@@ -1,0 +1,391 @@
+import * as THREE from 'three';
+
+// The whole story is a pure function of time t (seconds). Nothing here keeps
+// per-frame state, which is what lets the timeline scrub in both directions.
+// Units are metres; the ship's bow points along +X, +Y is up, starboard is +Z.
+//
+// The frigate steams ahead at constant speed. Everything mounted on it (the
+// launch rail, the missile launcher) and the drone's flight path are defined
+// in the ship's frame — a pure translation of the world frame — and offset by
+// shipPos(t). The missile and the debris are simulated in the world frame.
+
+export const G = 9.81;
+export const SHIP_SPEED = 7; // m/s (~14 kn)
+
+export function shipPos(t, out) {
+  return out.set(SHIP_SPEED * t, 0, 0);
+}
+
+// Main-deck height along the hull: level aft, sheer rising to the bow.
+export function deckHeight(x) {
+  return x < 12 ? 5.6 : 5.6 + 2.3 * ((x - 12) / 50) ** 1.6;
+}
+
+// --- Drone catapult --------------------------------------------------------
+// Steel truss rail on the port side of the helideck, angled out over the side.
+const RAIL_YAW = THREE.MathUtils.degToRad(50); // from the bow toward port
+const RAIL_PITCH = THREE.MathUtils.degToRad(12);
+export const RAIL = {
+  start: new THREE.Vector3(-52, deckHeight(-52) + 1.35, -1.2),
+  length: 9,
+  dir: new THREE.Vector3(
+    Math.cos(RAIL_PITCH) * Math.cos(RAIL_YAW), Math.sin(RAIL_PITCH), -Math.cos(RAIL_PITCH) * Math.sin(RAIL_YAW),
+  ),
+  up: new THREE.Vector3(
+    -Math.sin(RAIL_PITCH) * Math.cos(RAIL_YAW), Math.cos(RAIL_PITCH), Math.sin(RAIL_PITCH) * Math.sin(RAIL_YAW),
+  ),
+  yaw: RAIL_YAW,
+  pitch: RAIL_PITCH,
+  ride: 0.87, // drone origin above the rail top (belly rests on the cradle pad)
+};
+
+const T_SPOOL = 3.0; // engine run-up on the cradle
+const CAT_ACCEL = 57; // m/s², pneumatic stroke (~6 g)
+const T_RELEASE = T_SPOOL + Math.sqrt((2 * RAIL.length) / CAT_ACCEL);
+const V_RELEASE = CAT_ACCEL * (T_RELEASE - T_SPOOL); // ~32 m/s relative to the ship
+
+function railStroke(t) {
+  if (t <= T_SPOOL) return 0;
+  const dt = Math.min(t, T_RELEASE) - T_SPOOL;
+  return 0.5 * CAT_ACCEL * dt * dt;
+}
+
+// Cradle travel: strokes with the drone, sits on the buffers, then winches back.
+export function shuttleStroke(t) {
+  if (t <= T_RELEASE + 1.5) return railStroke(t);
+  return RAIL.length * (1 - THREE.MathUtils.smoothstep(t, T_RELEASE + 1.5, T_RELEASE + 6));
+}
+
+const RELEASE_POINT = RAIL.start.clone()
+  .addScaledVector(RAIL.dir, RAIL.length)
+  .addScaledVector(RAIL.up, RAIL.ride);
+
+// --- Flight path, ship frame -------------------------------------------------
+// Off the rail to port, a wide left-hand loop astern, back up the port side
+// low and close, then a long shallow climb away ahead of the bow.
+const WAYPOINTS = [
+  RELEASE_POINT.toArray(),
+  RELEASE_POINT.clone().addScaledVector(RAIL.dir, 20).toArray(),
+  [-22, 19, -45],
+  [-18, 30, -85],
+  [-45, 45, -140],
+  [-110, 60, -185],
+  [-200, 72, -205],
+  [-290, 78, -180],
+  [-350, 75, -120],
+  [-360, 65, -60],
+  [-300, 50, -36],
+  [-200, 36, -30],
+  [-110, 29, -28],
+  [-30, 27, -27],
+  [40, 30, -25],
+  [110, 35, -22],
+  [190, 44, -18],
+  [280, 57, -14],
+  [380, 74, -10],
+  [490, 95, -6],
+  [610, 120, -3],
+  [740, 148, 0],
+  [880, 178, 2],
+  [1030, 210, 3],
+];
+
+// Airspeed relative to the ship (m/s), keyed by seconds after release.
+const SPEED_KEYS = [
+  [0, V_RELEASE],
+  [3, 44],
+  [10, 52],
+  [25, 55],
+  [33, 60],
+  [40, 56],
+  [80, 50],
+];
+
+const curve = new THREE.CatmullRomCurve3(WAYPOINTS.map((p) => new THREE.Vector3(...p)), false, 'centripetal');
+curve.arcLengthDivisions = 4000;
+const PATH_LENGTH = curve.getLength();
+const PATH_END = curve.getPointAt(1);
+const PATH_END_DIR = curve.getTangentAt(1);
+
+function speedAt(tau) {
+  if (tau <= SPEED_KEYS[0][0]) return SPEED_KEYS[0][1];
+  for (let i = 1; i < SPEED_KEYS.length; i++) {
+    const [t1, v1] = SPEED_KEYS[i];
+    const [t0, v0] = SPEED_KEYS[i - 1];
+    if (tau <= t1) return v0 + ((v1 - v0) * (tau - t0)) / (t1 - t0);
+  }
+  return SPEED_KEYS[SPEED_KEYS.length - 1][1];
+}
+
+// Arc length flown since release, tabulated once (trapezoid rule).
+const ARC_DT = 0.01;
+const arcTable = [0];
+for (let tau = 0; arcTable[arcTable.length - 1] < PATH_LENGTH; tau += ARC_DT) {
+  const s = arcTable[arcTable.length - 1];
+  arcTable.push(s + 0.5 * (speedAt(tau) + speedAt(tau + ARC_DT)) * ARC_DT);
+}
+const ARC_TAU_MAX = (arcTable.length - 1) * ARC_DT;
+
+function arcAt(tau) {
+  if (tau <= 0) return 0;
+  if (tau >= ARC_TAU_MAX) return arcTable[arcTable.length - 1] + speedAt(tau) * (tau - ARC_TAU_MAX);
+  const f = tau / ARC_DT;
+  const i = Math.floor(f);
+  return arcTable[i] + (arcTable[i + 1] - arcTable[i]) * (f - i);
+}
+
+// Drone position in the ship frame.
+export function planeRelPos(t, out) {
+  if (t < T_RELEASE) {
+    return out.copy(RAIL.start).addScaledVector(RAIL.dir, railStroke(t)).addScaledVector(RAIL.up, RAIL.ride);
+  }
+  const s = arcAt(t - T_RELEASE);
+  if (s <= PATH_LENGTH) return curve.getPointAt(s / PATH_LENGTH, out);
+  return out.copy(PATH_END).addScaledVector(PATH_END_DIR, s - PATH_LENGTH);
+}
+
+const _a = new THREE.Vector3();
+const _b = new THREE.Vector3();
+const _c = new THREE.Vector3();
+const _d = new THREE.Vector3();
+
+export function planePos(t, out) {
+  planeRelPos(t, out);
+  return out.add(shipPos(t, _d));
+}
+
+export function planeVel(t, out) {
+  const h = 0.05;
+  planePos(t - h, _a);
+  planePos(t + h, _b);
+  return out.subVectors(_b, _a).divideScalar(2 * h);
+}
+
+const _m = new THREE.Matrix4();
+const _x = new THREE.Vector3();
+const _y = new THREE.Vector3();
+const _rel = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+const _zAxis = new THREE.Vector3(0, 0, 1);
+const _qRoll = new THREE.Quaternion();
+
+// World position + attitude. Nose is local +Z, left wing local +X. Attitude
+// follows the ship-relative path (continuous off the rail); bank comes from
+// the turn rate (coordinated turn: tan(bank) = v·ω / g). Returns airspeed.
+export function planePose(t, pos, quat) {
+  planeRelPos(t, _rel);
+  pos.copy(_rel).add(shipPos(t, _d));
+  const h = 0.15;
+  let speed = 0;
+  let bank = 0;
+  const fwd = _c;
+  if (t < T_RELEASE) {
+    fwd.copy(RAIL.dir);
+    speed = CAT_ACCEL * Math.max(0, t - T_SPOOL);
+  } else {
+    planeRelPos(t - h, _a);
+    planeRelPos(t + h, _b);
+    fwd.subVectors(_b, _a);
+    speed = fwd.length() / (2 * h);
+    fwd.normalize();
+    planeRelPos(t - 2 * h, _d);
+    const v1x = _rel.x - _d.x, v1z = _rel.z - _d.z;
+    planeRelPos(t + 2 * h, _d);
+    const v2x = _d.x - _rel.x, v2z = _d.z - _rel.z;
+    const turn = Math.atan2(v1z * v2x - v1x * v2z, v1x * v2x + v1z * v2z) / (2 * h);
+    // Ease bank in over the first second so it doesn't snap at release.
+    const ease = THREE.MathUtils.smoothstep(t, T_RELEASE, T_RELEASE + 1);
+    bank = ease * THREE.MathUtils.clamp(Math.atan((speed * turn) / G), -1.1, 1.1);
+  }
+  _x.crossVectors(_up, fwd).normalize();
+  _y.crossVectors(fwd, _x);
+  _m.makeBasis(_x, _y, fwd);
+  quat.setFromRotationMatrix(_m);
+  quat.multiply(_qRoll.setFromAxisAngle(_zAxis, -bank));
+  return speed;
+}
+
+// Propeller angle in closed form: linear run-up over T_SPOOL, then constant.
+const PROP_OMEGA = 560; // rad/s (~5300 rpm)
+export function propAngle(t) {
+  if (t <= 0) return 0;
+  if (t < T_SPOOL) return (PROP_OMEGA * t * t) / (2 * T_SPOOL);
+  return PROP_OMEGA * (t - T_SPOOL / 2);
+}
+export const propSpin01 = (t) => THREE.MathUtils.clamp(t / T_SPOOL, 0, 1);
+
+// --- Key moments, measured in the ship frame --------------------------------
+
+const SHIP_CENTER = new THREE.Vector3(0, 10, 0);
+const tmp = new THREE.Vector3();
+
+let tTurn = T_RELEASE;
+let tClose = T_RELEASE;
+{
+  let farthest = 0;
+  for (let t = T_RELEASE; t < T_RELEASE + ARC_TAU_MAX; t += 0.05) {
+    const d = planeRelPos(t, tmp).distanceTo(SHIP_CENTER);
+    if (d > farthest && tmp.y < 150) { farthest = d; tTurn = t; }
+    if (tmp.x > -100 && t > tTurn + 5) break; // back alongside: stop looking
+  }
+  let closest = Infinity;
+  for (let t = tTurn; t < T_RELEASE + ARC_TAU_MAX; t += 0.05) {
+    const d = planeRelPos(t, tmp).distanceTo(SHIP_CENTER);
+    if (d < closest) { closest = d; tClose = t; }
+  }
+}
+
+const T_LAUNCH = tClose + 9; // let the slow climb-out play before the shot
+
+// --- Missile launcher (8-cell trainable box, forward deckhouse) --------------
+
+export const LAUNCHER_PIVOT = new THREE.Vector3(24, deckHeight(24) + 4.1, 0); // high enough to clear the roof at full elevation
+// Top-port tube mouth, in the launcher's own frame (+X along the tubes).
+export const TUBE_MOUTH = new THREE.Vector3(1.75, 0.3, -0.93);
+
+const aimTarget = new THREE.Vector3();
+planePos(T_LAUNCH + 1.2, aimTarget).sub(shipPos(T_LAUNCH, tmp)).sub(LAUNCHER_PIVOT);
+const AIM_YAW = Math.atan2(-aimTarget.z, aimTarget.x);
+const AIM_PITCH = THREE.MathUtils.clamp(
+  Math.atan2(aimTarget.y, Math.hypot(aimTarget.x, aimTarget.z)),
+  THREE.MathUtils.degToRad(25), THREE.MathUtils.degToRad(70),
+);
+
+// Stowed (level, facing forward) -> slew onto the target -> back to stowed.
+export function launcherAim(t) {
+  const w = THREE.MathUtils.smoothstep(t, T_LAUNCH - 4, T_LAUNCH - 1)
+    * (1 - THREE.MathUtils.smoothstep(t, T_LAUNCH + 3, T_LAUNCH + 6));
+  return { yaw: AIM_YAW * w, pitch: AIM_PITCH * w };
+}
+
+const _qYaw = new THREE.Quaternion();
+const _qPitch = new THREE.Quaternion();
+const _yAxis = new THREE.Vector3(0, 1, 0);
+export function launcherQuat(yaw, pitch, out) {
+  _qYaw.setFromAxisAngle(_yAxis, yaw);
+  _qPitch.setFromAxisAngle(_zAxis, pitch);
+  return out.copy(_qYaw).multiply(_qPitch);
+}
+
+// --- Missile: proportional navigation, simulated once at load ---------------
+// Stored as a fixed-rate sample table; the last sample is snapped onto the
+// drone so the hit is exact by construction.
+
+const launchQuat = launcherQuat(AIM_YAW, AIM_PITCH, new THREE.Quaternion());
+const MISSILE_START = TUBE_MOUTH.clone().applyQuaternion(launchQuat)
+  .add(LAUNCHER_PIVOT).add(shipPos(T_LAUNCH, new THREE.Vector3()));
+const LAUNCH_DIR = new THREE.Vector3(1, 0, 0).applyQuaternion(launchQuat);
+
+const MISSILE_DT = 1 / 500;
+const missileSamples = []; // flat xyz
+let tHit;
+{
+  const pos = MISSILE_START.clone();
+  const vel = LAUNCH_DIR.clone().multiplyScalar(40);
+  const target = new THREE.Vector3();
+  const targetVel = new THREE.Vector3();
+  const r = new THREE.Vector3();
+  const vr = new THREE.Vector3();
+  const omega = new THREE.Vector3();
+  const acc = new THREE.Vector3();
+  const N = 5;
+  const MAX_ACC = 60 * G;
+  let t = T_LAUNCH;
+  missileSamples.push(pos.x, pos.y, pos.z);
+  for (;;) {
+    const age = t - T_LAUNCH;
+    const speed = age < 0.5 ? 40 + age * 360 : Math.min(420, 220 + (age - 0.5) * 160);
+    planePos(t, target);
+    planeVel(t, targetVel);
+    r.subVectors(target, pos);
+    if (r.length() < 2.5 || age > 12) break;
+    if (age > 0.3) {
+      vr.subVectors(targetVel, vel);
+      omega.crossVectors(r, vr).divideScalar(r.lengthSq());
+      acc.crossVectors(omega, vel).multiplyScalar(N);
+      if (acc.length() > MAX_ACC) acc.setLength(MAX_ACC);
+      vel.addScaledVector(acc, MISSILE_DT);
+    }
+    vel.setLength(speed);
+    pos.addScaledVector(vel, MISSILE_DT);
+    t += MISSILE_DT;
+    missileSamples.push(pos.x, pos.y, pos.z);
+  }
+  tHit = t;
+  const n = missileSamples.length;
+  missileSamples[n - 3] = target.x;
+  missileSamples[n - 2] = target.y;
+  missileSamples[n - 1] = target.z;
+}
+const MISSILE_N = missileSamples.length / 3;
+
+function missileSample(i, out) {
+  i = THREE.MathUtils.clamp(i, 0, MISSILE_N - 1);
+  return out.set(missileSamples[i * 3], missileSamples[i * 3 + 1], missileSamples[i * 3 + 2]);
+}
+
+export function missilePos(t, out) {
+  if (t <= T_LAUNCH) return out.copy(MISSILE_START);
+  const f = (t - T_LAUNCH) / MISSILE_DT;
+  const i = Math.floor(f);
+  if (i >= MISSILE_N - 1) return missileSample(MISSILE_N - 1, out);
+  missileSample(i, _a);
+  missileSample(i + 1, _b);
+  return out.lerpVectors(_a, _b, f - i);
+}
+
+const _fwd = new THREE.Vector3();
+// Missile nose is local +Z. Returns speed in m/s.
+export function missilePose(t, pos, quat) {
+  missilePos(t, pos);
+  const i = Math.min(Math.floor(Math.max(t - T_LAUNCH, 0) / MISSILE_DT), MISSILE_N - 2);
+  missileSample(i, _a);
+  missileSample(i + 1, _b);
+  _fwd.subVectors(_b, _a);
+  const speed = _fwd.length() / MISSILE_DT;
+  if (speed < 1e-3) _fwd.copy(LAUNCH_DIR);
+  quat.setFromUnitVectors(_zAxis, _fwd.normalize());
+  return speed;
+}
+
+// Every n-th sample as {t, pos}, used to lay the smoke trail.
+export function missileTrailPoints(step) {
+  const pts = [];
+  for (let i = 0; i < MISSILE_N; i += step) {
+    pts.push({ t: T_LAUNCH + i * MISSILE_DT, pos: missileSample(i, new THREE.Vector3()) });
+  }
+  return pts;
+}
+
+const hitPos = missileSample(MISSILE_N - 1, new THREE.Vector3());
+
+export const scenario = {
+  tSpool: T_SPOOL,
+  tRelease: T_RELEASE,
+  tTurn,
+  tClose,
+  tLaunch: T_LAUNCH,
+  tHit,
+  hitPos,
+  missileStart: MISSILE_START,
+  launchDir: LAUNCH_DIR,
+  releasePoint: RELEASE_POINT,
+  // tEnd is set by main once the debris knows how long it takes to fall.
+  tEnd: tHit + 15,
+  events: [
+    { t: 0, label: 'Engine run-up' },
+    { t: T_RELEASE, label: 'Catapult launch' },
+    { t: tTurn, label: 'Turn back' },
+    { t: tClose, label: 'Close pass' },
+    { t: T_LAUNCH, label: 'Missile launch' },
+    { t: tHit, label: 'Impact' },
+  ],
+};
+
+// Firing tube mouth in world space at time t (follows the launcher's slew).
+const _tq = new THREE.Quaternion();
+export function tubeMouth(t, out) {
+  const { yaw, pitch } = launcherAim(t);
+  return out.copy(TUBE_MOUTH).applyQuaternion(launcherQuat(yaw, pitch, _tq))
+    .add(LAUNCHER_PIVOT).add(shipPos(t, _d));
+}
