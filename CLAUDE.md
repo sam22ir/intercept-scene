@@ -13,9 +13,11 @@ The folder name ends with a **trailing space** (`/home/saadi/plane sceen `). Quo
 ```bash
 pnpm install      # one install at a time on this machine
 pnpm dev          # http://localhost:5173 (also the "dev" entry in .claude/launch.json)
-pnpm build        # production bundle in dist/ (the >500 kB chunk warning is three.js, expected)
+pnpm build        # dist/ bundle + dist/intercept-offline.html (the >500 kB chunk warning is three.js, expected)
 pnpm cf-deploy    # build + `wrangler deploy` (static-assets Worker, see wrangler.jsonc)
 ```
+
+`scripts/build-offline.mjs` runs after `vite build`. It inlines the single JS bundle and the CSS into `dist/intercept-offline.html`, which opens by double-click from disk with no internet. The site links to it ("Download offline version", `#dl-offline`), and the script strips that link from the offline copy. Keep the app free of runtime network loads (fonts, CDN scripts, fetched assets) and of code splitting, or the offline file breaks. The script fails the build if it finds more than one bundle.
 
 Live at https://intercept-scene.nafaa-store.workers.dev. Deploying is public, so ask before running it.
 
