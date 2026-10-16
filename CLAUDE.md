@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Interactive Three.js scene: an orange target drone is catapulted off a side launch rail on a steaming stealth frigate (C28A style, pennant 920). It flies a loop, comes back for a low close pass along the port side, and climbs away. A missile from the frigate's forward box launcher then shoots it down. The user can scrub time forwards and backwards and click the drone, missile or ship to focus the camera on it. Vanilla JS (ES modules), Vite, `three@0.186.1`. No tests, no linter.
+Interactive Three.js scene: an orange target drone is catapulted off a side launch rail on a steaming stealth frigate (C28A style, pennant 920). It flies a loop, makes a low close pass along the port side, climbs out slowly ahead, then turns back for an inbound run at the ship. On that run, a missile from the frigate's forward box launcher shoots it down. The user can scrub time forwards and backwards and click the drone, missile or ship to focus the camera on it. Vanilla JS (ES modules), Vite, `three@0.186.1`. No tests, no linter.
 
 The folder name ends with a **trailing space** (`/home/saadi/plane sceen `). Quote every path in shell commands.
 
@@ -42,7 +42,8 @@ Holds the story, all timing and every ship mount point. Units are metres. The bo
   - Proportional navigation is **simulated once at module load** into a fixed-rate sample table, starting from the tube mouth at `tLaunch` along the tube direction.
   - The last sample is snapped onto the drone, so the hit is exact. `tHit` is an output of that sim.
   - The launcher's slew (`launcherAim(t)`: stowed → aimed → stowed) is a pure function of `t`.
-  - The drone's climb-away is ahead of the bow, so the missile's first second clears the superstructure. Keep it that way if you change the path.
+  - The drone is shot down on its **inbound run** (coming back at the ship), never while flying away. `tInbound` is the farthest point after the close pass, and `tLaunch` is derived as the moment the inbound drone closes inside `LAUNCH_RANGE`.
+  - The inbound run comes from ahead of the bow, so the forward launcher's missile clears the superstructure in its first second. Keep it that way if you change the path.
 
 ### Rendering and timeline
 

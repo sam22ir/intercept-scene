@@ -62,7 +62,8 @@ const RELEASE_POINT = RAIL.start.clone()
 
 // --- Flight path, ship frame -------------------------------------------------
 // Off the rail to port, a wide left-hand loop astern, back up the port side
-// low and close, then a long shallow climb away ahead of the bow.
+// low and close, a long shallow climb out ahead of the bow, then a left turn
+// back onto an inbound run at the ship — the leg on which it is shot down.
 const WAYPOINTS = [
   RELEASE_POINT.toArray(),
   RELEASE_POINT.clone().addScaledVector(RAIL.dir, 20).toArray(),
@@ -79,15 +80,25 @@ const WAYPOINTS = [
   [-110, 29, -28],
   [-30, 27, -27],
   [40, 30, -25],
-  [110, 35, -22],
-  [190, 44, -18],
-  [280, 57, -14],
-  [380, 74, -10],
-  [490, 95, -6],
-  [610, 120, -3],
-  [740, 148, 0],
-  [880, 178, 2],
-  [1030, 210, 3],
+  [160, 40, -24],
+  [300, 55, -24],
+  [440, 72, -25],
+  [580, 90, -25],
+  [700, 104, -25],
+  // Left turn (r ≈ 190 m) until the nose points back at the ship.
+  [795, 110, -50],
+  [865, 113, -120],
+  [890, 114, -215],
+  [881, 114, -274],
+  // Inbound run: a straight, gently descending line at the ship.
+  [757, 110, -235],
+  [632, 104, -197],
+  [508, 96, -158],
+  [384, 88, -119],
+  [260, 80, -81],
+  [136, 72, -42],
+  [12, 65, -4],
+  [-112, 60, 35],
 ];
 
 // Airspeed relative to the ship (m/s), keyed by seconds after release.
@@ -228,14 +239,30 @@ let tClose = T_RELEASE;
     if (d > farthest && tmp.y < 150) { farthest = d; tTurn = t; }
     if (tmp.x > -100 && t > tTurn + 5) break; // back alongside: stop looking
   }
+  // Closest approach on the pass up the port side (stop once well ahead).
   let closest = Infinity;
   for (let t = tTurn; t < T_RELEASE + ARC_TAU_MAX; t += 0.05) {
     const d = planeRelPos(t, tmp).distanceTo(SHIP_CENTER);
     if (d < closest) { closest = d; tClose = t; }
+    if (tmp.x > 150) break;
   }
 }
 
-const T_LAUNCH = tClose + 9; // let the slow climb-out play before the shot
+// Farthest point of the climb-out: where the drone turns back inbound.
+let tInbound = tClose;
+{
+  let farthest = 0;
+  for (let t = tClose; t < T_RELEASE + ARC_TAU_MAX; t += 0.05) {
+    const d = planeRelPos(t, tmp).distanceTo(SHIP_CENTER);
+    if (d > farthest) { farthest = d; tInbound = t; }
+    else if (d < farthest - 50) break;
+  }
+}
+
+// Fire once the inbound drone closes inside this range of the ship.
+const LAUNCH_RANGE = 650;
+let T_LAUNCH = tInbound;
+while (planeRelPos(T_LAUNCH, tmp).distanceTo(SHIP_CENTER) > LAUNCH_RANGE) T_LAUNCH += 0.01;
 
 // --- Missile launcher (8-cell trainable box, forward deckhouse) --------------
 
@@ -364,6 +391,7 @@ export const scenario = {
   tRelease: T_RELEASE,
   tTurn,
   tClose,
+  tInbound,
   tLaunch: T_LAUNCH,
   tHit,
   hitPos,
@@ -377,6 +405,7 @@ export const scenario = {
     { t: T_RELEASE, label: 'Catapult launch' },
     { t: tTurn, label: 'Turn back' },
     { t: tClose, label: 'Close pass' },
+    { t: tInbound, label: 'Inbound run' },
     { t: T_LAUNCH, label: 'Missile launch' },
     { t: tHit, label: 'Impact' },
   ],
