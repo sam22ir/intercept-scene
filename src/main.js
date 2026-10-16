@@ -2,8 +2,9 @@ import './style.css';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
-  scenario, planePose, propAngle, propSpin01, missilePose, shipPos, tubeMouth,
+  scenario, planePose, planeVel, propAngle, propSpin01, missilePose, shipPos, tubeMouth, SHIP_SPEED,
 } from './scenario.js';
+import { createLabels } from './labels.js';
 import { createEnvironment } from './environment.js';
 import { createShip } from './models/ship.js';
 import { createPlane } from './models/plane.js';
@@ -45,10 +46,27 @@ const debris = createDebris(plane);
 const effects = createEffects(scene, debris);
 scenario.tEnd = scenario.tHit + debris.fallTime + 5;
 
+// Floating tags + missile path; the on/off choice is remembered per viewer.
+const labels = createLabels(scene);
+const labelsButton = document.querySelector('#btn-labels');
+function setLabels(on) {
+  labels.setEnabled(on);
+  labelsButton.classList.toggle('active', on);
+  labelsButton.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem('intercept.labels', on ? '1' : '0'); } catch { /* storage unavailable */ }
+}
+let labelsPref = true;
+try { labelsPref = localStorage.getItem('intercept.labels') !== '0'; } catch { /* storage unavailable */ }
+setLabels(labelsPref);
+labelsButton.addEventListener('click', () => setLabels(!labels.enabled));
+
 // --- Applying a moment in time ----------------------------------------------
 
 const telemetry = { planeAlt: 0, planeSpeed: 0, missileSpeed: null, range: null };
 const _mPos = new THREE.Vector3();
+const _lPos = new THREE.Vector3();
+const _lVel = new THREE.Vector3();
+const _lShip = new THREE.Vector3();
 
 function applyTime(t) {
   const { tHit, tLaunch } = scenario;
@@ -78,6 +96,19 @@ function applyTime(t) {
     telemetry.missileSpeed = null;
     telemetry.range = null;
   }
+
+  labels.update({
+    t,
+    dronePos: t < tHit ? plane.group.position : debris.fuselagePos(t - tHit, _lPos),
+    droneSpeed: t < tHit ? planeVel(t, _lVel).length() : 0,
+    droneAlt: telemetry.planeAlt,
+    droneRange: (t < tHit ? plane.group.position : _lPos).distanceTo(_lShip.copy(ship.group.position).setY(10)),
+    missilePos: missile.group.position,
+    missileSpeed: telemetry.missileSpeed ?? 0,
+    missileRange: telemetry.range ?? 0,
+    shipPos: ship.group.position,
+    shipSpeed: SHIP_SPEED,
+  });
 
   const ou = env.ocean.material.uniforms;
   ou.uTime.value = t;
@@ -183,6 +214,7 @@ const clock = createTimeline(scenario, {
     if (key === '1') setFocus('plane');
     if (key === '2') setFocus('missile');
     if (key === '3') setFocus('ship');
+    if (key === 'l' || key === 'L') setLabels(!labels.enabled);
   },
 });
 
@@ -208,6 +240,7 @@ function resize() {
   const w = window.innerWidth;
   const h = window.innerHeight;
   renderer.setSize(w, h, false);
+  labels.resize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   pointScale.value = (h * renderer.getPixelRatio()) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
@@ -237,6 +270,7 @@ renderer.setAnimationLoop((now) => {
   clock.renderUI();
   renderTelemetry();
   renderer.render(scene, camera);
+  labels.render(scene, camera);
 });
 
 // Debug/inspection handle.

@@ -48,6 +48,7 @@ Holds the story, all timing and every ship mount point. Units are metres. The bo
 ### Rendering and timeline
 
 - `src/main.js` holds `applyTime(t)`, which poses everything for a given `t`, plus focus targets, picking and the render loop. `scenario.tEnd` is set here from the debris fall time. There is deliberately **no bloom pass**: the `Sky` shader outputs HDR values far above any usable threshold, so bloom turned the whole frame milky. Glow comes from additive sprites (flash, exhaust) instead.
+- `src/labels.js` holds the floating tags (a `CSS2DRenderer` layer over the canvas, click-through) for the drone, missile and ship, plus the missile trajectory line. The line has two geometries sharing one position buffer: solid up to `t`, dashed for the rest. `main.js` feeds it per-frame data from `applyTime`. The Labels button and the **L** key turn it all off, and the choice is kept in `localStorage`.
 - `src/timeline.js` holds the master clock (`t`, play direction, speed) and the playback bar, markers and keys. The clock is the only source of time.
 
 ### Models
