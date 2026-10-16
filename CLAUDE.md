@@ -14,7 +14,10 @@ The folder name ends with a **trailing space** (`/home/saadi/plane sceen `). Quo
 pnpm install      # one install at a time on this machine
 pnpm dev          # http://localhost:5173 (also the "dev" entry in .claude/launch.json)
 pnpm build        # production bundle in dist/ (the >500 kB chunk warning is three.js, expected)
+pnpm deploy       # build + `wrangler deploy` (static-assets Worker, see wrangler.jsonc)
 ```
+
+Live at https://intercept-scene.nafaa-store.workers.dev. Deploying is public, so ask before running it.
 
 `src/scenario.js` imports only `three`, so timings and clearances can be checked in Node without a browser. Import it and sample `planeRelPos`, `missilePos` and `shipPos`.
 
