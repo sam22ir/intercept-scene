@@ -635,13 +635,39 @@ export function createShip() {
   base.add(new THREE.CylinderGeometry(1.0, 1.3, -0.4 - roof, 20), M.greyDark, { pos: [0, (roof - 0.4) / 2, 0] });
   const yawGroup = new THREE.Group();
   const yk = new Kit();
-  yk.add(new THREE.CylinderGeometry(0.9, 1.0, 0.5, 18), M.grey, { pos: [0, -0.5, 0] });
-  for (const s of [-1, 1]) yk.add(new THREE.BoxGeometry(0.9, 1.2, 0.18), M.grey, { pos: [0, -0.05, s * 1.45] });
+  // Turntable drum under the box.
+  yk.add(new THREE.CylinderGeometry(1.05, 1.15, 0.5, 24), M.grey, { pos: [0, -0.55, 0] });
+  for (const s of [-1, 1]) {
+    // Tall slab cheeks either side of the box, as on the real launcher: flat plates
+    // with a ringed disc and a round knob low at the front, a chain ring on the top edge.
+    yk.add(new THREE.BoxGeometry(1.9, 1.9, 0.3), M.grey, { pos: [0.1, -0.2, s * 1.53] });
+    yk.add(new THREE.BoxGeometry(1.9, 0.12, 0.38), M.greyLight, { pos: [0.1, 0.77, s * 1.53] });
+    const face = s * 1.7;
+    yk.add(new THREE.TorusGeometry(0.42, 0.035, 8, 28), M.greyDark, { pos: [-0.05, 0.05, face] });
+    for (const a of [Math.PI / 2, Math.PI / 2 + (Math.PI * 2) / 3, Math.PI / 2 - (Math.PI * 2) / 3]) {
+      yk.add(new THREE.BoxGeometry(0.4, 0.03, 0.03), M.greyDark, { pos: [-0.05 + Math.cos(a) * 0.2, 0.05 + Math.sin(a) * 0.2, face], rot: [0, 0, a] });
+    }
+    yk.add(new THREE.CylinderGeometry(0.17, 0.17, 0.1, 14), M.greyLight, { pos: [-0.05, -0.62, face], rot: [Math.PI / 2, 0, 0] });
+    yk.add(new THREE.CylinderGeometry(0.06, 0.06, 0.2, 8), M.black, { pos: [0.7, 0.62, face], rot: [Math.PI / 2, 0, 0] });
+  }
+  // Access ladder up the outboard (+z) cheek.
+  for (const x of [0.45, 0.85]) yk.rod([x, -1.1, 1.78], [x, 0.7, 1.78], 0.03, M.steel, 5);
+  for (let y = -1.0; y < 0.7; y += 0.28) yk.rod([0.45, y, 1.78], [0.85, y, 1.78], 0.025, M.steel, 5);
   yawGroup.add(yk.build());
   const pitchGroup = new THREE.Group();
   const pk = new Kit();
-  pk.add(new THREE.BoxGeometry(3.4, 1.22, 2.6), M.greyLight, { pos: [0.05, 0, 0] });
-  pk.add(new THREE.BoxGeometry(0.1, 1.3, 2.7), M.grey, { pos: [-1.6, 0, 0] });
+  // Dark housing behind the tubes, with vent slats down both sides.
+  pk.add(new THREE.BoxGeometry(2.1, 1.5, 2.6), M.greyDark, { pos: [-0.5, 0, 0] });
+  pk.add(new THREE.BoxGeometry(0.1, 1.56, 2.7), M.grey, { pos: [-1.6, 0, 0] });
+  for (const s of [-1, 1]) {
+    for (let x = -1.2; x < 0.45; x += 0.2) pk.add(new THREE.BoxGeometry(0.07, 0.9, 0.03), M.black, { pos: [x, -0.1, s * 1.31] });
+  }
+  // Eight tapered canisters in two rows of four, each with clamp bands, a lip
+  // ring and a domed frangible cap.
+  const capGeo = new THREE.SphereGeometry(0.25, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+  capGeo.scale(1, 0.5, 1);
+  capGeo.rotateZ(-Math.PI / 2); // dome points along +x
+  const tubeMat = mat(0x7b858b, { metalness: 0.3, roughness: 0.62 }); // canisters are a darker grey than the hull
   const caps = [];
   for (let r = 0; r < 2; r++) {
     for (let c = 0; c < 4; c++) {
@@ -650,15 +676,16 @@ export function createShip() {
       const isFiring = Math.abs(y - TUBE_MOUTH.y) < 0.01 && Math.abs(z - TUBE_MOUTH.z) < 0.01;
       // Pair mode fires a second round from the next cell: its cap blows off too.
       const isFiring2 = PAIR_MODE && Math.abs(y - TUBE_MOUTHS[1].y) < 0.01 && Math.abs(z - TUBE_MOUTHS[1].z) < 0.01;
-      if (isFiring2) caps.push([1.78, y, z]);
-      if (!isFiring && !isFiring2) pk.add(new THREE.CylinderGeometry(0.24, 0.24, 0.06, 16), M.white, { pos: [1.76, y, z], rot: [0, 0, Math.PI / 2] });
-      pk.add(new THREE.CylinderGeometry(0.26, 0.26, 0.04, 16), M.black, { pos: [1.74, y, z], rot: [0, 0, Math.PI / 2] });
-      if (isFiring) caps.push([1.78, y, z]);
+      pk.rod([0.55, y, z], [1.72, y, z], 0.275, tubeMat, 18, 0.25);
+      for (const x of [0.85, 1.3]) pk.add(new THREE.CylinderGeometry(0.29, 0.29, 0.07, 18), M.greyLight, { pos: [x, y, z], rot: [0, 0, Math.PI / 2] });
+      pk.add(new THREE.CylinderGeometry(0.27, 0.27, 0.05, 18), M.greyDark, { pos: [1.72, y, z], rot: [0, 0, Math.PI / 2] });
+      if (isFiring || isFiring2) caps.push([1.74, y, z]);
+      else pk.add(capGeo, tubeMat, { pos: [1.74, y, z] });
     }
   }
   pitchGroup.add(pk.build());
-  const fireCap = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.06, 16), M.white);
-  fireCap.rotation.z = Math.PI / 2;
+  const fireCap = new THREE.Mesh(capGeo, tubeMat);
+  fireCap.castShadow = true;
   fireCap.position.set(...caps[0]);
   pitchGroup.add(fireCap);
   const fireCap2 = PAIR_MODE ? fireCap.clone() : null;
@@ -957,20 +984,20 @@ export function createShip() {
       fireCap.visible = tau < 1.2;
       if (tau > 0) {
         fireCap.position.set(caps[0][0] + 6 * tau, caps[0][1] + 5 * tau - 4.9 * tau * tau, caps[0][2] - 1.5 * tau);
-        fireCap.rotation.set(tau * 9, 0, Math.PI / 2 + tau * 7);
+        fireCap.rotation.set(tau * 9, 0, tau * 7);
       } else {
         fireCap.position.set(...caps[0]);
-        fireCap.rotation.set(0, 0, Math.PI / 2);
+        fireCap.rotation.set(0, 0, 0);
       }
       if (fireCap2) {
         const tau2 = t - tLaunch2;
         fireCap2.visible = tau2 < 1.2;
         if (tau2 > 0) {
           fireCap2.position.set(caps[1][0] + 6 * tau2, caps[1][1] + 5 * tau2 - 4.9 * tau2 * tau2, caps[1][2] - 1.5 * tau2);
-          fireCap2.rotation.set(tau2 * 9, 0, Math.PI / 2 + tau2 * 7);
+          fireCap2.rotation.set(tau2 * 9, 0, tau2 * 7);
         } else {
           fireCap2.position.set(...caps[1]);
-          fireCap2.rotation.set(0, 0, Math.PI / 2);
+          fireCap2.rotation.set(0, 0, 0);
         }
       }
       const s = shuttleStroke(t);
