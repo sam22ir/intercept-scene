@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import { mulberry32, randomUnit, range } from '../rng.js';
 import { ParticleField, MODE } from './particles.js';
 import {
-  scenario, planePose, planePos, planeVel, propAngle, missileTrailPoints, shipPos, RAIL, G,
+  scenario, planePose, planePos, planeVel, propAngle, missileTrailPoints, shipPos, deckHeight, G,
 } from '../scenario.js';
 
 const _v = new THREE.Vector3();
 const _o = new THREE.Vector3();
+const deckY = deckHeight(-50); // helideck height: where the booster blast hits the plate
 
 // ---------------------------------------------------------------------------
 // Debris: on impact the plane's parts fly apart under gravity with linear air
@@ -125,21 +126,47 @@ export function createEffects(scene, debris) {
   }
   group.add(launch.finalize());
 
-  // Catapult: pneumatic exhaust puff at the rail head and a burst at release.
-  const puff = new ParticleField(160, {
-    mode: MODE.SMOKE, drag: 2.0, rise: 0.8, size: [0.4, 4.5], wind: [2.5, 0, 1.2],
+  // Booster rocket: a thick white plume streaming from under the drone's tail
+  // for the whole burn, and a blast of smoke and steam swept across the deck
+  // plate while the drone is still on the rail.
+  const { tRelease, tBoost0, tBoost1 } = scenario;
+  const puff = new ParticleField(700, {
+    mode: MODE.SMOKE, drag: 1.1, rise: 0.7, size: [0.5, 9], wind: [2.5, 0, 1.2],
   });
-  const { tRelease } = scenario;
-  const railWorld = (s, t) => shipPos(t, new THREE.Vector3()).add(RAIL.start).addScaledVector(RAIL.dir, s);
-  for (let i = 0; i < 160; i++) {
-    const atEnd = i % 2 === 0;
-    const t0 = tRelease - (atEnd ? 0 : 0.55) + range(rng, 0, 0.25);
-    _o.copy(railWorld(atEnd ? RAIL.length : 0.2, t0));
-    randomUnit(rng, _v).multiplyScalar(range(rng, 2, 9));
-    _v.x += 7;
-    puff.add(_o, _v, t0, range(rng, 1.5, 3.5), rng());
+  const blast = new ParticleField(260, {
+    mode: MODE.SMOKE, drag: 1.4, rise: 1.0, size: [1.2, 7.5], wind: [2.5, 0, 1.2],
+  });
+  {
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const fwd = new THREE.Vector3();
+    const vel = new THREE.Vector3();
+    const nozzle = new THREE.Vector3();
+    for (let t = tBoost0; t < tBoost1; t += 0.012) {
+      planePose(t, pos, quat);
+      planeVel(t, vel);
+      fwd.set(0, 0, 1).applyQuaternion(quat);
+      nozzle.set(0, -0.3, -1.7).applyQuaternion(quat).add(pos);
+      const ramp = Math.min(1, (t - tBoost0) / 0.15) * Math.min(1, (tBoost1 - t) / 0.5);
+      for (let k = 0; k < 3; k++) {
+        if (rng() > ramp) continue;
+        randomUnit(rng, _v).multiplyScalar(range(rng, 1, 4)).addScaledVector(fwd, -range(rng, 12, 30)).addScaledVector(vel, 0.25);
+        puff.add(nozzle, _v, t, range(rng, 2.4, 5), rng());
+      }
+      if (t < tRelease + 0.3) {
+        // Rail-level blast: sweeps backwards and out sideways along the plate.
+        _o.set(nozzle.x, deckY + 0.5, nozzle.z);
+        for (let k = 0; k < 2; k++) {
+          randomUnit(rng, _v);
+          _v.y = Math.abs(_v.y) * 0.4;
+          _v.multiplyScalar(range(rng, 4, 14)).addScaledVector(fwd, -range(rng, 3, 9));
+          _v.y = Math.abs(_v.y);
+          blast.add(_o, _v, t, range(rng, 2, 4.5), rng());
+        }
+      }
+    }
   }
-  group.add(puff.finalize());
+  group.add(puff.finalize(), blast.finalize());
 
   // Faint two-stroke exhaust haze behind the drone.
   const exhaust = new ParticleField(1400, {
@@ -204,7 +231,7 @@ export function createEffects(scene, debris) {
   light.position.copy(hitPos);
   group.add(flash, light);
 
-  const fields = [trail, launch, puff, exhaust, fire, burning, splash];
+  const fields = [trail, launch, puff, blast, exhaust, fire, burning, splash];
   return {
     update(t) {
       for (const f of fields) f.setTime(t);

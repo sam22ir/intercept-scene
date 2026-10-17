@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Interactive Three.js scene: an orange target drone is catapulted off a side launch rail on a steaming stealth frigate (C28A style, pennant 920). It flies a loop, makes a low close pass along the port side, climbs out slowly ahead, then turns back for an inbound run at the ship. On that run, a missile from the frigate's forward box launcher shoots it down. The user can scrub time forwards and backwards and click the drone, missile or ship to focus the camera on it. Vanilla JS (ES modules), Vite, `three@0.186.1`. No tests, no linter.
+Interactive Three.js scene: an orange target drone is launched off a steep side rail (24°) with a rocket booster under its tail, on a steaming stealth frigate (C28A style, pennant 920). It flies a loop, makes a low close pass along the port side, climbs out slowly ahead, then turns back for an inbound run at the ship. On that run, a missile from the frigate's forward box launcher shoots it down. The user can scrub time forwards and backwards and click the drone, missile or ship to focus the camera on it. Vanilla JS (ES modules), Vite, `three@0.186.1`. No tests, no linter.
 
 The folder name ends with a **trailing space** (`/home/saadi/plane sceen `). Quote every path in shell commands.
 
@@ -43,7 +43,7 @@ Holds the story, all timing and every ship mount point. Units are metres. The bo
 
 - **Moving ship frame**: the ship moves at constant `SHIP_SPEED`, and `shipPos(t)` is a pure translation, with no roll or pitch. The catapult `RAIL`, `LAUNCHER_PIVOT`/`TUBE_MOUTH` and `deckHeight(x)` are defined in the ship frame. `ship.js` builds its geometry from these same constants, so move a mount here, not in the model.
 - **Drone path**:
-  - On the rail, the drone strokes in closed form.
+  - On the rail, the drone strokes in closed form. The booster burns from `tBoost0` (cradle starts moving) to `tBoost1` (1.2 s after release), and the plane model hides the canister shortly after (`plane.setBooster(t, …)`).
   - After release it follows a Catmull-Rom curve in the **ship frame** (`planeRelPos`), driven by a relative-airspeed profile through a precomputed arc-length table. `planePos` adds `shipPos`.
   - The first waypoint and tangent are derived from the rail-end pose, so the release is continuous.
   - Attitude follows the *relative* path; bank comes from turn rate.
@@ -81,6 +81,7 @@ Holds the story, all timing and every ship mount point. Units are metres. The bo
   - The hull is lofted from per-level lines (keel, bilge, waterline, knuckle, deck) with raked stems. Each level pair is a separate strip, so creases stay sharp.
   - Hull UVs flip *u* on the port side, and port and starboard use different halves of the texture, so the painted "920" reads correctly on both sides.
   - The animated parts are the radar, launcher yaw/pitch, tube cap, catapult cradle and flag.
+  - The catapult follows the reference photos: a bent stainless blast plate, angle-iron base frame, ladder-frame beam on tubular A-frame legs, rust-brown pivot ears, hydraulic strut, tie-down chains to deck sockets, plus a battery box and flight case. The ears sit outboard of the drone's body (|z| 0.62) and behind its wing, and the gas bottle and buffers keep a gap from it. After changing the rail pitch, length or ride height, re-check clearances by sampling `planePose` in the rail frame, as the Node check did.
   - Ship pick boxes live inside the ship group.
 - **`plane.js`**:
   - The fuselage and flying surfaces are lofted from rounded-rect and airfoil sections. Stations are evenly spaced, so painted detail isn't stretched.
@@ -97,7 +98,7 @@ Holds the story, all timing and every ship mount point. Units are metres. The bo
 - **`src/fx/particles.js`** is a `ParticleField`. Each particle's position and colour are closed-form in `uTime - birth`, with all births baked at load.
 - **`src/fx/effects.js`**:
   - **Debris**: closed-form linear-drag ballistics from each part's pose at `tHit`, then the parts sink.
-  - **Particle bake**: catapult puff, drone exhaust haze, launch backblast, missile trail, fireball, burning smoke and splashes. Anything emitted from the ship must add the ship's velocity.
+  - **Particle bake**: booster plume and deck blast, drone exhaust haze, launch backblast, missile trail, fireball, burning smoke and splashes. Anything emitted from the ship must add the ship's velocity.
 - **`src/cameraRig.js`** eases to a target, then carries the camera by the target's per-frame delta. Focus targets always resolve to a position:
   - The missile sits at its tube before launch, and the blast point after.
   - The drone hands over to its falling fuselage after impact.

@@ -85,6 +85,7 @@ function applyTime(t) {
     telemetry.planeAlt = debris.fuselagePos(t - tHit, _mPos).y;
   }
   plane.setLights(t, t < tHit);
+  plane.setBooster(t, scenario.tBoost0, scenario.tBoost1);
 
   const flying = t > tLaunch && t < tHit;
   missile.group.visible = flying;

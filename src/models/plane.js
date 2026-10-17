@@ -149,8 +149,10 @@ function fuselageTexture() {
     ctx.fillText('H10-1727', 0, 10);
     ctx.restore();
     // Black anti-glare / wire channel along the top.
-    ctx.fillStyle = 'rgba(20,20,20,0.8)';
-    ctx.fillRect(0.5 * W - 6, V(1.8), 12, V(0.95) - V(1.8));
+    ctx.fillStyle = '#1d1c19';
+    ctx.fillRect(0.5 * W - 14, V(1.85), 28, V(-2.25) - V(1.85));
+    ctx.fillStyle = 'rgba(200,190,160,0.35)';
+    for (let y = V(1.8); y < V(-2.2); y += 22) ctx.fillRect(0.5 * W - 14, y, 28, 2);
     // Red/white "propeller" warning band near the nose.
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, V(1.72), W, 10);
@@ -338,6 +340,60 @@ export function createPlane() {
   // Nylon skids under the belly where it rests on the cradle.
   for (const z of [0.6, -0.3]) fk.add(new THREE.BoxGeometry(0.26, 0.025, 0.12), black, { pos: [0, -0.22, z] });
   fuselage.add(shadowed(fk.build()));
+
+  // Take-off booster rocket slung under the tail (jettisoned after burnout).
+  // Its flame is additive geometry, so its visibility and size are functions
+  // of t (setBooster).
+  const booster = new THREE.Group();
+  booster.position.set(0, -0.2, -1.1);
+  booster.rotation.x = -0.14; // nozzle points aft and a little down
+  const bk = new Kit();
+  const boosterBody = mat(0x4b5148, { metalness: 0.6, roughness: 0.5 });
+  const cyl = new THREE.CylinderGeometry(0.1, 0.1, 0.9, 16);
+  cyl.rotateX(Math.PI / 2);
+  bk.add(cyl, boosterBody);
+  const nose = new THREE.SphereGeometry(0.1, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+  nose.rotateX(Math.PI / 2);
+  bk.add(nose, boosterBody, { pos: [0, 0, 0.45] });
+  const bell = new THREE.CylinderGeometry(0.07, 0.125, 0.16, 16, 1, true);
+  bell.rotateX(-Math.PI / 2);
+  bk.add(bell, dark, { pos: [0, 0, -0.53] });
+  for (const z of [0.22, -0.22]) {
+    const band = new THREE.TorusGeometry(0.102, 0.012, 6, 20);
+    bk.add(band, white, { pos: [0, 0, z] });
+  }
+  for (const z of [0.25, -0.25]) bk.rod([0, 0.08, z], [0, 0.2, z], 0.012, metal, 4);
+  booster.add(shadowed(bk.build()));
+  const flameMats = [];
+  const flames = [[5.6, 0.3, 0xffd35a, 0.7], [3.2, 0.17, 0xfff3c4, 0.95]].map(([len, rad, color, opacity]) => {
+    const geo = new THREE.ConeGeometry(rad, len, 16, 1, true);
+    geo.rotateX(-Math.PI / 2); // apex points aft (-z)
+    geo.translate(0, 0, -0.6 - len / 2);
+    const material = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(color).multiplyScalar(2.4), transparent: true, opacity,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    });
+    flameMats.push(material);
+    const m = new THREE.Mesh(geo, material);
+    m.visible = false;
+    booster.add(m);
+    return m;
+  });
+  const flameGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: canvasTexture(64, 64, (ctx) => {
+      const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      g.addColorStop(0, 'rgba(255,245,210,1)');
+      g.addColorStop(0.3, 'rgba(255,190,70,0.75)');
+      g.addColorStop(1, 'rgba(255,120,20,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 64, 64);
+    }),
+    blending: THREE.AdditiveBlending, depthWrite: false, color: new THREE.Color(2, 2, 2),
+  }));
+  flameGlow.position.z = -0.75;
+  flameGlow.visible = false;
+  booster.add(flameGlow);
+  fuselage.add(booster);
   group.add(fuselage);
 
   // Wings (high-mounted on the fuselage top) -------------------------------------
@@ -443,6 +499,19 @@ export function createPlane() {
       const ph = ((t % 1) + 1) % 1;
       strobe.visible = on && (ph < 0.05 || (ph > 0.12 && ph < 0.17));
       for (const l of lights) l.visible = on;
+    },
+    // Booster: ignites at t0, burns until t1, canister drops off shortly after.
+    setBooster(t, t0, t1) {
+      const on = t >= t0 && t <= t1;
+      booster.visible = t < t1 + 0.35;
+      for (const f of flames) f.visible = on;
+      flameGlow.visible = on;
+      if (!on) return;
+      const ramp = THREE.MathUtils.smoothstep(t, t0, t0 + 0.12) * (1 - THREE.MathUtils.smoothstep(t, t1 - 0.35, t1));
+      const flick = 0.88 + 0.12 * Math.sin(t * 130) * Math.sin(t * 47);
+      flames[0].scale.set(1, 1, Math.max(0.01, ramp * flick));
+      flames[1].scale.set(1, 1, Math.max(0.01, ramp * (0.9 + 0.1 * Math.sin(t * 77))));
+      flameGlow.scale.setScalar(3.2 * ramp * flick);
     },
     restoreParts() {
       for (const p of parts) {

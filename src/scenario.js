@@ -37,7 +37,7 @@ export function deckHeight(x) {
 // --- Drone catapult --------------------------------------------------------
 // Steel truss rail on the port side of the helideck, angled out over the side.
 const RAIL_YAW = THREE.MathUtils.degToRad(50); // from the bow toward port
-const RAIL_PITCH = THREE.MathUtils.degToRad(12);
+const RAIL_PITCH = THREE.MathUtils.degToRad(24); // steep, nose-up launch rail
 export const RAIL = {
   start: new THREE.Vector3(-52, deckHeight(-52) + 1.35, -1.2),
   length: 9,
@@ -84,8 +84,8 @@ export const PATH_FIXED = [
   RELEASE_POINT.clone().addScaledVector(RAIL.dir, 20).toArray(),
 ];
 export const DEFAULT_PATH = [
-  [-22, 19, -45],
-  [-18, 30, -85],
+  [-21, 31, -47],
+  [-17, 38, -88],
   [-45, 45, -140],
   [-110, 60, -185],
   [-200, 72, -205],
@@ -481,6 +481,8 @@ const hitPos = missileSample(MISSILE_N - 1, new THREE.Vector3());
 export const scenario = {
   tSpool: T_SPOOL,
   tRelease: T_RELEASE,
+  tBoost0: T_SPOOL, // booster ignites with the stroke
+  tBoost1: T_RELEASE + 1.2,
   tLaunch: T_LAUNCH,
   interceptMiss,
   customPath: CUSTOM_PATH,
