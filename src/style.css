@@ -169,7 +169,16 @@ body.editing .timeline { opacity: 0.45; }
   font-size: 13px; transition: opacity 0.2s, transform 0.2s; z-index: 20; max-width: min(520px, 90vw); text-align: center;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
-@media (max-width: 640px) { .editor { width: auto; right: 14px; top: auto; bottom: 150px; } }
+/* Phones: the editor sits between the focus panel and the timeline (its own
+   height is fixed by top and bottom, so it scrolls if the screen is short). */
+.ed-fold { display: none; justify-self: start; font-size: 12px; }
+@media (max-width: 640px) {
+  .editor { width: auto; right: 14px; top: 204px; bottom: 216px; overflow-y: auto; overscroll-behavior: contain; }
+  .ed-fold { display: inline-block; }
+  .editor.folded { top: auto; overflow: visible; }
+  .editor.folded > :not(.title):not(.ed-fold) { display: none; }
+  body.editing .top-left .hint, body.editing .top-left .dl-link { display: none; }
+}
 
 
 /* Loading screen and fatal-error message */
@@ -209,3 +218,21 @@ body.editing .timeline { opacity: 0.45; }
 }
 .shot-caption::before { content: '● '; color: #ff3b30; }
 .shot-caption[hidden] { display: none; }
+
+
+/* Touch screens: big targets, and no page scroll or pinch-zoom from the scene,
+   scrub bar or toolbars (the scene itself is driven by OrbitControls). */
+#scene, #scrub { touch-action: none; }
+button, select, .link-btn { touch-action: manipulation; }
+.marker.end { transform: translateX(-100%); }
+.marker.end::after { left: auto; right: 0; }
+
+@media (pointer: coarse) {
+  button, select, .link-btn { min-height: 40px; }
+  button { min-width: 40px; }
+  .controls button { min-width: 44px; }
+  .controls select { min-height: 40px; }
+  .focus-buttons button { padding: 6px 10px; }
+  input[type='range'] { height: 40px; }
+  .link-btn { display: inline-flex; align-items: center; }
+}
