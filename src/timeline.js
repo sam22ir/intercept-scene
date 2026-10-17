@@ -8,6 +8,9 @@ export function createTimeline(scenario, { onKey } = {}) {
   const revBtn = $('#btn-reverse');
   const timeNow = $('#time-now');
   const markersEl = $('#markers');
+  const ticksEl = $('#ticks');
+  const phaseNow = $('#phase-now');
+  const phaseNext = $('#phase-next');
 
   const clock = {
     t: 0,
@@ -38,13 +41,26 @@ export function createTimeline(scenario, { onKey } = {}) {
     },
     renderUI() {
       if (!scrubbing) scrub.value = this.t;
-      timeNow.textContent = this.t.toFixed(2);
+      scrub.style.setProperty('--p', (this.t / scenario.tEnd).toFixed(4));
+      timeNow.textContent = this.t.toFixed(1);
       const fwd = this.playing && this.direction > 0;
       const rev = this.playing && this.direction < 0;
-      playBtn.textContent = fwd ? '❚❚' : '▶︎';
       playBtn.classList.toggle('active', fwd);
+      playBtn.setAttribute('aria-label', fwd ? 'Pause' : 'Play');
       revBtn.classList.toggle('active', rev);
-      for (const m of markerEls) m.el.classList.toggle('passed', this.t >= m.t);
+      // The current phase is the last event at or before t; the next one gets a countdown.
+      let cur = -1;
+      for (let i = 0; i < markerEls.length; i++) {
+        const passed = this.t >= markerEls[i].t;
+        markerEls[i].el.classList.toggle('passed', passed);
+        markerEls[i].tick.classList.toggle('passed', passed);
+        if (passed) cur = i;
+      }
+      const now = markerEls[cur]?.label ?? '';
+      const next = markerEls[cur + 1];
+      const nextText = next ? ` · ${next.label} in ${(next.t - this.t).toFixed(1)} s` : '';
+      if (phaseNow.textContent !== now) phaseNow.textContent = now;
+      if (phaseNext.textContent !== nextText) phaseNext.textContent = nextText;
     },
   };
 
@@ -61,23 +77,73 @@ export function createTimeline(scenario, { onKey } = {}) {
     clock.seek(parseFloat(scrub.value));
   });
 
-  // Labels closer than ~10% of the bar go on alternating rows.
-  let prevFrac = -1;
-  let row = 0;
+  // One tick per event on the bar; labels above it are laid out in pixels (see layoutMarkers).
   const markerEls = scenario.events.map(({ t, label }) => {
     const frac = t / scenario.tEnd;
-    row = frac - prevFrac < 0.1 ? 1 - row : 0;
-    prevFrac = frac;
     const el = document.createElement('div');
-    el.className = `marker row-${row}`;
+    el.className = 'marker';
     el.textContent = label;
-    el.style.left = `${frac * 100}%`;
-    if (frac > 0.8) el.classList.add('end'); // keep the label inside the bar's right edge
     el.title = `${label} — ${t.toFixed(1)} s`;
-    el.addEventListener('click', () => clock.seek(t));
+    el.addEventListener('click', () => { clock.playing = false; clock.seek(t); });
     markersEl.appendChild(el);
-    return { t, el };
+    const tick = document.createElement('div');
+    tick.className = 'tick';
+    tick.style.left = `${frac * 100}%`;
+    ticksEl.appendChild(tick);
+    return { t, frac, label, el, tick };
   });
+
+  // Greedy placement: each label goes on the first of two rows where it clears its
+  // neighbour by GAP px, clamped inside the bar; a label that fits nowhere is hidden
+  // (its tick stays, and the Now line names it when reached). Re-run on every resize.
+  const ROW_H = 16;
+  const GAP = 8;
+  function layoutMarkers() {
+    const w = markersEl.clientWidth;
+    if (!w) return; // hidden (phone layouts show ticks only)
+    const ends = [-Infinity, -Infinity];
+    let rows = 0;
+    for (const m of markerEls) {
+      m.el.hidden = false;
+      const lw = m.el.offsetWidth;
+      const x = m.frac * w;
+      const left = Math.min(Math.max(x - lw / 2, 0), w - lw);
+      const r = ends.findIndex((end) => left >= end + GAP);
+      if (r < 0) { m.el.hidden = true; m.tick.classList.remove('stem'); continue; }
+      ends[r] = left + lw;
+      rows = Math.max(rows, r + 1);
+      m.el.style.left = `${left}px`;
+      m.el.style.top = `${r * ROW_H}px`;
+      m.row = r;
+    }
+    markersEl.parentElement.style.setProperty('--label-rows', `${rows * ROW_H + 2}px`);
+    // Each labelled tick grows up to the bottom of its label's row (measured with no stems).
+    for (const m of markerEls) m.tick.classList.remove('stem');
+    const tick0 = markerEls[0].tick;
+    const tickTop = ticksEl.getBoundingClientRect().top + tick0.offsetTop;
+    const rowsTop = markersEl.getBoundingClientRect().top;
+    for (const m of markerEls) {
+      if (m.el.hidden) continue;
+      m.tick.classList.add('stem');
+      m.tick.style.setProperty('--stem', `${Math.max(0, tickTop - (rowsTop + (m.row + 1) * ROW_H))}px`);
+    }
+  }
+  layoutMarkers();
+  // Re-layout on width changes only, a frame later: layoutMarkers changes the track's own
+  // height, and doing that inside the observer callback is a ResizeObserver loop error.
+  let lastW = markersEl.clientWidth;
+  let pending = 0;
+  const relayout = () => {
+    if (pending) return;
+    pending = requestAnimationFrame(() => {
+      pending = 0;
+      if (markersEl.clientWidth === lastW) return;
+      lastW = markersEl.clientWidth;
+      layoutMarkers();
+    });
+  };
+  if (globalThis.ResizeObserver) new ResizeObserver(relayout).observe(markersEl.parentElement);
+  window.addEventListener('resize', relayout);
 
   playBtn.addEventListener('click', () => clock.play(1));
   revBtn.addEventListener('click', () => clock.play(-1));

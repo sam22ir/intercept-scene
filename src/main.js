@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
-  scenario, planePos, planePose, planeVel, propAngle, propSpin01, missilePose, shipPos, tubeMouth, SHIP_SPEED, SHIP_VARIANT,
+  scenario, planePos, planePose, planeVel, propAngle, propSpin01, missilePose, shipPos, tubeMouth, SHIP_SPEED, SHIP_VARIANT, PENNANT,
 } from './scenario.js';
 import { createLabels } from './labels.js';
 import { createParachute } from './models/parachute.js';
@@ -305,21 +305,50 @@ const audio = createAudio({
   splashTimes: debris ? debris.pieces.map((p) => scenario.tHit + p.tauWater) : [scenario.tSplash],
   pair: pair && { dronePos: pair.dronePosAt, splashTimes: pair.splashTimes },
 });
-// Hide/show the control panel (button in its title row, or the C key); remembered.
-const FOLD_KEY = 'intercept.panelFolded';
-const panelEl = document.querySelector('.panel.top-left');
+// Hide/show the whole interface (Hide button in the top bar, Show button, or the C key); remembered.
+const FOLD_KEY = 'intercept.uiHidden'; // not the old panelFolded key: that one only folded a panel
 const foldButton = document.querySelector('#btn-fold');
+const unfoldButton = document.querySelector('#btn-unfold');
 let panelFolded = false;
 function setPanelFolded(on, save = true) {
   panelFolded = on;
-  panelEl.classList.toggle('folded', on);
-  foldButton.textContent = on ? 'Show ▾' : 'Hide ▴';
-  foldButton.title = on ? 'Show the controls (C)' : 'Hide the controls (C)';
+  invalidate();
+  if (on) closePopovers();
+  document.body.classList.toggle('ui-hidden', on);
+  unfoldButton.hidden = !on;
   foldButton.setAttribute('aria-expanded', String(!on));
   if (save) try { localStorage.setItem(FOLD_KEY, on ? '1' : '0'); } catch { /* storage unavailable */ }
 }
-foldButton.addEventListener('click', () => setPanelFolded(!panelFolded));
+foldButton.addEventListener('click', () => setPanelFolded(true));
+unfoldButton.addEventListener('click', () => setPanelFolded(false));
+
+// "More" menu and the keyboard-shortcuts sheet. Esc, a click outside, or picking an item closes them.
+const menuButton = document.querySelector('#btn-menu');
+const menuEl = document.querySelector('#menu');
+const keysEl = document.querySelector('#keys');
+function setMenu(open) {
+  menuEl.hidden = !open;
+  menuButton.setAttribute('aria-expanded', String(open));
+  invalidate();
+}
+function setKeys(open) { keysEl.hidden = !open; invalidate(); }
+function closePopovers() {
+  const was = !menuEl.hidden || !keysEl.hidden;
+  setMenu(false); setKeys(false);
+  return was;
+}
+menuButton.addEventListener('click', () => setMenu(menuEl.hidden));
+menuEl.addEventListener('click', (e) => { if (e.target.closest('button, a')) setMenu(false); });
+document.querySelector('#btn-keys').addEventListener('click', () => setKeys(true));
+document.querySelector('#keys-close').addEventListener('click', () => setKeys(false));
+window.addEventListener('pointerdown', (e) => {
+  if (!menuEl.hidden && !e.target.closest('#menu, #btn-menu')) setMenu(false);
+  if (!keysEl.hidden && !e.target.closest('#keys, #btn-keys')) setKeys(false);
+}, true);
 try { setPanelFolded(localStorage.getItem(FOLD_KEY) === '1', false); } catch { /* storage unavailable */ }
+
+const MISSION_NAME = { intercept: 'Intercept', chute: 'Recovery', pair: 'Two drones' };
+document.querySelector('#mission-sub').textContent = `${PENNANT} · ${SHIP_VARIANT === 'aft' ? 'Aft' : 'Fwd'} launcher · ${MISSION_NAME[scenario.mode] ?? scenario.mode}`;
 
 const soundButton = document.querySelector('#btn-sound');
 function setSound(on) {
@@ -363,8 +392,10 @@ const hud = createHud();
 
 const clock = createTimeline(scenario, {
   onKey(key, e) {
+    if (key === 'Escape' && closePopovers()) return; // Esc closes an open menu or sheet first
     if (editor.active) { editor.onKey(key, e); return; }
     if (key === 'e' || key === 'E') { editor.toggle(); return; }
+    if (key === '?') { setKeys(keysEl.hidden); return; }
     if (key === 'Escape') setFocus('free');
     if (key === '1') setFocus('plane');
     if (key === '2' && scenario.hasMissile) setFocus('missile');
@@ -418,20 +449,6 @@ if (scenario.sharedPath) {
 createRecorder({
   canvas, clock, audio, scenario, setDirector, isDirecting: () => directing, isBusy: () => editor.active,
 });
-
-const tm = {
-  alt: document.querySelector('#tm-alt'),
-  speed: document.querySelector('#tm-speed'),
-  mspeed: document.querySelector('#tm-mspeed'),
-  range: document.querySelector('#tm-range'),
-};
-function renderTelemetry() {
-  const destroyed = clock.t >= scenario.tHit;
-  tm.alt.textContent = `${Math.max(0, telemetry.planeAlt).toFixed(0)} m`;
-  tm.speed.textContent = destroyed ? 'destroyed' : `${(telemetry.planeSpeed * 3.6).toFixed(0)} km/h`;
-  tm.mspeed.textContent = telemetry.missileSpeed == null ? '—' : `${(telemetry.missileSpeed * 3.6).toFixed(0)} km/h`;
-  tm.range.textContent = telemetry.range == null ? '—' : `${telemetry.range.toFixed(0)} m`;
-}
 
 // --- Loop -------------------------------------------------------------------
 
@@ -556,7 +573,6 @@ renderer.setAnimationLoop((now) => {
 
   clock.renderUI();
   hud.update(clock.t);
-  renderTelemetry();
   const draw = needsRender();
   if (draw) {
     renderer.render(scene, camera);

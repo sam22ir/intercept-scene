@@ -56,34 +56,70 @@
       </div>
     </div>
 
-    <div class="panel top-left">
-      <div class="title"><span>Intercept</span><button id="btn-fold" class="fold-btn" aria-expanded="true" title="Hide the controls (C)">Hide ▴</button></div>
-      <div class="focus-buttons" role="group" aria-label="Camera focus">
-        <button data-focus="free" class="active">Free</button>
-        <button data-focus="plane">Plane</button>
-        <button data-focus="missile">Missile</button>
-        <button data-focus="plane2" data-pair-only hidden>Plane 2</button>
-        <button data-focus="missile2" data-pair-only hidden>Missile 2</button>
-        <button data-focus="ship">Ship</button>
-        <span class="sep" aria-hidden="true"></span>
-        <button id="btn-labels" class="toggle active" aria-pressed="true" title="Show tags and missile path (L)">Labels</button>
-        <button id="btn-hud" class="toggle active" aria-pressed="true" title="Live readouts and end-of-run debrief (H)">HUD</button>
-        <button id="btn-edit" class="toggle" title="Draw or edit the drone's flight path (E)">✎ Edit path</button>
-        <button id="btn-director" class="toggle" aria-pressed="false" title="Cinematic camera: cuts between preset shots by itself (D)">🎬 Director</button>
-        <button id="btn-record" class="toggle" aria-pressed="false">⏺ Record</button>
-        <button id="btn-link" class="toggle" title="Copy a link to this exact moment, camera and flight path">🔗 Copy link</button>
-        <button id="btn-sound" class="toggle active" aria-pressed="true" title="Sound effects, synced to the timeline (S)">🔊 Sound</button>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        <symbol id="i-director" viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="11" rx="2"/><path d="M3 9l2.5-5 15 0L18 9M8.5 4L7 9M13.5 4L12 9"/></symbol>
+        <symbol id="i-labels" viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.4"/></symbol>
+        <symbol id="i-hud" viewBox="0 0 24 24"><path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-6"/><path d="M4 21h16"/></symbol>
+        <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/><path class="off" d="M17 9l5 6M22 9l-5 6"/></symbol>
+        <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></symbol>
+        <symbol id="i-start" viewBox="0 0 24 24"><path d="M6 5v14M19 5l-10 7 10 7z"/></symbol>
+        <symbol id="i-back" viewBox="0 0 24 24"><path d="M17 5l-8 7 8 7z"/><path d="M6 5v14"/></symbol>
+        <symbol id="i-rev" viewBox="0 0 24 24"><path d="M12 6l-8 6 8 6zM21 6l-8 6 8 6z"/></symbol>
+        <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5l13 7.5-13 7.5z"/></symbol>
+        <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></symbol>
+        <symbol id="i-fwd" viewBox="0 0 24 24"><path d="M7 5l8 7-8 7z"/><path d="M18 5v14"/></symbol>
+        <symbol id="i-end" viewBox="0 0 24 24"><path d="M18 5v14M5 5l10 7-10 7z"/></symbol>
+      </defs>
+    </svg>
+
+    <div class="panel topbar" id="topbar">
+      <div class="bar-row">
+        <div class="brand"><span class="dot" aria-hidden="true"></span><div><b>Intercept</b><small id="mission-sub"></small></div></div>
+        <div class="bar-tools" role="group" aria-label="View">
+          <button id="btn-director" class="toggle icon" aria-pressed="false" title="Director: cinematic camera that cuts between shots (D)"><svg><use href="#i-director"/></svg><span class="cap">Director</span></button>
+          <button id="btn-labels" class="toggle icon active" aria-pressed="true" title="Tags and missile path (L)"><svg><use href="#i-labels"/></svg><span class="cap">Labels</span></button>
+          <button id="btn-hud" class="toggle icon active" aria-pressed="true" title="Readouts and debrief (H)"><svg><use href="#i-hud"/></svg><span class="cap">Readouts</span></button>
+          <button id="btn-sound" class="toggle icon active" aria-pressed="true" title="Sound, synced to the timeline (S)"><svg><use href="#i-sound"/></svg><span class="cap">Sound</span></button>
+          <button id="btn-menu" class="icon" aria-haspopup="true" aria-expanded="false" aria-controls="menu" title="More"><svg><use href="#i-more"/></svg><span class="cap">More</span></button>
+        </div>
+        <button id="btn-fold" class="fold-btn" aria-expanded="true" title="Hide the interface (C)">Hide</button>
       </div>
-      <div class="hint">Click an object to focus · drag to orbit · scroll to zoom · Esc for free camera · D director · S sound · L labels · H HUD · E edit path · C hide controls</div>
-      <button id="btn-ship" class="link-btn" title="Back to the ship and mission selection screen">⇄ Change ship or mission</button>
+      <div id="menu" class="menu" role="menu" hidden>
+        <button id="btn-edit" role="menuitem" title="Draw or edit the drone's flight path (E)">Edit flight path<kbd>E</kbd></button>
+        <button id="btn-record" role="menuitem" aria-pressed="false">⏺ Record</button>
+        <button id="btn-link" role="menuitem" title="Copy a link to this exact moment, camera and flight path">Copy link to this moment</button>
+        <button id="btn-keys" role="menuitem" class="desk-only">Keyboard shortcuts<kbd>?</kbd></button>
+        <hr />
+        <button id="btn-ship" role="menuitem" title="Back to the ship and mission selection screen">Change ship or mission</button>
+        <a id="dl-offline" role="menuitem" href="/intercept-offline" download="intercept-offline.html" title="One HTML file that runs without internet: double-click to open">Download offline version</a>
+      </div>
       <div id="rec-box" class="rec-box" hidden>
         <div class="rec-status" role="status"></div>
         <a class="rec-link" download hidden></a>
         <div class="rec-note"></div>
         <button class="rec-close link-btn" type="button">Dismiss</button>
       </div>
-      <a id="dl-offline" class="dl-link" href="/intercept-offline" download="intercept-offline.html" title="One HTML file that runs without internet: double-click to open">⬇ Download offline version</a>
     </div>
+
+    <div id="keys" class="panel keys" role="dialog" aria-label="Keyboard shortcuts" hidden>
+      <div class="keys-h">Keyboard shortcuts <button id="keys-close" class="link-btn" type="button">Close</button></div>
+      <dl>
+        <dt><kbd>Space</kbd></dt><dd>Play / pause</dd>
+        <dt><kbd>R</kbd></dt><dd>Play backwards</dd>
+        <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Step 0.1 s (Shift: 1 s)</dd>
+        <dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>Start / end</dd>
+        <dt><kbd>1</kbd>–<kbd>5</kbd></dt><dd>Drone, missile, ship (pair: drone 2, missile 2)</dd>
+        <dt><kbd>Esc</kbd></dt><dd>Free camera</dd>
+        <dt><kbd>D</kbd></dt><dd>Director</dd>
+        <dt><kbd>L</kbd> <kbd>H</kbd> <kbd>S</kbd></dt><dd>Labels, readouts, sound</dd>
+        <dt><kbd>E</kbd></dt><dd>Edit flight path</dd>
+        <dt><kbd>C</kbd></dt><dd>Hide / show the interface</dd>
+      </dl>
+      <p class="keys-note">Click an object to follow it · drag to orbit · scroll to zoom</p>
+    </div>
+
+    <button id="btn-unfold" class="unfold-btn" hidden title="Show the interface (C)">Show controls</button>
 
     <div class="panel editor" id="editor" hidden>
       <div class="title">Path editor</div>
@@ -120,38 +156,45 @@
 
     <div id="shot-caption" class="shot-caption" hidden></div>
 
-    <div class="panel top-right telemetry">
-      <div><span>Plane alt</span><b id="tm-alt">—</b></div>
-      <div><span>Plane speed</span><b id="tm-speed">—</b></div>
-      <div><span>Missile speed</span><b id="tm-mspeed">—</b></div>
-      <div><span>Missile range</span><b id="tm-range">—</b></div>
-    </div>
-
-    <div id="hud" class="hud" aria-label="Live readouts">
+    <div id="hud" class="panel hud" aria-label="Live readouts">
       <div class="hud-live"></div>
       <div class="hud-debrief" hidden></div>
     </div>
 
     <div class="panel timeline">
       <div class="controls">
-        <button id="btn-start" title="Back to start (Home)">⏮</button>
-        <button id="btn-step-back" title="Step back (←, Shift = 1 s)">◀︎|</button>
-        <button id="btn-reverse" title="Play backwards (R)">◀︎◀︎</button>
-        <button id="btn-play" title="Play / pause (Space)">▶︎</button>
-        <button id="btn-step-fwd" title="Step forward (→, Shift = 1 s)">|▶︎</button>
-        <button id="btn-end" title="Jump to end (End)">⏭</button>
-        <select id="speed" title="Playback speed">
-          <option value="0.1">0.1×</option>
-          <option value="0.25">0.25×</option>
-          <option value="0.5">0.5×</option>
-          <option value="1" selected>1×</option>
-          <option value="2">2×</option>
-          <option value="4">4×</option>
-        </select>
-        <div class="time"><b id="time-now">0.00</b> / <span id="time-end">0</span> s</div>
+        <div class="seg cam" role="group" aria-label="Camera">
+          <button data-focus="free" class="active" title="Free camera (Esc)">Free</button>
+          <button data-focus="plane" title="Follow the drone (1)">Drone</button>
+          <button data-focus="missile" title="Follow the missile (2)">Missile</button>
+          <button data-focus="plane2" data-pair-only hidden title="Follow drone 2 (4)">Drone 2</button>
+          <button data-focus="missile2" data-pair-only hidden title="Follow missile 2 (5)">Missile 2</button>
+          <button data-focus="ship" title="Look at the ship (3)">Ship</button>
+        </div>
+        <div class="transport" role="group" aria-label="Playback">
+          <button id="btn-start" class="tbtn" title="Back to start (Home)" aria-label="Back to start"><svg><use href="#i-start"/></svg></button>
+          <button id="btn-step-back" class="tbtn" title="Step back (←, Shift = 1 s)" aria-label="Step back"><svg><use href="#i-back"/></svg></button>
+          <button id="btn-reverse" class="tbtn" title="Play backwards (R)" aria-label="Play backwards"><svg><use href="#i-rev"/></svg></button>
+          <button id="btn-play" class="tbtn play" title="Play / pause (Space)" aria-label="Play"><svg class="i-play"><use href="#i-play"/></svg><svg class="i-pause"><use href="#i-pause"/></svg></button>
+          <button id="btn-step-fwd" class="tbtn" title="Step forward (→, Shift = 1 s)" aria-label="Step forward"><svg><use href="#i-fwd"/></svg></button>
+          <button id="btn-end" class="tbtn" title="Jump to end (End)" aria-label="Jump to end"><svg><use href="#i-end"/></svg></button>
+        </div>
+        <div class="clock-box">
+          <div class="time"><b id="time-now">0.0</b><span> / <span id="time-end">0</span> s</span></div>
+          <select id="speed" title="Playback speed" aria-label="Playback speed">
+            <option value="0.1">0.1×</option>
+            <option value="0.25">0.25×</option>
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option>
+          </select>
+        </div>
       </div>
+      <div class="now"><span class="now-k">Now</span> <b id="phase-now"></b><span id="phase-next" class="now-next"></span></div>
       <div class="track">
         <div class="markers" id="markers"></div>
+        <div class="ticks" id="ticks" aria-hidden="true"></div>
         <input id="scrub" type="range" min="0" max="1" step="0.01" value="0" aria-label="Timeline" />
       </div>
     </div>
