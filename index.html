@@ -65,8 +65,10 @@
         <span class="sep" aria-hidden="true"></span>
         <button id="btn-labels" class="toggle active" aria-pressed="true" title="Show tags and missile path (L)">Labels</button>
         <button id="btn-edit" class="toggle" title="Draw or edit the drone's flight path (E)">✎ Edit path</button>
+        <button id="btn-director" class="toggle" aria-pressed="false" title="Cinematic camera: cuts between preset shots by itself (D)">🎬 Director</button>
+        <button id="btn-sound" class="toggle active" aria-pressed="true" title="Synthesised sound, synced to the timeline (S)">🔊 Sound</button>
       </div>
-      <div class="hint">Click an object to focus · drag to orbit · scroll to zoom · Esc for free camera · L labels · E edit path</div>
+      <div class="hint">Click an object to focus · drag to orbit · scroll to zoom · Esc for free camera · D director · S sound · L labels · E edit path</div>
       <button id="btn-ship" class="link-btn" title="Back to the ship and mission selection screen">⇄ Change ship or mission</button>
       <a id="dl-offline" class="dl-link" href="/intercept-offline" download="intercept-offline.html" title="One HTML file that runs without internet: double-click to open">⬇ Download offline version</a>
     </div>
@@ -97,6 +99,8 @@
         <button id="ed-cancel" title="Leave without saving (Esc)">Cancel</button>
       </div>
     </div>
+
+    <div id="shot-caption" class="shot-caption" hidden></div>
 
     <div class="panel top-right telemetry">
       <div><span>Plane alt</span><b id="tm-alt">—</b></div>

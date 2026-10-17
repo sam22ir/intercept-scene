@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
-  scenario, planePose, planeVel, propAngle, propSpin01, missilePose, shipPos, tubeMouth, SHIP_SPEED,
+  scenario, planePos, planePose, planeVel, propAngle, propSpin01, missilePose, shipPos, tubeMouth, SHIP_SPEED,
 } from './scenario.js';
 import { createLabels } from './labels.js';
 import { createParachute } from './models/parachute.js';
@@ -14,6 +14,8 @@ import { createDebris, createEffects } from './fx/effects.js';
 import { pointScale } from './fx/particles.js';
 import { CameraRig } from './cameraRig.js';
 import { createTimeline } from './timeline.js';
+import { createDirector } from './director.js';
+import { createAudio } from './audio.js';
 
 const canvas = document.querySelector('#scene');
 const loadingEl = document.querySelector('#loading');
@@ -127,13 +129,20 @@ function applyTime(t) {
 // is not on screen: the missile waits in its launch tube and ends at the blast
 // point, the drone hands over to its falling fuselage.
 
+// The drone in flight, then its falling fuselage, at any time t (used by the
+// focus targets, the Director and the audio).
+function dronePosAt(t, out) {
+  if (t < scenario.tHit) return planePos(t, out);
+  debris.fuselagePos(t - scenario.tHit, out);
+  out.y = Math.max(out.y, 0); // keep watching the splash once it sinks
+  return out;
+}
+
 const targets = {
   plane: {
     pos: (out) => {
       if (clock.t < scenario.tHit) return out.copy(plane.group.position);
-      debris.fuselagePos(clock.t - scenario.tHit, out);
-      out.y = Math.max(out.y, 0); // keep watching the splash once it sinks
-      return out;
+      return dronePosAt(clock.t, out);
     },
     distance: 14, minDistance: 2.5, hitRadius: 4,
   },
@@ -185,6 +194,7 @@ function pick(clientX, clientY) {
 const rig = new CameraRig(camera, controls);
 const focusButtons = document.querySelectorAll('[data-focus]');
 function setFocus(id, distance) {
+  if (directing) setDirector(false); // any manual camera choice ends the Director
   if (id === 'free' || !targets[id]) rig.free();
   else rig.focus(id, targets[id].pos, distance ?? targets[id].distance, targets[id].minDistance);
   focusButtons.forEach((b) => b.classList.toggle('active', b.dataset.focus === rig.id));
@@ -194,6 +204,71 @@ const missileButton = document.querySelector('[data-focus="missile"]');
 document.querySelector('#btn-ship').addEventListener('click', () => {
   try { sessionStorage.setItem('intercept.chooser', '1'); location.reload(); } catch { location.search = ''; }
 });
+
+// --- Director: cinematic cuts ---------------------------------------------------
+// While on, the Director places the camera every frame (OrbitControls and the
+// focus rig are bypassed). Any manual camera input hands control back.
+
+const fuselagePiece = debris?.pieces.find((p) => p.part.name === 'fuselage');
+const director = createDirector({
+  dronePos: dronePosAt,
+  tWater: debris ? scenario.tHit + fuselagePiece.tauWater : scenario.tSplash,
+});
+const directorButton = document.querySelector('#btn-director');
+const shotCaption = document.querySelector('#shot-caption');
+let directing = false;
+let currentShot = null;
+const dirLook = new THREE.Vector3();
+let dirShadowR = 75;
+
+function setDirector(on) {
+  if (on === directing) return;
+  directing = on;
+  directorButton.classList.toggle('active', on);
+  directorButton.setAttribute('aria-pressed', String(on));
+  controls.enabled = !on;
+  if (on) {
+    rig.free();
+    focusButtons.forEach((b) => b.classList.remove('active'));
+  } else {
+    shotCaption.hidden = true;
+    currentShot = null;
+    // Hand the view to OrbitControls without a jump: keep the camera where it is and
+    // aim the orbit target level with it (a low shot looks up, which the polar limit forbids).
+    const dist = Math.max(camera.position.distanceTo(dirLook), 5);
+    camera.getWorldDirection(controls.target).setY(0).normalize()
+      .multiplyScalar(dist).add(camera.position);
+    controls.update();
+    focusButtons.forEach((b) => b.classList.toggle('active', b.dataset.focus === 'free'));
+  }
+}
+directorButton.addEventListener('click', () => { if (!directing && editor.active) return; setDirector(!directing); });
+canvas.addEventListener('pointerdown', () => { if (directing) setFocus('free'); }, true);
+canvas.addEventListener('wheel', () => { if (directing) setFocus('free'); }, { passive: true, capture: true });
+try {
+  if (new URLSearchParams(location.search).get('cam') === 'director') setDirector(true);
+} catch { /* no query string available */ }
+
+// --- Sound ----------------------------------------------------------------------
+
+const audio = createAudio({
+  dronePos: dronePosAt,
+  splashTimes: debris ? debris.pieces.map((p) => scenario.tHit + p.tauWater) : [scenario.tSplash],
+});
+const soundButton = document.querySelector('#btn-sound');
+function setSound(on) {
+  audio.setEnabled(on);
+  soundButton.classList.toggle('active', on);
+  soundButton.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem('intercept.sound', on ? '1' : '0'); } catch { /* storage unavailable */ }
+}
+let soundPref = true;
+try { soundPref = localStorage.getItem('intercept.sound') !== '0'; } catch { /* storage unavailable */ }
+audio.setEnabled(soundPref);
+soundButton.classList.toggle('active', soundPref);
+soundButton.setAttribute('aria-pressed', String(soundPref));
+if (!audio.supported) { soundButton.disabled = true; soundButton.title = 'Sound is not available in this browser'; }
+soundButton.addEventListener('click', () => setSound(!audio.enabled));
 
 let downAt = null;
 canvas.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
@@ -226,10 +301,12 @@ const clock = createTimeline(scenario, {
     if (key === '2' && scenario.hasMissile) setFocus('missile');
     if (key === '3') setFocus('ship');
     if (key === 'l' || key === 'L') setLabels(!labels.enabled);
+    if (key === 'd' || key === 'D') setDirector(!directing);
+    if (key === 's' || key === 'S') setSound(!audio.enabled);
   },
 });
 
-setFocus('plane'); // open on the drone sitting on its cradle
+if (!directing) setFocus('plane'); // open on the drone sitting on its cradle
 
 // Path editor: pauses at t = 0 and hides the labels while drawing.
 let labelsBeforeEdit = true;
@@ -285,12 +362,26 @@ renderer.setAnimationLoop((now) => {
   if (missileGone && rig.id === 'missile') setFocus('plane', 60); // pull back out of the fireball
   editor.update();
   updatePickables();
-  rig.update();
-  controls.update();
-  if (camera.position.y < 1) camera.position.y = 1; // never dip under the (single-sided) sea
+  if (directing) {
+    const shot = director.pose(clock.t, camera.position, dirLook);
+    if (shot !== currentShot) {
+      currentShot = shot;
+      shotCaption.textContent = shot.label;
+      shotCaption.hidden = false;
+      dirShadowR = shot.shadowR;
+    }
+    if (camera.position.y < 1) camera.position.y = 1;
+    camera.lookAt(dirLook);
+  } else {
+    rig.update();
+    controls.update();
+    if (camera.position.y < 1) camera.position.y = 1; // never dip under the (single-sided) sea
+  }
 
   const close = rig.id === 'plane' || rig.id === 'missile';
-  env.setShadowFocus(close ? targets[rig.id].pos(shadowCenter) : targets.ship.pos(shadowCenter), close ? 25 : 75);
+  if (directing) env.setShadowFocus(dirLook, dirShadowR);
+  else env.setShadowFocus(close ? targets[rig.id].pos(shadowCenter) : targets.ship.pos(shadowCenter), close ? 25 : 75);
+  audio.update(clock.t, camera, clock.playing);
 
   clock.renderUI();
   renderTelemetry();
@@ -301,6 +392,6 @@ renderer.setAnimationLoop((now) => {
 
 // Debug/inspection handle.
 window.__scene = {
-  scenario, clock, setFocus, camera, controls, rig, renderer, chute,
+  scenario, clock, setFocus, camera, controls, rig, renderer, chute, director, audio, setDirector,
   plane: plane.group, missile: missile.group, ship: ship.group,
 };

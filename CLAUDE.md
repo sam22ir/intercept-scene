@@ -45,7 +45,7 @@ The choice reaches `scenario.js` through `globalThis.__SHIP_VARIANT` (set by `st
 
 ## Architecture
 
-**Core rule: every visual is a pure function of the sim time `t`.** Nothing accumulates per-frame state, which is what makes reverse playback and scrubbing work. Any new animation must be computable from `t` alone, including flicker, strobes and flag ripple. A stateful update breaks scrubbing (check by jumping to the end, then back to 0).
+**Core rule: every visual and every sound is a pure function of the sim time `t`.** Nothing accumulates per-frame state, which is what makes reverse playback and scrubbing work. Any new animation must be computable from `t` alone, including flicker, strobes and flag ripple. A stateful update breaks scrubbing (check by jumping to the end, then back to 0).
 
 ### `src/scenario.js`
 
@@ -81,6 +81,12 @@ Holds the story, all timing and every ship mount point. Units are metres. The bo
 
   Edits are only a preview until "Apply & play", which stores them and reloads. Pointer handlers are registered on `window` in the capture phase so a handle drag never reaches OrbitControls. The editor's logic can be driven in Node with a stand-in DOM.
 - `src/timeline.js` holds the master clock (`t`, play direction, speed) and the playback bar, markers and keys. The clock is the only source of time.
+
+### Director camera and sound
+
+- **`src/director.js`** is the cinematic camera (Director button, **D** key, `?cam=director`). Each shot is a pure function of `t` that places the camera and its look-at point, so cuts land on the same frames when scrubbing or playing backwards. The shot list is derived from `scenario` times (catapult, chase, low close pass found by the "Close pass" event, launcher, missile ride, wide impact, splash; recovery swaps the last three for a parachute orbit and splash). A shot shorter than `MIN_SHOT` is dropped, so custom paths still get sensible cuts. It needs `dronePos(t, out)` to resolve to the wreck after impact (`dronePosAt` in `main.js`) and `tWater`.
+- While directing, `main.js` bypasses `rig` and OrbitControls (`controls.enabled = false`; the polar limit would clamp the low shots) and sets the camera itself. Every manual camera input goes through `setFocus`, which ends the Director first and aims the orbit target level with the camera so there is no jump. Internal shot changes never call `setFocus`. Keep the field of view at 50: `pointScale` is only recomputed in `resize()`. Shot times can be checked in Node by standing in for `dronePos`.
+- **`src/audio.js`** is procedural sound from built-in Web Audio nodes only (no samples, no AudioWorklet, so the offline file works). Sources run continuously; each frame the gain, filter and pitch are set from `t` and the camera (distance falloff, pan, Doppler from analytic velocities, never frame deltas). The explosion, splashes, catapult burst and booster are envelopes of `t - tEvent`, not scheduled one-shots, so scrubbing and reverse work. It is silent while time stands still. The context starts on the first user gesture (Sound button or **S** key; the choice is kept in `localStorage`). `window.__scene.audio.state` reports the context state.
 
 ### Models
 
