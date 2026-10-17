@@ -15,6 +15,7 @@ import { CameraRig } from './cameraRig.js';
 import { createTimeline } from './timeline.js';
 
 const canvas = document.querySelector('#scene');
+const loadingEl = document.querySelector('#loading');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -186,7 +187,9 @@ function setFocus(id, distance) {
 }
 focusButtons.forEach((b) => b.addEventListener('click', () => setFocus(b.dataset.focus)));
 const missileButton = document.querySelector('[data-focus="missile"]');
-document.querySelector('#btn-ship').addEventListener('click', () => { location.search = ''; });
+document.querySelector('#btn-ship').addEventListener('click', () => {
+  try { sessionStorage.setItem('intercept.chooser', '1'); location.reload(); } catch { location.search = ''; }
+});
 
 let downAt = null;
 canvas.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
@@ -289,6 +292,7 @@ renderer.setAnimationLoop((now) => {
   renderTelemetry();
   renderer.render(scene, camera);
   labels.render(scene, camera);
+  loadingEl?.remove(); // first frame is on screen
 });
 
 // Debug/inspection handle.

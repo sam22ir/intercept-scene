@@ -16,6 +16,8 @@ export const G = 9.81;
 //   'aft' — pennant 921, launcher on a stand at the stern, firing up and over
 //           the superstructure.
 export const SHIP_VARIANT = (() => {
+  const chosen = globalThis.__SHIP_VARIANT; // set by the start screen, no reload needed
+  if (chosen === 'aft' || chosen === 'fwd') return chosen;
   try {
     return new URLSearchParams(globalThis.location?.search ?? '').get('ship') === 'aft' ? 'aft' : 'fwd';
   } catch {

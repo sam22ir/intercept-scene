@@ -23,6 +23,8 @@ Live at https://intercept-scene.nafaa-store.workers.dev. Deploying is public, so
 
 `src/scenario.js` imports only `three`, so timings and clearances can be checked in Node without a browser. Import it and sample `planeRelPos`, `missilePos` and `shipPos`.
 
+To test in a real browser when the built-in preview is unavailable, drive headless Chromium with `playwright-core` (installed under `/mnt/hdd/ai/ai-agent-board/node_modules`, Chromium under `~/.cache/ms-playwright/chromium-1243`) with the flags `--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --ignore-gpu-blocklist --no-sandbox`. Serve `dist/` with `python3 -m http.server`, or open `dist/intercept-offline.html` as `file://`. Software rendering is slow (about 10 s to start, 1-2 fps), so seek with `__scene.clock.seek(t)` instead of waiting for real-time playback. Also test the offline file inside an `<iframe sandbox="allow-scripts">` and with `--disable-3d-apis`.
+
 In the browser console, `window.__scene` exposes `{ scenario, clock, setFocus, camera, controls, rig, renderer, plane, missile, ship }`, for example `__scene.clock.seek(__scene.scenario.tHit)`.
 
 ## Ship variants
@@ -31,7 +33,7 @@ The player picks a frigate on a start screen (`#chooser` in `index.html`, driven
 - **`fwd`**, pennant 920: launcher on the forward deckhouse roof (the original fit).
 - **`aft`**, pennant 921: launcher on a braced stand on the helideck at the stern, starboard side, lofting steeply over the superstructure.
 
-The choice is the `?ship=fwd|aft` URL parameter, read **once at import time** by `scenario.js` (`SHIP_VARIANT`, `PENNANT`). Picking a ship reloads the page with the parameter, and "Change ship" drops it. `main.js` is imported lazily by `start.js` only after a ship is chosen, so `vite.config.js` sets `codeSplitting: false` to keep a single JS bundle for the offline file. Both variants share the drone path, so `tLaunch` and the hit are identical. The aft fit differs in its pivot, stow yaw (facing the stern), a steeper aim pitch and a short pitch-over guidance phase after launch. To check a variant in Node, set `globalThis.location = { search: '?ship=aft' }` before importing `scenario.js`.
+The choice reaches `scenario.js` through `globalThis.__SHIP_VARIANT` (set by `start.js` just before the lazy `import('./main.js')`) or, for deep links, `?ship=fwd|aft`. It is read **once at import time**, so switching ship means a fresh page load: "Change ship" sets a `sessionStorage` flag and reloads so the chooser shows again. Picking a ship does **not** navigate or reload, because navigation fails in sandboxed file viewers and previews. `start.js` also shows a loading screen while the scene builds and an on-screen error box (with a WebGL hint) if start-up or rendering throws. Never touch `localStorage` or `sessionStorage` outside `try`: even naming them throws in blocked-storage and sandboxed contexts (use the `read`/`write` helpers in `start.js`). `main.js` is imported lazily, so `vite.config.js` sets `codeSplitting: false` to keep a single JS bundle for the offline file. Both variants share the drone path, so `tLaunch` and the hit are identical. The aft fit differs in its pivot, stow yaw (facing the stern), a steeper aim pitch and a short pitch-over guidance phase after launch. To check a variant in Node, set `globalThis.__SHIP_VARIANT = 'aft'` before importing `scenario.js`.
 
 ## Architecture
 
