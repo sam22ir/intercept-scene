@@ -13,8 +13,10 @@ export const G = 9.81;
 
 // Two frigate fits, chosen on the start screen (URL ?ship=aft reloads into it):
 //   'fwd' — pennant 920, 8-cell launcher on the forward deckhouse;
-//   'aft' — pennant 921, launcher on a stand at the stern, firing up and over
-//           the superstructure.
+//   'aft' — pennant 921, launcher on the hangar roof at the stern.
+// Each box only engages a drone in its own half (forward: ahead of or abeam its
+// pivot; aft: astern of or abeam it), so a missile never crosses the ship. That is
+// why 921's default path ends in an inbound run from astern.
 export const SHIP_VARIANT = (() => {
   const chosen = globalThis.__SHIP_VARIANT; // set by the start screen, no reload needed
   if (chosen === 'aft' || chosen === 'fwd') return chosen;
@@ -109,7 +111,7 @@ export const PATH_FIXED = [
   RELEASE_POINT.toArray(),
   RELEASE_POINT.clone().addScaledVector(RAIL.dir, 20).toArray(),
 ];
-const INTERCEPT_PATH = [
+const INTERCEPT_PATH_FWD = [
   [-21, 31, -47],
   [-17, 38, -88],
   [-45, 45, -140],
@@ -143,13 +145,48 @@ const INTERCEPT_PATH = [
   [12, 65, -4],
   [-112, 60, 35],
 ];
-// Recovery uses the same flight up to the middle of the inbound run, where the
-// parachute opens, 400 m off the ship.
-const CHUTE_PATH = INTERCEPT_PATH.slice(0, INTERCEPT_PATH.findIndex((p) => p[0] === 384 && p[1] === 88) + 1);
+// The aft launcher (921) fires astern, so its drone shares the release, the loop
+// and the close pass, then swings round the bow, runs back astern well clear of
+// the port side, and turns onto an inbound run from behind the ship. Any missile
+// from the stern box then leaves away from the ship, never across it.
+const INTERCEPT_PATH_AFT = [
+  ...INTERCEPT_PATH_FWD.slice(0, INTERCEPT_PATH_FWD.findIndex((p) => p[0] === 160 && p[1] === 40) + 1),
+  [300, 55, -30],
+  // Left turn round the bow, then a long run astern on the port side.
+  [380, 62, -70],
+  [430, 70, -160],
+  [390, 76, -250],
+  [300, 80, -310],
+  [100, 84, -325],
+  [-150, 90, -330],
+  [-450, 98, -330],
+  [-750, 106, -330],
+  [-900, 112, -330],
+  // Left turn (r ≈ 110 m) until the nose points forward at the ship.
+  [-985, 113, -300],
+  [-1010, 114, -220],
+  [-980, 114, -140],
+  [-900, 114, -110],
+  // Inbound run from astern: a straight, gently descending line at the ship.
+  [-775, 111, -87],
+  [-650, 107, -64],
+  [-525, 102, -41],
+  [-400, 96, -18],
+  [-275, 89, 5],
+  [-150, 82, 28],
+  [-25, 75, 50],
+];
+const INTERCEPT_PATH = SHIP_VARIANT === 'aft' ? INTERCEPT_PATH_AFT : INTERCEPT_PATH_FWD;
+// Recovery uses the forward ship's flight up to the middle of the inbound run,
+// where the parachute opens, 400 m off the ship, for both ships (no missile).
+const CHUTE_PATH = INTERCEPT_PATH_FWD.slice(0, INTERCEPT_PATH_FWD.findIndex((p) => p[0] === 384 && p[1] === 88) + 1);
 export const DEFAULT_PATH = CHUTE_MODE ? CHUTE_PATH : INTERCEPT_PATH;
 
 // A custom path drawn in the editor is stored per browser and applied on load.
-export const PATH_STORAGE_KEY = CHUTE_MODE ? 'intercept.path.chute.v1' : PAIR_MODE ? 'intercept.path.pair.v1' : 'intercept.path.v1';
+// The aft ship flies a different default path, so its drawn paths are stored apart.
+export const PATH_STORAGE_KEY = CHUTE_MODE
+  ? 'intercept.path.chute.v1'
+  : `intercept.path.${PAIR_MODE ? 'pair.' : ''}${SHIP_VARIANT === 'aft' ? 'aft.' : ''}v1`;
 export const MIN_ALT = 8; // never let a drawn path touch the sea
 
 // Returns a cleaned copy of editable points, or null if they are unusable.
@@ -470,6 +507,14 @@ const rangeAt = (t, k = 0) => planeRelPos(t, tmp, k).distanceTo(SHIP_CENTER);
 // of the ship. If a drawn path never leaves the range, fire at the first
 // closing moment after a short delay; if it never closes, fire near the end.
 const LAUNCH_RANGE = 650;
+// Firing arc: the forward box only engages a drone ahead of or abeam its pivot,
+// the aft box one astern of or abeam its pivot, so a missile never has to cross
+// the ship. (Same pivot x as LAUNCHER_PIVOT below.)
+const PIVOT_X = SHIP_VARIANT === 'aft' ? -33.8 : 24;
+const inArc = (t, k) => {
+  const x = planeRelPos(t, tmp, k).x;
+  return SHIP_VARIANT === 'aft' ? x <= PIVOT_X : x >= PIVOT_X;
+};
 // Launch time of the missile for drone k, searched from that drone's own release.
 function deriveLaunch(k) {
   const f = FLIGHTS[k];
@@ -480,7 +525,7 @@ function deriveLaunch(k) {
   const from = tExit ?? f.tRelease + 8;
   for (let t = from; t < f.tPathEnd; t += 0.01) {
     const r = rangeAt(t, k);
-    if (r <= LAUNCH_RANGE && r < rangeAt(t - 0.2, k)) return t;
+    if (r <= LAUNCH_RANGE && r < rangeAt(t - 0.2, k) && inArc(t, k)) return t;
   }
   return Math.max(f.tRelease + 4, Math.min(from, f.tPathEnd - 4));
 }
@@ -527,7 +572,12 @@ const pathMarkers = [];
   }
   // The final turn-back before the shot is where the inbound run begins.
   const last = maxima.length ? pathMarkers[maxima[maxima.length - 1]] : null;
-  for (const m of pathMarkers) m.label = m.kind === 'min' ? 'Close pass' : (m === last ? 'Inbound run' : 'Turn back');
+  // Only a pass within CLOSE_PASS_RANGE is a "Close pass" (the Director frames those);
+  // a far abeam passage, such as 921's run astern, is just a fly-by.
+  const CLOSE_PASS_RANGE = 150;
+  for (const m of pathMarkers) {
+    m.label = m.kind === 'min' ? (rangeAt(m.t) < CLOSE_PASS_RANGE ? 'Close pass' : 'Fly-by') : (m === last ? 'Inbound run' : 'Turn back');
+  }
 }
 
 // --- Missile launcher (8-cell trainable box) --------------------------------
@@ -538,8 +588,8 @@ const AFT = SHIP_VARIANT === 'aft';
 export const FWD_ROOF_Y = deckHeight(24) + 2.2;
 export const HANGAR_ROOF_Y = 12.0;
 export const LAUNCHER_PIVOT = AFT
-  ? new THREE.Vector3(-33.8, HANGAR_ROOF_Y + 2.1, 0)
-  : new THREE.Vector3(24, FWD_ROOF_Y + 1.9, 0);
+  ? new THREE.Vector3(PIVOT_X, HANGAR_ROOF_Y + 2.1, 0)
+  : new THREE.Vector3(PIVOT_X, FWD_ROOF_Y + 1.9, 0);
 // Stowed: forward fit faces the bow, aft fit faces the stern.
 const STOW_YAW = AFT ? Math.PI : 0;
 // Top-port tube mouth, in the launcher's own frame (+X along the tubes).
@@ -568,10 +618,10 @@ function aimFor(k, tLaunch) {
   if (CHUTE_MODE) aimTarget.set(1, 0, 0); // never aimed
   else planePos(tLaunch + 1.2, aimTarget, k).sub(shipPos(tLaunch, tmp)).sub(LAUNCHER_PIVOT);
   const yaw = Math.atan2(-aimTarget.z, aimTarget.x);
-  // The aft fit must loft steeply to climb over the hangar, radome and mast.
+  // Both boxes fire away from the ship (see inArc), so nothing is in the way.
   const pitch = THREE.MathUtils.clamp(
     Math.atan2(aimTarget.y, Math.hypot(aimTarget.x, aimTarget.z)),
-    THREE.MathUtils.degToRad(AFT ? 52 : 25), THREE.MathUtils.degToRad(AFT ? 75 : 70),
+    THREE.MathUtils.degToRad(25), THREE.MathUtils.degToRad(70),
   );
   return { yaw, pitch };
 }
@@ -609,7 +659,7 @@ function engage(k, tLaunch) {
       planeVel(t, targetVel, k);
       r.subVectors(target, pos);
       if (r.length() < 2.5 || age > 12) { miss = r.length(); break; }
-      if (age > (AFT ? 0.7 : 0.3)) { // aft fit climbs clear of the masts before turning
+      if (age > 0.3) {
         const off = vel.angleTo(r);
         if (off > 0.6) {
           // Large heading error (e.g. after the aft fit's steep loft): PN can't
@@ -652,9 +702,14 @@ const E0 = ENGS[0];
 // into a shot finishes 0.3 s before it leaves and starts no earlier than 0.8 s
 // after the previous one, so closely spaced shots get a quicker slew.
 const SLEWS = [];
-for (const e of ENGS) {
-  if (!Number.isFinite(e.tLaunch)) continue;
+for (const e0 of ENGS) {
+  if (!Number.isFinite(e0.tLaunch)) continue;
   const prev = SLEWS[SLEWS.length - 1];
+  // Take the short way round from the previous heading (the stern box rests at
+  // yaw π, where atan2 can jump to -π): the slew is a lerp, so unwrap the target.
+  const e = { ...e0 };
+  const from = prev ? prev.aimYaw : STOW_YAW;
+  e.aimYaw = from + Math.atan2(Math.sin(e0.aimYaw - from), Math.cos(e0.aimYaw - from));
   const start = prev ? Math.max(e.tLaunch - 4, prev.tLaunch + 0.8) : e.tLaunch - 4;
   SLEWS.push({ ...e, slewStart: start, slewDur: Math.max(0.2, Math.min(3, e.tLaunch - 0.3 - start)) });
 }
@@ -730,6 +785,8 @@ export const scenario = {
   tBoost1: T_RELEASE + 1.2,
   tLaunch: T_LAUNCH,
   interceptMiss: E0.interceptMiss,
+  // True if a (custom) path forced a launch while the drone was on the wrong side of the box.
+  outOfArc: !CHUTE_MODE && ENGS.some((e) => !inArc(e.tLaunch, e.k ?? ENGS.indexOf(e))),
   customPath: CUSTOM_PATH,
   sharedPath: SHARED_PATH,
   activePath: ACTIVE_PATH,

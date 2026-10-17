@@ -441,7 +441,9 @@ const editor = createPathEditor({
 if (scenario.sharedPath) {
   toast('Viewing shared path — your own saved path is untouched. Edit path to make it yours.');
 } else if (scenario.customPath) {
-  toast(scenario.interceptMiss > 15
+  toast(scenario.outOfArc
+    ? `Custom path active — the drone is never on the ${SHIP_VARIANT === 'aft' ? 'aft' : 'forward'} launcher's side of the ship when it fires, so the missile has to cross the ship. Bring the drone in from ${SHIP_VARIANT === 'aft' ? 'astern' : 'ahead'}.`
+    : scenario.interceptMiss > 15
     ? `Custom path active — the missile misses it by ${Math.round(scenario.interceptMiss)} m before the hit is forced. Bring the drone back toward the ship.`
     : 'Custom flight path active — open Edit path to change it or restore the default.');
 }

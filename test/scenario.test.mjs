@@ -21,7 +21,7 @@ const COMBOS = [
 ];
 
 // Thresholds (metres unless noted), with the value measured at the time of writing.
-const INTERCEPT_MISS_MAX = 2.5; // measured 2.20 (fwd) / 2.18 (aft). The sim stops inside 2.5 m by design, so this also catches a timeout exit.
+const INTERCEPT_MISS_MAX = 2.5; // measured 2.20 (fwd) / 1.96 (aft). The sim stops inside 2.5 m by design, so this also catches a timeout exit.
 const HIT_GAP_MAX = 1e-3; // measured 0 (the last sample is snapped onto the drone)
 const RELEASE_STEP_MAX = 0.1; // max distance per 1 ms step across release. Measured 0.034 (about 32 m/s). Allows about 3x margin.
 const ALT_TOLERANCE = 0.5; // allowed dip below MIN_ALT. Measured minimum is 11.41 m, at release.
@@ -75,6 +75,30 @@ for (const combo of COMBOS) {
       it(`misses by less than ${INTERCEPT_MISS_MAX} m before the snap`, () => {
         assert.ok(S.scenario.interceptMiss < INTERCEPT_MISS_MAX,
           `interceptMiss ${S.scenario.interceptMiss} >= ${INTERCEPT_MISS_MAX}`);
+      });
+
+      it('fires only into its own half: the missile never crosses the ship', () => {
+        // 920 (forward box, pivot x 24) fires ahead of its pivot, 921 (aft box, pivot x -33.8) astern.
+        const aft = combo.ship === 'aft';
+        const pivotX = S.LAUNCHER_PIVOT.x;
+        S.scenario.engagements.forEach((e, k) => {
+          const dr = S.planePos(e.tLaunch, vec(), k).sub(S.shipPos(e.tLaunch, vec()));
+          assert.ok(aft ? dr.x <= pivotX : dr.x >= pivotX, `drone ${k} is on the wrong side of the launcher at launch (x ${dr.x})`);
+          for (let t = e.tLaunch; t <= e.tHit; t += 0.02) {
+            const m = S.missilePos(t, vec(), k).sub(S.shipPos(t, vec()));
+            if (m.distanceTo(S.LAUNCHER_PIVOT) < 10) continue; // still leaving the tube
+            assert.ok(aft ? m.x <= pivotX + 1 : m.x >= pivotX - 1, `missile ${k} crosses the ship at t=${t.toFixed(2)} (x ${m.x.toFixed(1)})`);
+          }
+        });
+      });
+
+      it('keeps the box on its own half of the ship the whole time (no spin through the bow/stern)', () => {
+        // Yaw 0 = bow, π = stern. A forward box must never face aft, nor an aft box forward.
+        const aft = combo.ship === 'aft';
+        for (let t = 0; t < S.scenario.tEnd; t += 0.05) {
+          const c = Math.cos(S.launcherAim(t).yaw);
+          assert.ok(aft ? c <= 0.05 : c >= -0.05, `launcher yaw faces the wrong way at t=${t.toFixed(2)} (cos ${c.toFixed(2)})`);
+        }
       });
 
       it('has the drone and the missile at the same place at tHit', () => {
