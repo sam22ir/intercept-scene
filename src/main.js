@@ -257,6 +257,10 @@ const fuselagePiece = debris?.pieces.find((p) => p.part.name === 'fuselage');
 const director = createDirector({
   dronePos: dronePosAt,
   tWater: debris ? scenario.tHit + fuselagePiece.tauWater : scenario.tSplash,
+  second: pair && {
+    dronePos: pair.dronePosAt,
+    tWater: pair.e.tHit + pair.debris.pieces.find((p) => p.part.name === 'fuselage').tauWater,
+  },
 });
 const directorButton = document.querySelector('#btn-director');
 const shotCaption = document.querySelector('#shot-caption');

@@ -10,13 +10,15 @@ import {
 //
 // `dronePos(t, out)` must resolve to a world position at any t: the drone in
 // flight, then its falling wreck (supplied by main.js). `tWater` is when the
-// wreck reaches the sea.
+// wreck reaches the sea. In the pair mission `second` gives the same for drone 2
+// ({ dronePos, tWater }), and the shot list adds its launch and engagement.
 
 const UP = new THREE.Vector3(0, 1, 0);
 const MIN_SHOT = 0.6; // a shot shorter than this gives way to the next one
 const { smoothstep, lerp, clamp } = THREE.MathUtils;
 
-export function createDirector({ dronePos, tWater }) {
+export function createDirector({ dronePos, tWater, second = null }) {
+  const dronePosOf = [dronePos, second?.dronePos];
   const A = new THREE.Vector3();
   const B = new THREE.Vector3();
   const H = new THREE.Vector3();
@@ -24,9 +26,9 @@ export function createDirector({ dronePos, tWater }) {
   const mix = new THREE.Vector3();
 
   // Horizontal unit heading of the drone around time t.
-  function heading(t, out) {
-    dronePos(Math.max(0, t - 0.1), A);
-    dronePos(t + 0.1, B);
+  function heading(t, out, k = 0) {
+    dronePosOf[k](Math.max(0, t - 0.1), A);
+    dronePosOf[k](t + 0.1, B);
     out.subVectors(B, A).setY(0);
     return out.lengthSq() < 1e-6 ? out.set(1, 0, 0) : out.normalize();
   }
@@ -40,23 +42,27 @@ export function createDirector({ dronePos, tWater }) {
   const railSide = new THREE.Vector3(-railH.z, 0, railH.x); // toward the centre line
   const catapultCam = RAIL.start.clone().addScaledVector(RAIL.dir, 4)
     .addScaledVector(railSide, 9).addScaledVector(railH, -1.5).add(new THREE.Vector3(0, 2.4, 0));
-  const catapult = {
-    id: 'catapult', label: 'Catapult', shadowR: 20, shake: 0.05,
-    fn(t, cam, look) {
-      shipPos(t, cam).add(catapultCam).addScaledVector(railSide, -1.2 * smoothstep(t, 0, tR));
-      dronePos(t, look);
-    },
+  const catapult = (k = 0) => {
+    const d = scenario.drones?.[k] ?? { tSpool: 0, tRelease: tR };
+    const t0 = k ? d.tSpool - 1 : 0;
+    return {
+      id: k ? 'catapult2' : 'catapult', label: k ? 'Catapult · drone 2' : 'Catapult', shadowR: 20, shake: 0.05,
+      fn(t, cam, look) {
+        shipPos(t, cam).add(catapultCam).addScaledVector(railSide, -1.2 * smoothstep(t, t0, d.tRelease));
+        dronePosOf[k](t, look);
+      },
+    };
   };
 
   // Trails the drone's own path a moment behind, off to one side: smooth by construction.
-  const chase = (id, label, { lag, height, side }) => ({
+  const chase = (id, label, { lag, height, side }, k = 0) => ({
     id, label, shadowR: 25, shake: 0.08,
     fn(t, cam, look) {
       const tc = Math.max(0, t - lag);
-      heading(tc, H);
+      heading(tc, H, k);
       S.crossVectors(UP, H).multiplyScalar(side);
-      dronePos(tc, cam).add(S).addScaledVector(UP, height);
-      dronePos(t, look);
+      dronePosOf[k](tc, cam).add(S).addScaledVector(UP, height);
+      dronePosOf[k](t, look);
     },
   });
 
@@ -77,58 +83,63 @@ export function createDirector({ dronePos, tWater }) {
   // Beside the launcher, from the starboard side, then swinging after the missile.
   const launchSide = LAUNCHER_PIVOT.z >= 0 ? 1 : -1;
   const launcherCam = LAUNCHER_PIVOT.clone().add(new THREE.Vector3(3, 2.5, 13 * launchSide));
-  const launcher = {
-    id: 'launcher', label: 'Launch', shadowR: 25, shake: 0.06,
-    fn(t, cam, look) {
-      shipPos(t, cam).add(launcherCam);
-      tubeMouth(t, look);
-      missilePos(t + 0.05, mix);
-      look.lerp(mix, smoothstep(t, scenario.tLaunch, scenario.tLaunch + 0.4));
-    },
+  const engagement = (k) => scenario.engagements?.[k] ?? scenario;
+  const launcher = (k = 0) => {
+    const e = engagement(k);
+    return {
+      id: k ? 'launcher2' : 'launcher', label: k ? 'Launch · missile 2' : 'Launch', shadowR: 25, shake: 0.06,
+      fn(t, cam, look) {
+        shipPos(t, cam).add(launcherCam);
+        tubeMouth(t, look, k);
+        missilePos(t + 0.05, mix, k);
+        look.lerp(mix, smoothstep(t, e.tLaunch, e.tLaunch + 0.4));
+      },
+    };
   };
 
   // A few metres behind and beside the missile, looking past it at the drone.
-  const missileRide = {
-    id: 'missile', label: 'Missile cam', shadowR: 25, shake: 0.25,
+  const missileRide = (k = 0) => ({
+    id: k ? 'missile2' : 'missile', label: k ? 'Missile cam · 2' : 'Missile cam', shadowR: 25, shake: 0.25,
     fn(t, cam, look) {
-      missilePos(t - 0.12, cam);
-      missilePos(t + 0.02, A);
-      missilePos(t - 0.02, B);
+      missilePos(t - 0.12, cam, k);
+      missilePos(t + 0.02, A, k);
+      missilePos(t - 0.02, B, k);
       H.subVectors(A, B).normalize();
       S.crossVectors(H, UP).normalize();
       cam.addScaledVector(S, 3).addScaledVector(UP, 1.8);
-      dronePos(t, look);
+      dronePosOf[k](t, look);
     },
-  };
+  });
 
   // Wide and low-ish on the side of the impact, easing in; follows the wreck down.
-  function wide() {
-    const hit = scenario.hitPos;
-    const app = new THREE.Vector3().subVectors(hit, scenario.missileStart).setY(0).normalize();
+  function wide(k = 0) {
+    const e = engagement(k);
+    const hit = e.hitPos;
+    const app = new THREE.Vector3().subVectors(hit, e.missileStart).setY(0).normalize();
     const perp = new THREE.Vector3(-app.z, 0, app.x);
     const hitLook = hit.clone().add(new THREE.Vector3(0, 6, 0));
     return {
-      id: 'wide', label: 'Impact', shadowR: 75, shake: 0.12,
+      id: k ? 'wide2' : 'wide', label: k ? 'Impact · 2' : 'Impact', shadowR: 75, shake: 0.12,
       fn(t, cam, look) {
-        const k = clamp((t - scenario.tHit) / 8, 0, 1);
-        cam.copy(hit).addScaledVector(perp, lerp(125, 90, k)).addScaledVector(app, -25)
-          .addScaledVector(UP, lerp(28, 16, k));
-        dronePos(t, mix);
+        const w = clamp((t - e.tHit) / 8, 0, 1);
+        cam.copy(hit).addScaledVector(perp, lerp(125, 90, w)).addScaledVector(app, -25)
+          .addScaledVector(UP, lerp(28, 16, w));
+        dronePosOf[k](t, mix);
         mix.y = Math.max(mix.y, 1);
-        look.lerpVectors(hitLook, mix, smoothstep(t - scenario.tHit, 0.8, 4));
+        look.lerpVectors(hitLook, mix, smoothstep(t - e.tHit, 0.8, 4));
       },
     };
   }
 
   // Low beside the point where the drone reaches the water, fixed in the world.
-  function splash(tw) {
-    const base = dronePos(tw, new THREE.Vector3()).setY(0);
+  function splash(tw, k = 0) {
+    const base = dronePosOf[k](tw, new THREE.Vector3()).setY(0);
     const camPos = base.clone().add(new THREE.Vector3(-28, 2.6, 26));
     return {
-      id: 'splash', label: 'Splash', shadowR: 40, shake: 0.03,
+      id: k ? 'splash2' : 'splash', label: k ? 'Splash · 2' : 'Splash', shadowR: 40, shake: 0.03,
       fn(t, cam, look) {
         cam.copy(camPos);
-        dronePos(t, look);
+        dronePosOf[k](t, look);
         look.y = Math.max(look.y, 0.6);
       },
     };
@@ -146,7 +157,7 @@ export function createDirector({ dronePos, tWater }) {
 
   // --- Shot list from the scenario's own times ---------------------------------
 
-  const cuts = [{ t: 0, shot: catapult }, { t: tR + 0.7, shot: chase('chase', 'Chase cam', { lag: 0.3, height: 2.2, side: 4.5 }) }];
+  const cuts = [{ t: 0, shot: catapult() }, { t: tR + 0.7, shot: chase('chase', 'Chase cam', { lag: 0.3, height: 2.2, side: 4.5 }) }];
   // The pass only gets its shots if they end before the story cuts that follow.
   const nextStory = scenario.hasMissile ? scenario.tLaunch - 3 : scenario.tChute - 0.3;
   const pass = scenario.events.find((e) => e.label === 'Close pass' && e.t > tR + 4 && e.t + 3.5 < nextStory - MIN_SHOT);
@@ -154,11 +165,32 @@ export function createDirector({ dronePos, tWater }) {
     cuts.push({ t: pass.t - 2.5, shot: lowPass(pass.t) });
     cuts.push({ t: pass.t + 3.5, shot: chase('chase2', 'Chase cam', { lag: 0.4, height: 3.5, side: -6 }) });
   }
+  if (second) {
+    // Drone 2 off the rail, a short chase, then back to drone 1's story.
+    const d2 = scenario.drones[1];
+    cuts.push({ t: d2.tSpool - 1, shot: catapult(1) });
+    cuts.push({ t: d2.tRelease + 0.7, shot: chase('chase-d2', 'Chase cam · drone 2', { lag: 0.3, height: 2.2, side: -4.5 }, 1) });
+    if (!pass || pass.t - 2.5 > d2.tRelease + 6) {
+      cuts.push({ t: d2.tRelease + 6, shot: chase('chase-back', 'Chase cam', { lag: 0.4, height: 3.5, side: -6 }) });
+    }
+  }
   if (scenario.hasMissile) {
-    cuts.push({ t: scenario.tLaunch - 3, shot: launcher });
-    cuts.push({ t: scenario.tLaunch + 0.4, shot: missileRide });
-    cuts.push({ t: scenario.tHit - 0.3, shot: wide() });
-    if (tWater > scenario.tHit + 4) cuts.push({ t: tWater - 2.5, shot: splash(tWater) });
+    const engs = second ? scenario.engagements : [scenario];
+    const waters = [tWater, second?.tWater];
+    engs.forEach((e, k) => {
+      cuts.push({ t: e.tLaunch - 3, shot: launcher(k) });
+      cuts.push({ t: e.tLaunch + 0.4, shot: missileRide(k) });
+      cuts.push({ t: e.tHit - 0.3, shot: wide(k) });
+      const tw = waters[k];
+      if (tw > e.tHit + 4) cuts.push({ t: tw - 2.5, shot: splash(tw, k) });
+      // Between the first splash and the second launch, ride along with drone 2.
+      if (k === 0 && engs[1]) {
+        const tFree = Math.max(e.tHit + 6, tw > e.tHit + 4 ? tw + 2 : 0);
+        if (tFree < engs[1].tLaunch - 3 - 2) {
+          cuts.push({ t: tFree, shot: chase('chase-d2b', 'Chase cam · drone 2', { lag: 0.4, height: 3.5, side: 6 }, 1) });
+        }
+      }
+    });
   } else {
     cuts.push({ t: scenario.tChute - 0.3, shot: canopy });
     cuts.push({ t: scenario.tSplash - 3, shot: splash(scenario.tSplash) });
