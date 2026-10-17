@@ -15,6 +15,9 @@ const MAX_SAMPLES = 1400;
 const MAX_POINTS = 80;
 const SPACING = 60; // m between freehand points
 const PICK_PX = 14;
+const PICK_TOUCH_PX = 30; // a fingertip needs a bigger target than a mouse pointer
+const COARSE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+const ALT_STEP = 5; // m per Alt +/- press, same as the arrow keys
 
 let toastEl = null;
 let toastTimer = 0;
@@ -31,6 +34,7 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
   const ui = {
     panel: $('#editor'), toggle: $('#btn-edit'), move: $('#ed-tool-move'), draw: $('#ed-tool-draw'),
     alt: $('#ed-alt'), altOut: $('#ed-alt-out'), altLabel: $('#ed-alt-label'), del: $('#ed-delete'),
+    altUp: $('#ed-alt-up'), altDown: $('#ed-alt-down'), add: $('#ed-add'), fold: $('#ed-fold'),
     clear: $('#ed-clear'), reset: $('#ed-reset'), apply: $('#ed-apply'), cancel: $('#ed-cancel'),
     info: $('#ed-info'), copy: $('#ed-copy'), paste: $('#ed-import'), restore: $('#ed-restore'), hint: $('#ed-hint'),
   };
@@ -120,6 +124,8 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
     ui.alt.value = sel ? sel[1] : drawAlt;
     ui.altOut.textContent = `${Math.round(sel ? sel[1] : drawAlt)} m`;
     ui.del.disabled = !sel || pts.length <= 1;
+    ui.altUp.disabled = ui.altDown.disabled = !sel;
+    ui.add.disabled = !sel || pts.length >= MAX_POINTS;
     ui.apply.disabled = pts.length < 1;
     ui.restore.hidden = !CUSTOM_PATH;
     ui.move.classList.toggle('active', tool === 'move');
@@ -128,9 +134,15 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
       + (sel ? ` · #${selected + 1}: ${Math.round(Math.hypot(sel[0], sel[2]))} m from ship` : '')
       + (CUSTOM_PATH ? ' · custom path active' : '')
       + (pts.length < 1 ? ' · draw at least one point' : '');
-    ui.hint.textContent = tool === 'draw'
-      ? 'Drag on the sea to draw (or click to add a point). Right-drag orbits, scroll zooms. Set the altitude below first.'
-      : 'Drag a dot to move it. Double-click the line to add a point. Delete removes the selected one. ↑/↓ change altitude.';
+    if (tool === 'draw') {
+      ui.hint.textContent = COARSE
+        ? 'Drag one finger on the sea to draw, or tap to add a point. Two fingers orbit and zoom. Set the altitude first.'
+        : 'Drag on the sea to draw (or click to add a point). Right-drag orbits, scroll zooms. Set the altitude below first.';
+    } else {
+      ui.hint.textContent = COARSE
+        ? 'Tap a dot to select it, drag to move it. Add point inserts after the selected dot. Alt ± and Delete act on it. Drag empty sea to orbit.'
+        : 'Drag a dot to move it. Double-click the line to add a point. Delete removes the selected one. ↑/↓ change altitude.';
+    }
     if (CHUTE_MODE) ui.hint.textContent += ' The parachute opens at the last point.';
   }
 
@@ -138,6 +150,9 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
     tool = next;
     controls.mouseButtons.LEFT = tool === 'draw' ? null : THREE.MOUSE.ROTATE;
     controls.mouseButtons.RIGHT = tool === 'draw' ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
+    // Touch: one finger orbits in Move mode, but in Draw mode it draws, so
+    // OrbitControls only gets the two-finger pinch and pan.
+    controls.touches.ONE = tool === 'draw' ? null : THREE.TOUCH.ROTATE;
     canvas.style.cursor = tool === 'draw' ? 'crosshair' : '';
     refreshUI();
   }
@@ -167,7 +182,7 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
 
   function pickHandle(e) {
     let best = -1;
-    let bestD = PICK_PX;
+    let bestD = e.pointerType === 'touch' ? PICK_TOUCH_PX : PICK_PX;
     pts.forEach((p, i) => {
       const d = toPx(world(p), e);
       if (d < bestD) { bestD = d; best = i; }
@@ -194,8 +209,25 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
   }
   const lastPoint = () => pts[pts.length - 1] ?? PATH_FIXED[PATH_FIXED.length - 1];
 
+  // Active touch pointers. With two or more fingers the gesture belongs to
+  // OrbitControls (pinch zoom, two-finger pan), so any drag or stroke ends.
+  const touchIds = new Set();
+  let touchDraw = null; // { id, x, y, moved }: a single finger in Draw mode
+
+  function endGesture() {
+    drag = null;
+    stroking = false;
+    touchDraw = null;
+    controls.enabled = true;
+  }
+
+  // Registered on window in the capture phase, so a handle drag stops here and
+  // never reaches the canvas (OrbitControls, main.js picking).
   function onPointerDown(e) {
+    const touch = e.pointerType === 'touch';
+    if (touch) touchIds.add(e.pointerId);
     if (!active || e.target !== canvas || e.button !== 0) return;
+    if (touchIds.size > 1) { endGesture(); return; }
     if (tool === 'move') {
       const i = pickHandle(e);
       if (i >= 0) {
@@ -209,6 +241,9 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
         refreshUI();
         rebuild();
       }
+    } else if (touch) {
+      // Single finger: drawn on move, or a tap adds a point on pointerup.
+      touchDraw = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
     } else {
       const p = groundPoint(e, pts[selected] ? pts[selected][1] : drawAlt);
       if (!p) return;
@@ -223,6 +258,18 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
     if (drag) {
       const p = groundPoint(e, pts[drag.index][1]);
       if (p) { pts[drag.index][0] = p[0]; pts[drag.index][2] = p[2]; rebuild(); }
+    } else if (touchDraw && e.pointerId === touchDraw.id) {
+      if (touchIds.size !== 1) return;
+      if (!touchDraw.moved) {
+        if (Math.hypot(e.clientX - touchDraw.x, e.clientY - touchDraw.y) < 8) return;
+        touchDraw.moved = true;
+        stroking = true;
+        const first = groundPoint({ clientX: touchDraw.x, clientY: touchDraw.y }, drawAlt);
+        if (first) append([first[0], drawAlt, first[2]]);
+      }
+      const p = groundPoint(e, drawAlt);
+      const last = lastPoint();
+      if (p && Math.hypot(p[0] - last[0], p[2] - last[2]) >= SPACING) append([p[0], drawAlt, p[2]]);
     } else if (stroking && e.buttons & 1) {
       const p = groundPoint(e, drawAlt);
       const last = lastPoint();
@@ -230,8 +277,17 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
     }
   }
 
-  function onPointerUp() {
+  function onPointerUp(e) {
+    if (e.pointerType === 'touch') touchIds.delete(e.pointerId);
     if (drag) { drag = null; controls.enabled = true; }
+    if (touchDraw && e.pointerId === touchDraw.id) {
+      // A tap (no drag, no second finger) adds a point, like a click does.
+      if (e.type === 'pointerup' && !touchDraw.moved && touchIds.size === 0 && active) {
+        const p = groundPoint(e, drawAlt);
+        if (p) append([p[0], drawAlt, p[2]]);
+      }
+      touchDraw = null;
+    }
     stroking = false;
   }
 
@@ -259,7 +315,34 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
   window.addEventListener('pointerdown', onPointerDown, true);
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('pointercancel', onPointerUp);
   canvas.addEventListener('dblclick', onDoubleClick);
+
+  // Touch alternatives to double-click (add), the Delete key and ↑/↓ (Alt ±).
+  function addAfterSelected() {
+    const a = pts[selected];
+    if (!a) return;
+    if (pts.length >= MAX_POINTS) { toast(`Maximum ${MAX_POINTS} points`); return; }
+    const b = pts[selected + 1];
+    let p;
+    if (b) {
+      p = [Math.round((a[0] + b[0]) / 2), Math.round((a[1] + b[1]) / 2), Math.round((a[2] + b[2]) / 2)];
+    } else {
+      // Last point: continue in the direction of travel from the point before it.
+      const prev = pts[selected - 1] ?? PATH_FIXED[PATH_FIXED.length - 1];
+      let dx = a[0] - prev[0];
+      let dz = a[2] - prev[2];
+      const len = Math.hypot(dx, dz);
+      if (len < 1) { dx = 1; dz = 0; } else { dx /= len; dz /= len; }
+      p = [Math.round(a[0] + dx * 300), a[1], Math.round(a[2] + dz * 300)];
+    }
+    pts.splice(selected + 1, 0, p);
+    selected += 1;
+    rebuild();
+  }
+  function nudgeAltitude(d) {
+    if (pts[selected]) setAltitude(pts[selected][1] + d);
+  }
 
   // --- Actions --------------------------------------------------------------------
   function apply() {
@@ -292,6 +375,15 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
   ui.draw.addEventListener('click', () => setTool('draw'));
   ui.alt.addEventListener('input', () => setAltitude(parseFloat(ui.alt.value)));
   ui.del.addEventListener('click', deleteSelected);
+  ui.add.addEventListener('click', addAfterSelected);
+  // Phones: collapse the controls so the sea (and the path) is visible to draw on.
+  ui.fold.addEventListener('click', () => {
+    const folded = ui.panel.classList.toggle('folded');
+    ui.fold.textContent = folded ? 'Show controls' : 'Hide controls';
+    ui.fold.setAttribute('aria-expanded', String(!folded));
+  });
+  ui.altUp.addEventListener('click', () => nudgeAltitude(ALT_STEP));
+  ui.altDown.addEventListener('click', () => nudgeAltitude(-ALT_STEP));
   ui.clear.addEventListener('click', () => { pts = []; selected = -1; setTool('draw'); rebuild(); });
   ui.reset.addEventListener('click', () => { pts = DEFAULT_PATH.map((p) => [...p]); selected = -1; rebuild(); });
   ui.apply.addEventListener('click', apply);
@@ -347,7 +439,7 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
     exit() {
       if (!active) return;
       active = false;
-      drag = null; stroking = false;
+      drag = null; stroking = false; touchDraw = null;
       controls.enabled = true;
       setTool('move');
       canvas.style.cursor = '';

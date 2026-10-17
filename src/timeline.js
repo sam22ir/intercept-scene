@@ -53,7 +53,9 @@ export function createTimeline(scenario, { onKey } = {}) {
 
   let scrubbing = false;
   scrub.addEventListener('pointerdown', () => { scrubbing = true; });
+  // pointercancel too: the browser cancels the pointer when a touch turns into a gesture.
   window.addEventListener('pointerup', () => { scrubbing = false; });
+  window.addEventListener('pointercancel', () => { scrubbing = false; });
   scrub.addEventListener('input', () => {
     clock.playing = false;
     clock.seek(parseFloat(scrub.value));
@@ -70,6 +72,7 @@ export function createTimeline(scenario, { onKey } = {}) {
     el.className = `marker row-${row}`;
     el.textContent = label;
     el.style.left = `${frac * 100}%`;
+    if (frac > 0.8) el.classList.add('end'); // keep the label inside the bar's right edge
     el.title = `${label} — ${t.toFixed(1)} s`;
     el.addEventListener('click', () => clock.seek(t));
     markersEl.appendChild(el);

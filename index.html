@@ -75,6 +75,7 @@
 
     <div class="panel editor" id="editor" hidden>
       <div class="title">Path editor</div>
+      <button id="ed-fold" class="ed-fold" aria-expanded="true" title="Phones: hide the controls to see the sea">Hide controls</button>
       <div class="focus-buttons" role="group" aria-label="Editor tool">
         <button id="ed-tool-move" class="active" title="Move points (M)">✥ Move</button>
         <button id="ed-tool-draw" title="Draw the path freehand (D)">✎ Draw</button>
@@ -83,7 +84,12 @@
         <input id="ed-alt" type="range" min="8" max="400" step="1" value="40" />
       </label>
       <div class="ed-row">
+        <button id="ed-alt-down" title="Lower the selected point 5 m (↓)">Alt −</button>
+        <button id="ed-alt-up" title="Raise the selected point 5 m (↑)">Alt +</button>
+      </div>
+      <div class="ed-row">
         <button id="ed-delete" title="Delete the selected point (Delete)">Delete point</button>
+        <button id="ed-add" title="Insert a point after the selected one (double-click the line does this too)">Add point</button>
         <button id="ed-clear" title="Remove every point and draw a new path">Clear</button>
         <button id="ed-reset" title="Back to the built-in path">Default</button>
       </div>
