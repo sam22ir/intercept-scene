@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {
   deckHeight, RAIL, LAUNCHER_PIVOT, TUBE_MOUTH, launcherAim, launcherQuat, shuttleStroke,
-  SHIP_VARIANT, PENNANT, FWD_ROOF_Y,
+  SHIP_VARIANT, PENNANT, FWD_ROOF_Y, HANGAR_ROOF_Y,
 } from '../scenario.js';
 import { Kit, hexa, slab, facePanel, mat, canvasTexture, toMatrix } from './kit.js';
 import { mulberry32 } from '../rng.js';
@@ -559,7 +559,8 @@ export function createShip() {
   k.add(slab({ x0: -26.5, x1: -21.5, y0: 14.6, y1: 16.2, w: 1.8, tw: 1.5 }), M.grey); // radome pedestal
   k.add(new THREE.SphereGeometry(2.7, 32, 20), M.white, { pos: [-24, 18.6, 0] });
   k.add(new THREE.CylinderGeometry(1.4, 1.6, 0.6, 20), M.greyDark, { pos: [-24, 16.4, 0] });
-  // Close-in weapon system on the hangar roof.
+  // Close-in weapon system on the hangar roof (the aft fit's launcher takes its place).
+  if (SHIP_VARIANT !== 'aft') {
   k.add(new THREE.CylinderGeometry(1.1, 1.3, 0.8, 18), M.grey, { pos: [-33.2, 12.4, 0] });
   k.add(slab({ x0: -34.4, x1: -32.2, tx1: -32.6, y0: 12.8, y1: 14.2, w: 0.85, tw: 0.7 }), M.greyLight);
   for (let i = 0; i < 7; i++) {
@@ -567,6 +568,7 @@ export function createShip() {
     k.add(new THREE.CylinderGeometry(0.035, 0.035, 2.4, 6), M.black, {
       pos: [-31.0, 13.5 + Math.sin(a) * 0.12, Math.cos(a) * 0.12], rot: [0, 0, -Math.PI / 2],
     });
+  }
   }
   k.add(new THREE.SphereGeometry(0.55, 14, 10), M.white, { pos: [-18.2, 15.2, 0] });
   k.add(new THREE.CylinderGeometry(0.3, 0.35, 0.6, 10), M.grey, { pos: [-18.2, 14.6, 0] });
@@ -599,12 +601,6 @@ export function createShip() {
     }
   }
   crewPos.push([-57, 5.6, 3.5, 0.6], [-56, 5.6, 4.6, 0.3], [-48, 5.6, 4.5, -0.4], [-40, 5.6, -5.5, 2.4]);
-  if (SHIP_VARIANT === 'aft') {
-    // Keep people out of the launcher stand's footprint.
-    for (let i = crewPos.length - 1; i >= 0; i--) {
-      if (Math.hypot(crewPos[i][0] - LAUNCHER_PIVOT.x, crewPos[i][2] - LAUNCHER_PIVOT.z) < 2.6) crewPos.splice(i, 1);
-    }
-  }
   for (const [x, y, z, ry] of crewPos) {
     const place = (geo, material, dy, sx = 1) => k.add(geo, material, toMatrix({ pos: [x, y + dy, z], rot: [0, ry, 0], scale: [sx, 1, 1] }));
     place(new THREE.CylinderGeometry(0.13, 0.15, 0.85, 8), M.navy, 0.43);
@@ -633,18 +629,10 @@ export function createShip() {
   launcher.position.copy(LAUNCHER_PIVOT);
   const base = new Kit();
   // Support surface in the launcher's frame: the deckhouse roof (forward fit)
-  // or the helideck (aft fit, where the stand is taller and braced).
+  // or the hangar roof (aft fit).
   const aft = SHIP_VARIANT === 'aft';
-  const roof = (aft ? deckHeight(LAUNCHER_PIVOT.x) : FWD_ROOF_Y) - LAUNCHER_PIVOT.y;
-  base.add(new THREE.CylinderGeometry(aft ? 0.75 : 1.0, aft ? 1.0 : 1.3, -0.4 - roof, 20), M.greyDark, { pos: [0, (roof - 0.4) / 2, 0] });
-  if (aft) {
-    base.add(new THREE.BoxGeometry(3.0, 0.14, 3.0), M.greyDark, { pos: [0, roof + 0.07, 0] });
-    for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-      base.rod([sx * 1.35, roof + 0.14, sz * 1.35], [sx * 0.55, roof * 0.35 - 0.1, sz * 0.55], 0.06, M.greyLight, 6);
-      base.add(new THREE.BoxGeometry(0.28, 0.1, 0.28), M.black, { pos: [sx * 1.35, roof + 0.19, sz * 1.35] });
-    }
-    base.add(new THREE.BoxGeometry(0.9, 0.55, 0.6), M.greyLight, { pos: [-1.9, roof + 0.4, 0] }); // hydraulic unit
-  }
+  const roof = (aft ? HANGAR_ROOF_Y : FWD_ROOF_Y) - LAUNCHER_PIVOT.y;
+  base.add(new THREE.CylinderGeometry(1.0, 1.3, -0.4 - roof, 20), M.greyDark, { pos: [0, (roof - 0.4) / 2, 0] });
   const yawGroup = new THREE.Group();
   const yk = new Kit();
   yk.add(new THREE.CylinderGeometry(0.9, 1.0, 0.5, 18), M.grey, { pos: [0, -0.5, 0] });

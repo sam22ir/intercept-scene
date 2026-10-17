@@ -468,13 +468,14 @@ const pathMarkers = [];
 }
 
 // --- Missile launcher (8-cell trainable box) --------------------------------
-// Forward fit sits on the deckhouse roof; aft fit on a stand on the helideck,
-// starboard side, clear of the catapult. Either pivot is high enough for the
-// box to clear what's under it at full elevation.
+// Forward fit sits on the deckhouse roof; aft fit on the aft end of the hangar
+// roof, in place of the CIWS. Either pivot is high enough for the box to clear
+// what's under it at full elevation.
 const AFT = SHIP_VARIANT === 'aft';
 export const FWD_ROOF_Y = deckHeight(24) + 2.2;
+export const HANGAR_ROOF_Y = 12.0;
 export const LAUNCHER_PIVOT = AFT
-  ? new THREE.Vector3(-56, deckHeight(-56) + 2.7, 3.8)
+  ? new THREE.Vector3(-33.8, HANGAR_ROOF_Y + 2.1, 0)
   : new THREE.Vector3(24, FWD_ROOF_Y + 1.9, 0);
 // Stowed: forward fit faces the bow, aft fit faces the stern.
 const STOW_YAW = AFT ? Math.PI : 0;

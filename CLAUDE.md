@@ -39,7 +39,7 @@ In recovery mode `tLaunch` and `tHit` are `Infinity` so every `t < tHit` check s
 
 The player picks a frigate on a start screen (`#chooser` in `index.html`, driven by `src/start.js`, the real entry point):
 - **`fwd`**, pennant 920: launcher on the forward deckhouse roof (the original fit).
-- **`aft`**, pennant 921: launcher on a braced stand on the helideck at the stern, starboard side, lofting steeply over the superstructure.
+- **`aft`**, pennant 921: launcher on the aft end of the hangar roof (it replaces the CIWS there), lofting steeply over the radome and mast.
 
 The choice reaches `scenario.js` through `globalThis.__SHIP_VARIANT` (set by `start.js` just before the lazy `import('./main.js')`) or, for deep links, `?ship=fwd|aft`. It is read **once at import time**, so switching ship means a fresh page load: "Change ship" sets a `sessionStorage` flag and reloads so the chooser shows again. Picking a ship does **not** navigate or reload, because navigation fails in sandboxed file viewers and previews. `start.js` also shows a loading screen while the scene builds and an on-screen error box (with a WebGL hint) if start-up or rendering throws. Never touch `localStorage` or `sessionStorage` outside `try`: even naming them throws in blocked-storage and sandboxed contexts (use the `read`/`write` helpers in `start.js`). `main.js` is imported lazily, so `vite.config.js` sets `codeSplitting: false` to keep a single JS bundle for the offline file. Both variants share the drone path, so `tLaunch` and the hit are identical. The aft fit differs in its pivot, stow yaw (facing the stern), a steeper aim pitch and a short pitch-over guidance phase after launch. To check a variant in Node, set `globalThis.__SHIP_VARIANT = 'aft'` before importing `scenario.js`.
 
