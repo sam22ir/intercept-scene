@@ -16,6 +16,8 @@ const COMBOS = [
   { ship: 'aft', mode: 'intercept' },
   { ship: 'fwd', mode: 'chute' },
   { ship: 'aft', mode: 'chute' },
+  { ship: 'fwd', mode: 'pair' },
+  { ship: 'aft', mode: 'pair' },
 ];
 
 // Thresholds (metres unless noted), with the value measured at the time of writing.
@@ -23,6 +25,9 @@ const INTERCEPT_MISS_MAX = 2.5; // measured 2.20 (fwd) / 2.18 (aft). The sim sto
 const HIT_GAP_MAX = 1e-3; // measured 0 (the last sample is snapped onto the drone)
 const RELEASE_STEP_MAX = 0.1; // max distance per 1 ms step across release. Measured 0.034 (about 32 m/s). Allows about 3x margin.
 const ALT_TOLERANCE = 0.5; // allowed dip below MIN_ALT. Measured minimum is 11.41 m, at release.
+
+const LAUNCH_GAP_MIN = 2; // s between the two launches (the launcher must slew and reload). Measured about 17 s.
+const PAIR_SEPARATION_MIN = 15; // m between the two drones while both are flying. Measured about 125 m.
 
 const SCENARIO_URL = new URL('../src/scenario.js', import.meta.url);
 
@@ -54,7 +59,7 @@ for (const combo of COMBOS) {
       assert.ok(Number.isFinite(S.scenario.tRelease));
     });
 
-    if (combo.mode === 'intercept') {
+    if (combo.mode !== 'chute') {
       it('has a finite launch that precedes the hit', () => {
         const { tLaunch, tHit } = S.scenario;
         assert.ok(Number.isFinite(tLaunch), 'tLaunch must be finite');
@@ -76,6 +81,82 @@ for (const combo of COMBOS) {
         const { tHit } = S.scenario;
         const gap = dist(S.planePos(tHit, vec()), S.missilePos(tHit, vec()));
         assert.ok(gap < HIT_GAP_MAX, `drone-missile gap at tHit is ${gap} m`);
+      });
+    }
+
+    if (combo.mode === 'pair') {
+      it('has two engagements, the first matching tLaunch/tHit', () => {
+        const { engagements, tLaunch, tHit } = S.scenario;
+        assert.equal(engagements.length, 2);
+        assert.equal(engagements[0].tLaunch, tLaunch);
+        assert.equal(engagements[0].tHit, tHit);
+        assert.equal(S.scenario.drones.length, 2);
+      });
+
+      it('hits both drones exactly and ends after the last hit', () => {
+        S.scenario.engagements.forEach((e, k) => {
+          assert.ok(e.tHit > e.tLaunch, `engagement ${k}: tHit must follow tLaunch`);
+          assert.ok(e.interceptMiss < INTERCEPT_MISS_MAX, `engagement ${k}: miss ${e.interceptMiss}`);
+          const gap = dist(S.planePos(e.tHit, vec(), k), S.missilePos(e.tHit, vec(), k));
+          assert.ok(gap < HIT_GAP_MAX, `engagement ${k}: drone-missile gap at tHit is ${gap} m`);
+        });
+        assert.ok(S.scenario.tEnd > S.scenario.engagements[1].tHit);
+      });
+
+      it(`launches the missiles at least ${LAUNCH_GAP_MIN} s apart, in order`, () => {
+        const [a, b] = S.scenario.engagements;
+        assert.ok(b.tLaunch - a.tLaunch >= LAUNCH_GAP_MIN, `launch gap ${b.tLaunch - a.tLaunch} s`);
+      });
+
+      it('launches drone 2 after the cradle is home, and drone 1 is long gone from the rail', () => {
+        const [, d2] = S.scenario.drones;
+        assert.ok(d2.tLoad >= S.scenario.tRelease + 6, `drone 2 appears at ${d2.tLoad} s, before the cradle is home`);
+        assert.ok(d2.tRelease > d2.tLoad);
+        assert.equal(S.shuttleStroke(d2.tLoad), 0);
+      });
+
+      it(`keeps the drones at least ${PAIR_SEPARATION_MIN} m apart while both fly`, () => {
+        const [e0, e1] = S.scenario.engagements;
+        const t1 = Math.min(e0.tHit, e1.tHit);
+        let min = Infinity;
+        let tAt = NaN;
+        for (let t = S.scenario.drones[1].tLoad; t <= t1; t += 0.02) {
+          const d = dist(S.planePos(t, vec(), 0), S.planePos(t, vec(), 1));
+          if (d < min) { min = d; tAt = t; }
+        }
+        assert.ok(min > PAIR_SEPARATION_MIN, `drones are ${min} m apart at t=${tAt}`);
+      });
+
+      it('keeps drone 2 above MIN_ALT on its path', () => {
+        const floor = S.MIN_ALT - ALT_TOLERANCE;
+        for (let t = S.scenario.drones[1].tRelease; t <= S.scenario.engagements[1].tHit; t += 0.01) {
+          const y = S.planeRelPos(t, vec(), 1).y;
+          assert.ok(y >= floor, `drone 2 altitude ${y} m at t=${t} is below ${floor} m`);
+        }
+      });
+
+      it('has continuous release for drone 2', () => {
+        const t0 = S.scenario.drones[1].tRelease;
+        let maxStep = 0;
+        for (let t = t0 - 0.2; t < t0 + 0.2; t += 0.001) {
+          maxStep = Math.max(maxStep, dist(S.planeRelPos(t, vec(), 1), S.planeRelPos(t + 0.001, vec(), 1)));
+        }
+        assert.ok(maxStep < RELEASE_STEP_MAX, `largest 1 ms step is ${maxStep} m`);
+      });
+
+      it('slews the launcher onto each shot (aim is steady while each missile leaves)', () => {
+        for (const e of S.scenario.engagements) {
+          const a = S.launcherAim(e.tLaunch - 0.5);
+          const b = S.launcherAim(e.tLaunch + 0.2);
+          assert.ok(Math.abs(a.yaw - b.yaw) < 1e-6 && Math.abs(a.pitch - b.pitch) < 1e-6, 'launcher moves while firing');
+          assert.ok(b.pitch > 0.1, 'launcher is not elevated at launch');
+        }
+        const end = S.launcherAim(S.scenario.engagements[1].tLaunch + 9);
+        assert.ok(Math.abs(end.pitch) < 1e-9, 'launcher is not stowed after the last shot');
+      });
+    } else {
+      it('has a single engagement (none in recovery)', () => {
+        assert.equal(S.scenario.engagements.length, combo.mode === 'chute' ? 0 : 1);
       });
     }
 
@@ -127,7 +208,13 @@ for (const combo of COMBOS) {
       const sample = (t) => {
         const rel = S.planeRelPos(t, vec());
         const miss = S.missilePos(t, vec());
-        return [rel.x, rel.y, rel.z, miss.x, miss.y, miss.z];
+        const out = [rel.x, rel.y, rel.z, miss.x, miss.y, miss.z];
+        if (combo.mode === 'pair') {
+          const rel2 = S.planeRelPos(t, vec(), 1);
+          const miss2 = S.missilePos(t, vec(), 1);
+          out.push(rel2.x, rel2.y, rel2.z, miss2.x, miss2.y, miss2.z);
+        }
+        return out;
       };
       const forward = times.map(sample);
       const reverse = [...times].reverse().map(sample).reverse();

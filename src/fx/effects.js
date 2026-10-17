@@ -14,17 +14,17 @@ const deckY = deckHeight(-50); // helideck height: where the booster blast hits 
 // drag, which has a closed form, then sink. Each piece is a pure function of
 // tau = t - tHit.
 // ---------------------------------------------------------------------------
-export function createDebris(plane) {
-  const rng = mulberry32(1337);
-  const { tHit } = scenario;
+export function createDebris(plane, k = 0) {
+  const rng = mulberry32(1337 + k);
+  const { tHit } = scenario.engagements[k]; // k > 0 is the second drone (pair mode)
   const hitPos = new THREE.Vector3();
   const hitQuat = new THREE.Quaternion();
-  planePose(tHit, hitPos, hitQuat);
-  const vPlane = planeVel(tHit, new THREE.Vector3());
+  planePose(tHit, hitPos, hitQuat, k);
+  const vPlane = planeVel(tHit, new THREE.Vector3(), k);
   const planeM = new THREE.Matrix4().compose(hitPos, hitQuat, new THREE.Vector3(1, 1, 1));
 
   plane.restoreParts();
-  plane.setProp(propAngle(tHit), 1);
+  plane.setProp(propAngle(tHit, k), 1);
   const pieces = plane.parts.map((part) => {
     part.updateMatrix();
     const world = planeM.clone().multiply(part.matrix);
@@ -98,9 +98,14 @@ export function createDebris(plane) {
 // Particle effects: missile trail, launch billow, fireball, burning debris
 // smoke and splashes. All births are baked at load.
 // ---------------------------------------------------------------------------
-export function createEffects(scene, debris) {
-  const rng = mulberry32(42);
-  const { tLaunch, tHit, hitPos, hasMissile } = scenario;
+export function createEffects(scene, debris, k = 0) {
+  const rng = mulberry32(42 + k * 1000);
+  const { hasMissile } = scenario;
+  // The engagement (missile + hit) and the drone this field of effects belongs to.
+  // k = 1 is the second drone in pair mode; k = 0 reads the scenario's own first-engagement fields.
+  const eng = k ? scenario.engagements[k] : scenario;
+  const { tLaunch, tHit, hitPos, missileStart, launchDir } = eng;
+  const drone = scenario.drones[k];
   // Recovery has no missile and no hit: the drone's flight ends under canopy.
   const tFlightEnd = hasMissile ? tHit : scenario.tChute;
   const group = new THREE.Group();
@@ -109,7 +114,7 @@ export function createEffects(scene, debris) {
   const trail = new ParticleField(1400, {
     mode: MODE.SMOKE, drag: 0.8, rise: 0.5, size: [1.0, 9], wind: [2.5, 0, 1.2],
   });
-  for (const { t, pos } of hasMissile ? missileTrailPoints(2) : []) {
+  for (const { t, pos } of hasMissile ? missileTrailPoints(2, k) : []) {
     trail.add(pos, randomUnit(rng, _v).multiplyScalar(1.2), t, range(rng, 8, 12), rng());
   }
   group.add(trail.finalize());
@@ -118,20 +123,20 @@ export function createEffects(scene, debris) {
   const launch = new ParticleField(240, {
     mode: MODE.SMOKE, drag: 1.6, rise: 1.4, size: [1.2, 11], wind: [2.5, 0, 1.2],
   });
-  const back = scenario.launchDir.clone().negate();
+  const back = launchDir.clone().negate();
   for (let i = 0; i < (hasMissile ? 240 : 0); i++) {
     randomUnit(rng, _v);
     _v.addScaledVector(back, 1.6).normalize().multiplyScalar(range(rng, 4, 24));
     _v.y = Math.abs(_v.y) * 0.6;
     _v.x += 7; // carried along with the ship
-    launch.add(scenario.missileStart, _v, tLaunch + range(rng, -0.05, 0.5), range(rng, 4, 9), rng());
+    launch.add(missileStart, _v, tLaunch + range(rng, -0.05, 0.5), range(rng, 4, 9), rng());
   }
   group.add(launch.finalize());
 
   // Booster rocket: a thick white plume streaming from under the drone's tail
   // for the whole burn, and a blast of smoke and steam swept across the deck
   // plate while the drone is still on the rail.
-  const { tRelease, tBoost0, tBoost1 } = scenario;
+  const { tRelease, tBoost0, tBoost1 } = drone;
   const puff = new ParticleField(700, {
     mode: MODE.SMOKE, drag: 1.1, rise: 0.7, size: [0.5, 9], wind: [2.5, 0, 1.2],
   });
@@ -145,8 +150,8 @@ export function createEffects(scene, debris) {
     const vel = new THREE.Vector3();
     const nozzle = new THREE.Vector3();
     for (let t = tBoost0; t < tBoost1; t += 0.012) {
-      planePose(t, pos, quat);
-      planeVel(t, vel);
+      planePose(t, pos, quat, k);
+      planeVel(t, vel, k);
       fwd.set(0, 0, 1).applyQuaternion(quat);
       nozzle.set(0, -0.3, -1.7).applyQuaternion(quat).add(pos);
       const ramp = Math.min(1, (t - tBoost0) / 0.15) * Math.min(1, (tBoost1 - t) / 0.5);
@@ -175,7 +180,7 @@ export function createEffects(scene, debris) {
     mode: MODE.SMOKE, drag: 1.0, rise: 0.2, size: [0.08, 0.7], wind: [2.5, 0, 1.2],
   });
   for (let t = tRelease; t < tFlightEnd; t += 0.06) {
-    planePos(t, _o);
+    planePos(t, _o, k);
     exhaust.add(_o, randomUnit(rng, _v).multiplyScalar(0.4), t, range(rng, 0.4, 0.8), rng());
   }
   group.add(exhaust.finalize());

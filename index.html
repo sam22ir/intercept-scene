@@ -18,6 +18,7 @@
         <div class="missions" role="group" aria-label="Mission">
           <button class="mission active" data-mode="intercept">Intercept<small>the missile shoots the drone down</small></button>
           <button class="mission" data-mode="chute">Recovery<small>no missile · the drone lands in the sea by parachute</small></button>
+          <button class="mission" data-mode="pair">Two drones<small>a second drone follows · a missile for each</small></button>
         </div>
         <div class="cards">
           <button class="card" data-ship="fwd">
@@ -61,6 +62,8 @@
         <button data-focus="free" class="active">Free</button>
         <button data-focus="plane">Plane</button>
         <button data-focus="missile">Missile</button>
+        <button data-focus="plane2" data-pair-only hidden>Plane 2</button>
+        <button data-focus="missile2" data-pair-only hidden>Missile 2</button>
         <button data-focus="ship">Ship</button>
         <span class="sep" aria-hidden="true"></span>
         <button id="btn-labels" class="toggle active" aria-pressed="true" title="Show tags and missile path (L)">Labels</button>

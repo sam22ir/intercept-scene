@@ -29,9 +29,11 @@ In the browser console, `window.__scene` exposes `{ scenario, clock, setFocus, c
 
 ## Missions
 
-The start screen also picks the mission (`?mode=intercept|chute`, or `globalThis.__SCENARIO` set by `start.js`, read once at import like the ship variant):
+The start screen also picks the mission (`?mode=intercept|chute|pair`, or `globalThis.__SCENARIO` set by `start.js`, read once at import like the ship variant):
 - **`intercept`**: the missile shoots the drone down on its inbound run, as described below.
 - **`chute`** (recovery): the missile is never fired and nothing is hit. At the end of the planned path (`T_CHUTE`) the engine cuts and the drone opens an orange parachute, descends and lands in the sea.
+
+- **`pair`** ("Two drones"): a second drone leaves the same rail `PAIR_DT` (14 s) after the first, on a wider, higher variant of the path (`pairVariant`), and a second missile is fired at it from the next launcher cell. Timing was chosen by sampling the minimum drone separation (about 125 m); the first drone's close pass at about 23 s sits right next to the rail, so a release roughly 17 to 28 s after it brings the drones within tens of metres. Drone 2 is hidden until the cradle is home (`drones[1].tLoad`). `scenario.engagements` (length 0 in chute, 1 in intercept, 2 in pair) and `scenario.drones` hold the per-missile and per-drone timings, and `tLaunch`/`tHit` stay the first engagement. `planePos/planePose/planeVel/propAngle/missilePos/missilePose/tubeMouth` take an optional last argument `k` (0 or 1). The PN sim is `engage(k, tLaunch)`, and `launcherAim` slews stowed, aim 1, aim 2, stowed. Everything for drone 2 is built by `src/pair.js` (second plane and missile, plus `createDebris(plane, k)` and `createEffects(scene, debris, k)`). Extra focus buttons and keys: Plane 2 (**4**), Missile 2 (**5**). The Director only frames the first engagement; the HUD debrief lists both.
 
 In recovery mode `tLaunch` and `tHit` are `Infinity` so every `t < tHit` check stays true. The missile simulation, debris, fireball and launcher aiming are skipped (`scenario.hasMissile` is false, `debris` is `null` in `main.js`, and the missile focus button is disabled). Code that loops up to `tHit` must use `scenario.tChute` instead (see `tFlightEnd` in `effects.js`). The default path is the intercept path cut at the middle of the inbound run, and a custom path is stored under its own key (`intercept.path.chute.v1`).
 

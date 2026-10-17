@@ -30,17 +30,24 @@ export const PENNANT = SHIP_VARIANT === 'aft' ? '921' : '920';
 //   'intercept' — the missile shoots the drone down on its inbound run;
 //   'chute'     — recovery: no missile is ever fired; at the end of its path
 //                 the drone cuts its engine, opens an orange parachute and
-//                 settles into the sea.
+//                 settles into the sea;
+//   'pair'      — two drones off the same rail, a missile for each.
+const MODES = ['intercept', 'chute', 'pair'];
 export const MODE = (() => {
   const chosen = globalThis.__SCENARIO;
-  if (chosen === 'chute' || chosen === 'intercept') return chosen;
+  if (MODES.includes(chosen)) return chosen;
   try {
-    return new URLSearchParams(globalThis.location?.search ?? '').get('mode') === 'chute' ? 'chute' : 'intercept';
+    const m = new URLSearchParams(globalThis.location?.search ?? '').get('mode');
+    return MODES.includes(m) ? m : 'intercept';
   } catch {
     return 'intercept';
   }
 })();
 export const CHUTE_MODE = MODE === 'chute';
+export const PAIR_MODE = MODE === 'pair';
+// Second drone: launched this long after the first, from the same rail (once the cradle is home).
+const PAIR_DT = 14;
+const PAIR_LOAD = PAIR_DT - 4; // drone 2 appears on the cradle once it is home (T_RELEASE + 6 = 9.6 s)
 export const SHIP_SPEED = 7; // m/s (~14 kn)
 
 export function shipPos(t, out) {
@@ -83,6 +90,7 @@ function railStroke(t) {
 
 // Cradle travel: strokes with the drone, sits on the buffers, then winches back.
 export function shuttleStroke(t) {
+  if (PAIR_MODE && t >= PAIR_DT) t -= PAIR_DT; // the cradle runs the same stroke again for drone 2
   if (t <= T_RELEASE + 1.5) return railStroke(t);
   return RAIL.length * (1 - THREE.MathUtils.smoothstep(t, T_RELEASE + 1.5, T_RELEASE + 6));
 }
@@ -141,7 +149,7 @@ const CHUTE_PATH = INTERCEPT_PATH.slice(0, INTERCEPT_PATH.findIndex((p) => p[0] 
 export const DEFAULT_PATH = CHUTE_MODE ? CHUTE_PATH : INTERCEPT_PATH;
 
 // A custom path drawn in the editor is stored per browser and applied on load.
-export const PATH_STORAGE_KEY = CHUTE_MODE ? 'intercept.path.chute.v1' : 'intercept.path.v1';
+export const PATH_STORAGE_KEY = CHUTE_MODE ? 'intercept.path.chute.v1' : PAIR_MODE ? 'intercept.path.pair.v1' : 'intercept.path.v1';
 export const MIN_ALT = 8; // never let a drawn path touch the sea
 
 // Returns a cleaned copy of editable points, or null if they are unusable.
@@ -190,10 +198,38 @@ const SPEED_KEYS = [
   [80, 50],
 ];
 
-const curve = buildPathCurve(ACTIVE_PATH);
-const PATH_LENGTH = curve.getLength();
-const PATH_END = curve.getPointAt(1);
-const PATH_END_DIR = curve.getTangentAt(1);
+// Drone 2 (pair mode) flies a variant of the same path: wider and higher, with the
+// offset ramped in over the first editable points so there is no kink after the
+// catapult-fixed waypoints.
+const PAIR_ALT = 14;
+const PAIR_WIDEN = 0.28;
+function pairVariant(pts) {
+  return pts.map(([x, y, z], i) => {
+    const k = Math.min(1, (i + 1) / 4);
+    return [Math.round(x), Math.round(y + PAIR_ALT * k), Math.round(z * (1 + PAIR_WIDEN * k))];
+  });
+}
+
+// A flight: one drone's spline in the ship frame, its arc-length table, and the
+// time its catapult stroke starts (`shift`, 0 for the first drone).
+function makeFlight(editablePts, shift) {
+  const curve = buildPathCurve(editablePts);
+  const length = curve.getLength();
+  // Arc length flown since release, tabulated once (trapezoid rule).
+  const arcTable = [0];
+  for (let tau = 0; arcTable[arcTable.length - 1] < length; tau += ARC_DT) {
+    const s = arcTable[arcTable.length - 1];
+    arcTable.push(s + 0.5 * (speedAt(tau) + speedAt(tau + ARC_DT)) * ARC_DT);
+  }
+  const tauMax = (arcTable.length - 1) * ARC_DT;
+  return {
+    shift, curve, length, arcTable, tauMax,
+    end: curve.getPointAt(1),
+    endDir: curve.getTangentAt(1),
+    tRelease: T_RELEASE + shift,
+    tPathEnd: shift + T_RELEASE + tauMax,
+  };
+}
 
 function speedAt(tau) {
   if (tau <= SPEED_KEYS[0][0]) return SPEED_KEYS[0][1];
@@ -205,33 +241,31 @@ function speedAt(tau) {
   return SPEED_KEYS[SPEED_KEYS.length - 1][1];
 }
 
-// Arc length flown since release, tabulated once (trapezoid rule).
 const ARC_DT = 0.01;
-const arcTable = [0];
-for (let tau = 0; arcTable[arcTable.length - 1] < PATH_LENGTH; tau += ARC_DT) {
-  const s = arcTable[arcTable.length - 1];
-  arcTable.push(s + 0.5 * (speedAt(tau) + speedAt(tau + ARC_DT)) * ARC_DT);
-}
-const ARC_TAU_MAX = (arcTable.length - 1) * ARC_DT;
+const FLIGHTS = [makeFlight(ACTIVE_PATH, 0)];
+if (PAIR_MODE) FLIGHTS.push(makeFlight(pairVariant(ACTIVE_PATH), PAIR_DT));
+const ARC_TAU_MAX = FLIGHTS[0].tauMax;
 // Recovery: the parachute opens when the planned path ends.
 const T_CHUTE = CHUTE_MODE ? T_RELEASE + ARC_TAU_MAX : Infinity;
 
-function arcAt(tau) {
+function arcAt(tau, f) {
+  const { arcTable, tauMax } = f;
   if (tau <= 0) return 0;
-  if (tau >= ARC_TAU_MAX) return arcTable[arcTable.length - 1] + speedAt(tau) * (tau - ARC_TAU_MAX);
-  const f = tau / ARC_DT;
-  const i = Math.floor(f);
-  return arcTable[i] + (arcTable[i + 1] - arcTable[i]) * (f - i);
+  if (tau >= tauMax) return arcTable[arcTable.length - 1] + speedAt(tau) * (tau - tauMax);
+  const x = tau / ARC_DT;
+  const i = Math.floor(x);
+  return arcTable[i] + (arcTable[i + 1] - arcTable[i]) * (x - i);
 }
 
 // Drone position in the ship frame along the planned path (before any parachute).
-function pathRelPos(t, out) {
+function pathRelPos(t, out, f = FLIGHTS[0]) {
+  t -= f.shift;
   if (t < T_RELEASE) {
     return out.copy(RAIL.start).addScaledVector(RAIL.dir, railStroke(t)).addScaledVector(RAIL.up, RAIL.ride);
   }
-  const s = arcAt(t - T_RELEASE);
-  if (s <= PATH_LENGTH) return curve.getPointAt(s / PATH_LENGTH, out);
-  return out.copy(PATH_END).addScaledVector(PATH_END_DIR, s - PATH_LENGTH);
+  const s = arcAt(t - T_RELEASE, f);
+  if (s <= f.length) return f.curve.getPointAt(s / f.length, out);
+  return out.copy(f.end).addScaledVector(f.endDir, s - f.length);
 }
 
 const _a = new THREE.Vector3();
@@ -240,20 +274,21 @@ const _c = new THREE.Vector3();
 const _d = new THREE.Vector3();
 
 // Drone position in the ship frame (under canopy it follows the world-frame descent).
-export function planeRelPos(t, out) {
+// `k` picks the drone (0, or 1 for the second drone in pair mode).
+export function planeRelPos(t, out, k = 0) {
   if (t >= T_CHUTE) return descentWorld(t, out).sub(shipPos(t, _d));
-  return pathRelPos(t, out);
+  return pathRelPos(t, out, FLIGHTS[k]);
 }
 
-export function planePos(t, out) {
-  planeRelPos(t, out);
+export function planePos(t, out, k = 0) {
+  planeRelPos(t, out, k);
   return out.add(shipPos(t, _d));
 }
 
-export function planeVel(t, out) {
+export function planeVel(t, out, k = 0) {
   const h = 0.05;
-  planePos(t - h, _a);
-  planePos(t + h, _b);
+  planePos(t - h, _a, k);
+  planePos(t + h, _b, k);
   return out.subVectors(_b, _a).divideScalar(2 * h);
 }
 
@@ -268,29 +303,30 @@ const _qRoll = new THREE.Quaternion();
 // World position + attitude. Nose is local +Z, left wing local +X. Attitude
 // follows the ship-relative path (continuous off the rail); bank comes from
 // the turn rate (coordinated turn: tan(bank) = v·ω / g). Returns airspeed.
-function pathPose(t, pos, quat) {
-  pathRelPos(t, _rel);
+function pathPose(t, pos, quat, f = FLIGHTS[0]) {
+  pathRelPos(t, _rel, f);
   pos.copy(_rel).add(shipPos(t, _d));
   const h = 0.15;
   let speed = 0;
   let bank = 0;
   const fwd = _c;
-  if (t < T_RELEASE) {
+  const tf = t - f.shift; // time since this drone's own stroke began
+  if (tf < T_RELEASE) {
     fwd.copy(RAIL.dir);
-    speed = CAT_ACCEL * Math.max(0, t - T_SPOOL);
+    speed = CAT_ACCEL * Math.max(0, tf - T_SPOOL);
   } else {
-    pathRelPos(t - h, _a);
-    pathRelPos(t + h, _b);
+    pathRelPos(t - h, _a, f);
+    pathRelPos(t + h, _b, f);
     fwd.subVectors(_b, _a);
     speed = fwd.length() / (2 * h);
     fwd.normalize();
-    pathRelPos(t - 2 * h, _d);
+    pathRelPos(t - 2 * h, _d, f);
     const v1x = _rel.x - _d.x, v1z = _rel.z - _d.z;
-    pathRelPos(t + 2 * h, _d);
+    pathRelPos(t + 2 * h, _d, f);
     const v2x = _d.x - _rel.x, v2z = _d.z - _rel.z;
     const turn = Math.atan2(v1z * v2x - v1x * v2z, v1x * v2x + v1z * v2z) / (2 * h);
     // Ease bank in over the first second so it doesn't snap at release.
-    const ease = THREE.MathUtils.smoothstep(t, T_RELEASE, T_RELEASE + 1);
+    const ease = THREE.MathUtils.smoothstep(tf, T_RELEASE, T_RELEASE + 1);
     bank = ease * THREE.MathUtils.clamp(Math.atan((speed * turn) / G), -1.1, 1.1);
   }
   _x.crossVectors(_up, fwd).normalize();
@@ -387,8 +423,8 @@ function descentPose(t, pos, quat) {
 }
 
 // World position + attitude of the drone at time t. Returns speed (m/s).
-export function planePose(t, pos, quat) {
-  return t >= T_CHUTE ? descentPose(t, pos, quat) : pathPose(t, pos, quat);
+export function planePose(t, pos, quat, k = 0) {
+  return t >= T_CHUTE ? descentPose(t, pos, quat) : pathPose(t, pos, quat, FLIGHTS[k]);
 }
 
 // Propeller angle in closed form: linear run-up over T_SPOOL, then constant.
@@ -399,12 +435,13 @@ function runUpAngle(t) {
   return PROP_OMEGA * (t - T_SPOOL / 2);
 }
 const T_COAST = 1.4; // recovery: engine cut, prop winds down over this time constant
-export function propAngle(t) {
+export function propAngle(t, k = 0) {
+  if (k) return runUpAngle(t - FLIGHTS[k].shift);
   if (t < T_CHUTE) return runUpAngle(t);
   return runUpAngle(T_CHUTE) + PROP_OMEGA * T_COAST * (1 - Math.exp(-(t - T_CHUTE) / T_COAST));
 }
-export const propSpin01 = (t) => (t < T_CHUTE
-  ? THREE.MathUtils.clamp(t / T_SPOOL, 0, 1)
+export const propSpin01 = (t, k = 0) => (t < T_CHUTE
+  ? THREE.MathUtils.clamp((t - (k ? FLIGHTS[k].shift : 0)) / T_SPOOL, 0, 1)
   : Math.exp(-(t - T_CHUTE) / T_COAST));
 
 // --- Key moments, measured in the ship frame --------------------------------
@@ -412,28 +449,39 @@ export const propSpin01 = (t) => (t < T_CHUTE
 const SHIP_CENTER = new THREE.Vector3(0, 10, 0);
 const tmp = new THREE.Vector3();
 
-const rangeAt = (t) => planeRelPos(t, tmp).distanceTo(SHIP_CENTER);
-const T_PATH_END = T_RELEASE + ARC_TAU_MAX;
+const rangeAt = (t, k = 0) => planeRelPos(t, tmp, k).distanceTo(SHIP_CENTER);
 
 // Fire once the drone, having been out of range, closes back inside this range
 // of the ship. If a drawn path never leaves the range, fire at the first
 // closing moment after a short delay; if it never closes, fire near the end.
 const LAUNCH_RANGE = 650;
-let T_LAUNCH;
-if (CHUTE_MODE) {
-  T_LAUNCH = Infinity; // recovery: the missile is never fired
-} else {
+// Launch time of the missile for drone k, searched from that drone's own release.
+function deriveLaunch(k) {
+  const f = FLIGHTS[k];
   let tExit = null;
-  for (let t = T_RELEASE; t < T_PATH_END; t += 0.05) {
-    if (rangeAt(t) > LAUNCH_RANGE) { tExit = t; break; }
+  for (let t = f.tRelease; t < f.tPathEnd; t += 0.05) {
+    if (rangeAt(t, k) > LAUNCH_RANGE) { tExit = t; break; }
   }
-  const from = tExit ?? T_RELEASE + 8;
-  for (let t = from; t < T_PATH_END; t += 0.01) {
-    const r = rangeAt(t);
-    if (r <= LAUNCH_RANGE && r < rangeAt(t - 0.2)) { T_LAUNCH = t; break; }
+  const from = tExit ?? f.tRelease + 8;
+  for (let t = from; t < f.tPathEnd; t += 0.01) {
+    const r = rangeAt(t, k);
+    if (r <= LAUNCH_RANGE && r < rangeAt(t - 0.2, k)) return t;
   }
-  T_LAUNCH ??= Math.max(T_RELEASE + 4, Math.min(from, T_PATH_END - 4));
+  return Math.max(f.tRelease + 4, Math.min(from, f.tPathEnd - 4));
 }
+// Two shots must leave the launcher at least this far apart (slew and reload).
+const MIN_LAUNCH_GAP = 2.5;
+const T_LAUNCHES = [];
+if (CHUTE_MODE) {
+  T_LAUNCHES.push(Infinity); // recovery: the missile is never fired
+} else {
+  for (let k = 0; k < FLIGHTS.length; k++) {
+    let tl = deriveLaunch(k);
+    if (k > 0) tl = Math.max(tl, T_LAUNCHES[k - 1] + MIN_LAUNCH_GAP);
+    T_LAUNCHES.push(tl);
+  }
+}
+const T_LAUNCH = T_LAUNCHES[0];
 
 const STORY_END = CHUTE_MODE ? T_CHUTE : T_LAUNCH; // markers are looked for up to here
 
@@ -480,23 +528,8 @@ export const LAUNCHER_PIVOT = AFT
 const STOW_YAW = AFT ? Math.PI : 0;
 // Top-port tube mouth, in the launcher's own frame (+X along the tubes).
 export const TUBE_MOUTH = new THREE.Vector3(1.75, 0.3, -0.93);
-
-const aimTarget = new THREE.Vector3();
-if (CHUTE_MODE) aimTarget.set(1, 0, 0); // never aimed
-else planePos(T_LAUNCH + 1.2, aimTarget).sub(shipPos(T_LAUNCH, tmp)).sub(LAUNCHER_PIVOT);
-const AIM_YAW = Math.atan2(-aimTarget.z, aimTarget.x);
-// The aft fit must loft steeply to climb over the hangar, radome and mast.
-const AIM_PITCH = THREE.MathUtils.clamp(
-  Math.atan2(aimTarget.y, Math.hypot(aimTarget.x, aimTarget.z)),
-  THREE.MathUtils.degToRad(AFT ? 52 : 25), THREE.MathUtils.degToRad(AFT ? 75 : 70),
-);
-
-// Stowed (level) -> slew onto the target -> back to stowed.
-export function launcherAim(t) {
-  const w = THREE.MathUtils.smoothstep(t, T_LAUNCH - 4, T_LAUNCH - 1)
-    * (1 - THREE.MathUtils.smoothstep(t, T_LAUNCH + 3, T_LAUNCH + 6));
-  return { yaw: THREE.MathUtils.lerp(STOW_YAW, AIM_YAW, w), pitch: AIM_PITCH * w };
-}
+// Pair mode fires the second round from the next cell along the top row.
+export const TUBE_MOUTHS = [TUBE_MOUTH, new THREE.Vector3(1.75, 0.3, -0.31)];
 
 const _qYaw = new THREE.Quaternion();
 const _qPitch = new THREE.Quaternion();
@@ -508,110 +541,171 @@ export function launcherQuat(yaw, pitch, out) {
 }
 
 // --- Missile: proportional navigation, simulated once at load ---------------
-// Stored as a fixed-rate sample table; the last sample is snapped onto the
-// drone so the hit is exact by construction.
-
-const launchQuat = launcherQuat(AIM_YAW, AIM_PITCH, new THREE.Quaternion());
-const MISSILE_START = TUBE_MOUTH.clone().applyQuaternion(launchQuat)
-  .add(LAUNCHER_PIVOT).add(shipPos(CHUTE_MODE ? 0 : T_LAUNCH, new THREE.Vector3()));
-const LAUNCH_DIR = new THREE.Vector3(1, 0, 0).applyQuaternion(launchQuat);
+// One engagement per drone. Stored as a fixed-rate sample table; the last
+// sample is snapped onto the drone so the hit is exact by construction.
 
 const MISSILE_DT = 1 / 500;
-const missileSamples = []; // flat xyz
-let tHit;
-let interceptMiss = 0; // metres the missile was short of the drone before the hit is snapped on
-if (CHUTE_MODE) {
-  tHit = Infinity; // no hit in a recovery
-  missileSamples.push(...MISSILE_START.toArray(), ...MISSILE_START.toArray());
-} else {
-  const pos = MISSILE_START.clone();
-  const vel = LAUNCH_DIR.clone().multiplyScalar(40);
-  const target = new THREE.Vector3();
-  const targetVel = new THREE.Vector3();
-  const r = new THREE.Vector3();
-  const vr = new THREE.Vector3();
-  const omega = new THREE.Vector3();
-  const acc = new THREE.Vector3();
-  const axis = new THREE.Vector3();
-  const N = 5;
-  const MAX_ACC = 60 * G;
-  let t = T_LAUNCH;
-  missileSamples.push(pos.x, pos.y, pos.z);
-  for (;;) {
-    const age = t - T_LAUNCH;
-    const speed = age < 0.5 ? 40 + age * 360 : Math.min(420, 220 + (age - 0.5) * 160);
-    planePos(t, target);
-    planeVel(t, targetVel);
-    r.subVectors(target, pos);
-    if (r.length() < 2.5 || age > 12) { interceptMiss = r.length(); break; }
-    if (age > (AFT ? 0.7 : 0.3)) { // aft fit climbs clear of the masts before turning
-      const off = vel.angleTo(r);
-      if (off > 0.6) {
-        // Large heading error (e.g. after the aft fit's steep loft): PN can't
-        // recover from that, so pitch over toward the target at the g limit.
-        const turn = Math.min((MAX_ACC / vel.length()) * MISSILE_DT, off);
-        axis.crossVectors(vel, r).normalize();
-        vel.applyAxisAngle(axis, turn);
-      } else {
-        vr.subVectors(targetVel, vel);
-        omega.crossVectors(r, vr).divideScalar(r.lengthSq());
-        acc.crossVectors(omega, vel).multiplyScalar(N);
-        if (acc.length() > MAX_ACC) acc.setLength(MAX_ACC);
-        vel.addScaledVector(acc, MISSILE_DT);
+
+// Where the launcher must point for a shot at drone k leaving at tLaunch.
+function aimFor(k, tLaunch) {
+  const aimTarget = new THREE.Vector3();
+  if (CHUTE_MODE) aimTarget.set(1, 0, 0); // never aimed
+  else planePos(tLaunch + 1.2, aimTarget, k).sub(shipPos(tLaunch, tmp)).sub(LAUNCHER_PIVOT);
+  const yaw = Math.atan2(-aimTarget.z, aimTarget.x);
+  // The aft fit must loft steeply to climb over the hangar, radome and mast.
+  const pitch = THREE.MathUtils.clamp(
+    Math.atan2(aimTarget.y, Math.hypot(aimTarget.x, aimTarget.z)),
+    THREE.MathUtils.degToRad(AFT ? 52 : 25), THREE.MathUtils.degToRad(AFT ? 75 : 70),
+  );
+  return { yaw, pitch };
+}
+
+function engage(k, tLaunch) {
+  const { yaw: aimYaw, pitch: aimPitch } = aimFor(k, tLaunch);
+  const launchQuat = launcherQuat(aimYaw, aimPitch, new THREE.Quaternion());
+  const start = TUBE_MOUTHS[k].clone().applyQuaternion(launchQuat)
+    .add(LAUNCHER_PIVOT).add(shipPos(CHUTE_MODE ? 0 : tLaunch, new THREE.Vector3()));
+  const launchDir = new THREE.Vector3(1, 0, 0).applyQuaternion(launchQuat);
+  const samples = []; // flat xyz
+  let tHit;
+  let miss = 0; // metres the missile was short of the drone before the hit is snapped on
+  if (CHUTE_MODE) {
+    tHit = Infinity; // no hit in a recovery
+    samples.push(...start.toArray(), ...start.toArray());
+  } else {
+    const pos = start.clone();
+    const vel = launchDir.clone().multiplyScalar(40);
+    const target = new THREE.Vector3();
+    const targetVel = new THREE.Vector3();
+    const r = new THREE.Vector3();
+    const vr = new THREE.Vector3();
+    const omega = new THREE.Vector3();
+    const acc = new THREE.Vector3();
+    const axis = new THREE.Vector3();
+    const N = 5;
+    const MAX_ACC = 60 * G;
+    let t = tLaunch;
+    samples.push(pos.x, pos.y, pos.z);
+    for (;;) {
+      const age = t - tLaunch;
+      const speed = age < 0.5 ? 40 + age * 360 : Math.min(420, 220 + (age - 0.5) * 160);
+      planePos(t, target, k);
+      planeVel(t, targetVel, k);
+      r.subVectors(target, pos);
+      if (r.length() < 2.5 || age > 12) { miss = r.length(); break; }
+      if (age > (AFT ? 0.7 : 0.3)) { // aft fit climbs clear of the masts before turning
+        const off = vel.angleTo(r);
+        if (off > 0.6) {
+          // Large heading error (e.g. after the aft fit's steep loft): PN can't
+          // recover from that, so pitch over toward the target at the g limit.
+          const turn = Math.min((MAX_ACC / vel.length()) * MISSILE_DT, off);
+          axis.crossVectors(vel, r).normalize();
+          vel.applyAxisAngle(axis, turn);
+        } else {
+          vr.subVectors(targetVel, vel);
+          omega.crossVectors(r, vr).divideScalar(r.lengthSq());
+          acc.crossVectors(omega, vel).multiplyScalar(N);
+          if (acc.length() > MAX_ACC) acc.setLength(MAX_ACC);
+          vel.addScaledVector(acc, MISSILE_DT);
+        }
       }
+      vel.setLength(speed);
+      pos.addScaledVector(vel, MISSILE_DT);
+      t += MISSILE_DT;
+      samples.push(pos.x, pos.y, pos.z);
     }
-    vel.setLength(speed);
-    pos.addScaledVector(vel, MISSILE_DT);
-    t += MISSILE_DT;
-    missileSamples.push(pos.x, pos.y, pos.z);
+    tHit = t;
+    const n = samples.length;
+    samples[n - 3] = target.x;
+    samples[n - 2] = target.y;
+    samples[n - 1] = target.z;
   }
-  tHit = t;
-  const n = missileSamples.length;
-  missileSamples[n - 3] = target.x;
-  missileSamples[n - 2] = target.y;
-  missileSamples[n - 1] = target.z;
-}
-const MISSILE_N = missileSamples.length / 3;
-
-function missileSample(i, out) {
-  i = THREE.MathUtils.clamp(i, 0, MISSILE_N - 1);
-  return out.set(missileSamples[i * 3], missileSamples[i * 3 + 1], missileSamples[i * 3 + 2]);
+  const n = samples.length / 3;
+  const hitPos = new THREE.Vector3(samples[(n - 1) * 3], samples[(n - 1) * 3 + 1], samples[(n - 1) * 3 + 2]);
+  return {
+    k, tLaunch, tHit, interceptMiss: miss, hitPos, missileStart: start, launchDir,
+    aimYaw, aimPitch, samples, n,
+  };
 }
 
-export function missilePos(t, out) {
-  if (t <= T_LAUNCH) return out.copy(MISSILE_START);
-  const f = (t - T_LAUNCH) / MISSILE_DT;
+// All launch times are known, so every shot can be aimed before any is flown.
+const ENGS = T_LAUNCHES.map((tl, k) => engage(k, tl));
+const E0 = ENGS[0];
+
+// Launcher slew: stowed -> aim at shot 1 -> (aim at shot 2) -> stowed. Each slew
+// into a shot finishes 0.3 s before it leaves and starts no earlier than 0.8 s
+// after the previous one, so closely spaced shots get a quicker slew.
+const SLEWS = [];
+for (const e of ENGS) {
+  if (!Number.isFinite(e.tLaunch)) continue;
+  const prev = SLEWS[SLEWS.length - 1];
+  const start = prev ? Math.max(e.tLaunch - 4, prev.tLaunch + 0.8) : e.tLaunch - 4;
+  SLEWS.push({ ...e, slewStart: start, slewDur: Math.max(0.2, Math.min(3, e.tLaunch - 0.3 - start)) });
+}
+const T_LAST_LAUNCH = SLEWS.length ? SLEWS[SLEWS.length - 1].tLaunch : Infinity;
+
+export function launcherAim(t) {
+  let yaw = STOW_YAW;
+  let pitch = 0;
+  for (const e of SLEWS) {
+    const w = THREE.MathUtils.smoothstep(t, e.slewStart, e.slewStart + e.slewDur);
+    yaw = THREE.MathUtils.lerp(yaw, e.aimYaw, w);
+    pitch = THREE.MathUtils.lerp(pitch, e.aimPitch, w);
+  }
+  const back = THREE.MathUtils.smoothstep(t, T_LAST_LAUNCH + 3, T_LAST_LAUNCH + 6);
+  return { yaw: THREE.MathUtils.lerp(yaw, STOW_YAW, back), pitch: THREE.MathUtils.lerp(pitch, 0, back) };
+}
+
+function missileSample(i, out, e = E0) {
+  i = THREE.MathUtils.clamp(i, 0, e.n - 1);
+  return out.set(e.samples[i * 3], e.samples[i * 3 + 1], e.samples[i * 3 + 2]);
+}
+
+export function missilePos(t, out, k = 0) {
+  const e = ENGS[k];
+  if (t <= e.tLaunch) return out.copy(e.missileStart);
+  const f = (t - e.tLaunch) / MISSILE_DT;
   const i = Math.floor(f);
-  if (i >= MISSILE_N - 1) return missileSample(MISSILE_N - 1, out);
-  missileSample(i, _a);
-  missileSample(i + 1, _b);
+  if (i >= e.n - 1) return missileSample(e.n - 1, out, e);
+  missileSample(i, _a, e);
+  missileSample(i + 1, _b, e);
   return out.lerpVectors(_a, _b, f - i);
 }
 
 const _fwd = new THREE.Vector3();
 // Missile nose is local +Z. Returns speed in m/s.
-export function missilePose(t, pos, quat) {
-  missilePos(t, pos);
-  const i = Math.min(Math.floor(Math.max(t - T_LAUNCH, 0) / MISSILE_DT), MISSILE_N - 2);
-  missileSample(i, _a);
-  missileSample(i + 1, _b);
+export function missilePose(t, pos, quat, k = 0) {
+  const e = ENGS[k];
+  missilePos(t, pos, k);
+  const i = Math.min(Math.floor(Math.max(t - e.tLaunch, 0) / MISSILE_DT), e.n - 2);
+  missileSample(i, _a, e);
+  missileSample(i + 1, _b, e);
   _fwd.subVectors(_b, _a);
   const speed = _fwd.length() / MISSILE_DT;
-  if (speed < 1e-3) _fwd.copy(LAUNCH_DIR);
+  if (speed < 1e-3) _fwd.copy(e.launchDir);
   quat.setFromUnitVectors(_zAxis, _fwd.normalize());
   return speed;
 }
 
 // Every n-th sample as {t, pos}, used to lay the smoke trail.
-export function missileTrailPoints(step) {
+export function missileTrailPoints(step, k = 0) {
+  const e = ENGS[k];
   const pts = [];
-  for (let i = 0; i < MISSILE_N; i += step) {
-    pts.push({ t: T_LAUNCH + i * MISSILE_DT, pos: missileSample(i, new THREE.Vector3()) });
+  for (let i = 0; i < e.n; i += step) {
+    pts.push({ t: e.tLaunch + i * MISSILE_DT, pos: missileSample(i, new THREE.Vector3(), e) });
   }
   return pts;
 }
 
-const hitPos = missileSample(MISSILE_N - 1, new THREE.Vector3());
+// Timeline entries for the extra drone and its missile.
+const pairEvents = PAIR_MODE
+  ? [
+    { t: FLIGHTS[1].tRelease, label: 'Drone 2 launch' },
+    { t: ENGS[1].tLaunch, label: 'Missile 2 launch' },
+    { t: ENGS[1].tHit, label: 'Impact 2' },
+  ]
+  : [];
+const tHit = E0.tHit;
 
 export const scenario = {
   tSpool: T_SPOOL,
@@ -619,19 +713,30 @@ export const scenario = {
   tBoost0: T_SPOOL, // booster ignites with the stroke
   tBoost1: T_RELEASE + 1.2,
   tLaunch: T_LAUNCH,
-  interceptMiss,
+  interceptMiss: E0.interceptMiss,
   customPath: CUSTOM_PATH,
   tHit,
-  hitPos,
-  missileStart: MISSILE_START,
-  launchDir: LAUNCH_DIR,
+  hitPos: E0.hitPos,
+  missileStart: E0.missileStart,
+  launchDir: E0.launchDir,
   releasePoint: RELEASE_POINT,
   mode: MODE,
   hasMissile: !CHUTE_MODE,
   tChute: T_CHUTE,
   tSplash: T_SPLASH,
+  // One entry per drone/missile pair: none in a recovery, one in an intercept, two in pair mode.
+  // tLaunch/tHit above are always the first engagement.
+  engagements: CHUTE_MODE ? [] : ENGS.map((e) => ({
+    tLaunch: e.tLaunch, tHit: e.tHit, interceptMiss: e.interceptMiss, hitPos: e.hitPos,
+    missileStart: e.missileStart, launchDir: e.launchDir,
+  })),
+  // Per drone: when its catapult stroke starts and its booster burns (drone 0 is the first).
+  drones: FLIGHTS.map((f) => ({
+    tShift: f.shift, tLoad: f.shift ? PAIR_LOAD : 0, tSpool: T_SPOOL + f.shift, tRelease: f.tRelease,
+    tBoost0: T_SPOOL + f.shift, tBoost1: T_RELEASE + 1.2 + f.shift,
+  })),
   // Intercept: main raises tEnd once the debris knows how long it takes to fall.
-  tEnd: CHUTE_MODE ? T_SPLASH + 14 : tHit + 15,
+  tEnd: CHUTE_MODE ? T_SPLASH + 14 : ENGS[ENGS.length - 1].tHit + 15,
   events: [
     { t: 0, label: 'Engine run-up' },
     { t: T_RELEASE, label: 'Catapult launch' },
@@ -639,13 +744,14 @@ export const scenario = {
     ...(CHUTE_MODE
       ? [{ t: T_CHUTE, label: 'Parachute opens' }, { t: T_SPLASH, label: 'Splashdown' }]
       : [{ t: T_LAUNCH, label: 'Missile launch' }, { t: tHit, label: 'Impact' }]),
-  ],
+    ...pairEvents,
+  ].sort((a, b) => a.t - b.t),
 };
 
 // Firing tube mouth in world space at time t (follows the launcher's slew).
 const _tq = new THREE.Quaternion();
-export function tubeMouth(t, out) {
+export function tubeMouth(t, out, k = 0) {
   const { yaw, pitch } = launcherAim(t);
-  return out.copy(TUBE_MOUTH).applyQuaternion(launcherQuat(yaw, pitch, _tq))
+  return out.copy(TUBE_MOUTHS[k]).applyQuaternion(launcherQuat(yaw, pitch, _tq))
     .add(LAUNCHER_PIVOT).add(shipPos(t, _d));
 }

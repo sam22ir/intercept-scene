@@ -26,26 +26,48 @@ export function createLabels(scene) {
   group.name = 'labels';
   scene.add(group);
 
-  const drone = tag('drone', 'TARGET DRONE');
+  const pair = scenario.engagements.length > 1; // pair mode: a second drone and missile
+  const drone = tag('drone', pair ? 'DRONE 1' : 'TARGET DRONE');
   const missile = tag('missile', 'MISSILE');
   const ship = tag('ship', `FRIGATE ${PENNANT}`);
   group.add(drone.obj, missile.obj, ship.obj);
 
   // Missile trajectory: two geometries sharing one position buffer, each
   // with its own draw range (flown part / remainder).
-  const pts = missileTrailPoints(2);
-  const geo = new THREE.BufferGeometry().setFromPoints(pts.map((p) => p.pos));
-  const geoAhead = new THREE.BufferGeometry();
-  geoAhead.setAttribute('position', geo.attributes.position);
-  const flown = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffb02e, transparent: true, opacity: 0.9, depthWrite: false }));
-  const ahead = new THREE.Line(geoAhead, new THREE.LineDashedMaterial({
-    color: 0xffd27a, dashSize: 6, gapSize: 4, transparent: true, opacity: 0.55, depthWrite: false,
-  }));
-  ahead.computeLineDistances();
-  flown.frustumCulled = ahead.frustumCulled = false;
-  flown.renderOrder = ahead.renderOrder = 5;
-  group.add(flown, ahead);
-  const stepDt = pts.length > 1 ? pts[1].t - pts[0].t : 1;
+  function trajectory(k) {
+    const pts = missileTrailPoints(2, k);
+    const geo = new THREE.BufferGeometry().setFromPoints(pts.map((p) => p.pos));
+    const geoAhead = new THREE.BufferGeometry();
+    geoAhead.setAttribute('position', geo.attributes.position);
+    const flown = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffb02e, transparent: true, opacity: 0.9, depthWrite: false }));
+    const ahead = new THREE.Line(geoAhead, new THREE.LineDashedMaterial({
+      color: 0xffd27a, dashSize: 6, gapSize: 4, transparent: true, opacity: 0.55, depthWrite: false,
+    }));
+    ahead.computeLineDistances();
+    flown.frustumCulled = ahead.frustumCulled = false;
+    flown.renderOrder = ahead.renderOrder = 5;
+    group.add(flown, ahead);
+    const n = pts.length;
+    const stepDt = n > 1 ? pts[1].t - pts[0].t : 1;
+    return {
+      // Hidden before launch, flown part solid, remainder dashed.
+      set(t, tLaunch) {
+        const i = THREE.MathUtils.clamp(Math.floor((t - tLaunch) / stepDt) + 1, 0, n);
+        flown.visible = ahead.visible = t > tLaunch - 1; // preview the shot as the launcher trains
+        geo.setDrawRange(0, i);
+        const j = Math.max(i - 1, 0);
+        geoAhead.setDrawRange(j, n - j);
+      },
+    };
+  }
+  const line = trajectory(0);
+  // Second engagement (pair mode only).
+  const second = pair ? {
+    drone: tag('drone', 'DRONE 2'),
+    missile: tag('missile', 'MISSILE 2'),
+    line: trajectory(1),
+  } : null;
+  if (second) group.add(second.drone.obj, second.missile.obj);
 
   let enabled = true;
   const fmt = (v, unit, digits = 0) => `${v.toFixed(digits)}<span>${unit}</span>`;
@@ -76,9 +98,9 @@ export function createLabels(scene) {
       const underChute = recovery && t >= scenario.tChute;
       const afloat = recovery && t >= scenario.tSplash;
       drone.el.classList.toggle('ok', afloat);
-      drone.title.textContent = destroyed ? 'DRONE · DESTROYED'
+      drone.title.textContent = destroyed ? (pair ? 'DRONE 1 · DESTROYED' : 'DRONE · DESTROYED')
         : afloat ? 'DRONE · RECOVERED'
-          : underChute ? 'DRONE · UNDER PARACHUTE' : 'TARGET DRONE';
+          : underChute ? 'DRONE · UNDER PARACHUTE' : (pair ? 'DRONE 1' : 'TARGET DRONE');
       drone.body.innerHTML = destroyed
         ? `ALT ${fmt(Math.max(0, d.droneAlt), ' m')}`
         : afloat
@@ -93,16 +115,31 @@ export function createLabels(scene) {
         missile.body.innerHTML = `${fmt(d.missileSpeed * 3.6, ' km/h')} · ${fmt(d.missileRange, ' m')} <em>to target</em>`;
       }
 
+      // Drone 2 and missile 2 (pair mode): same tags, driven by d.second.
+      if (second && d.second) {
+        const e = scenario.engagements[1];
+        const d2 = d.second;
+        const dead = t >= e.tHit;
+        second.drone.obj.visible = t >= scenario.drones[1].tLoad && (!dead || d2.droneAlt > -2);
+        second.drone.obj.position.copy(d2.dronePos).y += dead ? 3 : 1.6;
+        second.drone.el.classList.toggle('dead', dead);
+        second.drone.title.textContent = dead ? 'DRONE 2 · DESTROYED' : 'DRONE 2';
+        second.drone.body.innerHTML = dead
+          ? `ALT ${fmt(Math.max(0, d2.droneAlt), ' m')}`
+          : `${fmt(d2.droneSpeed * 3.6, ' km/h')} · ALT ${fmt(d2.droneAlt, ' m')} · ${fmt(d2.droneRange, ' m')} <em>to ship</em>`;
+        const fly2 = t > e.tLaunch && t < e.tHit;
+        second.missile.obj.visible = fly2;
+        if (fly2) {
+          second.missile.obj.position.copy(d2.missilePos).y += 1.2;
+          second.missile.body.innerHTML = `${fmt(d2.missileSpeed * 3.6, ' km/h')} · ${fmt(d2.missileRange, ' m')} <em>to target</em>`;
+        }
+        second.line.set(t, e.tLaunch);
+      }
+
       ship.obj.position.copy(d.shipPos).y += 37;
       ship.body.innerHTML = `${fmt(d.shipSpeed * 1.94384, ' kn')} · ${destroyed ? 'target down' : `${fmt(d.droneRange, ' m')} <em>to drone</em>`}`;
 
-      // Trajectory: hidden before launch, flown part solid, remainder dashed.
-      const n = pts.length;
-      const i = THREE.MathUtils.clamp(Math.floor((t - tLaunch) / stepDt) + 1, 0, n);
-      flown.visible = ahead.visible = t > tLaunch - 1; // preview the shot as the launcher trains
-      geo.setDrawRange(0, i);
-      const j = Math.max(i - 1, 0);
-      geoAhead.setDrawRange(j, n - j);
+      line.set(t, tLaunch);
     },
     render(scene, camera) {
       if (enabled) renderer.render(scene, camera);

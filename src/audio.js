@@ -25,8 +25,11 @@ const doppler = (vr) => clamp(SOUND_SPEED / (SOUND_SPEED + vr), 0.5, 2); // vr >
 
 // voice -> sample for the looping beds
 const LOOPS = { engine: 'engine', booster: 'booster', missile: 'motor', ship: 'hum', wind: 'wind', surf: 'surf' };
+// Pair mission: the second drone and its missile get their own copies of these beds.
+const LOOPS_PAIR = { engine2: 'engine', booster2: 'booster', missile2: 'motor' };
 
-export function createAudio({ dronePos, splashTimes }) {
+export function createAudio({ dronePos, splashTimes, pair = null }) {
+  const LOOP_VOICES = pair ? { ...LOOPS, ...LOOPS_PAIR } : LOOPS;
   const AudioCtx = globalThis.AudioContext ?? globalThis.webkitAudioContext;
   let ctx = null;
   let master = null;
@@ -62,7 +65,7 @@ export function createAudio({ dronePos, splashTimes }) {
   }
 
   function startLoop(sample) {
-    for (const [voice, name] of Object.entries(LOOPS)) {
+    for (const [voice, name] of Object.entries(LOOP_VOICES)) {
       if (name !== sample) continue;
       const s = ctx.createBufferSource();
       s.buffer = buffers[name];
@@ -110,6 +113,7 @@ export function createAudio({ dronePos, splashTimes }) {
 
     voices = {};
     for (const name of ['engine', 'booster', 'missile', 'ship', 'hiss', 'clunk', 'launch', 'boom', 'splash']) voices[name] = chain();
+    if (pair) for (const name of ['splash2', 'engine2', 'booster2', 'missile2', 'launch2', 'boom2']) voices[name] = chain();
     voices.wind = chain(false); // ambience sits at the listener
     voices.surf = chain(false);
 
@@ -122,7 +126,14 @@ export function createAudio({ dronePos, splashTimes }) {
       shots.push({ voice: 'launch', name: 'launch', t0: scenario.tLaunch });
       shots.push({ voice: 'boom', name: 'boom', t0: scenario.tHit });
     }
+    if (pair) {
+      const { tSpool, tRelease } = scenario.drones[1];
+      const e = scenario.engagements[1];
+      shots.push({ voice: 'hiss', name: 'hiss', t0: tSpool }, { voice: 'clunk', name: 'clunk', t0: tRelease });
+      shots.push({ voice: 'launch2', name: 'launch', t0: e.tLaunch }, { voice: 'boom2', name: 'boom', t0: e.tHit });
+    }
     for (const t0 of splashTimes) shots.push({ voice: 'splash', name: 'splash', t0 });
+    if (pair) for (const t0 of pair.splashTimes) shots.push({ voice: 'splash2', name: 'splash', t0 });
     for (const s of shots) s.cur = null;
   }
 
@@ -261,6 +272,34 @@ export function createAudio({ dronePos, splashTimes }) {
       place(v.missile, src, burn, 110);
       place(v.launch, src, t < tHit ? 1.0 : 0, 110);
       place(v.boom, scenario.hitPos, 1.6, 140);
+    }
+
+    if (pair) {
+      // Second drone and missile: same beds, driven by their own positions.
+      const e2 = scenario.engagements[1];
+      const d2 = scenario.drones[1];
+      pair.dronePos(t, src);
+      pair.dronePos(t - 0.05, a);
+      pair.dronePos(t + 0.05, b);
+      const dop2 = doppler(radial(src, a, b, vel));
+      const spin2 = propSpin01(t, 1);
+      const here = t >= d2.tLoad;
+      loopRate(v.engine2, (0.7 + 0.6 * spin2) * dop2);
+      place(v.engine2, src, here && t < e2.tHit ? 0.1 + 0.5 * spin2 : 0, 45);
+      const boost2 = smoothstep(t, d2.tBoost0 - 0.05, d2.tBoost0 + 0.25) * (1 - smoothstep(t, d2.tBoost1 - 0.3, d2.tBoost1 + 0.5));
+      loopRate(v.booster2, dop2);
+      place(v.booster2, src, 0.9 * boost2, 90);
+      const age2 = Math.max(0, t - e2.tLaunch);
+      const burn2 = t < e2.tLaunch || t >= e2.tHit ? 0 : (1 - Math.exp(-age2 / 0.03)) * (0.6 + 0.4 * Math.exp(-age2 / 1.5));
+      missilePos(t, src, 1);
+      missilePos(t - 0.05, a, 1);
+      missilePos(t + 0.05, b, 1);
+      loopRate(v.missile2, doppler(radial(src, a, b, vel)));
+      place(v.missile2, src, burn2, 110);
+      place(v.launch2, src, t < e2.tHit ? 1.0 : 0, 110);
+      place(v.boom2, e2.hitPos, 1.6, 140);
+      pair.dronePos(pair.splashTimes.length ? pair.splashTimes[0] : t, src).setY(0);
+      place(v.splash2, src, 0.6, 70);
     }
 
     // Sea impacts, at the wreck's splashdown.

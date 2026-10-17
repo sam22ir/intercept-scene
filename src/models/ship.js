@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  deckHeight, RAIL, LAUNCHER_PIVOT, TUBE_MOUTH, launcherAim, launcherQuat, shuttleStroke,
+  deckHeight, RAIL, LAUNCHER_PIVOT, TUBE_MOUTH, TUBE_MOUTHS, PAIR_MODE, launcherAim, launcherQuat, shuttleStroke,
   SHIP_VARIANT, PENNANT, FWD_ROOF_Y,
 } from '../scenario.js';
 import { Kit, hexa, slab, facePanel, mat, canvasTexture, toMatrix } from './kit.js';
@@ -660,7 +660,10 @@ export function createShip() {
       const y = r === 0 ? 0.3 : -0.3;
       const z = -0.93 + c * 0.62;
       const isFiring = Math.abs(y - TUBE_MOUTH.y) < 0.01 && Math.abs(z - TUBE_MOUTH.z) < 0.01;
-      if (!isFiring) pk.add(new THREE.CylinderGeometry(0.24, 0.24, 0.06, 16), M.white, { pos: [1.76, y, z], rot: [0, 0, Math.PI / 2] });
+      // Pair mode fires a second round from the next cell: its cap blows off too.
+      const isFiring2 = PAIR_MODE && Math.abs(y - TUBE_MOUTHS[1].y) < 0.01 && Math.abs(z - TUBE_MOUTHS[1].z) < 0.01;
+      if (isFiring2) caps.push([1.78, y, z]);
+      if (!isFiring && !isFiring2) pk.add(new THREE.CylinderGeometry(0.24, 0.24, 0.06, 16), M.white, { pos: [1.76, y, z], rot: [0, 0, Math.PI / 2] });
       pk.add(new THREE.CylinderGeometry(0.26, 0.26, 0.04, 16), M.black, { pos: [1.74, y, z], rot: [0, 0, Math.PI / 2] });
       if (isFiring) caps.push([1.78, y, z]);
     }
@@ -670,6 +673,11 @@ export function createShip() {
   fireCap.rotation.z = Math.PI / 2;
   fireCap.position.set(...caps[0]);
   pitchGroup.add(fireCap);
+  const fireCap2 = PAIR_MODE ? fireCap.clone() : null;
+  if (fireCap2) {
+    fireCap2.position.set(...caps[1]);
+    pitchGroup.add(fireCap2);
+  }
   yawGroup.add(pitchGroup);
   launcher.add(base.build(), yawGroup);
   group.add(launcher);
@@ -951,7 +959,7 @@ export function createShip() {
     group,
     picks,
     launcher,
-    update(t, tLaunch) {
+    update(t, tLaunch, tLaunch2 = Infinity) {
       radar.rotation.y = t * 2.1;
       const { yaw, pitch } = launcherAim(t);
       yawGroup.rotation.y = yaw;
@@ -965,6 +973,17 @@ export function createShip() {
       } else {
         fireCap.position.set(...caps[0]);
         fireCap.rotation.set(0, 0, Math.PI / 2);
+      }
+      if (fireCap2) {
+        const tau2 = t - tLaunch2;
+        fireCap2.visible = tau2 < 1.2;
+        if (tau2 > 0) {
+          fireCap2.position.set(caps[1][0] + 6 * tau2, caps[1][1] + 5 * tau2 - 4.9 * tau2 * tau2, caps[1][2] - 1.5 * tau2);
+          fireCap2.rotation.set(tau2 * 9, 0, Math.PI / 2 + tau2 * 7);
+        } else {
+          fireCap2.position.set(...caps[1]);
+          fireCap2.rotation.set(0, 0, Math.PI / 2);
+        }
       }
       const s = shuttleStroke(t);
       cradle.position.set(s * Math.cos(RAIL.pitch), s * Math.sin(RAIL.pitch), 0);

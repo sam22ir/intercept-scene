@@ -18,6 +18,7 @@ import { createDirector } from './director.js';
 import { createAudio } from './audio.js';
 import { createHud } from './hud.js';
 import { createRecorder } from './recorder.js';
+import { createPair } from './pair.js';
 
 const canvas = document.querySelector('#scene');
 const loadingEl = document.querySelector('#loading');
@@ -53,6 +54,9 @@ const chute = scenario.hasMissile ? null : createParachute();
 if (chute) scene.add(chute.group);
 const effects = createEffects(scene, debris);
 if (debris) scenario.tEnd = scenario.tHit + debris.fallTime + 5;
+// Pair mission: the second drone, its missile, wreck and effects.
+const pair = scenario.engagements.length > 1 ? createPair(scene) : null;
+if (pair) scenario.tEnd = Math.max(scenario.tEnd, pair.tDone);
 
 // Floating tags + missile path; the on/off choice is remembered per viewer.
 const labels = createLabels(scene);
@@ -80,7 +84,7 @@ function applyTime(t) {
   const { tHit, tLaunch } = scenario;
 
   shipPos(t, ship.group.position);
-  ship.update(t, tLaunch);
+  ship.update(t, tLaunch, pair?.e.tLaunch);
 
   if (t < tHit) {
     plane.restoreParts();
@@ -118,7 +122,10 @@ function applyTime(t) {
     missileRange: telemetry.range ?? 0,
     shipPos: ship.group.position,
     shipSpeed: SHIP_SPEED,
+    second: pair?.apply(t),
   });
+  if (pair && rig.id === 'missile2' && t >= pair.e.tHit) setFocus('plane2', 60); // out of the fireball
+  if (pair) missile2Button.disabled = t >= pair.e.tHit;
 
   const ou = env.ocean.material.uniforms;
   ou.uTime.value = t;
@@ -158,13 +165,27 @@ const targets = {
   },
   ship: { pos: (out) => out.copy(ship.group.position).setY(10), distance: 190, minDistance: 40 },
 };
+if (pair) {
+  targets.plane2 = {
+    pos: (out) => (clock.t < pair.e.tHit ? out.copy(pair.plane.group.position) : pair.dronePosAt(clock.t, out)),
+    distance: 14, minDistance: 2.5, hitRadius: 4,
+  };
+  targets.missile2 = {
+    pos: (out) => {
+      if (clock.t <= pair.e.tLaunch) return tubeMouth(clock.t, out, 1);
+      if (clock.t >= pair.e.tHit) return out.copy(pair.e.hitPos);
+      return out.copy(pair.missile.group.position);
+    },
+    distance: 9, minDistance: 1.5, hitRadius: 3,
+  };
+}
 
 // Invisible pick volumes. Drone and missile spheres grow with camera distance
 // so they stay clickable when they are only a few pixels across; the ship's
 // boxes ride along inside its group.
 const pickMat = new THREE.MeshBasicMaterial({ visible: false });
 const pickables = [...ship.picks];
-for (const id of ['plane', 'missile']) {
+for (const id of pair ? ['plane', 'missile', 'plane2', 'missile2'] : ['plane', 'missile']) {
   const m = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), pickMat);
   m.userData.focus = id;
   scene.add(m);
@@ -187,13 +208,17 @@ function pick(clientX, clientY) {
   ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
   const hits = raycaster.intersectObjects(pickables, false)
-    .filter((h) => h.object.userData.focus !== 'missile' || missile.group.visible);
+    .filter((h) => h.object.userData.focus !== 'missile' || missile.group.visible)
+    .filter((h) => h.object.userData.focus !== 'missile2' || pair.missile.group.visible);
   // Small moving objects win over the ship they overlap.
   const small = hits.find((h) => h.object.userData.focus !== 'ship');
   return (small ?? hits[0])?.object.userData.focus ?? null;
 }
 
 const rig = new CameraRig(camera, controls);
+// Pair mission: extra focus buttons for the second drone and its missile.
+for (const el of document.querySelectorAll('[data-pair-only]')) el.hidden = !pair;
+const missile2Button = document.querySelector('[data-focus="missile2"]');
 const focusButtons = document.querySelectorAll('[data-focus]');
 function setFocus(id, distance) {
   if (directing) setDirector(false); // any manual camera choice ends the Director
@@ -256,6 +281,7 @@ try {
 const audio = createAudio({
   dronePos: dronePosAt,
   splashTimes: debris ? debris.pieces.map((p) => scenario.tHit + p.tauWater) : [scenario.tSplash],
+  pair: pair && { dronePos: pair.dronePosAt, splashTimes: pair.splashTimes },
 });
 const soundButton = document.querySelector('#btn-sound');
 function setSound(on) {
@@ -304,6 +330,8 @@ const clock = createTimeline(scenario, {
     if (key === '1') setFocus('plane');
     if (key === '2' && scenario.hasMissile) setFocus('missile');
     if (key === '3') setFocus('ship');
+    if (key === '4' && pair) setFocus('plane2');
+    if (key === '5' && pair) setFocus('missile2');
     if (key === 'l' || key === 'L') setLabels(!labels.enabled);
     if (key === 'd' || key === 'D') setDirector(!directing);
     if (key === 's' || key === 'S') setSound(!audio.enabled);
@@ -387,7 +415,7 @@ renderer.setAnimationLoop((now) => {
     if (camera.position.y < 1) camera.position.y = 1; // never dip under the (single-sided) sea
   }
 
-  const close = rig.id === 'plane' || rig.id === 'missile';
+  const close = rig.id !== 'ship' && rig.id !== 'free' && !!targets[rig.id];
   if (directing) env.setShadowFocus(dirLook, dirShadowR);
   else env.setShadowFocus(close ? targets[rig.id].pos(shadowCenter) : targets.ship.pos(shadowCenter), close ? 25 : 75);
   audio.update(clock.t, camera, clock);
@@ -402,6 +430,6 @@ renderer.setAnimationLoop((now) => {
 
 // Debug/inspection handle.
 window.__scene = {
-  scenario, clock, setFocus, camera, controls, rig, renderer, chute, director, audio, setDirector,
+  scenario, clock, setFocus, camera, controls, rig, renderer, chute, director, audio, setDirector, pair,
   plane: plane.group, missile: missile.group, ship: ship.group,
 };

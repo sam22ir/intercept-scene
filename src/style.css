@@ -267,3 +267,5 @@ body.editing .hud { display: none; }
 }
 
 body:not(.playing) .hud { display: none; }
+
+[data-pair-only][hidden] { display: none; }

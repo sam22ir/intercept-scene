@@ -14,8 +14,8 @@ const _p = new THREE.Vector3();
 const _q = new THREE.Vector3();
 const _s = new THREE.Vector3();
 
-function rangeAt(t) {
-  planePos(t, _p);
+function rangeAt(t, k = 0) {
+  planePos(t, _p, k);
   shipPos(t, _s);
   _s.y += SHIP_CENTER_Y;
   return _p.distanceTo(_s);
@@ -37,18 +37,20 @@ function peakG(fn, t0, t1, h, step) {
 }
 
 // Computed once: the story is fixed after import.
-function computeDebrief() {
+function computeDebrief(k = 0) {
   const chute = !scenario.hasMissile;
-  const tEndRun = chute ? scenario.tSplash : scenario.tHit;
+  const e = scenario.engagements[k] ?? scenario; // k > 0 is the second drone (pair mode)
+  const tRelease = scenario.drones[k].tRelease;
+  const tEndRun = chute ? scenario.tSplash : e.tHit;
   const d = {
-    droneFlight: tEndRun - scenario.tRelease,
-    droneG: peakG(planePos, 0, tEndRun, 0.25, 0.05),
+    droneFlight: tEndRun - tRelease,
+    droneG: peakG((t, out) => planePos(t, out, k), tRelease - scenario.tRelease, tEndRun, 0.25, 0.05),
   };
   if (!chute) {
-    d.miss = scenario.interceptMiss;
-    d.missileFlight = scenario.tHit - scenario.tLaunch;
+    d.miss = e.interceptMiss;
+    d.missileFlight = e.tHit - e.tLaunch;
     // Skip the last 0.15 s: the final sample is snapped onto the drone, which is not real acceleration.
-    d.missileG = peakG(missilePos, scenario.tLaunch, scenario.tHit - 0.15, 0.05, 0.025);
+    d.missileG = peakG((t, out) => missilePos(t, out, k), e.tLaunch, e.tHit - 0.15, 0.05, 0.025);
   }
   return d;
 }
@@ -60,6 +62,10 @@ export function createHud() {
   const debrief = root.querySelector('.hud-debrief');
   const chute = !scenario.hasMissile;
   const info = computeDebrief();
+  // Pair mission: a second debrief block, and the live readouts follow whichever drone is current.
+  const engs = scenario.engagements;
+  const infos = engs.length > 1 ? engs.map((_, k) => (k ? computeDebrief(k) : info)) : null;
+  const tAllDone = chute ? scenario.tSplash : engs[engs.length - 1].tHit;
 
   let enabled = true;
   try { enabled = localStorage.getItem(KEY) !== '0'; } catch { /* storage unavailable */ }
@@ -71,12 +77,14 @@ export function createHud() {
 
   function liveHtml(t) {
     const rows = [];
-    const endT = chute ? scenario.tSplash : scenario.tHit;
+    const k = infos && t >= engs[0].tHit ? 1 : 0; // the drone still flying
+    const e = engs[k] ?? scenario;
+    const endT = chute ? scenario.tSplash : e.tHit;
     if (t < endT) {
-      const r = rangeAt(t);
+      const r = rangeAt(t, k);
       const a = Math.max(t - H, 0);
-      const closing = -(rangeAt(t + H) - rangeAt(a)) / (t + H - a);
-      rows.push(cell('Range to ship', `${f(r)} m`), cell('Altitude', `${f(planePos(t, _p).y)} m`),
+      const closing = -(rangeAt(t + H, k) - rangeAt(a, k)) / (t + H - a);
+      rows.push(cell('Range to ship', `${f(r)} m`), cell('Altitude', `${f(planePos(t, _p, k).y)} m`),
         cell('Closing speed', `${closing < 0 ? '-' : ''}${f(Math.abs(closing))} m/s`));
     } else {
       rows.push(cell('Drone', chute ? 'landed' : 'destroyed'));
@@ -88,13 +96,13 @@ export function createHud() {
       }
       rows.push(cell('Descent rate', rate));
     } else {
-      const flying = t > scenario.tLaunch && t < scenario.tHit;
-      rows.push(cell('Missile impact in', flying ? `${f(scenario.tHit - t, 1)} s` : '—'));
+      const flying = t > e.tLaunch && t < e.tHit;
+      rows.push(cell('Missile impact in', flying ? `${f(e.tHit - t, 1)} s` : '—'));
       let spd = '—';
       if (flying) {
-        const a = Math.max(t - 0.02, scenario.tLaunch);
-        const b = Math.min(t + 0.02, scenario.tHit);
-        spd = `${f(missilePos(b, _p).distanceTo(missilePos(a, _q)) / (b - a))} m/s`;
+        const a = Math.max(t - 0.02, e.tLaunch);
+        const b = Math.min(t + 0.02, e.tHit);
+        spd = `${f(missilePos(b, _p, k).distanceTo(missilePos(a, _q, k)) / (b - a))} m/s`;
       }
       rows.push(cell('Missile speed', spd));
     }
@@ -103,10 +111,13 @@ export function createHud() {
 
   function debriefHtml() {
     const rows = ['<div class="hud-h">Debrief</div>'];
-    if (!chute) rows.push(cell('Miss before snap', `${f(info.miss, 1)} m`));
-    rows.push(cell('Drone flight', `${f(info.droneFlight, 1)} s`));
-    if (!chute) rows.push(cell('Missile flight', `${f(info.missileFlight, 1)} s`), cell('Max missile G', f(info.missileG)));
-    rows.push(cell('Max drone G', f(info.droneG, 1)));
+    (infos ?? [info]).forEach((inf, k) => {
+      const tag = infos ? ` ${k + 1}` : '';
+      if (!chute) rows.push(cell(`Miss before snap${tag}`, `${f(inf.miss, 1)} m`));
+      rows.push(cell(`Drone${tag} flight`, `${f(inf.droneFlight, 1)} s`));
+      if (!chute) rows.push(cell(`Missile${tag} flight`, `${f(inf.missileFlight, 1)} s`), cell(`Max missile${tag} G`, f(inf.missileG)));
+      rows.push(cell(`Max drone${tag} G`, f(inf.droneG, 1)));
+    });
     return rows.join('');
   }
 
@@ -127,7 +138,7 @@ export function createHud() {
     if (!enabled) return;
     const html = liveHtml(t);
     if (html !== lastHtml) { live.innerHTML = html; lastHtml = html; }
-    const show = t >= (chute ? scenario.tSplash : scenario.tHit);
+    const show = t >= tAllDone;
     if (show !== lastDeb) {
       lastDeb = show;
       debrief.hidden = !show;
