@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Interactive Three.js scene: an orange target drone is launched off a steep side rail (24°) with a rocket booster under its tail, on a steaming stealth frigate (C28A style, pennant 920). It flies a loop, makes a low close pass along the port side, climbs out slowly ahead, then turns back for an inbound run at the ship. On that run, a missile from the frigate's forward box launcher shoots it down. The user can scrub time forwards and backwards and click the drone, missile or ship to focus the camera on it. Vanilla JS (ES modules), Vite, `three@0.186.1`. No tests, no linter.
+Interactive Three.js scene: an orange target drone is launched off a steep side rail (24°) with a rocket booster under its tail, on a steaming stealth frigate (C28A style, pennant 920). It flies a loop, makes a low close pass along the port side, climbs out slowly ahead, then turns back for an inbound run at the ship. On that run, a missile from the frigate's forward box launcher shoots it down. The user can scrub time forwards and backwards and click the drone, missile or ship to focus the camera on it. Vanilla JS (ES modules), Vite, `three@0.186.1`. Node regression tests for `scenario.js` (`pnpm test`, also run by `pnpm build`); no linter.
 
 The folder name ends with a **trailing space** (`/home/saadi/plane sceen `). Quote every path in shell commands.
 
@@ -13,7 +13,8 @@ The folder name ends with a **trailing space** (`/home/saadi/plane sceen `). Quo
 ```bash
 pnpm install      # one install at a time on this machine
 pnpm dev          # http://localhost:5173 (also the "dev" entry in .claude/launch.json)
-pnpm build        # dist/ bundle + dist/intercept-offline.html (the >500 kB chunk warning is three.js, expected)
+pnpm test         # node --test: scenario timings, hits, clearances, determinism
+pnpm build        # tests + dist/ bundle + dist/intercept-offline.html (the >500 kB chunk warning is three.js, expected)
 pnpm cf-deploy    # build + `wrangler deploy` (static-assets Worker, see wrangler.jsonc)
 ```
 
