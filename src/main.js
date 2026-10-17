@@ -209,7 +209,8 @@ function pick(clientX, clientY) {
   raycaster.setFromCamera(ndc, camera);
   const hits = raycaster.intersectObjects(pickables, false)
     .filter((h) => h.object.userData.focus !== 'missile' || missile.group.visible)
-    .filter((h) => h.object.userData.focus !== 'missile2' || pair.missile.group.visible);
+    .filter((h) => h.object.userData.focus !== 'missile2' || pair.missile.group.visible)
+    .filter((h) => h.object.userData.focus !== 'plane2' || pair.plane.group.visible);
   // Small moving objects win over the ship they overlap.
   const small = hits.find((h) => h.object.userData.focus !== 'ship');
   return (small ?? hits[0])?.object.userData.focus ?? null;
