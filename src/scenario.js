@@ -10,6 +10,19 @@ import * as THREE from 'three';
 // shipPos(t). The missile and the debris are simulated in the world frame.
 
 export const G = 9.81;
+
+// Two frigate fits, chosen on the start screen (URL ?ship=aft reloads into it):
+//   'fwd' — pennant 920, 8-cell launcher on the forward deckhouse;
+//   'aft' — pennant 921, launcher on a stand at the stern, firing up and over
+//           the superstructure.
+export const SHIP_VARIANT = (() => {
+  try {
+    return new URLSearchParams(globalThis.location?.search ?? '').get('ship') === 'aft' ? 'aft' : 'fwd';
+  } catch {
+    return 'fwd';
+  }
+})();
+export const PENNANT = SHIP_VARIANT === 'aft' ? '921' : '920';
 export const SHIP_SPEED = 7; // m/s (~14 kn)
 
 export function shipPos(t, out) {
@@ -264,25 +277,34 @@ const LAUNCH_RANGE = 650;
 let T_LAUNCH = tInbound;
 while (planeRelPos(T_LAUNCH, tmp).distanceTo(SHIP_CENTER) > LAUNCH_RANGE) T_LAUNCH += 0.01;
 
-// --- Missile launcher (8-cell trainable box, forward deckhouse) --------------
-
-export const LAUNCHER_PIVOT = new THREE.Vector3(24, deckHeight(24) + 4.1, 0); // high enough to clear the roof at full elevation
+// --- Missile launcher (8-cell trainable box) --------------------------------
+// Forward fit sits on the deckhouse roof; aft fit on a stand on the helideck,
+// starboard side, clear of the catapult. Either pivot is high enough for the
+// box to clear what's under it at full elevation.
+const AFT = SHIP_VARIANT === 'aft';
+export const FWD_ROOF_Y = deckHeight(24) + 2.2;
+export const LAUNCHER_PIVOT = AFT
+  ? new THREE.Vector3(-56, deckHeight(-56) + 2.7, 3.8)
+  : new THREE.Vector3(24, FWD_ROOF_Y + 1.9, 0);
+// Stowed: forward fit faces the bow, aft fit faces the stern.
+const STOW_YAW = AFT ? Math.PI : 0;
 // Top-port tube mouth, in the launcher's own frame (+X along the tubes).
 export const TUBE_MOUTH = new THREE.Vector3(1.75, 0.3, -0.93);
 
 const aimTarget = new THREE.Vector3();
 planePos(T_LAUNCH + 1.2, aimTarget).sub(shipPos(T_LAUNCH, tmp)).sub(LAUNCHER_PIVOT);
 const AIM_YAW = Math.atan2(-aimTarget.z, aimTarget.x);
+// The aft fit must loft steeply to climb over the hangar, radome and mast.
 const AIM_PITCH = THREE.MathUtils.clamp(
   Math.atan2(aimTarget.y, Math.hypot(aimTarget.x, aimTarget.z)),
-  THREE.MathUtils.degToRad(25), THREE.MathUtils.degToRad(70),
+  THREE.MathUtils.degToRad(AFT ? 52 : 25), THREE.MathUtils.degToRad(AFT ? 75 : 70),
 );
 
-// Stowed (level, facing forward) -> slew onto the target -> back to stowed.
+// Stowed (level) -> slew onto the target -> back to stowed.
 export function launcherAim(t) {
   const w = THREE.MathUtils.smoothstep(t, T_LAUNCH - 4, T_LAUNCH - 1)
     * (1 - THREE.MathUtils.smoothstep(t, T_LAUNCH + 3, T_LAUNCH + 6));
-  return { yaw: AIM_YAW * w, pitch: AIM_PITCH * w };
+  return { yaw: THREE.MathUtils.lerp(STOW_YAW, AIM_YAW, w), pitch: AIM_PITCH * w };
 }
 
 const _qYaw = new THREE.Quaternion();
@@ -315,6 +337,7 @@ let tHit;
   const vr = new THREE.Vector3();
   const omega = new THREE.Vector3();
   const acc = new THREE.Vector3();
+  const axis = new THREE.Vector3();
   const N = 5;
   const MAX_ACC = 60 * G;
   let t = T_LAUNCH;
@@ -326,12 +349,21 @@ let tHit;
     planeVel(t, targetVel);
     r.subVectors(target, pos);
     if (r.length() < 2.5 || age > 12) break;
-    if (age > 0.3) {
-      vr.subVectors(targetVel, vel);
-      omega.crossVectors(r, vr).divideScalar(r.lengthSq());
-      acc.crossVectors(omega, vel).multiplyScalar(N);
-      if (acc.length() > MAX_ACC) acc.setLength(MAX_ACC);
-      vel.addScaledVector(acc, MISSILE_DT);
+    if (age > (AFT ? 0.7 : 0.3)) { // aft fit climbs clear of the masts before turning
+      const off = vel.angleTo(r);
+      if (off > 0.6) {
+        // Large heading error (e.g. after the aft fit's steep loft): PN can't
+        // recover from that, so pitch over toward the target at the g limit.
+        const turn = Math.min((MAX_ACC / vel.length()) * MISSILE_DT, off);
+        axis.crossVectors(vel, r).normalize();
+        vel.applyAxisAngle(axis, turn);
+      } else {
+        vr.subVectors(targetVel, vel);
+        omega.crossVectors(r, vr).divideScalar(r.lengthSq());
+        acc.crossVectors(omega, vel).multiplyScalar(N);
+        if (acc.length() > MAX_ACC) acc.setLength(MAX_ACC);
+        vel.addScaledVector(acc, MISSILE_DT);
+      }
     }
     vel.setLength(speed);
     pos.addScaledVector(vel, MISSILE_DT);

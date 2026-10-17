@@ -115,3 +115,33 @@ button.toggle.active { background: rgba(255, 122, 26, 0.18); border-color: var(-
   .marker { font-size: 9px; }
   .top-left { right: 14px; max-width: none; }
 }
+
+
+/* Start screen: choose the warship before the scene loads. */
+body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels-layer { display: none; }
+.chooser {
+  position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; overflow: auto;
+  background: radial-gradient(1200px 700px at 50% 0%, #1b3550 0%, #0b1119 70%);
+}
+.chooser[hidden] { display: none; }
+.chooser-inner { width: min(860px, 100%); text-align: center; }
+.chooser-title { font-weight: 700; letter-spacing: 0.14em; color: var(--muted); font-size: 12px; }
+.chooser-title .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 8px; }
+.chooser h1 { margin: 10px 0 6px; font-size: clamp(26px, 5vw, 40px); letter-spacing: -0.01em; }
+.chooser-sub, .chooser-hint { color: var(--muted); margin: 0; }
+.chooser-hint { margin-top: 22px; font-size: 12px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 26px; }
+.card {
+  position: relative; text-align: left; padding: 16px; border-radius: 14px; cursor: pointer;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); color: var(--text);
+  transition: transform 0.15s, border-color 0.15s, background 0.15s;
+}
+.card:hover, .card.focused { transform: translateY(-3px); border-color: var(--accent); background: rgba(255, 122, 26, 0.09); }
+.card svg { width: 100%; height: auto; display: block; margin-bottom: 10px; }
+.card .sea { fill: #123a55; } .card .hull { fill: #8f99a0; } .card .deck { stroke: #5b656c; stroke-width: 2; fill: none; }
+.card .sup { fill: #aab3b8; } .card .dome { fill: #e6e8e4; } .card .hot { fill: var(--accent); }
+.card-num { position: absolute; top: 12px; right: 14px; color: var(--muted); font-weight: 700; }
+.card-name { font-weight: 700; font-size: 16px; }
+.card-desc { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.link-btn { display: block; margin-top: 8px; padding: 0; border: 0; background: none; color: var(--accent); font-size: 12px; cursor: pointer; }
+.link-btn:hover { text-decoration: underline; background: none; }

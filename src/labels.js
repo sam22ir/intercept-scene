@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { scenario, missileTrailPoints } from './scenario.js';
+import { scenario, missileTrailPoints, PENNANT } from './scenario.js';
 
 // Floating HTML tags on the drone, missile and ship, plus the missile's
 // trajectory line (solid for the part already flown, dashed for the rest of
@@ -28,7 +28,7 @@ export function createLabels(scene) {
 
   const drone = tag('drone', 'TARGET DRONE');
   const missile = tag('missile', 'MISSILE');
-  const ship = tag('ship', 'FRIGATE 920');
+  const ship = tag('ship', `FRIGATE ${PENNANT}`);
   group.add(drone.obj, missile.obj, ship.obj);
 
   // Missile trajectory: two geometries sharing one position buffer, each

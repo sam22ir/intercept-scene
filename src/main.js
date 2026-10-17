@@ -1,4 +1,3 @@
-import './style.css';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
@@ -185,6 +184,7 @@ function setFocus(id, distance) {
 }
 focusButtons.forEach((b) => b.addEventListener('click', () => setFocus(b.dataset.focus)));
 const missileButton = document.querySelector('[data-focus="missile"]');
+document.querySelector('#btn-ship').addEventListener('click', () => { location.search = ''; });
 
 let downAt = null;
 canvas.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });

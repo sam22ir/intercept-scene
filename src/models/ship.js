@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import {
   deckHeight, RAIL, LAUNCHER_PIVOT, TUBE_MOUTH, launcherAim, launcherQuat, shuttleStroke,
+  SHIP_VARIANT, PENNANT, FWD_ROOF_Y,
 } from '../scenario.js';
 import { Kit, hexa, slab, facePanel, mat, canvasTexture, toMatrix } from './kit.js';
 import { mulberry32 } from '../rng.js';
 
-// Stealth frigate, ~122 m (C28A style, pennant 920). Bow along +X, built in
+// Stealth frigate, ~122 m (C28A style, pennant 920 or 921 by variant). Bow along +X, built in
 // the ship frame; main moves `group` along with shipPos(t).
 
 const STERN = -60;
@@ -158,7 +159,7 @@ function bulwark(x0, height) {
 function hullTexture() {
   return canvasTexture(4096, 1024, (ctx, W, H) => {
     const half = H / 2;
-    const rng = mulberry32(920);
+    const rng = mulberry32(Number(PENNANT));
     const yToPx = (y) => half - ((y - V_MIN) / (V_MAX - V_MIN)) * half; // within a half
     for (const side of [1, -1]) {
       const top = side > 0 ? 0 : half; // starboard: upper half of the canvas
@@ -236,9 +237,9 @@ function hullTexture() {
       const nx = X(41);
       const ny = yToPx(2.3);
       ctx.fillStyle = 'rgba(40,46,50,0.55)';
-      ctx.fillText('920', nx + 5, ny + 5);
+      ctx.fillText(PENNANT, nx + 5, ny + 5);
       ctx.fillStyle = '#f3f3ee';
-      ctx.fillText('920', nx, ny);
+      ctx.fillText(PENNANT, nx, ny);
       ctx.restore();
     }
   });
@@ -570,6 +571,12 @@ export function createShip() {
     }
   }
   crewPos.push([-57, 5.6, 3.5, 0.6], [-56, 5.6, 4.6, 0.3], [-48, 5.6, 4.5, -0.4], [-40, 5.6, -5.5, 2.4]);
+  if (SHIP_VARIANT === 'aft') {
+    // Keep people out of the launcher stand's footprint.
+    for (let i = crewPos.length - 1; i >= 0; i--) {
+      if (Math.hypot(crewPos[i][0] - LAUNCHER_PIVOT.x, crewPos[i][2] - LAUNCHER_PIVOT.z) < 2.6) crewPos.splice(i, 1);
+    }
+  }
   for (const [x, y, z, ry] of crewPos) {
     const place = (geo, material, dy, sx = 1) => k.add(geo, material, toMatrix({ pos: [x, y + dy, z], rot: [0, ry, 0], scale: [sx, 1, 1] }));
     place(new THREE.CylinderGeometry(0.13, 0.15, 0.85, 8), M.navy, 0.43);
@@ -597,8 +604,19 @@ export function createShip() {
   const launcher = new THREE.Group();
   launcher.position.copy(LAUNCHER_PIVOT);
   const base = new Kit();
-  const roof = deckHeight(24) + 2.2 - LAUNCHER_PIVOT.y; // deckhouse roof, launcher frame
-  base.add(new THREE.CylinderGeometry(1.0, 1.3, -0.4 - roof, 20), M.greyDark, { pos: [0, (roof - 0.4) / 2, 0] });
+  // Support surface in the launcher's frame: the deckhouse roof (forward fit)
+  // or the helideck (aft fit, where the stand is taller and braced).
+  const aft = SHIP_VARIANT === 'aft';
+  const roof = (aft ? deckHeight(LAUNCHER_PIVOT.x) : FWD_ROOF_Y) - LAUNCHER_PIVOT.y;
+  base.add(new THREE.CylinderGeometry(aft ? 0.75 : 1.0, aft ? 1.0 : 1.3, -0.4 - roof, 20), M.greyDark, { pos: [0, (roof - 0.4) / 2, 0] });
+  if (aft) {
+    base.add(new THREE.BoxGeometry(3.0, 0.14, 3.0), M.greyDark, { pos: [0, roof + 0.07, 0] });
+    for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      base.rod([sx * 1.35, roof + 0.14, sz * 1.35], [sx * 0.55, roof * 0.35 - 0.1, sz * 0.55], 0.06, M.greyLight, 6);
+      base.add(new THREE.BoxGeometry(0.28, 0.1, 0.28), M.black, { pos: [sx * 1.35, roof + 0.19, sz * 1.35] });
+    }
+    base.add(new THREE.BoxGeometry(0.9, 0.55, 0.6), M.greyLight, { pos: [-1.9, roof + 0.4, 0] }); // hydraulic unit
+  }
   const yawGroup = new THREE.Group();
   const yk = new Kit();
   yk.add(new THREE.CylinderGeometry(0.9, 1.0, 0.5, 18), M.grey, { pos: [0, -0.5, 0] });

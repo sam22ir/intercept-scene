@@ -8,6 +8,47 @@
   <body>
     <canvas id="scene"></canvas>
 
+    <div id="chooser" class="chooser" hidden>
+      <div class="chooser-inner">
+        <div class="chooser-title"><span class="dot"></span>INTERCEPT</div>
+        <h1>Choose your warship</h1>
+        <p class="chooser-sub">Same drone, same shot. The difference is where the missile launcher sits.</p>
+        <div class="cards">
+          <button class="card" data-ship="fwd">
+            <svg viewBox="0 0 320 90" aria-hidden="true">
+              <path class="sea" d="M0 76 Q40 70 80 76 T160 76 T240 76 T320 76 V90 H0Z"/>
+              <path class="hull" d="M14 60 L228 60 L300 46 L300 40 L14 40Z"/>
+              <path class="deck" d="M14 40 H300"/>
+              <path class="sup" d="M118 40 V30 H178 V40Z M138 30 V16 H168 V30Z M150 16 V6 H160 V16Z"/>
+              <path class="sup" d="M54 40 V28 H98 V40Z M66 28 L72 20 H90 V28Z"/>
+              <circle class="dome" cx="78" cy="19" r="9"/>
+              <rect class="hot" x="188" y="24" width="30" height="16" rx="2"/>
+              <path class="sup" d="M236 40 V35 H262 V40Z"/>
+            </svg>
+            <div class="card-num">1</div>
+            <div class="card-name">920 · Forward launcher</div>
+            <div class="card-desc">Missile box on the forward deckhouse, firing over the bow. Short, steep shot.</div>
+          </button>
+          <button class="card" data-ship="aft">
+            <svg viewBox="0 0 320 90" aria-hidden="true">
+              <path class="sea" d="M0 76 Q40 70 80 76 T160 76 T240 76 T320 76 V90 H0Z"/>
+              <path class="hull" d="M14 60 L228 60 L300 46 L300 40 L14 40Z"/>
+              <path class="deck" d="M14 40 H300"/>
+              <path class="sup" d="M118 40 V30 H178 V40Z M138 30 V16 H168 V30Z M150 16 V6 H160 V16Z"/>
+              <path class="sup" d="M54 40 V28 H98 V40Z M66 28 L72 20 H90 V28Z"/>
+              <circle class="dome" cx="78" cy="19" r="9"/>
+              <rect class="hot" x="20" y="22" width="26" height="14" rx="2" transform="rotate(-38 33 29)"/>
+              <path class="sup" d="M236 40 V35 H262 V40Z"/>
+            </svg>
+            <div class="card-num">2</div>
+            <div class="card-name">921 · Aft launcher</div>
+            <div class="card-desc">Missile stand at the stern, lofting up and over the superstructure.</div>
+          </button>
+        </div>
+        <p class="chooser-hint">Click a ship, or press 1 or 2 · you can change it any time</p>
+      </div>
+    </div>
+
     <div class="panel top-left">
       <div class="title">Intercept</div>
       <div class="focus-buttons" role="group" aria-label="Camera focus">
@@ -19,6 +60,7 @@
         <button id="btn-labels" class="toggle active" aria-pressed="true" title="Show tags and missile path (L)">Labels</button>
       </div>
       <div class="hint">Click an object to focus · drag to orbit · scroll to zoom · Esc for free camera · L toggles labels</div>
+      <button id="btn-ship" class="link-btn" title="Back to the ship selection screen">⇄ Change ship</button>
       <a id="dl-offline" class="dl-link" href="/intercept-offline" download="intercept-offline.html" title="One HTML file that runs without internet: double-click to open">⬇ Download offline version</a>
     </div>
 
@@ -53,6 +95,6 @@
       </div>
     </div>
 
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="/src/start.js"></script>
   </body>
 </html>

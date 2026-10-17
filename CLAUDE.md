@@ -25,6 +25,14 @@ Live at https://intercept-scene.nafaa-store.workers.dev. Deploying is public, so
 
 In the browser console, `window.__scene` exposes `{ scenario, clock, setFocus, camera, controls, rig, renderer, plane, missile, ship }`, for example `__scene.clock.seek(__scene.scenario.tHit)`.
 
+## Ship variants
+
+The player picks a frigate on a start screen (`#chooser` in `index.html`, driven by `src/start.js`, the real entry point):
+- **`fwd`**, pennant 920: launcher on the forward deckhouse roof (the original fit).
+- **`aft`**, pennant 921: launcher on a braced stand on the helideck at the stern, starboard side, lofting steeply over the superstructure.
+
+The choice is the `?ship=fwd|aft` URL parameter, read **once at import time** by `scenario.js` (`SHIP_VARIANT`, `PENNANT`). Picking a ship reloads the page with the parameter, and "Change ship" drops it. `main.js` is imported lazily by `start.js` only after a ship is chosen, so `vite.config.js` sets `codeSplitting: false` to keep a single JS bundle for the offline file. Both variants share the drone path, so `tLaunch` and the hit are identical. The aft fit differs in its pivot, stow yaw (facing the stern), a steeper aim pitch and a short pitch-over guidance phase after launch. To check a variant in Node, set `globalThis.location = { search: '?ship=aft' }` before importing `scenario.js`.
+
 ## Architecture
 
 **Core rule: every visual is a pure function of the sim time `t`.** Nothing accumulates per-frame state, which is what makes reverse playback and scrubbing work. Any new animation must be computable from `t` alone, including flicker, strobes and flag ripple. A stateful update breaks scrubbing (check by jumping to the end, then back to 0).
@@ -59,6 +67,7 @@ Holds the story, all timing and every ship mount point. Units are metres. The bo
 
 - **`kit.js`**: `Kit` collects parts per material and merges them, which keeps the detailed ship at a few dozen draw calls. Add new detail through a Kit, not as loose meshes. `hexa` builds sloped stealth blocks and auto-orients face winding. `slab` and `facePanel` place windows, doors and panels on sloped faces.
 - **`ship.js`**:
+  - The launcher stand and the pennant text depend on `SHIP_VARIANT` and `PENNANT`.
   - The hull is lofted from per-level lines (keel, bilge, waterline, knuckle, deck) with raked stems. Each level pair is a separate strip, so creases stay sharp.
   - Hull UVs flip *u* on the port side, and port and starboard use different halves of the texture, so the painted "920" reads correctly on both sides.
   - The animated parts are the radar, launcher yaw/pitch, tube cap, catapult cradle and flag.
