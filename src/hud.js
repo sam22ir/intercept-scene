@@ -58,6 +58,7 @@ export function createHud() {
   const button = document.querySelector('#btn-hud');
   const live = root.querySelector('.hud-live');
   const debrief = root.querySelector('.hud-debrief');
+  const telemetry = document.querySelector('.telemetry'); // the older, smaller readout: shown only when the HUD is off
   const chute = !scenario.hasMissile;
   const info = computeDebrief();
 
@@ -112,6 +113,7 @@ export function createHud() {
 
   function paint() {
     root.hidden = !enabled;
+    if (telemetry) telemetry.hidden = enabled;
     button.classList.toggle('active', enabled);
     button.setAttribute('aria-pressed', String(enabled));
   }

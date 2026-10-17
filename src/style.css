@@ -50,6 +50,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .focus-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
 
 .telemetry { top: 14px; right: 14px; min-width: 200px; display: grid; gap: 4px; font-variant-numeric: tabular-nums; }
+.telemetry[hidden] { display: none; }
 .telemetry div { display: flex; justify-content: space-between; gap: 16px; }
 .telemetry span { color: var(--muted); }
 
@@ -240,7 +241,7 @@ button, select, .link-btn { touch-action: manipulation; }
 
 /* HUD: live readouts + debrief. Desktop: a panel under the telemetry. Phones: it flows
    inside the timeline panel (above the controls), so it can never cover the scrub bar. */
-.hud { position: fixed; top: 150px; right: 14px; width: 220px; padding: 10px 12px; font-variant-numeric: tabular-nums;
+.hud { position: fixed; top: 14px; right: 14px; width: 220px; padding: 10px 12px; font-variant-numeric: tabular-nums;
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px; backdrop-filter: blur(10px); }
 .hud[hidden], .hud-debrief[hidden] { display: none; }
 .hud-live, .hud-debrief { display: grid; gap: 4px; }
