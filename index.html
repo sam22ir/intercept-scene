@@ -12,47 +12,79 @@
 
     <div id="chooser" class="chooser" hidden>
       <div class="chooser-inner">
-        <div class="chooser-title"><span class="dot"></span>INTERCEPT</div>
-        <h1>Choose your warship</h1>
-        <p class="chooser-sub" id="chooser-sub"></p>
-        <div class="missions" role="group" aria-label="Mission">
-          <button class="mission active" data-mode="intercept">Intercept<small>the missile shoots the drone down</small></button>
-          <button class="mission" data-mode="chute">Recovery<small>no missile · the drone lands in the sea by parachute</small></button>
-          <button class="mission" data-mode="pair">Two drones<small>a second drone follows · a missile for each</small></button>
+        <header class="ch-head">
+          <div class="chooser-title"><span class="dot"></span>Intercept</div>
+          <h1>Plan the sortie</h1>
+          <p class="ch-tag">A target drone is catapulted off a stealth frigate. Pick what happens to it, and which ship launches it. Scrub time freely once it starts.</p>
+        </header>
+
+        <section class="ch-step" aria-labelledby="ch-step1">
+          <h2 id="ch-step1"><span class="n">1</span>Mission</h2>
+          <div class="missions" role="radiogroup" aria-label="Mission">
+            <button class="mission" role="radio" aria-checked="true" data-mode="intercept">
+              <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-arc" d="M6 34 Q10 10 28 12"/><path class="i-drone" d="M24 10 h10 M29 6 v8"/><circle class="i-burst" cx="29" cy="11" r="6"/></svg>
+              <span><b>Intercept</b><small>A missile shoots the drone down</small></span>
+            </button>
+            <button class="mission" role="radio" aria-checked="false" data-mode="chute">
+              <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-canopy" d="M8 18 Q20 2 32 18 Z"/><path class="i-line" d="M8 18 L20 30 L32 18 M20 18 V30"/><path class="i-drone" d="M15 31 h10"/><path class="i-sea" d="M4 36 Q10 34 16 36 T28 36 T38 36"/></svg>
+              <span><b>Recovery</b><small>No missile · lands by parachute</small></span>
+            </button>
+            <button class="mission" role="radio" aria-checked="false" data-mode="pair">
+              <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-drone" d="M18 9 h10 M23 5 v8 M26 21 h10 M31 17 v8"/><path class="i-arc" d="M4 34 Q8 14 22 11 M10 36 Q16 24 29 22"/></svg>
+              <span><b>Two drones</b><small>A missile for each target</small></span>
+            </button>
+          </div>
+        </section>
+
+        <section class="ch-step" aria-labelledby="ch-step2">
+          <h2 id="ch-step2"><span class="n">2</span>Ship</h2>
+          <div class="cards" role="radiogroup" aria-label="Ship">
+            <button class="card" role="radio" aria-checked="false" data-ship="fwd">
+              <svg viewBox="0 0 320 110" aria-hidden="true">
+              <path class="sea" d="M0 92 Q20 88 40 92 T80 92 T120 92 T160 92 T200 92 T240 92 T280 92 T320 92 V110 H0Z"/>
+              <path class="wake" d="M8 88 H70 M18 94 H52"/>
+              <path class="hull" d="M20 84 L246 84 L304 68 L300 62 L18 62 Z"/>
+              <path class="deckline" d="M18 62 H300"/>
+              <path class="sup" d="M44 62 L48 48 L110 48 L114 62Z"/>
+              <path class="sup" d="M130 62 L135 44 L196 44 L200 62Z"/>
+              <path class="sup" d="M146 44 L150 30 L182 30 L186 44Z"/>
+              <path class="mast" d="M166 30 V14 M160 20 H172"/>
+              <circle class="dome" cx="90" cy="41" r="8"/>
+              <path class="sup" d="M238 62 V57 H262 V62Z"/>
+              <text class="pn" x="58" y="77">920</text>
+              <path class="arc" d="M219 46 Q252 2 306 10"/>
+              <rect class="hot" x="208" y="49" width="22" height="13" rx="2"/>
+              <path class="tgt" d="M306 4 l6 6 -6 6 -6 -6z"/>
+              </svg>
+              <span class="card-txt"><span class="card-name"><kbd>1</kbd>920 · Forward launcher</span><span class="card-desc">Box on the forward deckhouse. Short, steep shot over the bow.</span></span>
+            </button>
+            <button class="card" role="radio" aria-checked="false" data-ship="aft">
+              <svg viewBox="0 0 320 110" aria-hidden="true">
+              <path class="sea" d="M0 92 Q20 88 40 92 T80 92 T120 92 T160 92 T200 92 T240 92 T280 92 T320 92 V110 H0Z"/>
+              <path class="wake" d="M8 88 H70 M18 94 H52"/>
+              <path class="hull" d="M20 84 L246 84 L304 68 L300 62 L18 62 Z"/>
+              <path class="deckline" d="M18 62 H300"/>
+              <path class="sup" d="M44 62 L48 48 L110 48 L114 62Z"/>
+              <path class="sup" d="M130 62 L135 44 L196 44 L200 62Z"/>
+              <path class="sup" d="M146 44 L150 30 L182 30 L186 44Z"/>
+              <path class="mast" d="M166 30 V14 M160 20 H172"/>
+              <circle class="dome" cx="90" cy="41" r="8"/>
+              <path class="sup" d="M238 62 V57 H262 V62Z"/>
+              <text class="pn" x="58" y="77">921</text>
+              <path class="arc" d="M66 40 Q120 -26 306 10"/>
+              <rect class="hot" x="56" y="40" width="20" height="10" rx="2" transform="rotate(-35 66 45)"/>
+              <path class="tgt" d="M306 4 l6 6 -6 6 -6 -6z"/>
+              </svg>
+              <span class="card-txt"><span class="card-name"><kbd>2</kbd>921 · Aft launcher</span><span class="card-desc">Box on the hangar roof. Lofts up and over the radome and mast.</span></span>
+            </button>
+          </div>
+        </section>
+
+        <div class="ch-go">
+          <p class="ch-sum"><span id="ch-summary"></span><small id="chooser-sub" class="chooser-sub"></small></p>
+          <button id="ch-start" class="ch-start" type="button">Start simulation <span aria-hidden="true">→</span></button>
         </div>
-        <div class="cards">
-          <button class="card" data-ship="fwd">
-            <svg viewBox="0 0 320 90" aria-hidden="true">
-              <path class="sea" d="M0 76 Q40 70 80 76 T160 76 T240 76 T320 76 V90 H0Z"/>
-              <path class="hull" d="M14 60 L228 60 L300 46 L300 40 L14 40Z"/>
-              <path class="deck" d="M14 40 H300"/>
-              <path class="sup" d="M118 40 V30 H178 V40Z M138 30 V16 H168 V30Z M150 16 V6 H160 V16Z"/>
-              <path class="sup" d="M54 40 V28 H98 V40Z M66 28 L72 20 H90 V28Z"/>
-              <circle class="dome" cx="78" cy="19" r="9"/>
-              <rect class="hot" x="188" y="24" width="30" height="16" rx="2"/>
-              <path class="sup" d="M236 40 V35 H262 V40Z"/>
-            </svg>
-            <div class="card-num">1</div>
-            <div class="card-name">920 · Forward launcher</div>
-            <div class="card-desc">Missile box on the forward deckhouse, firing over the bow. Short, steep shot.</div>
-          </button>
-          <button class="card" data-ship="aft">
-            <svg viewBox="0 0 320 90" aria-hidden="true">
-              <path class="sea" d="M0 76 Q40 70 80 76 T160 76 T240 76 T320 76 V90 H0Z"/>
-              <path class="hull" d="M14 60 L228 60 L300 46 L300 40 L14 40Z"/>
-              <path class="deck" d="M14 40 H300"/>
-              <path class="sup" d="M118 40 V30 H178 V40Z M138 30 V16 H168 V30Z M150 16 V6 H160 V16Z"/>
-              <path class="sup" d="M54 40 V28 H98 V40Z M66 28 L72 20 H90 V28Z"/>
-              <circle class="dome" cx="78" cy="19" r="9"/>
-              <rect class="hot" x="52" y="15" width="18" height="10" rx="2" transform="rotate(-30 61 20)"/>
-              <path class="sup" d="M236 40 V35 H262 V40Z"/>
-            </svg>
-            <div class="card-num">2</div>
-            <div class="card-name">921 · Aft launcher</div>
-            <div class="card-desc">Missile box on the hangar roof, lofting up and over the radome and mast.</div>
-          </button>
-        </div>
-        <p class="chooser-hint">Pick a mission, then click a ship (or press 1 or 2; M switches mission) · you can change both any time</p>
+        <p class="chooser-hint"><kbd>M</kbd> mission · <kbd>1</kbd> <kbd>2</kbd> ship · <kbd>Enter</kbd> start · you can change both any time</p>
       </div>
     </div>
 
