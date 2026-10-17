@@ -4,9 +4,9 @@ import {
 } from './scenario.js';
 import { SOUNDS } from './audioAssets.js';
 
-// Sound design. The samples are forged in code (scripts/forge-sounds.py, built on
-// earshot's synthesis toolkit) and embedded in the bundle, so the offline file still
-// needs nothing else. Like the visuals, everything follows the sim time `t`:
+// Sound design. The samples are sound effects generated with ElevenLabs (text to sound
+// v2), processed by scripts/build-sounds.py and embedded in the bundle, so the offline
+// file still needs nothing else. Like the visuals, everything follows the sim time `t`:
 //  * loops (engine, rocket motors, wind, surf, hum) run continuously and each frame
 //    get their gain, filter and playback rate from `t` and the camera;
 //  * one-shots (catapult, launch, explosion, splashes) play from the sample offset
@@ -235,7 +235,7 @@ export function createAudio({ dronePos, splashTimes }) {
     dronePos(t + 0.05, b);
     const dop = doppler(radial(src, a, b, vel));
     const spin = propSpin01(t);
-    loopRate(v.engine, ((58 + 92 * spin) / 90) * dop);
+    loopRate(v.engine, (0.7 + 0.6 * spin) * dop);
     place(v.engine, src, t < tHit ? 0.1 + 0.5 * spin : 0, 45); // dies with the drone (or at the chute cut, via spin)
 
     // Booster canister under the tail, burning from the stroke to just past release.
