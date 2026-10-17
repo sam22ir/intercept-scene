@@ -31,6 +31,11 @@ html, body {
 .top-left { top: 14px; left: 14px; max-width: 360px; }
 .title { font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px; }
 .title::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 8px; }
+.top-left .title { display: flex; align-items: center; gap: 10px; }
+.fold-btn { margin-left: auto; padding: 2px 8px; font-size: 11px; letter-spacing: normal; text-transform: none; font-weight: 600; }
+/* Folded: only the title row (with the Show button) stays on screen. */
+.top-left.folded .title { margin-bottom: 0; }
+.top-left.folded > :not(.title) { display: none !important; }
 .hint { color: var(--muted); font-size: 11.5px; margin-top: 8px; }
 .dl-link { display: inline-block; margin-top: 8px; color: var(--accent); font-size: 12px; text-decoration: none; }
 .dl-link:hover { text-decoration: underline; }

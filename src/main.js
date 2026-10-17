@@ -305,6 +305,22 @@ const audio = createAudio({
   splashTimes: debris ? debris.pieces.map((p) => scenario.tHit + p.tauWater) : [scenario.tSplash],
   pair: pair && { dronePos: pair.dronePosAt, splashTimes: pair.splashTimes },
 });
+// Hide/show the control panel (button in its title row, or the C key); remembered.
+const FOLD_KEY = 'intercept.panelFolded';
+const panelEl = document.querySelector('.panel.top-left');
+const foldButton = document.querySelector('#btn-fold');
+let panelFolded = false;
+function setPanelFolded(on, save = true) {
+  panelFolded = on;
+  panelEl.classList.toggle('folded', on);
+  foldButton.textContent = on ? 'Show ▾' : 'Hide ▴';
+  foldButton.title = on ? 'Show the controls (C)' : 'Hide the controls (C)';
+  foldButton.setAttribute('aria-expanded', String(!on));
+  if (save) try { localStorage.setItem(FOLD_KEY, on ? '1' : '0'); } catch { /* storage unavailable */ }
+}
+foldButton.addEventListener('click', () => setPanelFolded(!panelFolded));
+try { setPanelFolded(localStorage.getItem(FOLD_KEY) === '1', false); } catch { /* storage unavailable */ }
+
 const soundButton = document.querySelector('#btn-sound');
 function setSound(on) {
   invalidate();
@@ -359,6 +375,7 @@ const clock = createTimeline(scenario, {
     if (key === 'd' || key === 'D') setDirector(!directing);
     if (key === 's' || key === 'S') setSound(!audio.enabled);
     if (key === 'h' || key === 'H') hud.toggle();
+    if (key === 'c' || key === 'C') setPanelFolded(!panelFolded);
   },
 });
 
