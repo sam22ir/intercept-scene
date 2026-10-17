@@ -268,3 +268,13 @@ body.editing .hud { display: none; }
 }
 
 body:not(.playing) .hud { display: none; }
+/* Copy-link fallback box (shown when the clipboard is unavailable). */
+.share-box {
+  position: fixed; left: 50%; top: 56px; transform: translateX(-50%); z-index: 21;
+  display: flex; gap: 8px; align-items: center; width: min(560px, calc(100vw - 32px));
+  background: rgba(10, 14, 20, 0.94); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; font-size: 13px;
+}
+.share-box[hidden] { display: none; }
+.share-box label { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; color: var(--muted); }
+.share-box input { width: 100%; box-sizing: border-box; font: inherit; color: var(--text); background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+body.editing #btn-link { display: none; }

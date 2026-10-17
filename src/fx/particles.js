@@ -102,6 +102,8 @@ export class ParticleField extends THREE.Points {
     this.capacity = capacity;
     this.count = 0;
     this.frustumCulled = false;
+    this.isParticleField = true;
+    this._perm = null;
   }
 
   add(origin, vel, birth, life, seed) {
@@ -119,6 +121,27 @@ export class ParticleField extends THREE.Points {
     this.geometry.setDrawRange(0, this.count);
     for (const attr of Object.values(this.geometry.attributes)) attr.needsUpdate = true;
     return this;
+  }
+
+  // Draw only a fraction of the baked particles. A fixed low-discrepancy order
+  // (golden-ratio sort) makes every prefix an even spread over the whole life of
+  // the effect, so nothing is re-baked and the result is the same every time.
+  setDensity(f) {
+    if (!this.count) return;
+    if (f >= 1) {
+      if (this._perm) this.geometry.setIndex(null);
+      this._perm = null;
+      this.geometry.setDrawRange(0, this.count);
+      return;
+    }
+    if (!this._perm) {
+      const order = Array.from({ length: this.count }, (_, i) => i);
+      const key = (i) => (i * 0.6180339887498949) % 1;
+      order.sort((a, b) => key(a) - key(b));
+      this._perm = new Uint32Array(order);
+      this.geometry.setIndex(new THREE.BufferAttribute(this._perm, 1));
+    }
+    this.geometry.setDrawRange(0, Math.max(1, Math.ceil(this.count * f)));
   }
 
   setTime(t) {
