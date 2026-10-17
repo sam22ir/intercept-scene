@@ -238,6 +238,55 @@ export function buildPathCurve(editablePts) {
 
 const WAYPOINTS = [...PATH_FIXED, ...ACTIVE_PATH];
 
+// --- Engagement settings (the engagement panel) ---------------------------------
+// When the missile leaves, when it hits, and how close it gets before it bursts.
+// Like the path they are read once at import and applied by reloading, because the
+// guidance run is baked at load.
+//   timing: 'auto'   the launch moment is derived from the path (default);
+//           'launch' the missile leaves at `time` seconds;
+//           'impact' the missile is launched so that it bursts at `time` seconds;
+//           'range'  the missile leaves when the drone, coming back at the ship, closes to
+//                    `range` metres of it (only one trigger applies at a time).
+//   dist:   metres from the drone at which the warhead goes off. 0 is a direct hit.
+//   side:   where the burst sits relative to the drone's path: 'auto' (wherever the
+//           missile first comes within `dist`), or 'above' | 'below' | 'left' | 'right'.
+export const ENGAGE_STORAGE_KEY = 'intercept.engage.v1';
+export const BURST_SIDES = ['auto', 'above', 'below', 'left', 'right'];
+export const ENGAGE_TIMINGS = ['auto', 'launch', 'impact', 'range'];
+export const RANGE_LIMITS = [100, 1500]; // m, drone distance from the ship
+export const MAX_BURST = 60;
+export const ENGAGE_DEFAULTS = { timing: 'auto', time: 0, range: 650, dist: 0, side: 'auto' };
+
+export function validateEngage(o) {
+  if (!o || typeof o !== 'object') return null;
+  const timing = ENGAGE_TIMINGS.includes(o.timing) ? o.timing : 'auto';
+  const side = BURST_SIDES.includes(o.side) ? o.side : 'auto';
+  const time = Number(o.time);
+  const dist = Number(o.dist);
+  const range = o.range === undefined ? ENGAGE_DEFAULTS.range : Number(o.range);
+  if (!Number.isFinite(time) || !Number.isFinite(dist) || !Number.isFinite(range)) return null;
+  return {
+    timing,
+    time: Math.round(Math.min(Math.max(time, 0), 3600) * 10) / 10,
+    range: Math.round(Math.min(Math.max(range, RANGE_LIMITS[0]), RANGE_LIMITS[1])),
+    dist: Math.round(Math.min(Math.max(dist, 0), MAX_BURST)),
+    side,
+  };
+}
+
+function loadEngage() {
+  try {
+    if (globalThis.__ENGAGE) return validateEngage(globalThis.__ENGAGE); // tests and embedders
+    const raw = globalThis.localStorage?.getItem(ENGAGE_STORAGE_KEY);
+    return raw ? validateEngage(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+}
+const LOADED_ENGAGE = loadEngage();
+export const CUSTOM_ENGAGE = LOADED_ENGAGE !== null && JSON.stringify(LOADED_ENGAGE) !== JSON.stringify(ENGAGE_DEFAULTS);
+export const ENGAGE = LOADED_ENGAGE ?? { ...ENGAGE_DEFAULTS };
+
 
 // Airspeed relative to the ship (m/s), keyed by seconds after release.
 const SPEED_KEYS = [
@@ -293,8 +342,20 @@ function speedAt(tau) {
   return SPEED_KEYS[SPEED_KEYS.length - 1][1];
 }
 
+// Seconds from release to the end of a path (editor stat): the speed profile
+// integrated until it has covered the spline's length.
+export function pathFlightTime(editablePts, dt = 0.05) {
+  return flightTimeForLength(buildPathCurve(editablePts).getLength(), dt);
+}
+export function flightTimeForLength(len, dt = 0.05) {
+  let s = 0;
+  let tau = 0;
+  while (s < len && tau < 3600) { s += speedAt(tau + dt / 2) * dt; tau += dt; }
+  return tau;
+}
+
 const ARC_DT = 0.01;
-const FLIGHTS = [makeFlight(ACTIVE_PATH, 0)];
+const FLIGHTS =[makeFlight(ACTIVE_PATH, 0)];
 if (PAIR_MODE) FLIGHTS.push(makeFlight(pairVariant(ACTIVE_PATH), PAIR_DT));
 const ARC_TAU_MAX = FLIGHTS[0].tauMax;
 // Recovery: the parachute opens when the planned path ends.
@@ -515,35 +576,43 @@ const inArc = (t, k) => {
   const x = planeRelPos(t, tmp, k).x;
   return SHIP_VARIANT === 'aft' ? x <= PIVOT_X : x >= PIVOT_X;
 };
-// Launch time of the missile for drone k, searched from that drone's own release.
-function deriveLaunch(k) {
+// Distance from the ship at time t, as the drone-range trigger measures it.
+export function droneRange(t, k = 0) {
+  return rangeAt(t, k);
+}
+// Launch time of the missile for drone k, searched from that drone's own release: the
+// first moment, after the drone has been farther than `range`, that it closes back inside.
+// `ok` is false when the path never gets that far out, or never comes back (a fallback time).
+function launchAtRange(k, range) {
   const f = FLIGHTS[k];
   let tExit = null;
   for (let t = f.tRelease; t < f.tPathEnd; t += 0.05) {
-    if (rangeAt(t, k) > LAUNCH_RANGE) { tExit = t; break; }
+    if (rangeAt(t, k) > range) { tExit = t; break; }
   }
   const from = tExit ?? f.tRelease + 8;
   for (let t = from; t < f.tPathEnd; t += 0.01) {
     const r = rangeAt(t, k);
-    if (r <= LAUNCH_RANGE && r < rangeAt(t - 0.2, k) && inArc(t, k)) return t;
+    if (r <= range && r < rangeAt(t - 0.2, k) && inArc(t, k)) return { t, ok: tExit !== null };
   }
-  return Math.max(f.tRelease + 4, Math.min(from, f.tPathEnd - 4));
+  return { t: Math.max(f.tRelease + 4, Math.min(from, f.tPathEnd - 4)), ok: false };
 }
+const deriveLaunch = (k) => launchAtRange(k, LAUNCH_RANGE).t;
 // Two shots must leave the launcher at least this far apart (slew and reload).
 const MIN_LAUNCH_GAP = 2.5;
-const T_LAUNCHES = [];
+// Launch moments derived from the path alone. The engagement settings may move the
+// first of them (see resolveLaunches below, once the guidance run is defined).
+const AUTO_LAUNCHES = [];
 if (CHUTE_MODE) {
-  T_LAUNCHES.push(Infinity); // recovery: the missile is never fired
+  AUTO_LAUNCHES.push(Infinity); // recovery: the missile is never fired
 } else {
   for (let k = 0; k < FLIGHTS.length; k++) {
     let tl = deriveLaunch(k);
-    if (k > 0) tl = Math.max(tl, T_LAUNCHES[k - 1] + MIN_LAUNCH_GAP);
-    T_LAUNCHES.push(tl);
+    if (k > 0) tl = Math.max(tl, AUTO_LAUNCHES[k - 1] + MIN_LAUNCH_GAP);
+    AUTO_LAUNCHES.push(tl);
   }
 }
-const T_LAUNCH = T_LAUNCHES[0];
 
-const STORY_END = CHUTE_MODE ? T_CHUTE : T_LAUNCH; // markers are looked for up to here
+const STORY_END = CHUTE_MODE ? T_CHUTE : AUTO_LAUNCHES[0]; // markers are looked for up to here
 
 // Timeline markers from the shape of the path: prominent local maxima/minima
 // of the range to the ship (turn-backs and passes), found on a 0.1 s grid.
@@ -626,7 +695,28 @@ function aimFor(k, tLaunch) {
   return { yaw, pitch };
 }
 
-function engage(k, tLaunch) {
+// Unit direction of an explicit burst point from the drone: `fwd` is its velocity, and
+// right is starboard when it flies level (fwd x up).
+const _bf = new THREE.Vector3();
+const _br = new THREE.Vector3();
+const _bu = new THREE.Vector3();
+const _bo = new THREE.Vector3();
+function burstOffset(side, dist, targetVel, out) {
+  _bf.copy(targetVel);
+  if (_bf.lengthSq() < 1e-6) _bf.set(1, 0, 0);
+  _bf.normalize();
+  _br.crossVectors(_bf, _up);
+  if (_br.lengthSq() < 1e-6) _br.set(0, 0, 1);
+  _br.normalize();
+  _bu.crossVectors(_br, _bf);
+  const dir = side === 'above' ? _bu : side === 'below' ? _bu.negate() : side === 'right' ? _br : _br.negate();
+  return out.copy(dir).multiplyScalar(dist);
+}
+
+// `opts` (dist, side) is the warhead setting: a direct hit snaps the last sample onto
+// the drone; a burst `dist` metres away either homes on a point beside it (explicit
+// side) or fuzes when the missile first comes within that range (side 'auto').
+function engage(k, tLaunch, opts = ENGAGE) {
   const { yaw: aimYaw, pitch: aimPitch } = aimFor(k, tLaunch);
   const launchQuat = launcherQuat(aimYaw, aimPitch, new THREE.Quaternion());
   const start = TUBE_MOUTHS[k].clone().applyQuaternion(launchQuat)
@@ -634,13 +724,17 @@ function engage(k, tLaunch) {
   const launchDir = new THREE.Vector3(1, 0, 0).applyQuaternion(launchQuat);
   const samples = []; // flat xyz
   let tHit;
-  let miss = 0; // metres the missile was short of the drone before the hit is snapped on
+  let miss = 0; // metres the missile was short of its burst point when the run timed out (0 = reached)
   if (CHUTE_MODE) {
     tHit = Infinity; // no hit in a recovery
     samples.push(...start.toArray(), ...start.toArray());
   } else {
+    const burst = opts.dist ?? 0;
+    const explicit = burst > 0 && opts.side !== 'auto';
+    const fuzeRange = Math.max(2.5, explicit ? 0 : burst);
     const pos = start.clone();
     const vel = launchDir.clone().multiplyScalar(40);
+    const droneAt = new THREE.Vector3();
     const target = new THREE.Vector3();
     const targetVel = new THREE.Vector3();
     const r = new THREE.Vector3();
@@ -655,10 +749,14 @@ function engage(k, tLaunch) {
     for (;;) {
       const age = t - tLaunch;
       const speed = age < 0.5 ? 40 + age * 360 : Math.min(420, 220 + (age - 0.5) * 160);
-      planePos(t, target, k);
+      planePos(t, droneAt, k);
       planeVel(t, targetVel, k);
+      target.copy(droneAt);
+      if (explicit) target.add(burstOffset(opts.side, burst, targetVel, _bo));
       r.subVectors(target, pos);
-      if (r.length() < 2.5 || age > 12) { miss = r.length(); break; }
+      const closest = explicit ? r.length() : pos.distanceTo(droneAt);
+      if (closest < fuzeRange) break;
+      if (age > 12) { miss = r.length(); break; }
       if (age > 0.3) {
         const off = vel.angleTo(r);
         if (off > 0.6) {
@@ -681,20 +779,74 @@ function engage(k, tLaunch) {
       samples.push(pos.x, pos.y, pos.z);
     }
     tHit = t;
-    const n = samples.length;
-    samples[n - 3] = target.x;
-    samples[n - 2] = target.y;
-    samples[n - 1] = target.z;
+    if (explicit || fuzeRange <= 2.5 || miss > 0) {
+      // Direct hit, the explicit burst point itself, or a timed-out run (forced hit):
+      // land the last sample exactly on the point it was homing on.
+      const n = samples.length;
+      samples[n - 3] = target.x;
+      samples[n - 2] = target.y;
+      samples[n - 1] = target.z;
+    }
   }
   const n = samples.length / 3;
   const hitPos = new THREE.Vector3(samples[(n - 1) * 3], samples[(n - 1) * 3 + 1], samples[(n - 1) * 3 + 2]);
+  // How far from the drone the warhead actually went off.
+  const burstDist = Number.isFinite(tHit) ? hitPos.distanceTo(planePos(tHit, new THREE.Vector3(), k)) : 0;
   return {
-    k, tLaunch, tHit, interceptMiss: miss, hitPos, missileStart: start, launchDir,
+    k, tLaunch, tHit, interceptMiss: miss, burstDist, hitPos, missileStart: start, launchDir,
     aimYaw, aimPitch, samples, n,
   };
 }
 
+// --- Launch and impact timing from the engagement settings ----------------------
+const launchLimits = (k) => [FLIGHTS[k].tRelease + 1, FLIGHTS[k].tPathEnd - 1];
+const clampLaunch = (tl, k) => {
+  const [lo, hi] = launchLimits(k);
+  return Math.min(Math.max(tl, lo), hi);
+};
+
+// Launch time that makes the burst land at tImpact: flight time barely depends on the
+// launch moment, so stepping by the remaining error converges in a few runs.
+function solveLaunchForImpact(k, tImpact, opts) {
+  let tl = clampLaunch(tImpact - 6, k);
+  for (let i = 0; i < 14; i++) {
+    const err = tImpact - engage(k, tl, opts).tHit;
+    if (Math.abs(err) < 0.02) break;
+    tl = clampLaunch(tl + err, k);
+  }
+  return tl;
+}
+
+function resolveLaunch(autoLaunch, opts) {
+  if (CHUTE_MODE || opts.timing === 'auto') return autoLaunch;
+  if (opts.timing === 'launch') return clampLaunch(opts.time, 0);
+  if (opts.timing === 'range') return launchAtRange(0, opts.range).t;
+  return solveLaunchForImpact(0, opts.time, opts);
+}
+
+// What a setting would do, without applying it: the engagement panel's live readout.
+export function previewEngagement(opts) {
+  if (CHUTE_MODE) return null;
+  const o = validateEngage(opts) ?? ENGAGE_DEFAULTS;
+  const tl = resolveLaunch(AUTO_LAUNCHES[0], o);
+  const e = engage(0, tl, o);
+  const [tMin, tMax] = launchLimits(0);
+  return {
+    tLaunch: tl, tHit: e.tHit, burstDist: e.burstDist, reached: e.interceptMiss === 0,
+    rangeOk: o.timing !== 'range' || launchAtRange(0, o.range).ok,
+    launchRange: rangeAt(tl, 0),
+    autoLaunch: AUTO_LAUNCHES[0], tMin, tMax,
+  };
+}
+
 // All launch times are known, so every shot can be aimed before any is flown.
+const T_LAUNCHES = [];
+AUTO_LAUNCHES.forEach((auto, k) => {
+  let tl = k === 0 ? resolveLaunch(auto, ENGAGE) : auto;
+  if (k > 0) tl = Math.max(tl, T_LAUNCHES[k - 1] + MIN_LAUNCH_GAP);
+  T_LAUNCHES.push(tl);
+});
+const T_LAUNCH = T_LAUNCHES[0];
 const ENGS = T_LAUNCHES.map((tl, k) => engage(k, tl));
 const E0 = ENGS[0];
 
@@ -785,6 +937,10 @@ export const scenario = {
   tBoost1: T_RELEASE + 1.2,
   tLaunch: T_LAUNCH,
   interceptMiss: E0.interceptMiss,
+  burstDist: E0.burstDist, // metres from the drone at which the warhead goes off (0 = direct hit)
+  engage: { ...ENGAGE },
+  customEngage: CUSTOM_ENGAGE,
+  autoLaunch: AUTO_LAUNCHES[0],
   // True if a (custom) path forced a launch while the drone was on the wrong side of the box.
   outOfArc: !CHUTE_MODE && ENGS.some((e) => !inArc(e.tLaunch, e.k ?? ENGS.indexOf(e))),
   customPath: CUSTOM_PATH,
@@ -802,7 +958,7 @@ export const scenario = {
   // One entry per drone/missile pair: none in a recovery, one in an intercept, two in pair mode.
   // tLaunch/tHit above are always the first engagement.
   engagements: CHUTE_MODE ? [] : ENGS.map((e) => ({
-    tLaunch: e.tLaunch, tHit: e.tHit, interceptMiss: e.interceptMiss, hitPos: e.hitPos,
+    tLaunch: e.tLaunch, tHit: e.tHit, interceptMiss: e.interceptMiss, burstDist: e.burstDist, hitPos: e.hitPos,
     missileStart: e.missileStart, launchDir: e.launchDir,
   })),
   // Per drone: when its catapult stroke starts and its booster burns (drone 0 is the first).

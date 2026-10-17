@@ -16,7 +16,7 @@ const deckY = deckHeight(-50); // helideck height: where the booster blast hits 
 // ---------------------------------------------------------------------------
 export function createDebris(plane, k = 0) {
   const rng = mulberry32(1337 + k);
-  const { tHit } = scenario.engagements[k]; // k > 0 is the second drone (pair mode)
+  const { tHit, hitPos: burstPos, burstDist } = scenario.engagements[k]; // k > 0 is the second drone (pair mode)
   const hitPos = new THREE.Vector3();
   const hitQuat = new THREE.Quaternion();
   planePose(tHit, hitPos, hitQuat, k);
@@ -35,6 +35,13 @@ export function createDebris(plane, k = 0) {
     const v0 = vPlane.clone().multiplyScalar(heavy ? 0.3 : range(rng, 0.15, 0.35))
       .addScaledVector(randomUnit(rng, _v), heavy ? range(rng, 3, 6) : range(rng, 8, 18));
     v0.y += range(rng, 3, 10);
+    if (burstDist > 0.5) {
+      // The warhead went off beside the drone, not in it: the shock throws each part
+      // away from the burst point, harder the closer that part was to it.
+      const away = p0.clone().sub(burstPos);
+      const d = away.length();
+      if (d > 0.01) v0.addScaledVector(away.divideScalar(d), (heavy ? 14 : 30) * (8 / (8 + d)));
+    }
     const piece = {
       part,
       p0,
