@@ -77,9 +77,13 @@ const RELEASE_POINT = RAIL.start.clone()
 // Off the rail to port, a wide left-hand loop astern, back up the port side
 // low and close, a long shallow climb out ahead of the bow, then a left turn
 // back onto an inbound run at the ship — the leg on which it is shot down.
-const WAYPOINTS = [
+// The first two waypoints are fixed by the catapult (so the release is
+// continuous); everything after them is the editable path (path editor).
+export const PATH_FIXED = [
   RELEASE_POINT.toArray(),
   RELEASE_POINT.clone().addScaledVector(RAIL.dir, 20).toArray(),
+];
+export const DEFAULT_PATH = [
   [-22, 19, -45],
   [-18, 30, -85],
   [-45, 45, -140],
@@ -114,6 +118,45 @@ const WAYPOINTS = [
   [-112, 60, 35],
 ];
 
+// A custom path drawn in the editor is stored per browser and applied on load.
+export const PATH_STORAGE_KEY = 'intercept.path.v1';
+export const MIN_ALT = 8; // never let a drawn path touch the sea
+
+// Returns a cleaned copy of editable points, or null if they are unusable.
+export function validatePath(pts) {
+  if (!Array.isArray(pts) || pts.length < 1 || pts.length > 80) return null;
+  const out = [];
+  for (const p of pts) {
+    if (!Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite)) return null;
+    if (Math.abs(p[0]) > 6000 || Math.abs(p[2]) > 6000 || p[1] > 2000) return null;
+    out.push([Math.round(p[0]), Math.round(Math.max(p[1], MIN_ALT)), Math.round(p[2])]);
+  }
+  return out;
+}
+
+function loadCustomPath() {
+  try {
+    const raw = globalThis.localStorage?.getItem(PATH_STORAGE_KEY);
+    return raw ? validatePath(JSON.parse(raw).points) : null;
+  } catch {
+    return null;
+  }
+}
+
+const CUSTOM = loadCustomPath();
+export const CUSTOM_PATH = CUSTOM !== null;
+export const ACTIVE_PATH = CUSTOM ?? DEFAULT_PATH.map((p) => [...p]);
+
+// Same spline the drone flies, for the editor's live preview.
+export function buildPathCurve(editablePts) {
+  const c = new THREE.CatmullRomCurve3([...PATH_FIXED, ...editablePts].map((p) => new THREE.Vector3(...p)), false, 'centripetal');
+  c.arcLengthDivisions = 4000;
+  return c;
+}
+
+const WAYPOINTS = [...PATH_FIXED, ...ACTIVE_PATH];
+
+
 // Airspeed relative to the ship (m/s), keyed by seconds after release.
 const SPEED_KEYS = [
   [0, V_RELEASE],
@@ -125,8 +168,7 @@ const SPEED_KEYS = [
   [80, 50],
 ];
 
-const curve = new THREE.CatmullRomCurve3(WAYPOINTS.map((p) => new THREE.Vector3(...p)), false, 'centripetal');
-curve.arcLengthDivisions = 4000;
+const curve = buildPathCurve(ACTIVE_PATH);
 const PATH_LENGTH = curve.getLength();
 const PATH_END = curve.getPointAt(1);
 const PATH_END_DIR = curve.getTangentAt(1);
@@ -243,39 +285,56 @@ export const propSpin01 = (t) => THREE.MathUtils.clamp(t / T_SPOOL, 0, 1);
 const SHIP_CENTER = new THREE.Vector3(0, 10, 0);
 const tmp = new THREE.Vector3();
 
-let tTurn = T_RELEASE;
-let tClose = T_RELEASE;
-{
-  let farthest = 0;
-  for (let t = T_RELEASE; t < T_RELEASE + ARC_TAU_MAX; t += 0.05) {
-    const d = planeRelPos(t, tmp).distanceTo(SHIP_CENTER);
-    if (d > farthest && tmp.y < 150) { farthest = d; tTurn = t; }
-    if (tmp.x > -100 && t > tTurn + 5) break; // back alongside: stop looking
-  }
-  // Closest approach on the pass up the port side (stop once well ahead).
-  let closest = Infinity;
-  for (let t = tTurn; t < T_RELEASE + ARC_TAU_MAX; t += 0.05) {
-    const d = planeRelPos(t, tmp).distanceTo(SHIP_CENTER);
-    if (d < closest) { closest = d; tClose = t; }
-    if (tmp.x > 150) break;
-  }
-}
+const rangeAt = (t) => planeRelPos(t, tmp).distanceTo(SHIP_CENTER);
+const T_PATH_END = T_RELEASE + ARC_TAU_MAX;
 
-// Farthest point of the climb-out: where the drone turns back inbound.
-let tInbound = tClose;
-{
-  let farthest = 0;
-  for (let t = tClose; t < T_RELEASE + ARC_TAU_MAX; t += 0.05) {
-    const d = planeRelPos(t, tmp).distanceTo(SHIP_CENTER);
-    if (d > farthest) { farthest = d; tInbound = t; }
-    else if (d < farthest - 50) break;
-  }
-}
-
-// Fire once the inbound drone closes inside this range of the ship.
+// Fire once the drone, having been out of range, closes back inside this range
+// of the ship. If a drawn path never leaves the range, fire at the first
+// closing moment after a short delay; if it never closes, fire near the end.
 const LAUNCH_RANGE = 650;
-let T_LAUNCH = tInbound;
-while (planeRelPos(T_LAUNCH, tmp).distanceTo(SHIP_CENTER) > LAUNCH_RANGE) T_LAUNCH += 0.01;
+let T_LAUNCH;
+{
+  let tExit = null;
+  for (let t = T_RELEASE; t < T_PATH_END; t += 0.05) {
+    if (rangeAt(t) > LAUNCH_RANGE) { tExit = t; break; }
+  }
+  const from = tExit ?? T_RELEASE + 8;
+  for (let t = from; t < T_PATH_END; t += 0.01) {
+    const r = rangeAt(t);
+    if (r <= LAUNCH_RANGE && r < rangeAt(t - 0.2)) { T_LAUNCH = t; break; }
+  }
+  T_LAUNCH ??= Math.max(T_RELEASE + 4, Math.min(from, T_PATH_END - 4));
+}
+
+// Timeline markers from the shape of the path: prominent local maxima/minima
+// of the range to the ship (turn-backs and passes), found on a 0.1 s grid.
+const pathMarkers = [];
+{
+  const dt = 0.1;
+  const W = 50; // ±5 s window
+  const PROMINENCE = 40; // m
+  const t0 = T_RELEASE + 2;
+  const n = Math.max(0, Math.floor((T_LAUNCH + 5 - t0) / dt));
+  const r = Array.from({ length: n }, (_, i) => rangeAt(t0 + i * dt));
+  const maxima = [];
+  for (let i = 1; i < n - 1; i++) {
+    const lo = Math.max(0, i - W);
+    const hi = Math.min(n - 1, i + W);
+    let mx = -Infinity, mn = Infinity;
+    for (let k = lo; k <= hi; k++) { mx = Math.max(mx, r[k]); mn = Math.min(mn, r[k]); }
+    const t = t0 + i * dt;
+    if (t > T_LAUNCH - 0.5) break;
+    const prev = pathMarkers[pathMarkers.length - 1];
+    if (r[i] >= mx && mx - mn > PROMINENCE && r[i] > r[i - 1] && !(prev?.kind === 'max' && t - prev.t < 3)) {
+      pathMarkers.push({ t, kind: 'max' }); maxima.push(pathMarkers.length - 1);
+    } else if (r[i] <= mn && mx - mn > PROMINENCE && r[i] < r[i - 1] && !(prev?.kind === 'min' && t - prev.t < 3)) {
+      pathMarkers.push({ t, kind: 'min' });
+    }
+  }
+  // The final turn-back before the shot is where the inbound run begins.
+  const last = maxima.length ? pathMarkers[maxima[maxima.length - 1]] : null;
+  for (const m of pathMarkers) m.label = m.kind === 'min' ? 'Close pass' : (m === last ? 'Inbound run' : 'Turn back');
+}
 
 // --- Missile launcher (8-cell trainable box) --------------------------------
 // Forward fit sits on the deckhouse roof; aft fit on a stand on the helideck,
@@ -328,6 +387,7 @@ const LAUNCH_DIR = new THREE.Vector3(1, 0, 0).applyQuaternion(launchQuat);
 const MISSILE_DT = 1 / 500;
 const missileSamples = []; // flat xyz
 let tHit;
+let interceptMiss = 0; // metres the missile was short of the drone before the hit is snapped on
 {
   const pos = MISSILE_START.clone();
   const vel = LAUNCH_DIR.clone().multiplyScalar(40);
@@ -348,7 +408,7 @@ let tHit;
     planePos(t, target);
     planeVel(t, targetVel);
     r.subVectors(target, pos);
-    if (r.length() < 2.5 || age > 12) break;
+    if (r.length() < 2.5 || age > 12) { interceptMiss = r.length(); break; }
     if (age > (AFT ? 0.7 : 0.3)) { // aft fit climbs clear of the masts before turning
       const off = vel.angleTo(r);
       if (off > 0.6) {
@@ -421,10 +481,9 @@ const hitPos = missileSample(MISSILE_N - 1, new THREE.Vector3());
 export const scenario = {
   tSpool: T_SPOOL,
   tRelease: T_RELEASE,
-  tTurn,
-  tClose,
-  tInbound,
   tLaunch: T_LAUNCH,
+  interceptMiss,
+  customPath: CUSTOM_PATH,
   tHit,
   hitPos,
   missileStart: MISSILE_START,
@@ -435,9 +494,7 @@ export const scenario = {
   events: [
     { t: 0, label: 'Engine run-up' },
     { t: T_RELEASE, label: 'Catapult launch' },
-    { t: tTurn, label: 'Turn back' },
-    { t: tClose, label: 'Close pass' },
-    { t: tInbound, label: 'Inbound run' },
+    ...pathMarkers.map(({ t, label }) => ({ t, label })),
     { t: T_LAUNCH, label: 'Missile launch' },
     { t: tHit, label: 'Impact' },
   ],

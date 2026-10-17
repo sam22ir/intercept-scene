@@ -4,6 +4,7 @@ import {
   scenario, planePose, planeVel, propAngle, propSpin01, missilePose, shipPos, tubeMouth, SHIP_SPEED,
 } from './scenario.js';
 import { createLabels } from './labels.js';
+import { createPathEditor, toast } from './pathEditor.js';
 import { createEnvironment } from './environment.js';
 import { createShip } from './models/ship.js';
 import { createPlane } from './models/plane.js';
@@ -189,7 +190,7 @@ document.querySelector('#btn-ship').addEventListener('click', () => { location.s
 let downAt = null;
 canvas.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
 canvas.addEventListener('pointerup', (e) => {
-  if (!downAt) return;
+  if (!downAt || editor.active) { downAt = null; return; }
   const moved = Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]);
   downAt = null;
   if (moved > 5) return; // that was an orbit drag
@@ -198,7 +199,7 @@ canvas.addEventListener('pointerup', (e) => {
 });
 let hoverQueued = false;
 canvas.addEventListener('pointermove', (e) => {
-  if (hoverQueued || e.buttons) return;
+  if (hoverQueued || e.buttons || editor.active) return;
   hoverQueued = true;
   requestAnimationFrame(() => {
     hoverQueued = false;
@@ -209,7 +210,9 @@ canvas.addEventListener('pointermove', (e) => {
 // --- Clock + timeline UI ------------------------------------------------------
 
 const clock = createTimeline(scenario, {
-  onKey(key) {
+  onKey(key, e) {
+    if (editor.active) { editor.onKey(key, e); return; }
+    if (key === 'e' || key === 'E') { editor.toggle(); return; }
     if (key === 'Escape') setFocus('free');
     if (key === '1') setFocus('plane');
     if (key === '2') setFocus('missile');
@@ -219,6 +222,19 @@ const clock = createTimeline(scenario, {
 });
 
 setFocus('plane'); // open on the drone sitting on its cradle
+
+// Path editor: pauses at t = 0 and hides the labels while drawing.
+let labelsBeforeEdit = true;
+const editor = createPathEditor({
+  scene, camera, controls, canvas, clock,
+  onEnter() { labelsBeforeEdit = labels.enabled; labels.setEnabled(false); setFocus('free'); },
+  onExit() { labels.setEnabled(labelsBeforeEdit); },
+});
+if (scenario.customPath) {
+  toast(scenario.interceptMiss > 15
+    ? `Custom path active — the missile misses it by ${Math.round(scenario.interceptMiss)} m before the hit is forced. Bring the drone back toward the ship.`
+    : 'Custom flight path active — open Edit path to change it or restore the default.');
+}
 
 const tm = {
   alt: document.querySelector('#tm-alt'),
@@ -259,6 +275,7 @@ renderer.setAnimationLoop((now) => {
   const missileGone = clock.t >= scenario.tHit;
   missileButton.disabled = missileGone;
   if (missileGone && rig.id === 'missile') setFocus('plane', 60); // pull back out of the fireball
+  editor.update();
   updatePickables();
   rig.update();
   controls.update();

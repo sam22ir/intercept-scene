@@ -145,3 +145,27 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 .card-desc { color: var(--muted); font-size: 13px; margin-top: 4px; }
 .link-btn { display: block; margin-top: 8px; padding: 0; border: 0; background: none; color: var(--accent); font-size: 12px; cursor: pointer; }
 .link-btn:hover { text-decoration: underline; background: none; }
+
+
+/* Path editor */
+.editor { top: 200px; left: 14px; width: 300px; display: grid; gap: 8px; }
+.editor[hidden] { display: none; }
+.ed-alt { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: 12px; color: var(--muted); }
+.ed-alt input { grid-column: 1 / -1; }
+.ed-alt output { color: var(--text); font-variant-numeric: tabular-nums; }
+.ed-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.ed-info { font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; }
+.editor .hint { margin-top: 0; }
+.ed-actions { margin-top: 2px; }
+.ed-actions .primary { background: var(--accent); border-color: var(--accent); color: #1a0d02; font-weight: 700; }
+.ed-actions .primary:hover { filter: brightness(1.1); background: var(--accent); }
+.link-btn[hidden] { display: none; }
+body.editing .telemetry { display: none; }
+body.editing .timeline { opacity: 0.45; }
+.toast {
+  position: fixed; left: 50%; top: 18px; transform: translate(-50%, -20px); opacity: 0; pointer-events: none;
+  background: rgba(10, 14, 20, 0.9); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 14px;
+  font-size: 13px; transition: opacity 0.2s, transform 0.2s; z-index: 20; max-width: min(520px, 90vw); text-align: center;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+@media (max-width: 640px) { .editor { width: auto; right: 14px; top: auto; bottom: 150px; } }

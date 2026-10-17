@@ -47,7 +47,11 @@ Holds the story, all timing and every ship mount point. Units are metres. The bo
   - After release it follows a Catmull-Rom curve in the **ship frame** (`planeRelPos`), driven by a relative-airspeed profile through a precomputed arc-length table. `planePos` adds `shipPos`.
   - The first waypoint and tangent are derived from the rail-end pose, so the release is continuous.
   - Attitude follows the *relative* path; bank comes from turn rate.
-- **Derived event times**: `tTurn` and `tClose` are measured in the ship frame, so editing `WAYPOINTS` or `SPEED_KEYS` moves the events automatically.
+- **Editable path**: the first two waypoints (`PATH_FIXED`) come from the catapult; everything after is `DEFAULT_PATH`, or a custom path from `localStorage['intercept.path.v1']` (`{points: [[x, alt, z], …]}`, validated by `validatePath`, altitude floor `MIN_ALT`). It is read **once at import**, so the path editor applies a change by saving and reloading.
+- **Derived events**: everything is measured in the ship frame, so any path works:
+  - `tLaunch` is the first moment the drone, having left `LAUNCH_RANGE`, closes back inside it. If it never leaves, launch is at the first closing moment after 8 s. If it never closes, launch is near the path's end.
+  - Timeline markers "Turn back", "Close pass" and "Inbound run" come from prominent local maxima and minima of the range to the ship. They are not hard-coded.
+  - `scenario.interceptMiss` is how far short the missile was before the hit is snapped on. The UI warns when it is large.
 - **Missile**:
   - Proportional navigation is **simulated once at module load** into a fixed-rate sample table, starting from the tube mouth at `tLaunch` along the tube direction.
   - The last sample is snapped onto the drone, so the hit is exact. `tHit` is an output of that sim.
@@ -59,6 +63,12 @@ Holds the story, all timing and every ship mount point. Units are metres. The bo
 
 - `src/main.js` holds `applyTime(t)`, which poses everything for a given `t`, plus focus targets, picking and the render loop. `scenario.tEnd` is set here from the debris fall time. There is deliberately **no bloom pass**: the `Sky` shader outputs HDR values far above any usable threshold, so bloom turned the whole frame milky. Glow comes from additive sprites (flash, exhaust) instead.
 - `src/labels.js` holds the floating tags (a `CSS2DRenderer` layer over the canvas, click-through) for the drone, missile and ship, plus the missile trajectory line. The line has two geometries sharing one position buffer: solid up to `t`, dashed for the rest. `main.js` feeds it per-frame data from `applyTime`. The Labels button and the **L** key turn it all off, and the choice is kept in `localStorage`.
+- `src/pathEditor.js` is the path editor (button, **E** key). It pauses at t = 0 and shows the path as a cyan spline with draggable handles, altitude stems and a sea shadow, all in a group that follows the ship. Tools:
+  - **Move**: drag a dot, double-click the line to add a point, Delete removes one, ↑/↓ change altitude.
+  - **Draw**: freehand strokes on the sea at a chosen altitude, right-drag to orbit.
+  - Copy and Paste as JSON, Default, Clear.
+
+  Edits are only a preview until "Apply & play", which stores them and reloads. Pointer handlers are registered on `window` in the capture phase so a handle drag never reaches OrbitControls. The editor's logic can be driven in Node with a stand-in DOM.
 - `src/timeline.js` holds the master clock (`t`, play direction, speed) and the playback bar, markers and keys. The clock is the only source of time.
 
 ### Models

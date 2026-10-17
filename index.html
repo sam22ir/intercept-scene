@@ -58,10 +58,38 @@
         <button data-focus="ship">Ship</button>
         <span class="sep" aria-hidden="true"></span>
         <button id="btn-labels" class="toggle active" aria-pressed="true" title="Show tags and missile path (L)">Labels</button>
+        <button id="btn-edit" class="toggle" title="Draw or edit the drone's flight path (E)">✎ Edit path</button>
       </div>
-      <div class="hint">Click an object to focus · drag to orbit · scroll to zoom · Esc for free camera · L toggles labels</div>
+      <div class="hint">Click an object to focus · drag to orbit · scroll to zoom · Esc for free camera · L labels · E edit path</div>
       <button id="btn-ship" class="link-btn" title="Back to the ship selection screen">⇄ Change ship</button>
       <a id="dl-offline" class="dl-link" href="/intercept-offline" download="intercept-offline.html" title="One HTML file that runs without internet: double-click to open">⬇ Download offline version</a>
+    </div>
+
+    <div class="panel editor" id="editor" hidden>
+      <div class="title">Path editor</div>
+      <div class="focus-buttons" role="group" aria-label="Editor tool">
+        <button id="ed-tool-move" class="active" title="Move points (M)">✥ Move</button>
+        <button id="ed-tool-draw" title="Draw the path freehand (D)">✎ Draw</button>
+      </div>
+      <label class="ed-alt"><span id="ed-alt-label">Draw altitude</span> <output id="ed-alt-out">40 m</output>
+        <input id="ed-alt" type="range" min="8" max="400" step="1" value="40" />
+      </label>
+      <div class="ed-row">
+        <button id="ed-delete" title="Delete the selected point (Delete)">Delete point</button>
+        <button id="ed-clear" title="Remove every point and draw a new path">Clear</button>
+        <button id="ed-reset" title="Back to the built-in path">Default</button>
+      </div>
+      <div id="ed-info" class="ed-info"></div>
+      <div id="ed-hint" class="hint"></div>
+      <div class="ed-row">
+        <button id="ed-copy" title="Copy the path as JSON">Copy</button>
+        <button id="ed-import" title="Paste a path">Paste</button>
+        <button id="ed-restore" class="link-btn" title="Forget the custom path and reload" hidden>Restore default</button>
+      </div>
+      <div class="ed-row ed-actions">
+        <button id="ed-apply" class="primary" title="Save and replay from the start (Enter)">Apply &amp; play</button>
+        <button id="ed-cancel" title="Leave without saving (Esc)">Cancel</button>
+      </div>
     </div>
 
     <div class="panel top-right telemetry">

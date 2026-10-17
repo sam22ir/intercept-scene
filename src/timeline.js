@@ -97,7 +97,7 @@ export function createTimeline(scenario, { onKey } = {}) {
       case 'ArrowRight': clock.step(big); break;
       case 'Home': clock.playing = false; clock.seek(0); break;
       case 'End': clock.playing = false; clock.seek(scenario.tEnd); break;
-      default: onKey?.(e.key); return;
+      default: onKey?.(e.key, e); return;
     }
     e.preventDefault();
   });
