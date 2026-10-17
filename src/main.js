@@ -4,6 +4,7 @@ import {
   scenario, planePose, planeVel, propAngle, propSpin01, missilePose, shipPos, tubeMouth, SHIP_SPEED,
 } from './scenario.js';
 import { createLabels } from './labels.js';
+import { createParachute } from './models/parachute.js';
 import { createPathEditor, toast } from './pathEditor.js';
 import { createEnvironment } from './environment.js';
 import { createShip } from './models/ship.js';
@@ -43,9 +44,11 @@ scene.add(plane.group);
 const missile = createMissile();
 scene.add(missile.group);
 
-const debris = createDebris(plane);
+const debris = scenario.hasMissile ? createDebris(plane) : null;
+const chute = scenario.hasMissile ? null : createParachute();
+if (chute) scene.add(chute.group);
 const effects = createEffects(scene, debris);
-scenario.tEnd = scenario.tHit + debris.fallTime + 5;
+if (debris) scenario.tEnd = scenario.tHit + debris.fallTime + 5;
 
 // Floating tags + missile path; the on/off choice is remembered per viewer.
 const labels = createLabels(scene);
@@ -87,6 +90,7 @@ function applyTime(t) {
   }
   plane.setLights(t, t < tHit);
   plane.setBooster(t, scenario.tBoost0, scenario.tBoost1);
+  chute?.update(t, plane.group.position, plane.group.quaternion);
 
   const flying = t > tLaunch && t < tHit;
   missile.group.visible = flying;
@@ -219,7 +223,7 @@ const clock = createTimeline(scenario, {
     if (key === 'e' || key === 'E') { editor.toggle(); return; }
     if (key === 'Escape') setFocus('free');
     if (key === '1') setFocus('plane');
-    if (key === '2') setFocus('missile');
+    if (key === '2' && scenario.hasMissile) setFocus('missile');
     if (key === '3') setFocus('ship');
     if (key === 'l' || key === 'L') setLabels(!labels.enabled);
   },
@@ -277,7 +281,7 @@ renderer.setAnimationLoop((now) => {
   applyTime(clock.t);
   // The missile ceases to exist at impact: hand the camera to the wreckage.
   const missileGone = clock.t >= scenario.tHit;
-  missileButton.disabled = missileGone;
+  missileButton.disabled = !scenario.hasMissile || missileGone;
   if (missileGone && rig.id === 'missile') setFocus('plane', 60); // pull back out of the fireball
   editor.update();
   updatePickables();
@@ -297,6 +301,6 @@ renderer.setAnimationLoop((now) => {
 
 // Debug/inspection handle.
 window.__scene = {
-  scenario, clock, setFocus, camera, controls, rig, renderer,
+  scenario, clock, setFocus, camera, controls, rig, renderer, chute,
   plane: plane.group, missile: missile.group, ship: ship.group,
 };

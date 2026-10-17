@@ -72,10 +72,18 @@ export function createLabels(scene) {
       drone.obj.visible = !destroyed || d.droneAlt > -2;
       drone.obj.position.copy(d.dronePos).y += destroyed ? 3 : 1.6;
       drone.el.classList.toggle('dead', destroyed);
-      drone.title.textContent = destroyed ? 'DRONE · DESTROYED' : 'TARGET DRONE';
+      const recovery = !scenario.hasMissile;
+      const underChute = recovery && t >= scenario.tChute;
+      const afloat = recovery && t >= scenario.tSplash;
+      drone.el.classList.toggle('ok', afloat);
+      drone.title.textContent = destroyed ? 'DRONE · DESTROYED'
+        : afloat ? 'DRONE · RECOVERED'
+          : underChute ? 'DRONE · UNDER PARACHUTE' : 'TARGET DRONE';
       drone.body.innerHTML = destroyed
         ? `ALT ${fmt(Math.max(0, d.droneAlt), ' m')}`
-        : `${fmt(d.droneSpeed * 3.6, ' km/h')} · ALT ${fmt(d.droneAlt, ' m')} · ${fmt(d.droneRange, ' m')} <em>to ship</em>`;
+        : afloat
+          ? `AFLOAT · ${fmt(d.droneRange, ' m')} <em>from ship</em>`
+          : `${fmt(d.droneSpeed * 3.6, ' km/h')} · ALT ${fmt(d.droneAlt, ' m')} · ${fmt(d.droneRange, ' m')} <em>to ship</em>`;
 
       // Missile, only while it flies.
       const flying = t > tLaunch && t < tHit;

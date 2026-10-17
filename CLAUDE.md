@@ -27,6 +27,14 @@ To test in a real browser when the built-in preview is unavailable, drive headle
 
 In the browser console, `window.__scene` exposes `{ scenario, clock, setFocus, camera, controls, rig, renderer, plane, missile, ship }`, for example `__scene.clock.seek(__scene.scenario.tHit)`.
 
+## Missions
+
+The start screen also picks the mission (`?mode=intercept|chute`, or `globalThis.__SCENARIO` set by `start.js`, read once at import like the ship variant):
+- **`intercept`**: the missile shoots the drone down on its inbound run, as described below.
+- **`chute`** (recovery): the missile is never fired and nothing is hit. At the end of the planned path (`T_CHUTE`) the engine cuts and the drone opens an orange parachute, descends and lands in the sea.
+
+In recovery mode `tLaunch` and `tHit` are `Infinity` so every `t < tHit` check stays true. The missile simulation, debris, fireball and launcher aiming are skipped (`scenario.hasMissile` is false, `debris` is `null` in `main.js`, and the missile focus button is disabled). Code that loops up to `tHit` must use `scenario.tChute` instead (see `tFlightEnd` in `effects.js`). The default path is the intercept path cut at the middle of the inbound run, and a custom path is stored under its own key (`intercept.path.chute.v1`).
+
 ## Ship variants
 
 The player picks a frigate on a start screen (`#chooser` in `index.html`, driven by `src/start.js`, the real entry point):
@@ -49,6 +57,7 @@ Holds the story, all timing and every ship mount point. Units are metres. The bo
   - After release it follows a Catmull-Rom curve in the **ship frame** (`planeRelPos`), driven by a relative-airspeed profile through a precomputed arc-length table. `planePos` adds `shipPos`.
   - The first waypoint and tangent are derived from the rail-end pose, so the release is continuous.
   - Attitude follows the *relative* path; bank comes from turn rate.
+- **Recovery descent** (`CHUTE_MODE`): after `T_CHUTE` the drone follows a closed-form world-frame descent. The horizontal speed bleeds off into a breeze, the vertical speed settles to a 5.4 m/s sink rate, and `T_SPLASH` is found by bisection. The attitude blends from the path's last attitude to a swinging hang, then a floating list. `planePose`, `planeRelPos` and `propAngle` switch to it automatically.
 - **Editable path**: the first two waypoints (`PATH_FIXED`) come from the catapult; everything after is `DEFAULT_PATH`, or a custom path from `localStorage['intercept.path.v1']` (`{points: [[x, alt, z], …]}`, validated by `validatePath`, altitude floor `MIN_ALT`). It is read **once at import**, so the path editor applies a change by saving and reloading.
 - **Derived events**: everything is measured in the ship frame, so any path works:
   - `tLaunch` is the first moment the drone, having left `LAUNCH_RANGE`, closes back inside it. If it never leaves, launch is at the first closing moment after 8 s. If it never closes, launch is near the path's end.
@@ -85,6 +94,7 @@ Holds the story, all timing and every ship mount point. Units are metres. The bo
   - The animated parts are the radar, launcher yaw/pitch, tube cap, catapult cradle and flag.
   - The catapult follows the reference photos: a bent stainless blast plate, angle-iron base frame, ladder-frame beam on tubular A-frame legs, rust-brown pivot ears, hydraulic strut, tie-down chains to deck sockets, plus a battery box and flight case. The ears sit outboard of the drone's body (|z| 0.62) and behind its wing, and the gas bottle and buffers keep a gap from it. After changing the rail pitch, length or ride height, re-check clearances by sampling `planePose` in the rail frame, as the Node check did.
   - Ship pick boxes live inside the ship group.
+- **`parachute.js`** (recovery only): a 24-gore orange canopy with suspension lines and a pilot chute. Everything is a function of `t` and the drone's pose: lines pay out, the canopy streams then inflates, and after splashdown it collapses flat on the water downwind. The lines and pilot chute live in world space, and only the canopy has its own transform.
 - **`plane.js`**:
   - The fuselage and flying surfaces are lofted from rounded-rect and airfoil sections. Stations are evenly spaced, so painted detail isn't stretched.
   - The **direct children of `plane.group` are the debris pieces**: fuselage, wingL, wingR, tail, prop. Nest new detail inside them, or each addition becomes its own falling piece with its own splash.
@@ -100,6 +110,7 @@ Holds the story, all timing and every ship mount point. Units are metres. The bo
 - **`src/fx/particles.js`** is a `ParticleField`. Each particle's position and colour are closed-form in `uTime - birth`, with all births baked at load.
 - **`src/fx/effects.js`**:
   - **Debris**: closed-form linear-drag ballistics from each part's pose at `tHit`, then the parts sink.
+  - **Recovery**: a puff as the pilot chute pops, then at splashdown a spray burst and an expanding foam ring.
   - **Particle bake**: booster plume and deck blast, drone exhaust haze, launch backblast, missile trail, fireball, burning smoke and splashes. Anything emitted from the ship must add the ship's velocity.
 - **`src/cameraRig.js`** eases to a target, then carries the camera by the target's per-frame delta. Focus targets always resolve to a position:
   - The missile sits at its tube before launch, and the blast point after.

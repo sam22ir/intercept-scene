@@ -1,8 +1,9 @@
 import './style.css';
 
-// Entry point. The ship fit is chosen on a start screen. scenario.js reads
-// `globalThis.__SHIP_VARIANT` (set here) or ?ship=fwd|aft at import time, so
-// the scene is imported only after a ship is picked: no page reload needed.
+// Entry point. The ship fit and the mission are chosen on a start screen.
+// scenario.js reads `globalThis.__SHIP_VARIANT` / `__SCENARIO` (set here) or
+// ?ship=fwd|aft and ?mode=intercept|chute at import time, so the scene is
+// imported only after a choice is made: no page reload needed.
 
 const $ = (s) => document.querySelector(s);
 // Merely naming `localStorage` can throw (blocked storage, sandboxed viewers),
@@ -28,12 +29,17 @@ function showFatal(err) {
   document.body.appendChild(box);
 }
 
+let mode = 'intercept';
+
 async function launch(id) {
   globalThis.__SHIP_VARIANT = id;
+  globalThis.__SCENARIO = mode;
   write('localStorage', 'intercept.ship', id);
+  write('localStorage', 'intercept.mode', mode);
   try {
     const url = new URL(location.href);
     url.searchParams.set('ship', id);
+    url.searchParams.set('mode', mode);
     history.replaceState(null, '', url); // keeps a refresh on the same ship
   } catch { /* not allowed in some viewers: fine */ }
   $('#chooser').hidden = true;
@@ -57,9 +63,21 @@ function showChooser() {
   const remembered = read('localStorage', 'intercept.ship');
   let focused = Math.max(0, cards.findIndex((c) => c.dataset.ship === remembered));
   const mark = () => cards.forEach((c, i) => c.classList.toggle('focused', i === focused));
+  const sub = $('#chooser-sub');
+  const missions = [...chooser.querySelectorAll('[data-mode]')];
+  const setMode = (m) => {
+    mode = m;
+    missions.forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
+    sub.textContent = m === 'chute'
+      ? 'The missile is never fired: the drone finishes its flight, opens an orange parachute and lands in the sea. The ship choice changes the ship only.'
+      : 'Same drone, same shot. The difference is where the missile launcher sits.';
+  };
+  missions.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  setMode(mode);
   const pick = (id) => { window.removeEventListener('keydown', onKey); launch(id); };
   const onKey = (e) => {
-    if (e.key === '1' || e.key === '2') pick(cards[Number(e.key) - 1].dataset.ship);
+    if (e.key === 'm' || e.key === 'M') setMode(mode === 'chute' ? 'intercept' : 'chute');
+    else if (e.key === '1' || e.key === '2') pick(cards[Number(e.key) - 1].dataset.ship);
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { focused = (focused + 1) % cards.length; mark(); }
     else if (e.key === 'Enter') pick(cards[focused].dataset.ship);
   };
@@ -77,6 +95,13 @@ function showChooser() {
 const forceChooser = read('sessionStorage', 'intercept.chooser') === '1';
 write('sessionStorage', 'intercept.chooser', '0');
 let fromUrl = null;
-try { fromUrl = new URLSearchParams(location.search).get('ship'); } catch { /* ignore */ }
+let modeFromUrl = null;
+try {
+  const params = new URLSearchParams(location.search);
+  fromUrl = params.get('ship');
+  modeFromUrl = params.get('mode');
+} catch { /* ignore */ }
+const rememberedMode = read('localStorage', 'intercept.mode');
+mode = modeFromUrl === 'chute' || modeFromUrl === 'intercept' ? modeFromUrl : (rememberedMode === 'chute' ? 'chute' : 'intercept');
 if ((fromUrl === 'fwd' || fromUrl === 'aft') && !forceChooser) launch(fromUrl);
 else showChooser();

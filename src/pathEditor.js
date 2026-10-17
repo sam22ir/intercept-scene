@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  ACTIVE_PATH, DEFAULT_PATH, CUSTOM_PATH, PATH_FIXED, PATH_STORAGE_KEY, MIN_ALT,
+  ACTIVE_PATH, DEFAULT_PATH, CUSTOM_PATH, PATH_FIXED, PATH_STORAGE_KEY, MIN_ALT, CHUTE_MODE,
   buildPathCurve, validatePath, shipPos,
 } from './scenario.js';
 
@@ -131,6 +131,7 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
     ui.hint.textContent = tool === 'draw'
       ? 'Drag on the sea to draw (or click to add a point). Right-drag orbits, scroll zooms. Set the altitude below first.'
       : 'Drag a dot to move it. Double-click the line to add a point. Delete removes the selected one. ↑/↓ change altitude.';
+    if (CHUTE_MODE) ui.hint.textContent += ' The parachute opens at the last point.';
   }
 
   function setTool(next) {

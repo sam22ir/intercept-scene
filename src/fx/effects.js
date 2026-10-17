@@ -100,14 +100,16 @@ export function createDebris(plane) {
 // ---------------------------------------------------------------------------
 export function createEffects(scene, debris) {
   const rng = mulberry32(42);
-  const { tLaunch, tHit, hitPos } = scenario;
+  const { tLaunch, tHit, hitPos, hasMissile } = scenario;
+  // Recovery has no missile and no hit: the drone's flight ends under canopy.
+  const tFlightEnd = hasMissile ? tHit : scenario.tChute;
   const group = new THREE.Group();
   scene.add(group);
 
   const trail = new ParticleField(1400, {
     mode: MODE.SMOKE, drag: 0.8, rise: 0.5, size: [1.0, 9], wind: [2.5, 0, 1.2],
   });
-  for (const { t, pos } of missileTrailPoints(2)) {
+  for (const { t, pos } of hasMissile ? missileTrailPoints(2) : []) {
     trail.add(pos, randomUnit(rng, _v).multiplyScalar(1.2), t, range(rng, 8, 12), rng());
   }
   group.add(trail.finalize());
@@ -117,7 +119,7 @@ export function createEffects(scene, debris) {
     mode: MODE.SMOKE, drag: 1.6, rise: 1.4, size: [1.2, 11], wind: [2.5, 0, 1.2],
   });
   const back = scenario.launchDir.clone().negate();
-  for (let i = 0; i < 240; i++) {
+  for (let i = 0; i < (hasMissile ? 240 : 0); i++) {
     randomUnit(rng, _v);
     _v.addScaledVector(back, 1.6).normalize().multiplyScalar(range(rng, 4, 24));
     _v.y = Math.abs(_v.y) * 0.6;
@@ -172,7 +174,7 @@ export function createEffects(scene, debris) {
   const exhaust = new ParticleField(1400, {
     mode: MODE.SMOKE, drag: 1.0, rise: 0.2, size: [0.08, 0.7], wind: [2.5, 0, 1.2],
   });
-  for (let t = tRelease; t < tHit; t += 0.06) {
+  for (let t = tRelease; t < tFlightEnd; t += 0.06) {
     planePos(t, _o);
     exhaust.add(_o, randomUnit(rng, _v).multiplyScalar(0.4), t, range(rng, 0.4, 0.8), rng());
   }
@@ -181,7 +183,7 @@ export function createEffects(scene, debris) {
   const fire = new ParticleField(520, {
     mode: MODE.FIRE, drag: 2.4, rise: 2.5, size: [1.6, 9], wind: [1.5, 0, 0.8],
   });
-  for (let i = 0; i < 520; i++) {
+  for (let i = 0; i < (hasMissile ? 520 : 0); i++) {
     randomUnit(rng, _v).multiplyScalar(range(rng, 8, 42));
     _o.copy(hitPos).addScaledVector(randomUnit(rng, new THREE.Vector3()), range(rng, 0, 1.2));
     fire.add(_o, _v, tHit + range(rng, 0, 0.25) ** 2, range(rng, 2.5, 7), rng());
@@ -194,7 +196,7 @@ export function createEffects(scene, debris) {
   const splash = new ParticleField(600, {
     mode: MODE.SPLASH, drag: 0.3, gravity: G, size: [1.2, 4],
   });
-  for (const pc of debris.pieces) {
+  for (const pc of debris?.pieces ?? []) {
     const heavy = pc.part.name === 'fuselage';
     const step = heavy ? 0.03 : 0.08;
     for (let tau = 0; tau < pc.tauWater; tau += step) {
@@ -214,6 +216,40 @@ export function createEffects(scene, debris) {
   group.add(burning.finalize(), splash.finalize());
 
   // Blast flash and light.
+  // Recovery: a puff as the parachute pops out, then at splashdown a ring of
+  // spray, a rippling foam ring and a shower of droplets.
+  let ring = null;
+  const ringT = hasMissile ? Infinity : scenario.tSplash;
+  const ringPos = new THREE.Vector3();
+  if (!hasMissile) {
+    const { tChute, tSplash } = scenario;
+    const pop = new THREE.Vector3();
+    planePos(tChute, pop);
+    for (let i = 0; i < 44; i++) {
+      randomUnit(rng, _v).multiplyScalar(range(rng, 1, 5));
+      _v.y = Math.abs(_v.y) + 1;
+      puff.add(_o.copy(pop).add(_v.set(0, 0.5, 0)), _v, tChute + range(rng, 0, 0.25), range(rng, 1.2, 2.6), rng());
+    }
+    planePos(tSplash, ringPos);
+    ringPos.y = 0.22;
+    for (let i = 0; i < 170; i++) {
+      const a = rng() * Math.PI * 2;
+      const r = range(rng, 0.8, 4.2);
+      _v.set(Math.cos(a) * r, range(rng, 4, 11), Math.sin(a) * r);
+      splash.add(_o.copy(ringPos), _v, tSplash + range(rng, 0, 0.18), range(rng, 1.2, 2.6), rng());
+    }
+    ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.85, 1.0, 64),
+      new THREE.MeshBasicMaterial({ color: 0xe8f4ff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.copy(ringPos);
+    ring.visible = false;
+    group.add(ring);
+    puff.finalize(); // refresh draw ranges after the late additions
+    splash.finalize();
+  }
+
   const glowCanvas = document.createElement('canvas');
   glowCanvas.width = glowCanvas.height = 128;
   const ctx = glowCanvas.getContext('2d');
@@ -243,6 +279,14 @@ export function createEffects(scene, debris) {
         flash.material.opacity = 0.85 * (1 - THREE.MathUtils.smoothstep(tau, 0.03, 0.35));
       }
       light.intensity = tau >= 0 ? 1.5e5 * Math.exp(-tau * 3) : 0;
+      if (ring) {
+        const ta = t - ringT;
+        ring.visible = ta >= 0 && ta < 6;
+        if (ring.visible) {
+          ring.scale.setScalar(1 + 6.5 * ta);
+          ring.material.opacity = 0.6 * (1 - ta / 6) ** 2;
+        }
+      }
     },
   };
 }

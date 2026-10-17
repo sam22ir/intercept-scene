@@ -14,7 +14,11 @@
       <div class="chooser-inner">
         <div class="chooser-title"><span class="dot"></span>INTERCEPT</div>
         <h1>Choose your warship</h1>
-        <p class="chooser-sub">Same drone, same shot. The difference is where the missile launcher sits.</p>
+        <p class="chooser-sub" id="chooser-sub"></p>
+        <div class="missions" role="group" aria-label="Mission">
+          <button class="mission active" data-mode="intercept">Intercept<small>the missile shoots the drone down</small></button>
+          <button class="mission" data-mode="chute">Recovery<small>no missile · the drone lands in the sea by parachute</small></button>
+        </div>
         <div class="cards">
           <button class="card" data-ship="fwd">
             <svg viewBox="0 0 320 90" aria-hidden="true">
@@ -47,7 +51,7 @@
             <div class="card-desc">Missile stand at the stern, lofting up and over the superstructure.</div>
           </button>
         </div>
-        <p class="chooser-hint">Click a ship, or press 1 or 2 · you can change it any time</p>
+        <p class="chooser-hint">Pick a mission, then click a ship (or press 1 or 2; M switches mission) · you can change both any time</p>
       </div>
     </div>
 
@@ -63,7 +67,7 @@
         <button id="btn-edit" class="toggle" title="Draw or edit the drone's flight path (E)">✎ Edit path</button>
       </div>
       <div class="hint">Click an object to focus · drag to orbit · scroll to zoom · Esc for free camera · L labels · E edit path</div>
-      <button id="btn-ship" class="link-btn" title="Back to the ship selection screen">⇄ Change ship</button>
+      <button id="btn-ship" class="link-btn" title="Back to the ship and mission selection screen">⇄ Change ship or mission</button>
       <a id="dl-offline" class="dl-link" href="/intercept-offline" download="intercept-offline.html" title="One HTML file that runs without internet: double-click to open">⬇ Download offline version</a>
     </div>
 
