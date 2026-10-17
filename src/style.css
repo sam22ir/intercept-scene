@@ -50,6 +50,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .focus-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
 
 .telemetry { top: 14px; right: 14px; min-width: 200px; display: grid; gap: 4px; font-variant-numeric: tabular-nums; }
+.telemetry[hidden] { display: none; }
 .telemetry div { display: flex; justify-content: space-between; gap: 16px; }
 .telemetry span { color: var(--muted); }
 
@@ -240,7 +241,7 @@ button, select, .link-btn { touch-action: manipulation; }
 
 /* HUD: live readouts + debrief. Desktop: a panel under the telemetry. Phones: it flows
    inside the timeline panel (above the controls), so it can never cover the scrub bar. */
-.hud { position: fixed; top: 150px; right: 14px; width: 220px; padding: 10px 12px; font-variant-numeric: tabular-nums;
+.hud { position: fixed; top: 14px; right: 14px; width: 220px; padding: 10px 12px; font-variant-numeric: tabular-nums;
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px; backdrop-filter: blur(10px); }
 .hud[hidden], .hud-debrief[hidden] { display: none; }
 .hud-live, .hud-debrief { display: grid; gap: 4px; }
@@ -269,3 +270,13 @@ body.editing .hud { display: none; }
 body:not(.playing) .hud { display: none; }
 
 [data-pair-only][hidden] { display: none; }
+/* Copy-link fallback box (shown when the clipboard is unavailable). */
+.share-box {
+  position: fixed; left: 50%; top: 56px; transform: translateX(-50%); z-index: 21;
+  display: flex; gap: 8px; align-items: center; width: min(560px, calc(100vw - 32px));
+  background: rgba(10, 14, 20, 0.94); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; font-size: 13px;
+}
+.share-box[hidden] { display: none; }
+.share-box label { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; color: var(--muted); }
+.share-box input { width: 100%; box-sizing: border-box; font: inherit; color: var(--text); background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+body.editing #btn-link { display: none; }

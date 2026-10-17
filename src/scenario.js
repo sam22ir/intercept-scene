@@ -173,7 +173,22 @@ function loadCustomPath() {
   }
 }
 
-const CUSTOM = loadCustomPath();
+// A shared link carries its path in the URL hash (#path=<base64url of {"points":[[x,alt,z],...]}>).
+// It wins over the stored path for this page view only: nothing is written to storage.
+function loadSharedPath() {
+  try {
+    const m = /(?:^#|&)path=([A-Za-z0-9_-]+)/.exec(globalThis.location?.hash ?? '');
+    if (!m) return null;
+    const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+    return validatePath(JSON.parse(globalThis.atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4))).points);
+  } catch {
+    return null;
+  }
+}
+
+const SHARED = loadSharedPath();
+const CUSTOM = SHARED ?? loadCustomPath();
+export const SHARED_PATH = SHARED !== null;
 export const CUSTOM_PATH = CUSTOM !== null;
 export const ACTIVE_PATH = CUSTOM ?? DEFAULT_PATH.map((p) => [...p]);
 
@@ -516,13 +531,14 @@ const pathMarkers = [];
 }
 
 // --- Missile launcher (8-cell trainable box) --------------------------------
-// Forward fit sits on the deckhouse roof; aft fit on a stand on the helideck,
-// starboard side, clear of the catapult. Either pivot is high enough for the
-// box to clear what's under it at full elevation.
+// Forward fit sits on the deckhouse roof; aft fit on the aft end of the hangar
+// roof, in place of the CIWS. Either pivot is high enough for the box to clear
+// what's under it at full elevation.
 const AFT = SHIP_VARIANT === 'aft';
 export const FWD_ROOF_Y = deckHeight(24) + 2.2;
+export const HANGAR_ROOF_Y = 12.0;
 export const LAUNCHER_PIVOT = AFT
-  ? new THREE.Vector3(-56, deckHeight(-56) + 2.7, 3.8)
+  ? new THREE.Vector3(-33.8, HANGAR_ROOF_Y + 2.1, 0)
   : new THREE.Vector3(24, FWD_ROOF_Y + 1.9, 0);
 // Stowed: forward fit faces the bow, aft fit faces the stern.
 const STOW_YAW = AFT ? Math.PI : 0;
@@ -715,6 +731,8 @@ export const scenario = {
   tLaunch: T_LAUNCH,
   interceptMiss: E0.interceptMiss,
   customPath: CUSTOM_PATH,
+  sharedPath: SHARED_PATH,
+  activePath: ACTIVE_PATH,
   tHit,
   hitPos: E0.hitPos,
   missileStart: E0.missileStart,

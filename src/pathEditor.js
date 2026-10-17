@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import {
-  ACTIVE_PATH, DEFAULT_PATH, CUSTOM_PATH, PATH_FIXED, PATH_STORAGE_KEY, MIN_ALT, CHUTE_MODE,
+  ACTIVE_PATH, DEFAULT_PATH, CUSTOM_PATH, SHARED_PATH, PATH_FIXED, PATH_STORAGE_KEY, MIN_ALT, CHUTE_MODE,
   buildPathCurve, validatePath, shipPos,
 } from './scenario.js';
+import { stripShareParams } from './share.js';
 
 // Path editor: draw or adjust the drone's flight path in the ship frame.
 // Edits live in memory (preview only) until "Apply & play", which stores the
@@ -27,6 +28,13 @@ export function toast(msg, ms = 5200) {
   toastEl.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toastEl.classList.remove('show'), ms);
+}
+
+// A shared link keeps its path in the hash (and the moment in ?t=): both go before reloading,
+// otherwise the hash would beat the path saved here and the page would reopen paused.
+function dropSharedHash() {
+  stripShareParams();
+  try { if (location.hash) location.hash = ''; } catch { /* ignore */ }
 }
 
 export function createPathEditor({ scene, camera, controls, canvas, clock, onEnter, onExit }) {
@@ -355,11 +363,14 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
       toast('Could not save the path (browser storage is blocked).');
       return;
     }
+    dropSharedHash();
     location.reload();
   }
 
   function restoreDefault() {
-    try { localStorage.removeItem(PATH_STORAGE_KEY); } catch { /* storage unavailable */ }
+    // Viewing a shared path: "restore" only leaves the link; the viewer's own saved path stays.
+    if (!SHARED_PATH) { try { localStorage.removeItem(PATH_STORAGE_KEY); } catch { /* storage unavailable */ } }
+    dropSharedHash();
     location.reload();
   }
 
