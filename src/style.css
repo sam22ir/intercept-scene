@@ -258,7 +258,7 @@ body.editing .hud { display: none; }
 .rec-note { color: var(--muted); font-size: 11px; margin-top: 4px; }
 #btn-record.active { background: #e5484d; border-color: #e5484d; color: #fff; }
 
-@media (max-width: 640px) {
+@media (max-width: 640px), (max-height: 560px) {
   .hud { position: static; width: auto; padding: 0 0 8px; margin-bottom: 8px; background: none; border: 0; border-bottom: 1px solid var(--border);
     border-radius: 0; backdrop-filter: none; font-size: 12px; }
   .hud-live { grid-template-columns: 1fr 1fr; column-gap: 14px; gap: 2px 14px; }
