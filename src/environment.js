@@ -50,6 +50,13 @@ export function createEnvironment(renderer, scene) {
   return {
     sunDir,
     ocean,
+    // Smaller shadow map for the lower quality tiers (the old map is freed and rebuilt on the next frame).
+    setShadowSize(n) {
+      if (sun.shadow.mapSize.x === n) return;
+      sun.shadow.mapSize.set(n, n);
+      sun.shadow.map?.dispose();
+      sun.shadow.map = null;
+    },
     // Shadow frustum follows whatever the camera is looking at.
     setShadowFocus(center, halfSize) {
       sun.target.position.copy(center);

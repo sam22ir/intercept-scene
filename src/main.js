@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
-  scenario, planePos, planePose, planeVel, propAngle, propSpin01, missilePose, shipPos, tubeMouth, SHIP_SPEED,
+  scenario, planePos, planePose, planeVel, propAngle, propSpin01, missilePose, shipPos, tubeMouth, SHIP_SPEED, SHIP_VARIANT,
 } from './scenario.js';
 import { createLabels } from './labels.js';
 import { createParachute } from './models/parachute.js';
@@ -16,11 +16,13 @@ import { CameraRig } from './cameraRig.js';
 import { createTimeline } from './timeline.js';
 import { createDirector } from './director.js';
 import { createAudio } from './audio.js';
+import { createShare, readShareParams, stripShareParams } from './share.js';
 
 const canvas = document.querySelector('#scene');
 const loadingEl = document.querySelector('#loading');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const PIXEL_RATIO_CAP = { high: 2, medium: 1.5, low: 1 };
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, PIXEL_RATIO_CAP.high));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.75;
 renderer.shadowMap.enabled = true;
@@ -36,6 +38,17 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.maxDistance = 6000;
 controls.maxPolarAngle = Math.PI * 0.495;
+
+// Idle rendering: the loop keeps running (clock, controls, audio, UI) but the
+// scene is only drawn when something visible changed. invalidate() forces the
+// next frame; input events and UI toggles call it.
+let invalidations = 0;
+let renderCount = 0;
+function invalidate() { invalidations++; }
+for (const type of ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown', 'click', 'resize', 'visibilitychange']) {
+  window.addEventListener(type, invalidate, { capture: true, passive: true });
+}
+canvas.addEventListener('webglcontextrestored', invalidate);
 
 const env = createEnvironment(renderer, scene);
 
@@ -56,6 +69,7 @@ if (debris) scenario.tEnd = scenario.tHit + debris.fallTime + 5;
 const labels = createLabels(scene);
 const labelsButton = document.querySelector('#btn-labels');
 function setLabels(on) {
+  invalidate();
   labels.setEnabled(on);
   labelsButton.classList.toggle('active', on);
   labelsButton.setAttribute('aria-pressed', String(on));
@@ -194,6 +208,7 @@ function pick(clientX, clientY) {
 const rig = new CameraRig(camera, controls);
 const focusButtons = document.querySelectorAll('[data-focus]');
 function setFocus(id, distance) {
+  invalidate();
   if (directing) setDirector(false); // any manual camera choice ends the Director
   if (id === 'free' || !targets[id]) rig.free();
   else rig.focus(id, targets[id].pos, distance ?? targets[id].distance, targets[id].minDistance);
@@ -202,6 +217,7 @@ function setFocus(id, distance) {
 focusButtons.forEach((b) => b.addEventListener('click', () => setFocus(b.dataset.focus)));
 const missileButton = document.querySelector('[data-focus="missile"]');
 document.querySelector('#btn-ship').addEventListener('click', () => {
+  stripShareParams(); // the chooser starts a new view: drop t, focus, cam and the shared path
   try { sessionStorage.setItem('intercept.chooser', '1'); location.reload(); } catch { location.search = ''; }
 });
 
@@ -224,6 +240,7 @@ let dirShadowR = 75;
 function setDirector(on) {
   if (on === directing) return;
   directing = on;
+  invalidate();
   directorButton.classList.toggle('active', on);
   directorButton.setAttribute('aria-pressed', String(on));
   controls.enabled = !on;
@@ -257,6 +274,7 @@ const audio = createAudio({
 });
 const soundButton = document.querySelector('#btn-sound');
 function setSound(on) {
+  invalidate();
   audio.setEnabled(on);
   soundButton.classList.toggle('active', on);
   soundButton.setAttribute('aria-pressed', String(on));
@@ -306,16 +324,37 @@ const clock = createTimeline(scenario, {
   },
 });
 
-if (!directing) setFocus('plane'); // open on the drone sitting on its cradle
+// Deep link (?t=, ?focus=): open paused at that moment, on that target.
+const shared = readShareParams();
+if (shared.t !== null) { clock.playing = false; clock.seek(shared.t); }
+const sharedFocus = shared.focus === 'plane' || shared.focus === 'ship' || (shared.focus === 'missile' && scenario.hasMissile) ? shared.focus : null;
+if (!directing) setFocus(sharedFocus ?? 'plane'); // default: open on the drone sitting on its cradle
+
+// "Copy link": ship, mission, moment, camera focus and (if custom) the flight path.
+createShare({
+  button: document.querySelector('#btn-link'),
+  toast,
+  onChange: invalidate,
+  getState: () => ({
+    ship: SHIP_VARIANT,
+    mode: scenario.mode,
+    t: clock.t,
+    focus: rig.id,
+    director: directing,
+    path: scenario.customPath ? scenario.activePath : null,
+  }),
+});
 
 // Path editor: pauses at t = 0 and hides the labels while drawing.
 let labelsBeforeEdit = true;
 const editor = createPathEditor({
   scene, camera, controls, canvas, clock,
-  onEnter() { labelsBeforeEdit = labels.enabled; labels.setEnabled(false); setFocus('free'); },
-  onExit() { labels.setEnabled(labelsBeforeEdit); },
+  onEnter() { invalidate(); labelsBeforeEdit = labels.enabled; labels.setEnabled(false); setFocus('free'); },
+  onExit() { invalidate(); labels.setEnabled(labelsBeforeEdit); },
 });
-if (scenario.customPath) {
+if (scenario.sharedPath) {
+  toast('Viewing shared path — your own saved path is untouched. Edit path to make it yours.');
+} else if (scenario.customPath) {
   toast(scenario.interceptMiss > 15
     ? `Custom path active — the missile misses it by ${Math.round(scenario.interceptMiss)} m before the hit is forced. Bring the drone back toward the ship.`
     : 'Custom flight path active — open Edit path to change it or restore the default.');
@@ -344,10 +383,83 @@ function resize() {
   labels.resize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  invalidate();
   pointScale.value = (h * renderer.getPixelRatio()) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
 }
 window.addEventListener('resize', resize);
 resize();
+
+// --- Adaptive quality ----------------------------------------------------------
+// Frame time is measured only between consecutive frames that were both drawn
+// (idle skips would otherwise read as slow frames). The tier is decided once from
+// the first ~3 s of drawing, with at most one later step down. ?quality= pins it.
+const QUALITY = {
+  high: { shadow: 2048, density: 1 },
+  medium: { shadow: 1024, density: 1 },
+  low: { shadow: 512, density: 0.5 },
+};
+const forcedQuality = (() => {
+  try {
+    const q = new URLSearchParams(location.search).get('quality');
+    return q in QUALITY ? q : null;
+  } catch { return null; }
+})();
+let quality = 'high';
+function setQuality(tier) {
+  quality = tier;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, PIXEL_RATIO_CAP[tier]));
+  env.setShadowSize(QUALITY[tier].shadow);
+  scene.traverse((o) => { if (o.isParticleField) o.setDensity(QUALITY[tier].density); });
+  resize(); // pointScale depends on the pixel ratio
+}
+if (forcedQuality) setQuality(forcedQuality);
+
+const perf = { stage: forcedQuality ? 'done' : 'first', samples: [], skip: 3, start: 0, wait: 0, prevNow: 0, prevDrawn: false };
+const median = (a) => [...a].sort((x, y) => x - y)[a.length >> 1];
+function sampleFrame(now, drawn) {
+  if (perf.stage === 'done') return;
+  const had = perf.prevDrawn;
+  const dtMs = now - perf.prevNow;
+  perf.prevDrawn = drawn;
+  perf.prevNow = now;
+  if (!drawn || !had) return;
+  if (perf.stage === 'wait') {
+    if (now >= perf.wait) { perf.stage = 'second'; perf.samples = []; perf.start = now; perf.skip = 0; }
+    return;
+  }
+  if (perf.skip > 0) { perf.skip--; perf.start = now; return; } // shader compiles and first uploads
+  if (perf.start === 0) perf.start = now;
+  perf.samples.push(dtMs);
+  const n = perf.samples.length;
+  const m = median(perf.samples);
+  const elapsed = now - perf.start;
+  if (perf.stage === 'first') {
+    if ((n >= 3 && m > 100) || (elapsed >= 3000 && n >= 8)) {
+      setQuality(m > 30 ? 'low' : m > 22 ? 'medium' : 'high');
+      perf.stage = quality === 'low' ? 'done' : 'wait';
+      perf.wait = now + 5000;
+      perf.prevDrawn = false;
+    }
+  } else if (elapsed >= 3000 && n >= 8) { // one later check: step down once if it still struggles
+    if (m > 33) setQuality(quality === 'high' ? 'medium' : 'low');
+    perf.stage = 'done';
+  }
+}
+
+// Snapshot of what was last drawn.
+const drawn = { t: NaN, rig: null, shot: null, inv: -1, mat: new Float64Array(16) };
+function needsRender() {
+  camera.updateMatrixWorld();
+  const e = camera.matrixWorld.elements;
+  let same = true;
+  for (let i = 0; i < 16; i++) if (Math.abs(e[i] - drawn.mat[i]) > 1e-5) { same = false; break; }
+  return !same || clock.t !== drawn.t || rig.id !== drawn.rig || currentShot !== drawn.shot
+    || invalidations !== drawn.inv || editor.active;
+}
+function markDrawn() {
+  drawn.t = clock.t; drawn.rig = rig.id; drawn.shot = currentShot; drawn.inv = invalidations;
+  drawn.mat.set(camera.matrixWorld.elements);
+}
 
 const shadowCenter = new THREE.Vector3();
 let last = performance.now();
@@ -385,13 +497,22 @@ renderer.setAnimationLoop((now) => {
 
   clock.renderUI();
   renderTelemetry();
-  renderer.render(scene, camera);
-  labels.render(scene, camera);
-  loadingEl?.remove(); // first frame is on screen
+  const draw = needsRender();
+  if (draw) {
+    renderer.render(scene, camera);
+    labels.render(scene, camera);
+    markDrawn();
+    renderCount++;
+    loadingEl?.remove(); // first frame is on screen
+  }
+  sampleFrame(now, draw);
 });
 
 // Debug/inspection handle.
 window.__scene = {
+  get renderCount() { return renderCount; },
+  get quality() { return quality; },
+  invalidate, perf,
   scenario, clock, setFocus, camera, controls, rig, renderer, chute, director, audio, setDirector,
   plane: plane.group, missile: missile.group, ship: ship.group,
 };

@@ -17,7 +17,7 @@ export function createTimeline(scenario, { onKey } = {}) {
     tick(dt) {
       if (!this.playing || scrubbing) return;
       this.seek(this.t + dt * this.speed * this.direction);
-      if (this.t >= scenario.tEnd || this.t <= 0) this.playing = false;
+      if ((this.direction > 0 && this.t >= scenario.tEnd) || (this.direction < 0 && this.t <= 0)) this.playing = false;
     },
     seek(t) {
       this.t = Math.min(Math.max(t, 0), scenario.tEnd);

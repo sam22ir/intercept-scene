@@ -165,7 +165,22 @@ function loadCustomPath() {
   }
 }
 
-const CUSTOM = loadCustomPath();
+// A shared link carries its path in the URL hash (#path=<base64url of {"points":[[x,alt,z],...]}>).
+// It wins over the stored path for this page view only: nothing is written to storage.
+function loadSharedPath() {
+  try {
+    const m = /(?:^#|&)path=([A-Za-z0-9_-]+)/.exec(globalThis.location?.hash ?? '');
+    if (!m) return null;
+    const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+    return validatePath(JSON.parse(globalThis.atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4))).points);
+  } catch {
+    return null;
+  }
+}
+
+const SHARED = loadSharedPath();
+const CUSTOM = SHARED ?? loadCustomPath();
+export const SHARED_PATH = SHARED !== null;
 export const CUSTOM_PATH = CUSTOM !== null;
 export const ACTIVE_PATH = CUSTOM ?? DEFAULT_PATH.map((p) => [...p]);
 
@@ -621,6 +636,8 @@ export const scenario = {
   tLaunch: T_LAUNCH,
   interceptMiss,
   customPath: CUSTOM_PATH,
+  sharedPath: SHARED_PATH,
+  activePath: ACTIVE_PATH,
   tHit,
   hitPos,
   missileStart: MISSILE_START,
