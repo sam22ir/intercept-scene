@@ -32,7 +32,10 @@ function showFatal(err) {
 const MODES = ['intercept', 'chute', 'pair'];
 let mode = 'intercept';
 
+let launched = false;
 async function launch(id) {
+  if (launched) return; // Enter on a focused button fires both keydown and click
+  launched = true;
   globalThis.__SHIP_VARIANT = id;
   globalThis.__SCENARIO = mode;
   write('localStorage', 'intercept.ship', id);
@@ -57,40 +60,66 @@ async function launch(id) {
   }
 }
 
+// Two choices (mission, ship) and a Start button. Selection changes only on click or
+// key; hover is visual only, so the summary and the Start target never follow the mouse.
+const SHIP_NAMES = { fwd: '920 · Forward launcher', aft: '921 · Aft launcher' };
+const MODE_NAMES = { intercept: 'Intercept', chute: 'Recovery', pair: 'Two drones' };
+const MODE_NOTES = {
+  intercept: 'Same drone, same shot on either ship. The difference is where the launcher sits.',
+  chute: 'The missile is never fired: the drone opens an orange parachute and lands in the sea.',
+  pair: 'A second drone leaves the same catapult 14 s later, on a wider, higher track.',
+};
+
 function showChooser() {
   const chooser = $('#chooser');
   chooser.hidden = false;
   const cards = [...chooser.querySelectorAll('[data-ship]')];
-  const remembered = read('localStorage', 'intercept.ship');
-  let focused = Math.max(0, cards.findIndex((c) => c.dataset.ship === remembered));
-  const mark = () => cards.forEach((c, i) => c.classList.toggle('focused', i === focused));
-  const sub = $('#chooser-sub');
   const missions = [...chooser.querySelectorAll('[data-mode]')];
-  const setMode = (m) => {
-    mode = m;
-    missions.forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
-    sub.textContent = m === 'chute'
-      ? 'The missile is never fired: the drone finishes its flight, opens an orange parachute and lands in the sea. The ship choice changes the ship only.'
-      : m === 'pair'
-        ? 'A second drone leaves the same catapult 14 s after the first, on a wider, higher track. The frigate fires one missile at each.'
-        : 'Same drone, same shot. The difference is where the missile launcher sits.';
+  const summary = $('#ch-summary');
+  const sub = $('#chooser-sub');
+  const remembered = read('localStorage', 'intercept.ship');
+  let ship = cards.some((c) => c.dataset.ship === remembered) ? remembered : 'fwd';
+
+  const paint = () => {
+    cards.forEach((c) => c.setAttribute('aria-checked', String(c.dataset.ship === ship)));
+    missions.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === mode)));
+    summary.textContent = `${MODE_NAMES[mode]} · ${SHIP_NAMES[ship]}`;
+    sub.textContent = MODE_NOTES[mode];
   };
-  missions.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
-  setMode(mode);
-  const pick = (id) => { window.removeEventListener('keydown', onKey); launch(id); };
+  const setMode = (m) => { mode = m; paint(); };
+  const setShip = (id) => { ship = id; paint(); };
+  const go = () => { window.removeEventListener('keydown', onKey); launch(ship); };
+
+  // Arrow keys move within a radio group (focus follows selection, as radios do).
+  const arrows = (list, i, e, set, key) => {
+    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1;
+    const next = list[(i + step + list.length) % list.length];
+    set(next.dataset[key]);
+    next.focus();
+  };
   const onKey = (e) => {
-    if (e.key === 'm' || e.key === 'M') setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]);
-    else if (e.key === '1' || e.key === '2') pick(cards[Number(e.key) - 1].dataset.ship);
-    else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { focused = (focused + 1) % cards.length; mark(); }
-    else if (e.key === 'Enter') pick(cards[focused].dataset.ship);
+    if (e.key.startsWith('Arrow')) {
+      const mi = missions.indexOf(e.target);
+      const ci = cards.indexOf(e.target);
+      if (mi >= 0) arrows(missions, mi, e, setMode, 'mode');
+      else if (ci >= 0) arrows(cards, ci, e, setShip, 'ship');
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') setShip(ship === 'fwd' ? 'aft' : 'fwd');
+      else return;
+      e.preventDefault();
+    } else if (e.key === 'm' || e.key === 'M') setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]);
+    else if (e.key === '1' || e.key === '2') setShip(cards[Number(e.key) - 1].dataset.ship);
+    else if (e.key === 'Enter') { e.preventDefault(); go(); } // also when a card has focus after a click
   };
-  mark();
-  cards.forEach((c, i) => {
-    c.addEventListener('click', () => pick(c.dataset.ship));
-    c.addEventListener('pointerenter', () => { focused = i; mark(); });
+
+  missions.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  cards.forEach((c) => {
+    c.addEventListener('click', () => setShip(c.dataset.ship));
+    c.addEventListener('dblclick', go); // a double click still starts straight away
   });
+  $('#ch-start').addEventListener('click', go);
   window.addEventListener('keydown', onKey);
-  cards[focused].focus();
+  paint();
+  $('#ch-start').focus({ preventScroll: true });
 }
 
 // "Change ship" reloads with this flag so the chooser shows even though the

@@ -376,29 +376,120 @@ button, select, .link-btn, .menu a { touch-action: manipulation; }
 /* Start screen: choose the warship before the scene loads. */
 body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels-layer { display: none; }
 .chooser {
-  position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; overflow: auto;
-  background: radial-gradient(1200px 700px at 50% 0%, #1b3550 0%, #0b1119 70%);
+  position: fixed; inset: 0; z-index: 2; display: grid; padding: calc(20px + var(--safe-t)) calc(20px + var(--safe-r)) calc(20px + var(--safe-b)) calc(20px + var(--safe-l));
+  overflow-y: auto; overscroll-behavior: contain;
+  background:
+    radial-gradient(900px 420px at 50% -10%, rgba(255, 122, 26, 0.10), transparent 70%),
+    radial-gradient(1200px 700px at 50% 0%, #1b3550 0%, #0b1119 70%);
 }
 .chooser[hidden] { display: none; }
-.chooser-inner { width: min(860px, 100%); text-align: center; }
-.chooser-title { font-weight: 700; letter-spacing: 0.14em; color: var(--muted); font-size: 12px; }
-.chooser-title .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 8px; }
-.chooser h1 { margin: 10px 0 6px; font-size: clamp(26px, 5vw, 40px); letter-spacing: -0.01em; }
-.chooser-sub, .chooser-hint { color: var(--muted); margin: 0; }
-.chooser-hint { margin-top: 22px; font-size: 12px; }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 26px; }
-.card {
-  position: relative; text-align: left; padding: 16px; border-radius: 14px; cursor: pointer;
-  background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); color: var(--text);
-  transition: transform 0.15s, border-color 0.15s, background 0.15s;
+/* margin: auto centres when there is room and never clips the top when there is not. */
+.chooser-inner { width: min(900px, 100%); margin: auto; display: grid; gap: 14px; }
+.ch-head { text-align: center; }
+.chooser-title { font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); font-size: 11.5px; }
+.chooser-title .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 8px; box-shadow: 0 0 0 3px var(--accent-soft); }
+.chooser h1 { margin: 6px 0 4px; font-size: clamp(24px, 4vw, 32px); letter-spacing: -0.015em; }
+.ch-tag { margin: 0 auto; max-width: 560px; color: var(--muted); font-size: 13px; }
+.ch-step h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 7px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.ch-step .n { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: rgba(255, 255, 255, 0.08); color: var(--text); font-size: 10.5px; letter-spacing: 0; }
+
+.missions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mission {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px; text-align: left; border-radius: 11px;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); transition: border-color 0.15s, background 0.15s;
 }
-.card:hover, .card.focused { transform: translateY(-3px); border-color: var(--accent); background: rgba(255, 122, 26, 0.09); }
-.card svg { width: 100%; height: auto; display: block; margin-bottom: 10px; }
-.card .sea { fill: #123a55; } .card .hull { fill: #8f99a0; } .card .deck { stroke: #5b656c; stroke-width: 2; fill: none; }
-.card .sup { fill: #aab3b8; } .card .dome { fill: #e6e8e4; } .card .hot { fill: var(--accent); }
-.card-num { position: absolute; top: 12px; right: 14px; color: var(--muted); font-weight: 700; }
-.card-name { font-weight: 700; font-size: 16px; }
-.card-desc { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.mission:hover { background: rgba(255, 255, 255, 0.08); }
+.mission svg { width: 36px; height: 36px; stroke-width: 2; }
+.mission b { display: block; font-size: 14px; }
+.mission small { display: block; color: var(--muted); font-size: 11.5px; }
+.mission[aria-checked='true'] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.mission .i-arc { stroke: var(--missile); stroke-dasharray: 3 3; }
+.mission .i-drone { stroke: var(--accent); stroke-width: 2.6; }
+.mission .i-burst { stroke: var(--bad); fill: rgba(255, 93, 97, 0.25); }
+.mission .i-canopy { stroke: var(--accent); fill: rgba(255, 122, 26, 0.3); }
+.mission .i-line { stroke: var(--muted); stroke-width: 1.2; }
+.mission .i-sea { stroke: #3d7fa6; }
+.mission[data-mode='chute'] .i-drone { stroke-width: 2.6; }
+
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.card {
+  display: grid; gap: 8px; padding: 12px 14px 14px; text-align: left; border-radius: 14px; color: var(--text);
+  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+.card:hover { background: rgba(255, 255, 255, 0.07); transform: translateY(-2px); }
+.card[aria-checked='true'] { border-color: var(--accent); background: rgba(255, 122, 26, 0.08); box-shadow: inset 0 0 0 1px var(--accent); }
+.card svg { width: 100%; height: 104px; stroke: none; stroke-width: 1; }
+.card .sea { fill: #123a55; }
+.card .wake { stroke: rgba(255, 255, 255, 0.35); stroke-width: 1.5; fill: none; }
+.card .hull { fill: #8f99a0; }
+.card .deckline { stroke: #5b656c; stroke-width: 1.5; fill: none; }
+.card .sup { fill: #b2bbc0; }
+.card .mast { stroke: #b2bbc0; stroke-width: 2.4; fill: none; }
+.card .dome { fill: #e6e8e4; }
+.card .hot { fill: var(--accent); }
+.card .pn { fill: #5b656c; font: 700 10px system-ui, sans-serif; }
+.card .arc { stroke: var(--missile); stroke-width: 1.8; stroke-dasharray: 5 4; fill: none; opacity: 0.55; }
+.card .tgt { fill: var(--accent); opacity: 0.55; }
+.card[aria-checked='true'] .arc, .card:hover .arc { opacity: 1; }
+.card[aria-checked='true'] .tgt, .card:hover .tgt { opacity: 1; }
+.card-txt { display: grid; gap: 2px; }
+.card-name { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
+.card-desc { color: var(--muted); font-size: 12.5px; }
+
+.ch-go {
+  display: flex; align-items: center; gap: 16px; padding: 10px 10px 10px 16px; border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border);
+}
+.ch-sum { margin: 0; flex: 1; min-width: 0; display: grid; }
+#ch-summary { font-weight: 700; font-size: 14px; }
+.chooser-sub { color: var(--muted); font-size: 12px; }
+.ch-start {
+  flex: none; padding: 11px 22px; border-radius: 10px; font-weight: 700; font-size: 14px;
+  background: var(--accent); border-color: var(--accent); color: #1a0d02; box-shadow: 0 6px 20px rgba(255, 122, 26, 0.3);
+}
+.ch-start:hover { background: #ff8d3a; }
+.chooser-hint { margin: 0; text-align: center; color: var(--dim); font-size: 11.5px; }
+.chooser kbd { font-size: 10px; }
+.card-name kbd { color: var(--muted); }
+@media (pointer: coarse) { .chooser-hint, .card-name kbd { display: none; } }
+@media (prefers-reduced-motion: reduce) { .card, .mission { transition: none; } .card:hover { transform: none; } }
+
+/* Phones, portrait: one column, mission rows, smaller drawings, Start pinned to the bottom. */
+@media (max-width: 640px) and (min-height: 501px) {
+  .chooser { padding: calc(16px + var(--safe-t)) 12px 0; }
+  .chooser-inner { gap: 12px; margin-top: 0; }
+  .ch-tag { font-size: 12.5px; }
+  .missions { grid-template-columns: 1fr; gap: 6px; }
+  .mission { padding: 8px 10px; }
+  .mission svg { width: 30px; height: 30px; }
+  .cards { grid-template-columns: 1fr; gap: 8px; }
+  .card { grid-template-columns: 42% 1fr; align-items: center; gap: 10px; padding: 8px 10px; }
+  .card svg { height: 64px; }
+  .card-name { font-size: 13.5px; }
+  .card-desc { font-size: 11.5px; }
+  .ch-go {
+    position: sticky; bottom: 0; margin: 0 -12px; padding: 10px 12px calc(10px + var(--safe-b)); border-radius: 0; border-width: 1px 0 0;
+    background: rgba(11, 17, 25, 0.94); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  .ch-start { padding: 12px 16px; }
+}
+/* Phones, landscape: missions on the left, ships on the right, Start pinned to the bottom. */
+@media (max-height: 500px) {
+  .chooser { padding: calc(10px + var(--safe-t)) calc(14px + var(--safe-r)) 0 calc(14px + var(--safe-l)); }
+  .chooser-inner { width: 100%; margin-top: 0; grid-template-columns: 0.8fr 1.2fr; gap: 10px 14px; align-items: start; }
+  .ch-head, .ch-go, .chooser-hint { grid-column: 1 / -1; }
+  .ch-head { display: flex; align-items: baseline; gap: 12px; text-align: left; }
+  .chooser h1 { margin: 0; font-size: 20px; }
+  .ch-tag, .chooser-hint, .chooser-sub { display: none; }
+  .missions { grid-template-columns: 1fr; gap: 6px; }
+  .mission { padding: 6px 10px; }
+  .mission svg { width: 28px; height: 28px; }
+  .cards { grid-template-columns: 1fr; gap: 6px; }
+  .card { grid-template-columns: 44% 1fr; align-items: center; gap: 10px; padding: 6px 10px; }
+  .card svg { height: 56px; }
+  .card-desc { font-size: 11px; }
+  .ch-go { position: sticky; bottom: 0; margin: 0 -14px; padding: 8px 14px calc(8px + var(--safe-b)); border-radius: 0; border-width: 1px 0 0; background: rgba(11, 17, 25, 0.94); }
+}
 .link-btn { display: block; margin-top: 8px; padding: 0; border: 0; background: none; color: var(--accent); font-size: 12px; cursor: pointer; }
 .link-btn:hover { text-decoration: underline; background: none; }
 
@@ -447,11 +538,6 @@ body.editing .timeline { display: none; }
 }
 .fatal pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; color: #ffb4b6; }
 
-.missions { display: inline-flex; gap: 8px; margin-top: 18px; padding: 5px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); flex-wrap: wrap; justify-content: center; }
-.mission { display: grid; gap: 1px; padding: 8px 16px; border-radius: 8px; border: 1px solid transparent; background: none; text-align: left; font-weight: 700; }
-.mission small { font-weight: 400; color: var(--muted); font-size: 11.5px; }
-.mission.active { background: var(--accent); color: #1a0d02; border-color: var(--accent); }
-.mission.active small { color: rgba(26, 13, 2, 0.75); }
 
 .shot-caption {
   position: fixed;

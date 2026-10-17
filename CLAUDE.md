@@ -40,7 +40,7 @@ In recovery mode `tLaunch` and `tHit` are `Infinity` so every `t < tHit` check s
 
 ## Ship variants
 
-The player picks a frigate on a start screen (`#chooser` in `index.html`, driven by `src/start.js`, the real entry point):
+The player picks a mission and a frigate on a start screen (`#chooser` in `index.html`, driven by `src/start.js`, the real entry point). Both are radio groups (`[data-mode]`, `[data-ship]` with `aria-checked`): a click or a key (M, 1/2, arrows) only selects, hover is visual only, and the Start button, Enter or a double click launches. `launch()` runs at most once. The screen fits 1092×598 without scrolling; on phones the Start bar is sticky at the bottom (portrait stacks everything, landscape puts missions left and ships right). The `.chooser` grid centres with `margin: auto` on `.chooser-inner`, so tall content scrolls instead of being clipped at the top. Nothing inside the chooser may use `.panel` (hidden before `body.playing`).
 - **`fwd`**, pennant 920: launcher on the forward deckhouse roof (the original fit).
 - **`aft`**, pennant 921: launcher on the aft end of the hangar roof (it replaces the CIWS there), lofting steeply over the radome and mast.
 
