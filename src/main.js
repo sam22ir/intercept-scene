@@ -381,7 +381,7 @@ renderer.setAnimationLoop((now) => {
   const close = rig.id === 'plane' || rig.id === 'missile';
   if (directing) env.setShadowFocus(dirLook, dirShadowR);
   else env.setShadowFocus(close ? targets[rig.id].pos(shadowCenter) : targets.ship.pos(shadowCenter), close ? 25 : 75);
-  audio.update(clock.t, camera, clock.playing);
+  audio.update(clock.t, camera, clock);
 
   clock.renderUI();
   renderTelemetry();

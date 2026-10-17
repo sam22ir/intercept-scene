@@ -1,14 +1,18 @@
 import * as THREE from 'three';
 import {
-  scenario, shipPos, missilePos, propSpin01, RAIL, LAUNCHER_PIVOT,
+  scenario, shipPos, missilePos, propSpin01, RAIL,
 } from './scenario.js';
+import { SOUNDS } from './audioAssets.js';
 
-// Procedural sound, built from Web Audio nodes only (no samples, no worklets, so
-// the single-file offline build still works). Like the visuals, every voice is a
-// function of the sim time `t`: the sources run continuously and each frame we
-// set their gain, filter and pitch from `t` and the camera position. Nothing is
-// scheduled, so scrubbing and reverse playback just work. Sound is silent while
-// time stands still.
+// Sound design. The samples are forged in code (scripts/forge-sounds.py, built on
+// earshot's synthesis toolkit) and embedded in the bundle, so the offline file still
+// needs nothing else. Like the visuals, everything follows the sim time `t`:
+//  * loops (engine, rocket motors, wind, surf, hum) run continuously and each frame
+//    get their gain, filter and playback rate from `t` and the camera;
+//  * one-shots (catapult, launch, explosion, splashes) play from the sample offset
+//    `t - tEvent`, and re-sync whenever time jumps, so seeking lands mid-sound.
+//    They play while the clock runs forward; scrubbing and reverse keep the loops.
+// Sound is silent while time stands still.
 //
 // `dronePos(t, out)` resolves the drone (or its wreck) in world space;
 // `splashTimes` lists when pieces of the drone hit the sea.
@@ -18,18 +22,21 @@ const { smoothstep, clamp } = THREE.MathUtils;
 
 const att = (d, ref) => ref / (ref + d); // loudness falloff with distance
 const doppler = (vr) => clamp(SOUND_SPEED / (SOUND_SPEED + vr), 0.5, 2); // vr > 0: receding
-const after = (t, t0) => Math.max(0, t - t0);
-const bump = (t, a, b) => { const u = (t - a) / (b - a); return u > 0 && u < 1 ? 4 * u * (1 - u) : 0; };
+
+// voice -> sample for the looping beds
+const LOOPS = { engine: 'engine', booster: 'booster', missile: 'motor', ship: 'hum', wind: 'wind', surf: 'surf' };
 
 export function createAudio({ dronePos, splashTimes }) {
   const AudioCtx = globalThis.AudioContext ?? globalThis.webkitAudioContext;
   let ctx = null;
   let master = null;
   let voices = null;
+  let shots = [];
   let enabled = true;
   let failed = !AudioCtx;
   let lastT = -1;
   let lastMove = -10;
+  const buffers = {};
 
   // --- Scratch -----------------------------------------------------------------
   const cam = new THREE.Vector3();
@@ -45,166 +52,76 @@ export function createAudio({ dronePos, splashTimes }) {
 
   // --- Graph -------------------------------------------------------------------
 
-  function noiseBuffer(kind) {
-    const len = ctx.sampleRate * 3;
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    let last = 0;
-    let seed = kind === 'brown' ? 7 : 11;
-    for (let i = 0; i < len; i++) {
-      seed = (seed * 16807) % 2147483647;
-      const w = (seed / 2147483647) * 2 - 1;
-      if (kind === 'brown') { last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; } else d[i] = w;
+  function bytes(b64) {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  }
+
+  function startLoop(sample) {
+    for (const [voice, name] of Object.entries(LOOPS)) {
+      if (name !== sample) continue;
+      const s = ctx.createBufferSource();
+      s.buffer = buffers[name];
+      s.loop = true;
+      s.connect(voices[voice].in);
+      s.start();
+      voices[voice].src = s;
     }
-    return buf;
+  }
+
+  function loadBuffers() {
+    for (const name of Object.keys(SOUNDS)) {
+      const done = (buf) => { buffers[name] = buf; startLoop(name); };
+      try {
+        // callbacks for old Safari, the promise for everyone else
+        ctx.decodeAudioData(bytes(SOUNDS[name]), done, () => {})?.catch?.(() => {});
+      } catch { /* undecodable on this browser: that sound stays silent */ }
+    }
+  }
+
+  // Every voice ends: low-pass (distance) -> level -> pan -> master.
+  function chain(distance = true) {
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    const p = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (p) g.connect(p).connect(master); else g.connect(master);
+    let lp = null;
+    if (distance) {
+      lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 14000;
+      lp.Q.value = 0.5;
+      lp.connect(g);
+    }
+    return { g, p, lp, in: lp ?? g, src: null };
   }
 
   function build() {
     master = ctx.createGain();
     master.gain.value = 0;
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -18;
-    comp.ratio.value = 6;
+    comp.threshold.value = -16;
+    comp.ratio.value = 5;
     master.connect(comp).connect(ctx.destination);
 
-    const white = noiseBuffer('white');
-    const brown = noiseBuffer('brown');
-    const noise = (buf, offset) => {
-      const s = ctx.createBufferSource();
-      s.buffer = buf;
-      s.loop = true;
-      s.start(0, offset);
-      return s;
-    };
-    const osc = (type, freq) => {
-      const o = ctx.createOscillator();
-      o.type = type;
-      o.frequency.value = freq;
-      o.start();
-      return o;
-    };
-    const filter = (type, freq, q = 0.7) => {
-      const f = ctx.createBiquadFilter();
-      f.type = type;
-      f.frequency.value = freq;
-      f.Q.value = q;
-      return f;
-    };
-    // Every voice ends in a gain (level) -> optional panner -> master.
-    const out = () => {
-      const g = ctx.createGain();
-      g.gain.value = 0;
-      const p = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-      if (p) { g.connect(p).connect(master); } else g.connect(master);
-      return { g, p, lp: null };
-    };
-    // Optional distance low-pass sits before the level.
-    const spatial = (head) => {
-      const o = out();
-      o.lp = filter('lowpass', 12000, 0.5);
-      head.connect(o.lp).connect(o.g);
-      return o;
-    };
+    voices = {};
+    for (const name of ['engine', 'booster', 'missile', 'ship', 'hiss', 'clunk', 'launch', 'boom', 'splash']) voices[name] = chain();
+    voices.wind = chain(false); // ambience sits at the listener
+    voices.surf = chain(false);
 
-    const v = {};
-
-    // Drone engine: two detuned saws, amplitude-flutter at the firing rate.
-    {
-      const o1 = osc('sawtooth', 60);
-      const o2 = osc('sawtooth', 60.7);
-      const mixer = ctx.createGain();
-      mixer.gain.value = 0.5;
-      const tone = filter('lowpass', 1400, 1.2);
-      const flutter = ctx.createGain();
-      flutter.gain.value = 0.7;
-      const lfo = osc('sine', 30);
-      const lfoDepth = ctx.createGain();
-      lfoDepth.gain.value = 0.3;
-      lfo.connect(lfoDepth).connect(flutter.gain);
-      o1.connect(mixer);
-      o2.connect(mixer);
-      mixer.connect(tone).connect(flutter);
-      v.engine = { ...spatial(flutter), o1, o2, lfo, tone };
+    // One-shots: which voice plays which sample at which time.
+    shots = [
+      { voice: 'hiss', name: 'hiss', t0: scenario.tSpool },
+      { voice: 'clunk', name: 'clunk', t0: scenario.tRelease },
+    ];
+    if (scenario.hasMissile) {
+      shots.push({ voice: 'launch', name: 'launch', t0: scenario.tLaunch });
+      shots.push({ voice: 'boom', name: 'boom', t0: scenario.tHit });
     }
-    // Rocket motors (booster, missile): hiss band plus rumble.
-    const rocket = () => {
-      const hiss = noise(white, 0.3);
-      const band = filter('bandpass', 900, 0.5);
-      const rumble = noise(brown, 1.1);
-      const low = filter('lowpass', 220, 0.7);
-      const sum = ctx.createGain();
-      hiss.connect(band).connect(sum);
-      rumble.connect(low).connect(sum);
-      return { ...spatial(sum), band, low };
-    };
-    v.booster = rocket();
-    v.missile = rocket();
-    // Catapult: pneumatic burst + the clunk of the cradle on its buffers.
-    {
-      const hiss = noise(white, 0.8);
-      const hp = filter('highpass', 2800, 0.6);
-      hiss.connect(hp);
-      v.hiss = spatial(hp);
-      const thump = osc('sine', 62);
-      const click = noise(white, 1.6);
-      const cl = filter('bandpass', 1800, 1.5);
-      const sum = ctx.createGain();
-      thump.connect(sum);
-      click.connect(cl).connect(sum);
-      v.clunk = spatial(sum);
-    }
-    // Launcher servo whine.
-    {
-      const o = osc('sawtooth', 200);
-      const lp = filter('lowpass', 900, 1);
-      o.connect(lp);
-      v.servo = { ...spatial(lp), o };
-    }
-    // Explosion: crack + body (swept low-pass) + sub.
-    {
-      const n = noise(white, 2.0);
-      const body = filter('lowpass', 3000, 0.8);
-      const rumble = noise(brown, 0.4);
-      const sub = osc('sine', 46);
-      const sum = ctx.createGain();
-      n.connect(body).connect(sum);
-      rumble.connect(sum);
-      sub.connect(sum);
-      v.boom = { ...spatial(sum), body };
-    }
-    // Splashes.
-    {
-      const n = noise(white, 2.5);
-      const bp = filter('bandpass', 1400, 0.6);
-      n.connect(bp);
-      v.splash = spatial(bp);
-    }
-    // Ship: engine hum + a wash of broadband noise.
-    {
-      const o1 = osc('sine', 52);
-      const o2 = osc('triangle', 78);
-      const n = noise(brown, 2.2);
-      const lp = filter('lowpass', 160, 0.7);
-      const sum = ctx.createGain();
-      o1.connect(sum);
-      o2.connect(sum);
-      n.connect(lp).connect(sum);
-      v.ship = spatial(sum);
-    }
-    // Ambient: wind and surf, always at the listener.
-    {
-      const n = noise(white, 0.1);
-      const bp = filter('bandpass', 400, 0.4);
-      n.connect(bp);
-      v.wind = { ...out(), bp };
-      bp.connect(v.wind.g);
-      const s = noise(brown, 1.7);
-      const lp = filter('lowpass', 450, 0.6);
-      s.connect(lp);
-      v.surf = out();
-      lp.connect(v.surf.g);
-    }
-    voices = v;
+    for (const t0 of splashTimes) shots.push({ voice: 'splash', name: 'splash', t0 });
+    for (const s of shots) s.cur = null;
   }
 
   function ensure() {
@@ -212,6 +129,7 @@ export function createAudio({ dronePos, splashTimes }) {
     try {
       ctx = new AudioCtx();
       build();
+      loadBuffers();
     } catch {
       failed = true;
       ctx = null;
@@ -244,22 +162,51 @@ export function createAudio({ dronePos, splashTimes }) {
     set(voice.g.gain, level * att(d, ref));
     if (voice.lp) set(voice.lp.frequency, clamp(14000 / (1 + d / 140), 500, 14000));
     if (voice.p) set(voice.p.pan, d > 0.5 ? clamp(to.dot(right) / d, -1, 1) * 0.8 : 0);
-    return d;
   }
 
+  // Receding speed of a source moving from p0 to p1 over 0.1 s, seen from the camera.
   function radial(pos, p0, p1, out) {
-    // Receding speed of a source moving from p0 to p1 over 0.1 s, seen from the camera.
     out.subVectors(p1, p0).multiplyScalar(10);
     to.subVectors(pos, cam);
     const d = to.length();
     return d > 0.5 ? out.dot(to) / d : 0;
   }
 
-  function update(t, camera, clockPlaying) {
+  const loopRate = (voice, rate) => { if (voice.src) set(voice.src.playbackRate, rate); };
+
+  function stopShot(s) {
+    if (!s.cur) return;
+    try { s.cur.stop(); } catch { /* already ended */ }
+    s.cur = null;
+  }
+
+  // Keep a one-shot on the sample offset `t - t0` while the clock runs forward.
+  function driveShot(s, t, forward, rate) {
+    const buf = buffers[s.name];
+    const off = t - s.t0;
+    if (!buf || !forward || off < 0 || off > buf.duration - 0.03) { stopShot(s); return; }
+    if (s.cur) {
+      const expected = s.off0 + (ctx.currentTime - s.ctx0) * s.rate;
+      if (Math.abs(expected - off) < 0.12 && s.rate === rate) return;
+      stopShot(s);
+    }
+    const node = ctx.createBufferSource();
+    node.buffer = buf;
+    node.playbackRate.value = rate;
+    node.connect(voices[s.voice].in);
+    node.start(0, off);
+    node.onended = () => { if (s.cur === node) s.cur = null; };
+    s.cur = node;
+    s.off0 = off;
+    s.ctx0 = ctx.currentTime;
+    s.rate = rate;
+  }
+
+  function update(t, camera, clock) {
     if (!ctx || failed) return;
     const now = performance.now() / 1000;
     if (Math.abs(t - lastT) > 1e-4) lastMove = now;
-    const moving = clockPlaying || now - lastMove < 0.25;
+    const moving = clock.playing || now - lastMove < 0.25;
     const dt = lastT < 0 ? 0 : Math.abs(t - lastT);
     lastT = t;
     camera.getWorldPosition(cam);
@@ -272,94 +219,60 @@ export function createAudio({ dronePos, splashTimes }) {
     const speed = dt > 0 && dt < 0.2 && step / dt < 300 ? step / dt : 0;
     camSpeed += (speed - camSpeed) * 0.1;
 
-    set(master.gain, enabled && moving && ctx.state === 'running' ? 0.9 : 0);
-    if (!enabled || !moving) return;
+    const live = enabled && moving && ctx.state === 'running';
+    set(master.gain, live ? 0.9 : 0);
+    if (!live) { for (const s of shots) stopShot(s); return; }
 
     const v = voices;
-    const { tHit, tLaunch, tRelease, tSpool, tBoost0, tBoost1, hasMissile } = scenario;
-    const alive = t < tHit; // the engine dies with the drone (or at the chute cut, via propSpin01)
+    const { tHit, tBoost0, tBoost1, hasMissile } = scenario;
+    const forward = clock.playing && clock.direction > 0;
+    const rate = clamp(clock.speed, 0.25, 4);
+    for (const s of shots) driveShot(s, t, forward, rate);
 
-    // Drone engine, pitched with prop speed and Doppler-shifted by its motion.
-    {
-      dronePos(t, src);
-      dronePos(t - 0.05, a);
-      dronePos(t + 0.05, b);
-      const dop = doppler(radial(src, a, b, vel));
-      const spin = propSpin01(t);
-      const f = (58 + 92 * spin) * dop;
-      set(v.engine.o1.frequency, f);
-      set(v.engine.o2.frequency, f * 1.012);
-      set(v.engine.lfo.frequency, f * 0.5);
-      set(v.engine.tone.frequency, 500 + 1300 * spin);
-      place(v.engine, src, alive ? (0.1 + 0.55 * spin) : 0, 45);
+    // Drone engine: pitch follows prop speed, Doppler-shifted by its motion.
+    dronePos(t, src);
+    dronePos(t - 0.05, a);
+    dronePos(t + 0.05, b);
+    const dop = doppler(radial(src, a, b, vel));
+    const spin = propSpin01(t);
+    loopRate(v.engine, ((58 + 92 * spin) / 90) * dop);
+    place(v.engine, src, t < tHit ? 0.1 + 0.5 * spin : 0, 45); // dies with the drone (or at the chute cut, via spin)
 
-      // Booster canister under the tail, burning from the stroke to just past release.
-      const boost = smoothstep(t, tBoost0 - 0.05, tBoost0 + 0.25) * (1 - smoothstep(t, tBoost1 - 0.3, tBoost1 + 0.5));
-      set(v.booster.band.frequency, 800 * dop);
-      place(v.booster, src, 1.1 * boost, 90);
-    }
+    // Booster canister under the tail, burning from the stroke to just past release.
+    const boost = smoothstep(t, tBoost0 - 0.05, tBoost0 + 0.25) * (1 - smoothstep(t, tBoost1 - 0.3, tBoost1 + 0.5));
+    loopRate(v.booster, dop);
+    place(v.booster, src, 0.9 * boost, 90);
 
-    // Catapult: air burst at the stroke, clunk at the buffers.
-    {
-      src.copy(RAIL.start).addScaledVector(RAIL.dir, RAIL.length * 0.5).add(shipPos(t, a));
-      const tt = after(t, tSpool);
-      const burst = t < tSpool ? 0 : (1 - Math.exp(-tt / 0.02)) * (0.8 * Math.exp(-tt / 0.5) + 0.2 * Math.exp(-tt / 2));
-      place(v.hiss, src, 0.55 * burst, 60);
-      const c = after(t, tRelease);
-      const clunk = t < tRelease ? 0 : (1 - Math.exp(-c / 0.004)) * Math.exp(-c / 0.14);
-      place(v.clunk, src, 1.2 * clunk, 60);
-    }
+    // Catapult (the burst and clunk are one-shots at the rail).
+    src.copy(RAIL.start).addScaledVector(RAIL.dir, RAIL.length * 0.5).add(shipPos(t, a));
+    place(v.hiss, src, 0.55, 60);
+    place(v.clunk, src, 0.9, 60);
 
-    // Missile: ignition crack, motor, launcher servo. Both end at impact.
+    // Missile motor loop, launch whoosh and impact. Everything ends at the hit.
     if (hasMissile) {
-      const age = after(t, tLaunch);
-      const burn = t < tLaunch || t >= tHit ? 0
-        : (1 - Math.exp(-age / 0.03)) * (0.6 + 0.4 * Math.exp(-age / 1.5));
+      const age = Math.max(0, t - scenario.tLaunch);
+      const burn = t < scenario.tLaunch || t >= tHit ? 0 : (1 - Math.exp(-age / 0.03)) * (0.6 + 0.4 * Math.exp(-age / 1.5));
       missilePos(t, src);
       missilePos(t - 0.05, a);
       missilePos(t + 0.05, b);
-      const dop = doppler(radial(src, a, b, vel));
-      set(v.missile.band.frequency, 700 * dop);
-      set(v.missile.low.frequency, 200 * dop);
-      place(v.missile, src, 1.5 * burn, 110);
-
-      const slew = Math.max(bump(t, tLaunch - 4, tLaunch - 1), bump(t, tLaunch + 3, tLaunch + 6));
-      set(v.servo.o.frequency, 170 + 90 * slew);
-      src.copy(LAUNCHER_PIVOT).add(shipPos(t, a));
-      place(v.servo, src, 0.1 * slew, 25);
-
-      // Impact.
-      const e = after(t, tHit);
-      const boom = t < tHit ? 0 : (1 - Math.exp(-e / 0.004)) * (0.65 * Math.exp(-e / 0.35) + 0.35 * Math.exp(-e / 1.7));
-      set(v.boom.body.frequency, 160 + 3500 * Math.exp(-e / 0.5));
-      place(v.boom, scenario.hitPos, 2.4 * boom, 140);
-    } else {
-      place(v.missile, cam, 0, 1);
-      place(v.servo, cam, 0, 1);
-      place(v.boom, cam, 0, 1);
+      loopRate(v.missile, doppler(radial(src, a, b, vel)));
+      place(v.missile, src, burn, 110);
+      place(v.launch, src, t < tHit ? 1.0 : 0, 110);
+      place(v.boom, scenario.hitPos, 1.6, 140);
     }
 
-    // Sea impacts.
-    {
-      let s = 0;
-      for (const ts of splashTimes) {
-        const e = t - ts;
-        if (e > 0) s += (1 - Math.exp(-e / 0.01)) * Math.exp(-e / 0.45);
-      }
-      dronePos(splashTimes.length ? splashTimes[0] : t, src).setY(0);
-      place(v.splash, src, 0.5 * Math.min(s, 1.5), 70);
-    }
+    // Sea impacts, at the wreck's splashdown.
+    dronePos(splashTimes.length ? splashTimes[0] : t, src).setY(0);
+    place(v.splash, src, 0.6, 70);
 
     // Ship hum, wind and surf.
-    {
-      src.set(-20, 5, 0).add(shipPos(t, a));
-      place(v.ship, src, 0.07, 80); // a bed, not a drone over the engine run-up
-      const high = smoothstep(cam.y, 5, 200);
-      const gust = 0.85 + 0.15 * Math.sin(t * 0.9) * Math.sin(t * 0.37 + 1);
-      set(v.wind.bp.frequency, 260 + 9 * camSpeed + 200 * high);
-      set(v.wind.g.gain, (0.05 + 0.1 * high + 0.5 * Math.min(camSpeed / 90, 1)) * gust);
-      set(v.surf.g.gain, 0.4 * (1 - smoothstep(cam.y, 8, 120)) * (0.8 + 0.2 * Math.sin(t * 0.6)));
-    }
+    src.set(-20, 5, 0).add(shipPos(t, a));
+    place(v.ship, src, 0.12, 80);
+    const high = smoothstep(cam.y, 5, 200);
+    const gust = 0.85 + 0.15 * Math.sin(t * 0.9) * Math.sin(t * 0.37 + 1);
+    loopRate(v.wind, 1 + 0.5 * Math.min(camSpeed / 90, 1));
+    set(v.wind.g.gain, (0.1 + 0.15 * high + 0.6 * Math.min(camSpeed / 90, 1)) * gust);
+    set(v.surf.g.gain, 0.35 * (1 - smoothstep(cam.y, 8, 120)) * (0.8 + 0.2 * Math.sin(t * 0.6)));
   }
 
   return {
@@ -372,5 +285,6 @@ export function createAudio({ dronePos, splashTimes }) {
     // For inspection from the console.
     get state() { return ctx?.state ?? (failed ? 'unavailable' : 'idle'); },
     get supported() { return !failed; },
+    get loaded() { return Object.keys(buffers); },
   };
 }
