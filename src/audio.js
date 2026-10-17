@@ -30,6 +30,8 @@ export function createAudio({ dronePos, splashTimes }) {
   const AudioCtx = globalThis.AudioContext ?? globalThis.webkitAudioContext;
   let ctx = null;
   let master = null;
+  let comp = null; // master output stage (after the compressor), tapped for video capture
+  let capture = null;
   let voices = null;
   let shots = [];
   let enabled = true;
@@ -101,7 +103,7 @@ export function createAudio({ dronePos, splashTimes }) {
   function build() {
     master = ctx.createGain();
     master.gain.value = 0;
-    const comp = ctx.createDynamicsCompressor();
+    comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -16;
     comp.ratio.value = 5;
     master.connect(comp).connect(ctx.destination);
@@ -286,5 +288,20 @@ export function createAudio({ dronePos, splashTimes }) {
     get state() { return ctx?.state ?? (failed ? 'unavailable' : 'idle'); },
     get supported() { return !failed; },
     get loaded() { return Object.keys(buffers); },
+    // A MediaStream carrying exactly what reaches the speakers, for the recorder.
+    // Null when audio is unavailable. Must be called from a user gesture the first time.
+    getCaptureStream() {
+      if (failed) return null;
+      ensure();
+      if (!ctx || !comp) return null;
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      if (!capture) {
+        try {
+          capture = ctx.createMediaStreamDestination();
+          comp.connect(capture);
+        } catch { capture = null; return null; }
+      }
+      return capture.stream;
+    },
   };
 }

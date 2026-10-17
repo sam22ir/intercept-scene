@@ -16,6 +16,8 @@ import { CameraRig } from './cameraRig.js';
 import { createTimeline } from './timeline.js';
 import { createDirector } from './director.js';
 import { createAudio } from './audio.js';
+import { createHud } from './hud.js';
+import { createRecorder } from './recorder.js';
 
 const canvas = document.querySelector('#scene');
 const loadingEl = document.querySelector('#loading');
@@ -290,6 +292,8 @@ canvas.addEventListener('pointermove', (e) => {
   });
 });
 
+const hud = createHud();
+
 // --- Clock + timeline UI ------------------------------------------------------
 
 const clock = createTimeline(scenario, {
@@ -303,6 +307,7 @@ const clock = createTimeline(scenario, {
     if (key === 'l' || key === 'L') setLabels(!labels.enabled);
     if (key === 'd' || key === 'D') setDirector(!directing);
     if (key === 's' || key === 'S') setSound(!audio.enabled);
+    if (key === 'h' || key === 'H') hud.toggle();
   },
 });
 
@@ -320,6 +325,10 @@ if (scenario.customPath) {
     ? `Custom path active — the missile misses it by ${Math.round(scenario.interceptMiss)} m before the hit is forced. Bring the drone back toward the ship.`
     : 'Custom flight path active — open Edit path to change it or restore the default.');
 }
+
+createRecorder({
+  canvas, clock, audio, scenario, setDirector, isDirecting: () => directing, isBusy: () => editor.active,
+});
 
 const tm = {
   alt: document.querySelector('#tm-alt'),
@@ -384,6 +393,7 @@ renderer.setAnimationLoop((now) => {
   audio.update(clock.t, camera, clock);
 
   clock.renderUI();
+  hud.update(clock.t);
   renderTelemetry();
   renderer.render(scene, camera);
   labels.render(scene, camera);

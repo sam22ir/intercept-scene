@@ -64,12 +64,20 @@
         <button data-focus="ship">Ship</button>
         <span class="sep" aria-hidden="true"></span>
         <button id="btn-labels" class="toggle active" aria-pressed="true" title="Show tags and missile path (L)">Labels</button>
+        <button id="btn-hud" class="toggle active" aria-pressed="true" title="Live readouts and end-of-run debrief (H)">HUD</button>
         <button id="btn-edit" class="toggle" title="Draw or edit the drone's flight path (E)">✎ Edit path</button>
         <button id="btn-director" class="toggle" aria-pressed="false" title="Cinematic camera: cuts between preset shots by itself (D)">🎬 Director</button>
+        <button id="btn-record" class="toggle" aria-pressed="false">⏺ Record</button>
         <button id="btn-sound" class="toggle active" aria-pressed="true" title="Sound effects, synced to the timeline (S)">🔊 Sound</button>
       </div>
-      <div class="hint">Click an object to focus · drag to orbit · scroll to zoom · Esc for free camera · D director · S sound · L labels · E edit path</div>
+      <div class="hint">Click an object to focus · drag to orbit · scroll to zoom · Esc for free camera · D director · S sound · L labels · H HUD · E edit path</div>
       <button id="btn-ship" class="link-btn" title="Back to the ship and mission selection screen">⇄ Change ship or mission</button>
+      <div id="rec-box" class="rec-box" hidden>
+        <div class="rec-status" role="status"></div>
+        <a class="rec-link" download hidden></a>
+        <div class="rec-note"></div>
+        <button class="rec-close link-btn" type="button">Dismiss</button>
+      </div>
       <a id="dl-offline" class="dl-link" href="/intercept-offline" download="intercept-offline.html" title="One HTML file that runs without internet: double-click to open">⬇ Download offline version</a>
     </div>
 
@@ -113,6 +121,11 @@
       <div><span>Plane speed</span><b id="tm-speed">—</b></div>
       <div><span>Missile speed</span><b id="tm-mspeed">—</b></div>
       <div><span>Missile range</span><b id="tm-range">—</b></div>
+    </div>
+
+    <div id="hud" class="hud" aria-label="Live readouts">
+      <div class="hud-live"></div>
+      <div class="hud-debrief" hidden></div>
     </div>
 
     <div class="panel timeline">
