@@ -48,6 +48,7 @@ function computeDebrief(k = 0) {
   };
   if (!chute) {
     d.miss = e.interceptMiss;
+    d.burst = e.burstDist;
     d.missileFlight = e.tHit - e.tLaunch;
     // Skip the last 0.15 s: the final sample is snapped onto the drone, which is not real acceleration.
     d.missileG = peakG((t, out) => missilePos(t, out, k), e.tLaunch, e.tHit - 0.15, 0.05, 0.025);
@@ -153,7 +154,8 @@ export function createHud() {
       rows.push(row('Drone flight', `${f(inf.droneFlight, 1)} s`), row('Max drone G', f(inf.droneG, 1)));
       if (!chute) {
         rows.push(row('Missile flight', `${f(inf.missileFlight, 1)} s`), row('Max missile G', f(inf.missileG)),
-          row('Miss before snap', `${f(inf.miss, 1)} m`));
+          row('Warhead', inf.burst < 2.6 ? 'Direct hit' : `Burst ${f(inf.burst)} m away`));
+        if (inf.miss > 0) rows.push(row('Missile fell short', `${f(inf.miss, 1)} m`));
       }
     });
     return `<div class="hud-head"><b>Debrief</b><span class="chip ${chute ? 'ok' : 'bad'}">Complete</span></div>${headline}<div class="deb-rows">${rows.join('')}</div>`;

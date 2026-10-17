@@ -20,6 +20,7 @@ import { createHud } from './hud.js';
 import { createRecorder } from './recorder.js';
 import { createPair } from './pair.js';
 import { createShare, readShareParams, stripShareParams } from './share.js';
+import { createEngagePanel, SEEK_KEY } from './engagePanel.js';
 
 const canvas = document.querySelector('#scene');
 const loadingEl = document.querySelector('#loading');
@@ -392,9 +393,12 @@ const hud = createHud();
 
 const clock = createTimeline(scenario, {
   onKey(key, e) {
+    if ((e.ctrlKey || e.metaKey) && !editor.active) return; // only the path editor (undo) uses chords
     if (key === 'Escape' && closePopovers()) return; // Esc closes an open menu or sheet first
+    if (key === 'Escape' && engagePanel.active) { engagePanel.close(); return; }
     if (editor.active) { editor.onKey(key, e); return; }
-    if (key === 'e' || key === 'E') { editor.toggle(); return; }
+    if (key === 'e' || key === 'E') { engagePanel.close(); editor.toggle(); return; }
+    if (key === 'g' || key === 'G') { if (!editor.active) engagePanel.toggle(); return; }
     if (key === '?') { setKeys(keysEl.hidden); return; }
     if (key === 'Escape') setFocus('free');
     if (key === '1') setFocus('plane');
@@ -413,6 +417,14 @@ const clock = createTimeline(scenario, {
 // Deep link (?t=, ?focus=): open paused at that moment, on that target.
 const shared = readShareParams();
 if (shared.t !== null) { clock.playing = false; clock.seek(shared.t); }
+else {
+  // After "Apply & replay" in the engagement panel: start just before the launch, playing.
+  try {
+    const seek = parseFloat(sessionStorage.getItem(SEEK_KEY));
+    sessionStorage.removeItem(SEEK_KEY);
+    if (Number.isFinite(seek)) clock.seek(Math.min(Math.max(seek, 0), scenario.tEnd));
+  } catch { /* storage unavailable */ }
+}
 const sharedFocus = shared.focus === 'plane' || shared.focus === 'ship' || (shared.focus === 'missile' && scenario.hasMissile) ? shared.focus : null;
 if (!directing) setFocus(sharedFocus ?? 'plane'); // default: open on the drone sitting on its cradle
 
@@ -435,9 +447,11 @@ createShare({
 let labelsBeforeEdit = true;
 const editor = createPathEditor({
   scene, camera, controls, canvas, clock,
-  onEnter() { invalidate(); labelsBeforeEdit = labels.enabled; labels.setEnabled(false); setFocus('free'); },
+  onEnter() { engagePanel.close(); invalidate(); labelsBeforeEdit = labels.enabled; labels.setEnabled(false); setFocus('free'); },
   onExit() { invalidate(); labels.setEnabled(labelsBeforeEdit); },
 });
+const engagePanel = createEngagePanel({ onOpen: invalidate, onClose: invalidate });
+document.querySelector('#btn-engage').addEventListener('click', () => { if (editor.active) editor.exit(); });
 if (scenario.sharedPath) {
   toast('Viewing shared path — your own saved path is untouched. Edit path to make it yours.');
 } else if (scenario.customPath) {
@@ -446,6 +460,8 @@ if (scenario.sharedPath) {
     : scenario.interceptMiss > 15
     ? `Custom path active — the missile misses it by ${Math.round(scenario.interceptMiss)} m before the hit is forced. Bring the drone back toward the ship.`
     : 'Custom flight path active — open Edit path to change it or restore the default.');
+} else if (scenario.customEngage && scenario.hasMissile) {
+  toast('Custom missile engagement active — open Missile engagement (G) to change it or reset it.');
 }
 
 createRecorder({

@@ -119,6 +119,7 @@
       </div>
       <div id="menu" class="menu" role="menu" hidden>
         <button id="btn-edit" role="menuitem" title="Draw or edit the drone's flight path (E)">Edit flight path<kbd>E</kbd></button>
+        <button id="btn-engage" role="menuitem" title="When the missile launches and hits, and how close the warhead bursts (G)">Missile engagement<kbd>G</kbd></button>
         <button id="btn-record" role="menuitem" aria-pressed="false">⏺ Record</button>
         <button id="btn-link" role="menuitem" title="Copy a link to this exact moment, camera and flight path">Copy link to this moment</button>
         <button id="btn-keys" role="menuitem" class="desk-only">Keyboard shortcuts<kbd>?</kbd></button>
@@ -146,6 +147,7 @@
         <dt><kbd>D</kbd></dt><dd>Director</dd>
         <dt><kbd>L</kbd> <kbd>H</kbd> <kbd>S</kbd></dt><dd>Labels, readouts, sound</dd>
         <dt><kbd>E</kbd></dt><dd>Edit flight path</dd>
+        <dt><kbd>G</kbd></dt><dd>Missile engagement (launch, impact, burst distance)</dd>
         <dt><kbd>C</kbd></dt><dd>Hide / show the interface</dd>
       </dl>
       <p class="keys-note">Click an object to follow it · drag to orbit · scroll to zoom</p>
@@ -156,24 +158,62 @@
     <div class="panel editor" id="editor" hidden>
       <div class="title">Path editor</div>
       <button id="ed-fold" class="ed-fold" aria-expanded="true" title="Phones: hide the controls to see the sea">Hide controls</button>
-      <div class="focus-buttons" role="group" aria-label="Editor tool">
-        <button id="ed-tool-move" class="active" title="Move points (M)">✥ Move</button>
-        <button id="ed-tool-draw" title="Draw the path freehand (D)">✎ Draw</button>
+      <div class="ed-top">
+        <div class="chips" role="group" aria-label="Editor tool">
+          <button id="ed-tool-move" class="active" title="Select and move points (M)">✥ Move</button>
+          <button id="ed-tool-draw" title="Draw the path freehand (D)">✎ Draw</button>
+        </div>
+        <div class="ed-ur" role="group" aria-label="History">
+          <button id="ed-undo" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
+          <button id="ed-redo" title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>
+        </div>
       </div>
-      <label class="ed-alt"><span id="ed-alt-label">Draw altitude</span> <output id="ed-alt-out">40 m</output>
-        <input id="ed-alt" type="range" min="8" max="400" step="1" value="40" />
-      </label>
-      <div class="ed-row">
-        <button id="ed-alt-down" title="Lower the selected point 5 m (↓)">Alt −</button>
-        <button id="ed-alt-up" title="Raise the selected point 5 m (↑)">Alt +</button>
+      <div class="ed-stats" id="ed-stats">
+        <div><span>Length</span><b id="ed-s-len">–</b></div>
+        <div><span>Flight</span><b id="ed-s-time">–</b></div>
+        <div><span>Altitude</span><b id="ed-s-alt">–</b></div>
+        <div><span>Closest</span><b id="ed-s-near">–</b></div>
       </div>
-      <div class="ed-row">
-        <button id="ed-delete" title="Delete the selected point (Delete)">Delete point</button>
-        <button id="ed-add" title="Insert a point after the selected one (double-click the line does this too)">Add point</button>
-        <button id="ed-clear" title="Remove every point and draw a new path">Clear</button>
-        <button id="ed-reset" title="Back to the built-in path">Default</button>
-      </div>
-      <div id="ed-info" class="ed-info"></div>
+      <section class="en-sec" id="ed-point">
+        <div class="sec-row">
+          <h3 id="ed-point-title">Draw altitude</h3>
+          <div class="ed-nav" role="group" aria-label="Choose point">
+            <button id="ed-prev" title="Previous point ([)" aria-label="Previous point">‹</button>
+            <button id="ed-next" title="Next point (])" aria-label="Next point">›</button>
+          </div>
+        </div>
+        <div class="ed-fields" id="ed-fields">
+          <label title="Metres ahead of the ship's centre (negative: astern)"><span>Ahead</span><input id="ed-x" type="number" step="1" inputmode="numeric" /></label>
+          <label title="Metres to starboard of the ship's centreline (negative: port)"><span>Stbd</span><input id="ed-z" type="number" step="1" inputmode="numeric" /></label>
+          <label title="Metres above the sea"><span>Alt</span><input id="ed-altn" type="number" step="1" min="8" max="600" inputmode="numeric" /></label>
+        </div>
+        <label class="ed-alt"><span id="ed-alt-label">Draw altitude</span> <output id="ed-alt-out">40 m</output>
+          <input id="ed-alt" type="range" min="8" max="400" step="1" value="40" />
+        </label>
+        <div class="ed-row">
+          <button id="ed-add" title="Insert a point after the selected one (double-click the line does this too)">＋ Insert after</button>
+          <button id="ed-delete" title="Delete the selected point (Delete)">Delete</button>
+        </div>
+      </section>
+      <section class="en-sec">
+        <h3>Whole path</h3>
+        <div class="ed-snap"><span>Snap</span>
+          <div class="chips" id="ed-snap" role="group" aria-label="Snap to grid">
+            <button data-snap="0" class="active">Off</button><button data-snap="10">10 m</button><button data-snap="25">25 m</button><button data-snap="50">50 m</button>
+          </div>
+        </div>
+        <div class="ed-grid">
+          <button id="ed-smooth" title="Round off kinks by blending each point with its neighbours">Smooth</button>
+          <button id="ed-simplify" title="Remove points that barely change the curve">Simplify</button>
+          <button id="ed-mirror" title="Flip the path from port to starboard and back">Flip L/R</button>
+          <button id="ed-wider" title="Spread the path 15 % further from the ship">Wider</button>
+          <button id="ed-tighter" title="Pull the path 13 % closer to the ship">Tighter</button>
+          <button id="ed-raise" title="Raise every point 10 m">Raise all</button>
+          <button id="ed-lower" title="Lower every point 10 m">Lower all</button>
+          <button id="ed-reset" title="Back to the built-in path">Default</button>
+          <button id="ed-clear" title="Remove every point and draw a new path">Clear</button>
+        </div>
+      </section>
       <div id="ed-hint" class="hint"></div>
       <div class="ed-row">
         <button id="ed-copy" title="Copy the path as JSON">Copy</button>
@@ -183,6 +223,51 @@
       <div class="ed-row ed-actions">
         <button id="ed-apply" class="primary" title="Save and replay from the start (Enter)">Apply &amp; play</button>
         <button id="ed-cancel" title="Leave without saving (Esc)">Cancel</button>
+      </div>
+    </div>
+
+    <div class="panel editor engage" id="engage" hidden>
+      <div class="title">Missile engagement</div>
+      <section class="en-sec">
+        <h3>Timing</h3>
+        <div class="chips" id="en-timing" role="group" aria-label="Timing">
+          <button data-timing="auto" title="Launch when the drone comes back inside 650 m of the ship">Auto</button>
+          <button data-timing="launch" title="Choose the moment the missile leaves">Time</button>
+          <button data-timing="impact" title="Choose the moment the warhead goes off; the launch is worked out from it">Impact</button>
+          <button data-timing="range" title="Launch when the drone, coming back at the ship, closes to a chosen distance">Range</button>
+        </div>
+        <label class="ed-alt" id="en-time-row"><span id="en-time-label">Launch time</span> <output id="en-time-out"></output>
+          <input id="en-time" type="range" min="0" max="300" step="0.1" value="0" />
+        </label>
+        <label class="ed-alt" id="en-range-row"><span>Launch when the drone is within</span> <output id="en-range-out"></output>
+          <input id="en-range" type="range" min="100" max="1500" step="10" value="650" />
+        </label>
+        <div class="en-bar" id="en-bar" aria-hidden="true"><i class="auto"></i><i class="span"></i></div>
+        <div class="en-tiles">
+          <div><span>Launch</span><b id="en-launch">–</b></div>
+          <div><span>Flight</span><b id="en-flight">–</b></div>
+          <div><span>Impact</span><b id="en-impact">–</b></div>
+        </div>
+      </section>
+      <section class="en-sec">
+        <h3>Warhead</h3>
+        <label class="ed-alt"><span>Burst distance</span> <output id="en-dist-out"></output>
+          <input id="en-dist" type="range" min="0" max="60" step="1" value="0" />
+        </label>
+        <div class="chips" id="en-side" role="group" aria-label="Burst side">
+          <button data-side="auto" title="Wherever the missile first comes within range">Auto</button>
+          <button data-side="above">Above</button>
+          <button data-side="below">Below</button>
+          <button data-side="left">Left</button>
+          <button data-side="right">Right</button>
+        </div>
+        <div id="en-side-hint" class="hint"></div>
+      </section>
+      <div id="en-verdict" class="hint warn" hidden></div>
+      <div class="ed-row ed-actions">
+        <button id="en-apply" class="primary" title="Save and replay from just before the launch">Apply &amp; replay</button>
+        <button id="en-reset" title="Auto timing, direct hit">Reset</button>
+        <button id="en-cancel" title="Close without saving (Esc)">Cancel</button>
       </div>
     </div>
 

@@ -158,6 +158,10 @@ export function createTimeline(scenario, { onKey } = {}) {
 
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLSelectElement) return;
+    // Typing in a number or text field is never a shortcut.
+    if (e.target instanceof HTMLInputElement && e.target.type !== 'range' && e.target.type !== 'checkbox') return;
+    // Ctrl/Cmd chords (undo, reload, copy) go to the editor or the browser, never to playback.
+    if (e.ctrlKey || e.metaKey) { onKey?.(e.key, e); return; }
     const big = e.shiftKey ? 1 : 0.1;
     switch (e.key) {
       case ' ': clock.play(1); break;
