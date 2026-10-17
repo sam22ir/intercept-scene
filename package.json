@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/build-offline.mjs",
+    "test": "node --test \"test/*.test.mjs\"",
+    "build": "node --test \"test/*.test.mjs\" && vite build && node scripts/build-offline.mjs",
     "preview": "vite preview",
     "cf-deploy": "pnpm build && wrangler deploy"
   },
