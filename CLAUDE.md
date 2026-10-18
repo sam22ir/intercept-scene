@@ -133,7 +133,7 @@ Holds the story, all timing and every ship mount point. Units are metres. The bo
   - `Sky`, also used as the PMREM environment.
   - Sun shadow frustum that follows the focus.
   - Sprite clouds.
-  - Analytic ocean shader whose wave normals are driven by `t`. Its wake foam (bow wave, stern wake, Kelvin arms) reads `uShipX`, and `hullHalf()` there mirrors `widthFactor()` in `ship.js`.
+  - Analytic ocean shader whose wave normals are driven by `t` (the surface stays flat). Its shading follows web-ocean (MIT): each wave's slope variance moves into a roughness covariance as it fades with distance (LEAN), plus capillary roughness and screen-space slope AA; sun glitter is an anisotropic Gaussian slope distribution with Smith masking (`uSunE`), and the sky reflection samples the PMREM `scene.environment` through three's `cube_uv_reflection_fragment` (defines from `cubeUVDefines`, scaled by `uEnvGain`), blurred by the roughness and tilted toward the viewer at grazing angles. Its wake foam (bow wave, stern wake, Kelvin arms) reads `uShipX`, and `hullHalf()` there mirrors `widthFactor()` in `ship.js`.
 
 ### Effects, camera and picking
 
