@@ -495,6 +495,7 @@ body.mission-maneuvers .shot-caption { top: calc(var(--gap) + var(--safe-t) + va
 .shot-caption.call::before { content: none; }
 .shot-caption.standby { color: #ffd166; border-color: rgba(255, 209, 102, 0.7); }
 .shot-caption.execute { color: #6dffa0; border-color: rgba(109, 255, 160, 0.8); background: rgba(10, 40, 24, 0.7); }
+.shot-caption.station { color: #e6f0ff; border-color: rgba(200, 220, 255, 0.8); background: rgba(16, 28, 48, 0.75); }
 
 /* The Orders dropdown from the top bar: the briefing's contents column, ticks on the finished orders, and the
    standby time at the foot. */

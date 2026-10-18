@@ -5,7 +5,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  exercise, shipState, relation, headingDeg, PASS, PHASES, YD, KT, FORMATION_RANGE, EXECUTE_FLASH,
+  exercise, shipState, relation, headingDeg, PASS, PHASES, YD, KT, FORMATION_RANGE, EXECUTE_FLASH, STATION_FLASH,
   orderStatus, lampOn, CUES, LIGHT, guideAt, stationAt, orderedAt, DEBRIEF,
 } from '../src/maneuvers.js';
 
@@ -104,20 +104,24 @@ describe('naval maneuvers: formation geometry', () => {
 });
 
 describe('naval maneuvers: orders, signals and timeline', () => {
-  it('each order is announced, counts down to the ships\' arrival without a pause, executes there, then runs', () => {
+  it('each order stands by (ships still), executes as the ships start, then calls A STATION on arrival', () => {
     for (const p of PHASES) {
       const before = orderStatus(p.t + 1);
       assert.equal(before.state, 'standby');
-      assert.equal(before.moving, false, `${p.id}: the ships have not started yet`);
-      near(before.count, p.ta - (p.t + 1), 1e-9, `${p.id} countdown runs to arrival`);
-      if (p.ta > p.tx + 5) {
-        const mid = orderStatus((p.tx + p.ta) / 2);
-        assert.equal(mid.state, 'standby', `${p.id} still counting while the ships are under way`);
-        assert.equal(mid.moving, true);
+      near(before.count, p.tx - (p.t + 1), 1e-9, `${p.id} standby counts down to EXECUTE`);
+      assert.equal(orderStatus(p.tx + 0.5).state, 'execute', `${p.id} executes when the ships start`);
+      if (p.hasStation) {
+        const tm = (p.tx + EXECUTE_FLASH + p.ta) / 2;
+        const mid = orderStatus(tm);
+        assert.equal(mid.state, 'underway', `${p.id} under way while maneuvering`);
+        near(mid.count, p.ta - tm, 1e-9, `${p.id} counts to station`);
+        assert.equal(orderStatus(p.ta + 0.5).state, 'station', `${p.id} A STATION on arrival`);
+        assert.equal(orderStatus(p.ta + STATION_FLASH + 0.5).state, 'onstation');
+      } else {
+        assert.equal(orderStatus(p.tx + EXECUTE_FLASH + 0.5).state, 'onstation', `${p.id} only signals`);
       }
-      assert.equal(orderStatus(p.ta + 0.5).state, 'execute');
-      assert.equal(orderStatus(p.ta + EXECUTE_FLASH + 0.5).state, 'underway');
     }
+    assert.deepEqual(PHASES.filter((p) => !p.hasStation).map((p) => p.id), ['form1', 'station']);
   });
 
   it('the countdown ends exactly as the ships are in position (the deck\'s time of arrival)', () => {
@@ -168,9 +172,9 @@ describe('naval maneuvers: orders, signals and timeline', () => {
     assert.ok(rus > 20 && alg > 20, 'both lamps flash');
   });
 
-  it('has sound cues in time order: a horn as each countdown ends, and a click per flash', () => {
+  it('has sound cues in time order: a horn at each EXECUTE, and a click per flash', () => {
     for (let i = 1; i < CUES.length; i++) assert.ok(CUES[i].t >= CUES[i - 1].t);
-    for (const p of PHASES) assert.ok(CUES.some((c) => c.kind === 'horn' && c.ship === 'alg' && Math.abs(c.t - p.ta) < 1e-9), `${p.id} horn at arrival`);
+    for (const p of PHASES) assert.ok(CUES.some((c) => c.kind === 'horn' && c.ship === 'alg' && Math.abs(c.t - p.tx) < 1e-9), `${p.id} horn at EXECUTE`);
     assert.ok(CUES.filter((c) => c.kind === 'click').length > 20);
     assert.ok(CUES.every((c) => c.t >= 0 && c.t <= exercise.tEnd));
   });

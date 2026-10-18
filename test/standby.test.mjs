@@ -38,15 +38,15 @@ describe('standby time', () => {
     assert.equal(a.tEnd, b.tEnd);
   });
 
-  it('is the warning before the ships start; the countdown runs on to their arrival', async () => {
+  it('is the time to get ready: it counts down to EXECUTE, when the ships start', async () => {
     const M = await load(18);
     for (const p of M.PHASES) {
       const s = M.orderStatus(p.t + 3);
       assert.equal(s.state, 'standby');
-      assert.equal(s.moving, false);
-      near(s.count, p.ta - (p.t + 3), 'countdown to arrival');
-      assert.equal(M.orderStatus(p.tx + 1).moving ?? true, true);
-      assert.equal(M.orderStatus(p.ta + 1).state, 'execute');
+      near(s.count, p.tx - (p.t + 3), 'countdown to EXECUTE');
+      near(p.tx - p.t, 18, 'the whole standby');
+      assert.equal(M.orderStatus(p.tx + 1).state, 'execute');
+      if (p.hasStation) assert.equal(M.orderStatus(p.ta + 1).state, 'station');
     }
   });
 

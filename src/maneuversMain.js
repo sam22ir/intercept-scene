@@ -14,7 +14,7 @@ import { createManeuverAudio } from './maneuverAudio.js';
 import { toast } from './pathEditor.js';
 import {
   exercise, shipState, headingDeg, phaseAt, orderStatus, PHASES, STANDBY, STANDBY_LIMITS, KT, YD, LIGHT, FLAGS, lampOn,
-  stationAt, orderedAt, DEBRIEF, EXECUTE_FLASH,
+  stationAt, orderedAt, DEBRIEF, STATION_FLASH,
 } from './maneuvers.js';
 import { stripShareParams } from './share.js';
 
@@ -392,12 +392,13 @@ let lastBanner = '';
 function updateBanner(order) {
   let text = '';
   let cls = '';
-  if (order.state === 'standby') { text = `STANDBY · ${fmtCount(order.count)}`; cls = 'standby'; } else if (order.state === 'execute') { text = `EXECUTE · ${order.phase.title}`; cls = 'execute'; }
+  // STANDBY counts down to EXECUTE (getting ready); EXECUTE starts the maneuver; A STATION when in position.
+  if (order.state === 'standby') { text = `STANDBY · ${fmtCount(order.count)}`; cls = 'standby'; } else if (order.state === 'execute') { text = `EXECUTE · ${order.phase.title}`; cls = 'execute'; } else if (order.state === 'station') { text = 'A STATION'; cls = 'station'; }
   if (text + cls === lastBanner) return;
   lastBanner = text + cls;
   banner.hidden = !text;
   banner.textContent = text;
-  banner.classList.remove('standby', 'execute');
+  banner.classList.remove('standby', 'execute', 'station');
   if (cls) banner.classList.add(cls);
 }
 // A ship's heading and speed, with the ordered ones after an arrow while she is still turning or working up.
@@ -417,14 +418,18 @@ function updateReadout(t) {
   const order = orderStatus(t);
   const phase = order.phase;
   const idx = PHASES.indexOf(phase);
-  const chip = t >= exercise.tEnd ? ['Complete', 'ok'] : order.state === 'standby' ? [`${order.moving ? 'Under way' : 'Standby'} ${fmtCount(order.count)}`, 'warn'] : order.state === 'execute' ? ['Execute', 'ok'] : ['Under way', 'live'];
+  const chip = t >= exercise.tEnd ? ['Complete', 'ok']
+    : order.state === 'standby' ? [`Standby ${fmtCount(order.count)}`, 'warn']
+      : order.state === 'execute' ? ['Execute', 'ok']
+        : order.state === 'underway' ? [`Under way · station in ${fmtCount(order.count)}`, 'live']
+          : order.state === 'station' || order.state === 'onstation' ? ['A station', 'ok'] : ['Standing by', ''];
   setText(bar.title, phase.title);
   // The plain words under the signal's own shorthand (TURN STBD 9 is a turn of 90 degrees).
   const plain = phase.label.toUpperCase() !== phase.title.toUpperCase() ? ` · ${phase.label}` : '';
   setText(bar.step, `Order ${idx + 1} of ${PHASES.length}${plain}`);
   setText(bar.chip, chip[0]);
-  // The banner carries standby and execute; the rest of the time the chip says where the order stands.
-  const shown = order.state !== 'standby' && order.state !== 'execute' ? ' shown' : '';
+  // The banner carries standby, execute and A STATION; the rest of the time the chip says where the order stands.
+  const shown = order.state === 'underway' || order.state === 'onstation' || order.state === 'idle' ? ' shown' : '';
   if (bar.chip.dataset.tone !== chip[1] + shown) { bar.chip.dataset.tone = chip[1] + shown; bar.chip.className = `chip ${chip[1]}${shown}`; }
   const end = PHASES[idx + 1]?.t ?? exercise.tEnd;
   bar.progress.style.width = `${(Math.min(Math.max((t - phase.t) / (end - phase.t), 0), 1) * 100).toFixed(1)}%`;
@@ -449,7 +454,7 @@ function updateReadout(t) {
 }
 
 // Debrief, once the last order is done: how long each order took to arrive and how close it ended.
-const debriefFrom = PHASES[PHASES.length - 1].ta + EXECUTE_FLASH;
+const debriefFrom = PHASES[PHASES.length - 1].ta + STATION_FLASH;
 function debriefResult(r) {
   if (r.pass !== undefined) return `Passed at ${Math.round(r.pass / YD)} yd`;
   if (r.error) {
@@ -618,7 +623,7 @@ ordersEl.className = 'orders-menu';
 ordersEl.hidden = true;
 ordersEl.innerHTML = '<div class="orders-head"><b>Orders</b><small>Click one to jump to it</small></div>'
   + `<ol class="orders-list">${PHASES.map((p, i) => `<li><button type="button" class="order" data-i="${i}" title="Jump to just before this order is announced"><span class="chk"></span><span class="name">${p.label}</span><span class="when">${mmss(p.t)}</span></button></li>`).join('')}</ol>`
-  + '<div class="mh-standby" title="The warning before the ships start to obey an order. The countdown itself runs on until they are in position. Changing it reloads the scene at this moment."><span>Standby time</span>'
+  + '<div class="mh-standby" title="The time to get ready between the announcement of an order and EXECUTE, when the ships start to maneuver. Changing it reloads the scene at this moment."><span>Standby time</span>'
   + '<div class="mh-step"><button type="button" data-sb="-1" aria-label="Shorter standby">–</button><b data-sb-val></b><button type="button" data-sb="1" aria-label="Longer standby">+</button></div></div>';
 document.querySelector('#topbar').appendChild(ordersEl);
 ordersButton.addEventListener('click', () => setOrders(ordersEl.hidden));
@@ -723,8 +728,8 @@ for (const b of ordersEl.querySelectorAll('[data-sb]')) {
 
 // Clicking an order in the list jumps to just before it is announced.
 orderButtons.forEach((b, i) => b.addEventListener('click', () => { clock.seek(Math.max(PHASES[i].t - 1, 0)); setOrders(false); invalidate(); }));
-// About 52 minutes of exercise: sixteen times real time by default. Time never slows for an order: its STANDBY
-// countdown simply runs on, through the maneuver, to the moment the ships are in position.
+// About 52 minutes of exercise: sixteen times real time by default. Time never slows for an order: STANDBY
+// counts down to EXECUTE, the ships maneuver, and A STATION is called when they are in position.
 clock.setSpeed(16);
 // Deep link: ?t= opens paused at that moment; the standby stepper reloads at the same moment, playing.
 try {
@@ -807,7 +812,7 @@ renderer.setAnimationLoop((now) => {
   }
 });
 
-toast('Plays at 16×. Each order counts down to the ships\' arrival. Speed: the button or [ ].', 4500);
+toast('Plays at 16×. Each order: STANDBY, then EXECUTE (the ships start), then A STATION. Speed: the button or [ ].', 4500);
 
 // Debug / inspection handle (mirrors the intercept scene's).
 window.__scene = { exercise, clock, rig, camera, controls, setFocus, ships, scene, renderer };

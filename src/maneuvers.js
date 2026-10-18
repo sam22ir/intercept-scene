@@ -221,17 +221,26 @@ export function relation(t, from = 'rus', to = 'alg') {
 
 export const phaseAt = (t) => PHASES.reduce((cur, p) => (t >= p.t ? p : cur), PHASES[0]);
 
-// Where an order is in its life at time t. 'idle' before the first announcement. Then 'standby', which counts
-// down (`count`, seconds) to the moment the ships are in position (`ta`, the deck's time of arrival) and so
-// runs through the maneuver itself (`moving` is true once the ships have started to obey). At `ta` the order is
-// 'execute' for a moment, then 'underway' until the next one.
+// Where an order is in its life at time t:
+//  'idle'     before the first announcement;
+//  'standby'  from the announcement to `tx`: only getting ready, the ships do not move yet (`count` = s to EXECUTE);
+//  'execute'  for EXECUTE_FLASH s from `tx`: the EXECUTE call; the ships start the maneuver at `tx`;
+//  'underway' while they maneuver, until they are in position at `ta` (`count` = s to `ta`);
+//  'station'  for STATION_FLASH s from `ta`: the "A STATION" call;
+//  'onstation' after that, until the next order.
+// Orders that only signal (the start and the FORM 1 stations) arrive as they execute, so they have no
+// under-way or A STATION part (`p.hasStation` is false).
 export const EXECUTE_FLASH = 4; // s the EXECUTE call stays up
+export const STATION_FLASH = 5; // s the A STATION call stays up
 export function orderStatus(t) {
   const phase = phaseAt(t);
   if (t < phase.t) return { phase, state: 'idle' };
-  if (t < phase.ta) return { phase, state: 'standby', count: phase.ta - t, moving: t >= phase.tx };
-  if (t < phase.ta + EXECUTE_FLASH) return { phase, state: 'execute', since: t - phase.ta };
-  return { phase, state: 'underway' };
+  if (t < phase.tx) return { phase, state: 'standby', count: phase.tx - t };
+  if (t < phase.tx + EXECUTE_FLASH) return { phase, state: 'execute', since: t - phase.tx };
+  if (!phase.hasStation) return { phase, state: 'onstation' };
+  if (t < phase.ta) return { phase, state: 'underway', count: phase.ta - t };
+  if (t < phase.ta + STATION_FLASH) return { phase, state: 'station', since: t - phase.ta };
+  return { phase, state: 'onstation' };
 }
 
 // Flashing light (EX3 serial 12030): a signal lamp blinking from RUS to ALG, and back, between these times.
@@ -271,7 +280,10 @@ const ARRIVAL = {
   flags: () => FLAGS.t1,
   skim: () => PASS.t,
 };
-for (const p of PHASES) p.ta = ARRIVAL[p.id](p);
+for (const p of PHASES) {
+  p.ta = ARRIVAL[p.id](p);
+  p.hasStation = p.ta - p.tx > EXECUTE_FLASH;
+}
 
 // The signal lamp: RUS flashes in the first half of the light window, ALG answers in the second half.
 // The pattern is dots and dashes, a pure function of t (units of the 8-unit pattern run at 2.2 per second).
@@ -288,12 +300,12 @@ export function lampOn(t, id) {
   return LAMP_PATTERN.some(([from, to]) => u >= from && u < to);
 }
 
-// Sound cues the scene plays, in time order: one long blast of ALG's horn as each countdown ends (the
-// ships are in position, which for a serial is its end), and a click at the start of every flash of the lamp.
+// Sound cues the scene plays, in time order: one long blast of ALG's horn at each EXECUTE (the ships start
+// the maneuver), and a click at the start of every flash of the lamp.
 // {t, kind: 'horn' | 'click', ship, len (s, horns)}
 export const CUES = (() => {
   const cues = [];
-  for (const p of PHASES) cues.push({ t: p.ta, kind: 'horn', ship: 'alg', len: 2.2 });
+  for (const p of PHASES) cues.push({ t: p.tx, kind: 'horn', ship: 'alg', len: 2.2 });
   for (const id of ['rus', 'alg']) {
     let on = false;
     for (let t = LAMP_WINDOW[id][0]; t < LAMP_WINDOW[id][1]; t += 0.05) {

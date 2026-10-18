@@ -63,12 +63,12 @@ describe('maneuver audio with the recorded sounds', () => {
   it('has decoded the recordings', () => assert.equal(audio.recorded, true));
 
   it('plays the recorded horn (one buffer source) as an order executes', () => {
-    const tx = PHASES[2].ta;
+    const tx = PHASES[2].tx;
     assert.deepEqual(step(audio, tx - 0.2, tx + 0.2), { oscillators: 0, sources: 1 });
   });
 
   it('plays each cue once, then not again', () => {
-    const tx = PHASES[4].ta;
+    const tx = PHASES[4].tx;
     audio.update(tx - 0.5, cam, positions, playing);
     made = { oscillators: 0, sources: 0 };
     audio.update(tx + 0.1, cam, positions, playing);
@@ -82,7 +82,7 @@ describe('maneuver audio with the recorded sounds', () => {
   });
 
   it('is silent when scrubbing (a big jump), playing backwards or paused', () => {
-    const tx = PHASES[3].ta;
+    const tx = PHASES[3].tx;
     const none = { oscillators: 0, sources: 0 };
     assert.deepEqual(step(audio, tx - 50, tx + 50), none);
     assert.deepEqual(step(audio, tx + 0.2, tx - 0.2), none);
@@ -92,7 +92,7 @@ describe('maneuver audio with the recorded sounds', () => {
 
   it('is silent when switched off', () => {
     audio.setEnabled(false);
-    const tx = PHASES[5].ta;
+    const tx = PHASES[5].tx;
     assert.deepEqual(step(audio, tx - 0.2, tx + 0.2), { oscillators: 0, sources: 0 });
     audio.setEnabled(true);
   });
@@ -102,7 +102,7 @@ describe('maneuver audio when the recordings cannot be decoded', () => {
   it('falls back to the synthesised horn (two tones) and click', async () => {
     const audio = await build(false, 'synth');
     assert.equal(audio.recorded, false);
-    const tx = PHASES[2].ta;
+    const tx = PHASES[2].tx;
     assert.deepEqual(step(audio, tx - 0.2, tx + 0.2), { oscillators: 2, sources: 0 });
     const click = CUES.find((c) => c.kind === 'click' && c.t > LIGHT.t0);
     assert.equal(step(audio, click.t - 0.02, click.t + 0.02).sources, 1);
