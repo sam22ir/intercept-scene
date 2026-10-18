@@ -120,6 +120,7 @@
       <div id="menu" class="menu" role="menu" hidden>
         <button id="btn-edit" role="menuitem" title="Draw or edit the drone's flight path (E)">Edit flight path<kbd>E</kbd></button>
         <button id="btn-engage" role="menuitem" title="When the missile launches and hits, and how close the warhead bursts (G)">Missile engagement<kbd>G</kbd></button>
+        <button id="btn-map" role="menuitem" aria-pressed="true" title="Mini map of the ship, drones and missiles (M)">Mini map<kbd>M</kbd></button>
         <button id="btn-record" role="menuitem" aria-pressed="false">⏺ Record</button>
         <button id="btn-link" role="menuitem" title="Copy a link to this exact moment, camera and flight path">Copy link to this moment</button>
         <button id="btn-keys" role="menuitem" class="desk-only">Keyboard shortcuts<kbd>?</kbd></button>
@@ -147,6 +148,7 @@
         <dt><kbd>D</kbd></dt><dd>Cinematic camera</dd>
         <dt><kbd>L</kbd> <kbd>H</kbd> <kbd>S</kbd></dt><dd>Labels, readouts, sound</dd>
         <dt><kbd>T</kbd></dt><dd>Trajectory trails (ship, drone, missile)</dd>
+        <dt><kbd>M</kbd></dt><dd>Mini map (click it to change the zoom)</dd>
         <dt><kbd>E</kbd></dt><dd>Edit flight path</dd>
         <dt><kbd>G</kbd></dt><dd>Missile engagement (launch, impact, burst distance)</dd>
         <dt><kbd>C</kbd></dt><dd>Hide / show the interface</dd>
@@ -270,6 +272,10 @@
         <button id="en-reset" title="Auto timing, direct hit">Reset</button>
         <button id="en-cancel" title="Close without saving (Esc)">Cancel</button>
       </div>
+    </div>
+
+    <div id="minimap" class="minimap" role="img" aria-label="Mini map: ship, drone and missile positions, bow up" title="Mini map, bow up. Click to change the zoom, M to hide it." hidden>
+      <canvas></canvas><span class="mm-scale"></span>
     </div>
 
     <div id="trail-legend" class="trail-legend" aria-label="Trajectory colours" hidden>

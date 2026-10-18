@@ -10,6 +10,8 @@ import * as THREE from 'three';
 // shipPos(t). The missile and the debris are simulated in the world frame.
 
 export const G = 9.81;
+export const MAX_BANK = THREE.MathUtils.degToRad(50); // the drone never rolls past this
+export const MAX_PITCH = THREE.MathUtils.degToRad(20); // nor pitches past this on the default path
 
 // Two frigate fits, chosen on the start screen (URL ?ship=aft reloads into it):
 //   'fwd' — pennant 920, 8-cell launcher on the forward deckhouse;
@@ -64,7 +66,7 @@ export function deckHeight(x) {
 // --- Drone catapult --------------------------------------------------------
 // Steel truss rail on the port side of the helideck, angled out over the side.
 const RAIL_YAW = THREE.MathUtils.degToRad(50); // from the bow toward port
-const RAIL_PITCH = THREE.MathUtils.degToRad(24); // steep, nose-up launch rail
+const RAIL_PITCH = THREE.MathUtils.degToRad(18); // nose-up launch rail (with the spline blend after release the drone stays under 20 degrees of pitch)
 export const RAIL = {
   start: new THREE.Vector3(-52, deckHeight(-52) + 1.35, -1.2),
   length: 9,
@@ -111,75 +113,53 @@ export const PATH_FIXED = [
   RELEASE_POINT.toArray(),
   RELEASE_POINT.clone().addScaledVector(RAIL.dir, 20).toArray(),
 ];
+// Generated from straights and constant-radius left arcs (R = 190 m), so the bank never
+// passes 50 degrees at the cruise speeds below (bank = atan(v^2 / (g R)), 46.6 degrees at
+// 42 m/s) and the pitch never passes 20 degrees. Out to port, a wide left-hand loop
+// astern that exits level 40 m abeam, a low close pass up the port side, a long shallow
+// climb out ahead of the bow, then a left turn back onto a straight, gently descending
+// inbound run at the ship.
 const INTERCEPT_PATH_FWD = [
-  [-21, 31, -47],
-  [-17, 38, -88],
-  [-45, 45, -140],
-  [-110, 60, -185],
-  [-200, 72, -205],
-  [-290, 78, -180],
-  [-350, 75, -120],
-  [-360, 65, -60],
-  [-300, 50, -36],
-  [-200, 36, -30],
-  [-110, 29, -28],
-  [-30, 27, -27],
-  [40, 30, -25],
-  [160, 40, -24],
-  [300, 55, -24],
-  [440, 72, -25],
-  [580, 90, -25],
-  [700, 104, -25],
-  // Left turn (r ≈ 190 m) until the nose points back at the ship.
-  [795, 110, -50],
-  [865, 113, -120],
-  [890, 114, -215],
-  [881, 114, -274],
-  // Inbound run: a straight, gently descending line at the ship.
-  [757, 110, -235],
-  [632, 104, -197],
-  [508, 96, -158],
-  [384, 88, -119],
-  [260, 80, -81],
-  [136, 72, -42],
-  [12, 65, -4],
-  [-112, 60, 35],
+  [2, 29, -65], [38, 38, -108], [64, 40, -149], [79, 43, -195],
+  [81, 47, -244], [72, 51, -292], [50, 55, -336], [18, 59, -372],
+  [-23, 61, -400], [-69, 63, -416], [-118, 66, -420], [-166, 70, -411],
+  [-210, 74, -390], [-247, 77, -359], [-276, 77, -319], [-293, 72, -274],
+  [-298, 66, -225], [-290, 61, -177], [-271, 57, -132], [-241, 52, -94],
+  [-202, 45, -65], [-156, 38, -46], [-108, 33, -40], [10, 28, -40],
+  [127, 34, -40], [245, 40, -40], [362, 55, -40], [480, 67, -40],
+  [598, 83, -40], [715, 95, -40], [766, 96, -47], [812, 96, -66],
+  [852, 97, -98], [882, 98, -139], [900, 99, -186], [905, 100, -236],
+  [897, 102, -286], [876, 103, -332], [843, 104, -371], [802, 105, -399],
+  [754, 106, -416], [703, 107, -420], [654, 107, -410], [608, 108, -387],
+  [490, 101, -306], [371, 91, -225], [252, 79, -144], [133, 69, -64],
+  [15, 62, 17],
 ];
-// The aft launcher (921) fires astern, so its drone shares the release, the loop
-// and the close pass, then swings round the bow, runs back astern well clear of
-// the port side, and turns onto an inbound run from behind the ship. Any missile
-// from the stern box then leaves away from the ship, never across it.
+// The aft launcher (921) fires astern, so its drone shares the release, the loop and the
+// close pass, then swings left round the bow, runs back astern on the port side well clear
+// of the ship, and turns left again onto an inbound run from behind (converging slowly on
+// the ship). Any missile from the stern box then leaves away from the ship, never across it.
 const INTERCEPT_PATH_AFT = [
-  ...INTERCEPT_PATH_FWD.slice(0, INTERCEPT_PATH_FWD.findIndex((p) => p[0] === 160 && p[1] === 40) + 1),
-  [300, 55, -30],
-  // Left turn round the bow, then a long run astern on the port side.
-  [380, 62, -70],
-  [430, 70, -160],
-  [390, 76, -250],
-  [300, 80, -310],
-  [100, 84, -325],
-  [-150, 90, -330],
-  [-450, 98, -330],
-  [-750, 106, -330],
-  [-900, 112, -330],
-  // Left turn (r ≈ 110 m) until the nose points forward at the ship.
-  [-985, 113, -300],
-  [-1010, 114, -220],
-  [-980, 114, -140],
-  [-900, 114, -110],
-  // Inbound run from astern: a straight, gently descending line at the ship.
-  [-775, 111, -87],
-  [-650, 107, -64],
-  [-525, 102, -41],
-  [-400, 96, -18],
-  [-275, 89, 5],
-  [-150, 82, 28],
-  [-25, 75, 50],
+  [2, 29, -65], [38, 38, -108], [64, 40, -149], [79, 43, -195],
+  [81, 47, -244], [72, 51, -292], [50, 55, -336], [18, 59, -372],
+  [-23, 61, -400], [-69, 63, -416], [-118, 66, -420], [-166, 70, -411],
+  [-210, 74, -390], [-247, 77, -359], [-276, 77, -319], [-293, 72, -274],
+  [-298, 66, -225], [-290, 61, -177], [-271, 57, -132], [-241, 52, -94],
+  [-202, 45, -65], [-156, 38, -46], [-108, 33, -40], [-26, 28, -40],
+  [55, 32, -40], [137, 36, -40], [218, 40, -40], [300, 55, -40],
+  [349, 56, -46], [395, 58, -65], [434, 59, -96], [465, 61, -135],
+  [484, 63, -181], [490, 66, -230], [484, 68, -279], [465, 70, -325],
+  [434, 72, -364], [395, 73, -395], [349, 75, -414], [300, 76, -420],
+  [156, 80, -420], [12, 85, -420], [-132, 91, -420], [-276, 97, -420],
+  [-420, 103, -420], [-564, 108, -420], [-708, 112, -420], [-756, 112, -414],
+  [-801, 112, -395], [-840, 112, -366], [-870, 113, -328], [-890, 113, -284],
+  [-898, 113, -236], [-893, 113, -187], [-876, 113, -141], [-848, 114, -102],
+  [-811, 114, -70], [-767, 114, -49], [-719, 114, -40], [-581, 108, -32],
+  [-443, 99, -24], [-306, 90, -16], [-168, 81, -8], [-30, 75, 0],
 ];
 const INTERCEPT_PATH = SHIP_VARIANT === 'aft' ? INTERCEPT_PATH_AFT : INTERCEPT_PATH_FWD;
-// Recovery uses the forward ship's flight up to the middle of the inbound run,
-// where the parachute opens, 400 m off the ship, for both ships (no missile).
-const CHUTE_PATH = INTERCEPT_PATH_FWD.slice(0, INTERCEPT_PATH_FWD.findIndex((p) => p[0] === 384 && p[1] === 88) + 1);
+// Recovery uses the forward ship's flight up to the middle of the inbound run (index 45,
+// about 400 m off the ship), where the parachute opens, for both ships (no missile).
+const CHUTE_PATH = INTERCEPT_PATH_FWD.slice(0, 46);
 export const DEFAULT_PATH = CHUTE_MODE ? CHUTE_PATH : INTERCEPT_PATH;
 
 // A custom path drawn in the editor is stored per browser and applied on load.
@@ -289,14 +269,15 @@ export const ENGAGE = LOADED_ENGAGE ?? { ...ENGAGE_DEFAULTS };
 
 
 // Airspeed relative to the ship (m/s), keyed by seconds after release.
+// Kept low enough that the default path's turns (R = 190 m) stay under 50 degrees of bank.
 const SPEED_KEYS = [
   [0, V_RELEASE],
-  [3, 44],
-  [10, 52],
-  [25, 55],
-  [33, 60],
-  [40, 56],
-  [80, 50],
+  [3, 36],
+  [10, 38],
+  [25, 40],
+  [33, 42],
+  [40, 41],
+  [80, 40],
 ];
 
 // Drone 2 (pair mode) flies a variant of the same path: wider and higher, with the
@@ -440,7 +421,7 @@ function pathPose(t, pos, quat, f = FLIGHTS[0]) {
     const turn = Math.atan2(v1z * v2x - v1x * v2z, v1x * v2x + v1z * v2z) / (2 * h);
     // Ease bank in over the first second so it doesn't snap at release.
     const ease = THREE.MathUtils.smoothstep(tf, T_RELEASE, T_RELEASE + 1);
-    bank = ease * THREE.MathUtils.clamp(Math.atan((speed * turn) / G), -1.1, 1.1);
+    bank = ease * THREE.MathUtils.clamp(Math.atan((speed * turn) / G), -MAX_BANK, MAX_BANK);
   }
   _x.crossVectors(_up, fwd).normalize();
   _y.crossVectors(fwd, _x);

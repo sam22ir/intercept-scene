@@ -508,6 +508,19 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 .ed-actions .primary:hover { filter: brightness(1.1); background: var(--accent); }
 .link-btn[hidden] { display: none; }
 
+/* Mini map: a small translucent round radar above the timeline, bow up */
+.minimap {
+  position: fixed; z-index: 9; width: 176px; height: 176px; border-radius: 50%; overflow: hidden; cursor: pointer;
+  left: calc(var(--gap) + var(--safe-l)); bottom: calc(var(--tl-h, 150px) + var(--gap) * 2 + var(--safe-b));
+  background: rgba(8, 13, 20, 0.52); border: 1px solid var(--border); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.minimap[hidden] { display: none; }
+.minimap canvas { display: block; }
+.minimap .mm-scale { position: absolute; left: 0; right: 0; bottom: 11px; text-align: center; font-size: 9.5px; letter-spacing: 0.08em; color: rgba(255, 255, 255, 0.7); pointer-events: none; }
+body.ui-hidden .minimap, body.editing .minimap { display: none; }
+@media (max-width: 640px), (max-height: 500px) { .minimap { transform: scale(0.72); transform-origin: left bottom; } }
+
 /* Trajectory legend: one coloured chip per trail, under the top bar */
 .trail-legend {
   position: fixed; z-index: 9; top: calc(var(--gap) + var(--safe-t) + 58px); left: calc(var(--gap) + var(--safe-l));
