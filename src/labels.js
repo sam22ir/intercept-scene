@@ -1,11 +1,10 @@
 import * as THREE from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { scenario, missileTrailPoints, PENNANT } from './scenario.js';
+import { scenario } from './scenario.js';
 
-// Floating HTML tags on the drone, missile and ship, plus the missile's
-// trajectory line (solid for the part already flown, dashed for the rest of
-// the intercept). Everything is driven by `t` like the rest of the scene and
-// can be switched off as a whole.
+// Floating HTML tags on the drone, missile and ship. Everything is driven by `t`
+// like the rest of the scene and can be switched off as a whole. (The trajectory
+// lines live in trails.js, with their own switch.)
 
 function tag(kind, title) {
   const el = document.createElement('div');
@@ -29,43 +28,13 @@ export function createLabels(scene) {
   const pair = scenario.engagements.length > 1; // pair mode: a second drone and missile
   const drone = tag('drone', pair ? 'DRONE 1' : 'TARGET DRONE');
   const missile = tag('missile', 'MISSILE');
-  const ship = tag('ship', `FRIGATE ${PENNANT}`);
+  const ship = tag('ship', 'FRIGATE');
   group.add(drone.obj, missile.obj, ship.obj);
 
-  // Missile trajectory: two geometries sharing one position buffer, each
-  // with its own draw range (flown part / remainder).
-  function trajectory(k) {
-    const pts = missileTrailPoints(2, k);
-    const geo = new THREE.BufferGeometry().setFromPoints(pts.map((p) => p.pos));
-    const geoAhead = new THREE.BufferGeometry();
-    geoAhead.setAttribute('position', geo.attributes.position);
-    const flown = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffb02e, transparent: true, opacity: 0.9, depthWrite: false }));
-    const ahead = new THREE.Line(geoAhead, new THREE.LineDashedMaterial({
-      color: 0xffd27a, dashSize: 6, gapSize: 4, transparent: true, opacity: 0.55, depthWrite: false,
-    }));
-    ahead.computeLineDistances();
-    flown.frustumCulled = ahead.frustumCulled = false;
-    flown.renderOrder = ahead.renderOrder = 5;
-    group.add(flown, ahead);
-    const n = pts.length;
-    const stepDt = n > 1 ? pts[1].t - pts[0].t : 1;
-    return {
-      // Hidden before launch, flown part solid, remainder dashed.
-      set(t, tLaunch) {
-        const i = THREE.MathUtils.clamp(Math.floor((t - tLaunch) / stepDt) + 1, 0, n);
-        flown.visible = ahead.visible = t > tLaunch - 1; // preview the shot as the launcher trains
-        geo.setDrawRange(0, i);
-        const j = Math.max(i - 1, 0);
-        geoAhead.setDrawRange(j, n - j);
-      },
-    };
-  }
-  const line = trajectory(0);
   // Second engagement (pair mode only).
   const second = pair ? {
     drone: tag('drone', 'DRONE 2'),
     missile: tag('missile', 'MISSILE 2'),
-    line: trajectory(1),
   } : null;
   if (second) group.add(second.drone.obj, second.missile.obj);
 
@@ -133,13 +102,10 @@ export function createLabels(scene) {
           second.missile.obj.position.copy(d2.missilePos).y += 1.2;
           second.missile.body.innerHTML = `${fmt(d2.missileSpeed * 3.6, ' km/h')} · ${fmt(d2.missileRange, ' m')} <em>to target</em>`;
         }
-        second.line.set(t, e.tLaunch);
       }
 
       ship.obj.position.copy(d.shipPos).y += 37;
       ship.body.innerHTML = `${fmt(d.shipSpeed * 1.94384, ' kn')} · ${destroyed ? 'target down' : `${fmt(d.droneRange, ' m')} <em>to drone</em>`}`;
-
-      line.set(t, tLaunch);
     },
     render(scene, camera) {
       if (enabled) renderer.render(scene, camera);

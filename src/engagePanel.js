@@ -111,6 +111,7 @@ export function createEngagePanel({ onOpen, onClose }) {
     try {
       if (isDefault) localStorage.removeItem(ENGAGE_STORAGE_KEY);
       else localStorage.setItem(ENGAGE_STORAGE_KEY, JSON.stringify(clean));
+      sessionStorage.setItem('intercept.skip', '1'); // reload straight back into the scene
       sessionStorage.setItem(SEEK_KEY, String(Math.max(0, (preview?.tLaunch ?? scenario.tLaunch) - 4)));
     } catch {
       toast('Could not save the settings (browser storage is blocked).');

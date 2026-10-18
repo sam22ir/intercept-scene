@@ -32,7 +32,7 @@ export function createRecorder({
     button.title = 'Video recording is not available in this browser or embedded view (needs MediaRecorder and canvas capture)';
     return { supported: false };
   }
-  button.title = 'Record the Director cut as a video file (real-time capture)';
+  button.title = 'Record the cinematic cut as a video file (real-time capture)';
 
   let rec = null;
   let chunks = [];
