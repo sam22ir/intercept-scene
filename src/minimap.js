@@ -2,13 +2,13 @@ import * as THREE from 'three';
 import { scenario, shipPos, planePos, planeVel, missilePos, missileTrailPoints } from './scenario.js';
 import { TRAIL_COLORS } from './trails.js';
 
-// Mini map: a small translucent round radar at the bottom of the screen. It is centred on
+// Mini map: a small translucent round radar at the bottom of the screen, beside the timeline. It is centred on
 // the ship with the bow pointing up (so ahead is up, starboard is right) and shows the
 // ship, each drone and each missile with the way they are heading, plus their paths in the
 // ship's frame (the part already flown is bright, the rest faint). Everything is a pure
 // function of t, so it scrubs both ways. Click it to change the zoom; M hides it.
 
-const SIZE = 176; // CSS px
+const SIZE = 124; // CSS px: fits beside the timeline panel
 const SCALES = [300, 500, 750, 1000, 1500, 2000, 3000]; // auto-zoom steps: metres to the rim
 const ZOOMS = ['auto', 500, 1000, 2000]; // what a click cycles through
 const PATH_DT = 0.5; // s between path samples
@@ -233,7 +233,7 @@ export function createMinimap({ dronePosAt }) {
 
   const api = {
     get enabled() { return enabled; },
-    setEnabled(on) { enabled = on; root.hidden = !on; lastKey = ''; },
+    setEnabled(on) { enabled = on; root.hidden = !on; document.body.classList.toggle('has-map', on); lastKey = ''; },
     cycleZoom() { zoom = (zoom + 1) % ZOOMS.length; lastKey = ''; },
     // Redraws only when the moment or the zoom changed.
     update(t) {
