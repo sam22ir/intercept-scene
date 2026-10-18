@@ -10,6 +10,7 @@ import { createDebris } from './fx/effects.js';
 import { createLiveFx } from './fx/liveFx.js';
 import { pointScale } from './fx/particles.js';
 import { CameraRig } from './cameraRig.js';
+import { createFlyMap } from './flyMap.js';
 import {
   FlySim, T_SPOOL, T_RELEASE, BOOST_TIME, DEFAULT_SPEED, MISSILE_RANGE,
 } from './fly.js';
@@ -398,6 +399,20 @@ restartButton.innerHTML = 'Fly again<kbd>R</kbd>';
 menuEl.insertBefore(restartButton, menuEl.firstChild);
 restartButton.addEventListener('click', () => restart());
 
+// The map (bow up, centred on the drone); the choice is remembered like the other missions'.
+const map = createFlyMap();
+const mapButton = document.querySelector('#btn-map');
+function setMap(on) {
+  map.setEnabled(on);
+  mapButton.classList.toggle('active', on);
+  mapButton.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem('intercept.map', on ? '1' : '0'); } catch { /* storage unavailable */ }
+}
+let mapPref = true;
+try { mapPref = localStorage.getItem('intercept.map') !== '0'; } catch { /* storage unavailable */ }
+setMap(mapPref);
+mapButton.addEventListener('click', () => setMap(!map.enabled));
+
 const hudButton = document.querySelector('#btn-hud');
 function setHud(on) {
   hudOn = on;
@@ -418,6 +433,7 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>R</kbd>', 'Fly again'],
   ['<kbd>V</kbd>', 'Camera: chase, orbit, tower'],
   ['<kbd>[</kbd> <kbd>]</kbd>', 'Cruise speed (default 75 m/s)'],
+  ['<kbd>M</kbd>', 'Map (click it to change the zoom)'],
   ['<kbd>H</kbd> <kbd>C</kbd>', 'Readouts, hide the interface'],
 ].map(([k, d]) => `<dt>${k}</dt><dd>${d}</dd>`).join('');
 keysSheet.querySelector('.keys-note').textContent = 'Fly with the arrow keys · the engine only starts on the ship · the missile always finds you';
@@ -459,6 +475,7 @@ window.addEventListener('keydown', (e) => {
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
     case 'h': setHud(!hudOn); break;
+    case 'm': setMap(!map.enabled); break;
     case 'c': setFolded(!document.body.classList.contains('ui-hidden')); break;
     case '[': case ']': {
       sim.setSpeed(sim.speedTarget + (key === ']' ? 5 : -5));
@@ -504,6 +521,7 @@ renderer.setAnimationLoop((now) => {
   droneFocus(focus);
   env.setShadowFocus(sim.phase === 'deck' || sim.phase === 'cat' ? ship.group.position : focus, sim.phase === 'deck' ? 70 : 45);
   fx.update(sim.t);
+  map.update(sim);
   if (hudOn) {
     const html = hudHtml();
     if (html !== lastHtml) { live.innerHTML = html; lastHtml = html; }

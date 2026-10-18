@@ -21,7 +21,7 @@
 // direction, 90 = starboard), so a right turn increases it. Nose is local +Z, the left wing local +X.
 import * as THREE from 'three';
 import {
-  scenario, RAIL, SHIP_SPEED, G, MAX_BANK, LAUNCHER_PIVOT, TUBE_MOUTHS, launcherQuat, deckHeight, shipPos,
+  scenario, RAIL, SHIP_SPEED, G, LAUNCHER_PIVOT, TUBE_MOUTHS, launcherQuat, deckHeight, shipPos,
 } from './scenario.js';
 
 const rad = THREE.MathUtils.degToRad;
@@ -40,7 +40,10 @@ export const DEFAULT_SPEED = 75; // m/s
 export const SPEED_LIMITS = [45, 110];
 const PITCH_UP = rad(30);
 const PITCH_DOWN = rad(25);
-const TAU_ROLL = 0.35; // s, how fast the bank follows the key
+// A hard turn: 75 degrees of bank is 3.9 g and 28 degrees a second at 75 m/s (a 150 m radius). The scripted
+// flights stay under 50 degrees; a pilot who is dodging a missile needs more.
+export const MAX_BANK = rad(75);
+const TAU_ROLL = 0.22; // s, how fast the bank follows the key
 const TAU_PITCH = 0.55;
 const BOOST_ACCEL = 36; // m/s² while the booster burns
 const SPEED_ACCEL = 12; // m/s² otherwise, toward the target speed

@@ -100,13 +100,22 @@ describe('fly: arrow-key flight', () => {
     const sim = airborne(3);
     const a0 = sim.alpha;
     run(sim, 6, { right: true });
-    near(sim.bank, 50 * Math.PI / 180, 0.02, 'bank reaches the 50 degree limit');
+    near(sim.bank, F.MAX_BANK, 0.02, 'bank reaches the limit');
     const rate = (S.G * Math.tan(sim.bank)) / sim.speed;
     near(sim.alpha - a0, rate * 6, 0.35, 'heading change');
     assert.ok(sim.alpha > a0, 'turned to starboard');
     // The wing really is down on the right: local +X (left wing) points up.
     const left = new (sim.pos.constructor)(1, 0, 0).applyQuaternion(sim.quat);
     assert.ok(left.y > 0.3, 'right wing down');
+  });
+
+  it('turns hard: a half circle in under 8 s, on a radius of about 150 m', () => {
+    const sim = airborne(4);
+    const a0 = sim.alpha;
+    let t = 0;
+    while (sim.alpha - a0 < Math.PI && t < 12) { sim.advance(1 / 60, { right: true }); t += 1 / 60; }
+    assert.ok(t < 8, `a half turn took ${t.toFixed(1)} s`);
+    near(75 / ((S.G * Math.tan(F.MAX_BANK)) / 75), 150, 25, 'turn radius');
   });
 
   it('a held left arrow turns left', () => {
