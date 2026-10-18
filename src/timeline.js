@@ -23,7 +23,9 @@ export function createTimeline(scenario, { onKey } = {}) {
     speed: 1,
     tick(dt) {
       if (!this.playing || scrubbing) return;
-      this.seek(this.t + dt * this.speed * this.direction);
+      // `slow(t)` may cap the speed for a stretch (the maneuvers mission slows down at each order).
+      const speed = this.slow ? Math.min(this.speed, this.slow(this.t)) : this.speed;
+      this.seek(this.t + dt * speed * this.direction);
       if ((this.direction > 0 && this.t >= scenario.tEnd) || (this.direction < 0 && this.t <= 0)) this.playing = false;
     },
     seek(t) {

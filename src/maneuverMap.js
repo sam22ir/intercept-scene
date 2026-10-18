@@ -1,4 +1,4 @@
-import { shipState, relation, headingDeg, YD } from './maneuvers.js';
+import { shipState, relation, headingDeg, orderStatus, EXECUTE_FLASH, YD } from './maneuvers.js';
 
 // Exercise map for the naval maneuvers mission: the same round translucent disc as the intercept
 // minimap, but north up (like the briefing diagrams) and centred between the two ships, with
@@ -124,6 +124,25 @@ export function createManeuverMap() {
     ctx.fillText('ALG', ax, ay - 10);
     ctx.fillStyle = COLORS.rus;
     ctx.fillText('RUS', bx, by - 10);
+
+    // The order's life: an amber countdown while it stands by, a green pulse the moment it executes.
+    const order = orderStatus(t);
+    ctx.textAlign = 'center';
+    if (order.state === 'standby') {
+      ctx.fillStyle = 'rgba(255, 205, 90, 0.95)';
+      ctx.font = '700 9.5px system-ui, sans-serif';
+      ctx.fillText(`STANDBY ${Math.ceil(order.count)}`, half, 26);
+    } else if (order.state === 'execute') {
+      const u = order.since / EXECUTE_FLASH;
+      ctx.strokeStyle = `rgba(110, 255, 160, ${1 - u})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(half, half, rim * (0.15 + 0.85 * u), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = `rgba(110, 255, 160, ${1 - u * 0.4})`;
+      ctx.font = '700 10px system-ui, sans-serif';
+      ctx.fillText('EXECUTE', half, 26);
+    }
 
     label.textContent = `${ZOOMS[zoom] === 'auto' ? 'AUTO · ' : ''}${R >= 1000 ? `${R / 1000} km` : `${R} m`} · ${Math.round(headingDeg(a.heading)).toString().padStart(3, '0')}°`;
   }

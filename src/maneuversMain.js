@@ -10,10 +10,12 @@ import { canvasTexture } from './models/kit.js';
 import { CameraRig } from './cameraRig.js';
 import { createTimeline } from './timeline.js';
 import { createManeuverMap } from './maneuverMap.js';
+import { createManeuverAudio } from './maneuverAudio.js';
 import { toast } from './pathEditor.js';
 import {
-  exercise, shipState, relation, headingDeg, phaseAt, KT, YD, LIGHT, FLAGS,
+  exercise, shipState, relation, headingDeg, phaseAt, orderStatus, EXECUTE_FLASH, PHASES, STANDBY, STANDBY_LIMITS, KT, YD, LIGHT, FLAGS, lampOn,
 } from './maneuvers.js';
+import { stripShareParams } from './share.js';
 
 // Entry point of the second mission, "Naval maneuvers" (see maneuvers.js). Two frigates, ALG and
 // RUS, fly through the signalled maneuvers of the briefing deck. Like the intercept scene, every
@@ -68,14 +70,20 @@ function placeShip(s, t) {
   s.ship.update(1000 + t, Infinity);
 }
 
-// --- Wakes: a fading ribbon of foam along each ship's recent track -----------------------------------
-const WAKE_STEPS = 48;
-const WAKE_SPAN = 150; // s of track behind the ship
+// --- Wakes: a narrow ribbon of foam along each ship's recent track ---------------------------------------
+// Three vertices per step (port edge, centre, starboard edge): the edges are transparent, so the foam
+// has soft sides, and it widens and fades with age.
+const WAKE_STEPS = 40;
+const WAKE_SPAN = 90; // s of track behind the ship
 function createWake() {
-  const pos = new Float32Array(WAKE_STEPS * 2 * 3);
-  const col = new Float32Array(WAKE_STEPS * 2 * 4);
+  const pos = new Float32Array(WAKE_STEPS * 3 * 3);
+  const col = new Float32Array(WAKE_STEPS * 3 * 4);
   const index = [];
-  for (let i = 0; i < WAKE_STEPS - 1; i++) { const a = i * 2; index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  for (let i = 0; i < WAKE_STEPS - 1; i++) {
+    const a = i * 3;
+    const b = a + 3;
+    index.push(a, a + 1, b, a + 1, b + 1, b, a + 1, a + 2, b + 1, a + 2, b + 2, b + 1);
+  }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 4));
@@ -93,18 +101,17 @@ const _w = {};
 function updateWake(id, t) {
   const w = wakes[id];
   for (let i = 0; i < WAKE_STEPS; i++) {
-    const age = (i / (WAKE_STEPS - 1)) * WAKE_SPAN;
-    shipState(id, Math.max(t - age, 0), _w);
     const u = i / (WAKE_STEPS - 1);
-    const half = 4 + 22 * u;
-    // Sideways = to starboard of the heading (compass: East when heading North).
-    const sx = -Math.sin(_w.heading);
+    const age = u * WAKE_SPAN;
+    shipState(id, Math.max(t - age, 0), _w);
+    const half = 3 + 11 * Math.sqrt(u); // a few metres at the stern, spreading slowly
+    const sx = -Math.sin(_w.heading); // to starboard of the heading
     const sz = Math.cos(_w.heading);
     const bx = _w.x + SHIFT.x - Math.cos(_w.heading) * 55; // from the stern, at each moment
     const bz = _w.z + SHIFT.z - Math.sin(_w.heading) * 55;
-    w.pos.set([bx + sx * half, 0.5, bz + sz * half, bx - sx * half, 0.5, bz - sz * half], i * 6);
-    const a = (t - age < 0 ? 0 : 0.5) * (1 - u) ** 1.4;
-    w.col.set([0.94, 0.97, 1, a, 0.94, 0.97, 1, a], i * 8);
+    w.pos.set([bx + sx * half, 0.5, bz + sz * half, bx, 0.5, bz, bx - sx * half, 0.5, bz - sz * half], i * 9);
+    const a = t - age < 0 ? 0 : 0.5 * (1 - u) ** 2;
+    w.col.set([0.95, 0.98, 1, 0, 0.95, 0.98, 1, a, 0.95, 0.98, 1, 0], i * 12);
   }
   w.geo.attributes.position.needsUpdate = true;
   w.geo.attributes.color.needsUpdate = true;
@@ -169,23 +176,15 @@ const _from = new THREE.Vector3();
 const _to = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
-function blink(t, phase) {
-  // A signalling lamp: dots and dashes as a pure function of t.
-  const u = (t * 2.2 + phase) % 8;
-  return u < 0.6 || (u > 1.2 && u < 2.6) || (u > 3.2 && u < 3.8) || (u > 4.4 && u < 6) ? 1 : 0;
-}
+const _flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI);
 function updateLamps(t) {
-  const span = LIGHT.t1 - LIGHT.t0;
-  // RUS signals first, ALG answers in the second half.
-  const turns = { rus: [LIGHT.t0, LIGHT.t0 + span / 2], alg: [LIGHT.t0 + span / 2, LIGHT.t1] };
   for (const id of ['rus', 'alg']) {
     const lamp = lamps[id];
-    const [a, b] = turns[id];
-    const on = t >= a && t < b ? blink(t - a, id === 'rus' ? 0 : 3) : 0;
-    lamp.sprite.visible = on > 0;
+    const on = lampOn(t, id);
+    lamp.sprite.visible = on;
     lamp.sprite.scale.setScalar(on ? 26 : 1);
     const beam = lamp.beam;
-    beam.visible = on > 0;
+    beam.visible = on;
     if (!on) continue;
     const other = id === 'rus' ? 'alg' : 'rus';
     ships[id].ship.group.localToWorld(_from.set(9.2, 29, 0));
@@ -195,7 +194,7 @@ function updateLamps(t) {
     beam.position.copy(_from).addScaledVector(_dir, 0.5);
     beam.quaternion.setFromUnitVectors(_up, _dir.normalize());
     // A cone's apex is at +Y: flip it so the apex sits at the lamp.
-    beam.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI));
+    beam.quaternion.multiply(_flip);
     beam.scale.set(len * 0.045, len, len * 0.045);
     beam.material.opacity = 0.3;
   }
@@ -237,6 +236,31 @@ function updateFlags(t) {
       }
       pos.needsUpdate = true;
     }
+  }
+}
+
+// --- Markers: a ring above each ship that keeps its size on screen, so they stay findable from far away ---
+const ringTexture = (hex) => canvasTexture(64, 64, (c) => {
+  c.lineWidth = 7; c.strokeStyle = 'rgba(8,12,18,0.9)';
+  c.beginPath(); c.arc(32, 32, 20, 0, Math.PI * 2); c.stroke();
+  c.lineWidth = 4; c.strokeStyle = hex; c.stroke();
+  c.fillStyle = hex; c.beginPath(); c.arc(32, 32, 5, 0, Math.PI * 2); c.fill();
+});
+const markers = {};
+for (const [id, hex] of [['alg', '#3ddc84'], ['rus', '#ff7a1a']]) {
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTexture(hex), depthTest: false, transparent: true, sizeAttenuation: false, fog: false }));
+  sprite.scale.setScalar(0.05);
+  sprite.renderOrder = 20;
+  scene.add(sprite);
+  markers[id] = sprite;
+}
+function updateMarkers() {
+  for (const id of ['alg', 'rus']) {
+    const pos = ships[id].ship.group.position;
+    const a = THREE.MathUtils.smoothstep(camera.position.distanceTo(pos), 350, 900); // fades in as you pull away
+    markers[id].position.copy(pos).setY(22);
+    markers[id].material.opacity = a;
+    markers[id].visible = a > 0.01;
   }
 }
 
@@ -304,8 +328,12 @@ for (const b of focusButtons) {
   const id = FOCUS_ALIAS[b.dataset.focus];
   if (id) { b.dataset.focus = id; b.textContent = FOCUS_LABEL[id]; b.disabled = false; b.title = `Look at ${FOCUS_LABEL[id]} (${{ alg: 1, rus: 2, formation: 3 }[id]})`; }
 }
+// The Formation view keeps both ships in frame: it pulls back as they part and in as they close, until you
+// zoom yourself (the wheel) or pick Formation again.
+let autoZoom = true;
 function setFocus(id, distance) {
   invalidate();
+  autoZoom = id === 'formation';
   if (id === 'free' || !targets[id]) {
     rig.free();
   } else {
@@ -315,6 +343,18 @@ function setFocus(id, distance) {
   focusButtons.forEach((b) => b.classList.toggle('active', b.dataset.focus === rig.id));
 }
 for (const b of focusButtons) b.addEventListener('click', () => setFocus(b.dataset.focus));
+canvas.addEventListener('wheel', () => { autoZoom = false; }, { passive: true });
+const _off = new THREE.Vector3();
+function applyAutoZoom(dt) {
+  if (!autoZoom || rig.id !== 'formation' || rig.transition) return;
+  const range = ships.alg.ship.group.position.distanceTo(ships.rus.ship.group.position);
+  const want = Math.min(Math.max(range * 1.45 + 300, 650), 3200);
+  _off.subVectors(camera.position, controls.target);
+  const len = _off.length();
+  if (len < 1) return;
+  const next = len + (want - len) * (1 - Math.exp(-dt * 1.2));
+  camera.position.copy(controls.target).addScaledVector(_off, next / len);
+}
 
 // --- Interface: readouts, serial box, toggles, menu --------------------------------------------------------
 const hudRoot = document.querySelector('#hud');
@@ -325,30 +365,86 @@ const tile = (label, value, unit, cls = '') => `<div class="tile ${cls}"><span>$
 const redTokens = (s) => s.replace(/\b(AS|AB|AC|ALG|RUS)\b/g, '<span class="red">$1</span>');
 let lastPhase = null;
 let lastLive = '';
-hudLive.innerHTML = '<div class="hud-sec" data-live></div><div class="hud-sec serial" data-serial></div>';
+hudLive.innerHTML = '<div class="mh-bar"><div class="mh-title"><b data-title></b><div class="mh-sub"><small data-step></small><span class="chip" data-chip></span></div></div>'
+  + '<div class="mh-btns"><button type="button" data-min title="Minimise: keep only the readouts" aria-label="Minimise" aria-expanded="true">–</button>'
+  + '<button type="button" data-hide title="Hide the panel (H, or the Readouts button)" aria-label="Hide">×</button></div></div>'
+  + '<div class="mh-progress" title="How far through this order"><i data-progress></i></div>'
+  + '<div class="hud-sec" data-live></div><div class="hud-sec serial" data-serial></div>';
+const bar = {
+  title: hudLive.querySelector('[data-title]'), step: hudLive.querySelector('[data-step]'), chip: hudLive.querySelector('[data-chip]'),
+  progress: hudLive.querySelector('[data-progress]'),
+};
 const liveEl = hudLive.querySelector('[data-live]');
 const serialEl = hudLive.querySelector('[data-serial]');
-const serialHtml = (phase) => (phase.speeds ? `<div class="serial-speeds">${phase.speeds.map((s) => `<div>${s}</div>`).join('')}</div>` : '')
+const serialHtml = (phase) => (phase.note ? `<div class="serial-note">${phase.note}</div>` : '') + (phase.speeds ? `<div class="serial-speeds">${phase.speeds.map((s) => `<div>${s}</div>`).join('')}</div>` : '')
   + phase.serial.map((blk) => `<div class="serial-box">${blk.head ? `<div class="serial-head">${blk.head}</div>` : ''}${blk.lines.map((l) => `<div>${redTokens(l)}</div>`).join('')}</div>`).join('');
+const banner = document.querySelector('#shot-caption');
+banner.classList.add('call');
+let lastBanner = '';
+function updateBanner(order) {
+  let text = '';
+  let cls = '';
+  if (order.state === 'standby') { text = `STANDBY · ${Math.ceil(order.count)}`; cls = 'standby'; } else if (order.state === 'execute') { text = `EXECUTE · ${order.phase.title}`; cls = 'execute'; }
+  if (text + cls === lastBanner) return;
+  lastBanner = text + cls;
+  banner.hidden = !text;
+  banner.textContent = text;
+  banner.classList.remove('standby', 'execute');
+  if (cls) banner.classList.add(cls);
+}
+const mhCell = (name, s, cls) => `<div class="mh-cell ${cls}"><span>${name}</span><b>${pad3(headingDeg(s.heading))}°</b><em>${(s.speed / KT).toFixed(0)} kn</em></div>`;
+const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
 function updateReadout(t) {
-  const phase = phaseAt(t);
-  const a = ships.alg.state;
-  const r = ships.rus.state;
+  const order = orderStatus(t);
+  const phase = order.phase;
+  const idx = PHASES.indexOf(phase);
+  const chip = t >= exercise.tEnd ? ['Complete', 'ok'] : order.state === 'standby' ? [`Standby ${Math.ceil(order.count)} s`, 'warn'] : order.state === 'execute' ? ['Execute', 'ok'] : ['Under way', 'live'];
+  setText(bar.title, phase.title);
+  setText(bar.step, `Order ${idx + 1} of ${PHASES.length}`);
+  setText(bar.chip, chip[0]);
+  if (bar.chip.dataset.tone !== chip[1]) { bar.chip.dataset.tone = chip[1]; bar.chip.className = `chip ${chip[1]}`; }
+  const end = PHASES[idx + 1]?.t ?? exercise.tEnd;
+  bar.progress.style.width = `${(Math.min(Math.max((t - phase.t) / (end - phase.t), 0), 1) * 100).toFixed(1)}%`;
   const rel = relation(t, 'rus', 'alg');
-  const html = `<div class="hud-head"><b>${phase.title}</b><span class="chip live">${t >= exercise.tEnd ? 'Complete' : 'Under way'}</span></div>`
-    + `<div class="tiles">${tile('ALG', `${pad3(headingDeg(a.heading))}°`, `${(a.speed / KT).toFixed(0)} kn`)}${tile('RUS', `${pad3(headingDeg(r.heading))}°`, `${(r.speed / KT).toFixed(0)} kn`)}`
-    + `${tile('Station', `${Math.round(rel.range / YD)}`, `yd · ${pad3(rel.bearing)}°`, 'wide')}</div>`;
+  const html = `<div class="mh-row">${mhCell('ALG', ships.alg.state, 'alg')}${mhCell('RUS', ships.rus.state, 'rus')}`
+    + `<div class="mh-cell"><span>Station</span><b>${Math.round(rel.range / YD)}</b><em>yd · ${pad3(rel.bearing)}°</em></div></div>`;
   if (html !== lastLive) { liveEl.innerHTML = html; lastLive = html; }
   if (phase !== lastPhase) {
     lastPhase = phase;
     serialEl.innerHTML = serialHtml(phase);
   }
+  updateBanner(order);
 }
 
 let hudOn = true;
 const hudButton = document.querySelector('#btn-hud');
-function setHud(on) { hudOn = on; hudRoot.hidden = !on; hudButton.classList.toggle('active', on); hudButton.setAttribute('aria-pressed', String(on)); invalidate(); }
+let hudHint = false;
+function setHud(on) {
+  hudOn = on;
+  hudRoot.hidden = !on;
+  hudButton.classList.toggle('active', on);
+  hudButton.setAttribute('aria-pressed', String(on));
+  invalidate();
+  if (!on && !hudHint) { hudHint = true; toast('Readouts hidden. The Readouts button or H brings them back.', 3800); }
+}
 hudButton.addEventListener('click', () => setHud(!hudOn));
+// Minimise keeps the header, progress and readouts and drops the signal text; the choice is remembered.
+const minButton = hudLive.querySelector('[data-min]');
+function setHudMin(on) {
+  hudRoot.classList.toggle('min', on);
+  minButton.textContent = on ? '+' : '–';
+  minButton.title = on ? 'Show the signal text again' : 'Minimise: keep only the readouts';
+  minButton.setAttribute('aria-label', on ? 'Expand' : 'Minimise');
+  minButton.setAttribute('aria-expanded', String(!on));
+  try { localStorage.setItem('intercept.hudMin', on ? '1' : '0'); } catch { /* storage unavailable */ }
+  invalidate();
+}
+minButton.addEventListener('click', () => setHudMin(!hudRoot.classList.contains('min')));
+hudLive.querySelector('[data-hide]').addEventListener('click', () => setHud(false));
+hudLive.querySelector('.mh-bar').addEventListener('dblclick', (e) => { if (!e.target.closest('button')) setHudMin(!hudRoot.classList.contains('min')); });
+let hudMinPref = false;
+try { hudMinPref = localStorage.getItem('intercept.hudMin') === '1'; } catch { /* storage unavailable */ }
+setHudMin(hudMinPref);
 
 const labelsButton = document.querySelector('#btn-labels');
 function setLabels(on) {
@@ -400,9 +496,24 @@ const unfoldButton = document.querySelector('#btn-unfold');
 const menuButton = document.querySelector('#btn-menu');
 const menuEl = document.querySelector('#menu');
 const keysEl = document.querySelector('#keys');
-function setMenu(open) { menuEl.hidden = !open; menuButton.setAttribute('aria-expanded', String(open)); invalidate(); }
+// The Orders button and its dropdown (the list and the standby time) are built below, in the top bar.
+let ordersEl = null;
+let ordersButton = null;
+let lastOrderIdx = -2;
+function setOrders(open) {
+  if (!ordersEl) return;
+  ordersEl.hidden = !open;
+  ordersButton.setAttribute('aria-expanded', String(open));
+  if (open) { setMenu(false); lastOrderIdx = -2; } // redraw once, scrolled to the current order
+  invalidate();
+}
+function setMenu(open) { menuEl.hidden = !open; menuButton.setAttribute('aria-expanded', String(open)); if (open) setOrders(false); invalidate(); }
 function setKeys(open) { keysEl.hidden = !open; invalidate(); }
-function closePopovers() { const was = !menuEl.hidden || !keysEl.hidden; setMenu(false); setKeys(false); return was; }
+function closePopovers() {
+  const was = !menuEl.hidden || !keysEl.hidden || !!(ordersEl && !ordersEl.hidden);
+  setMenu(false); setKeys(false); setOrders(false);
+  return was;
+}
 function setPanelFolded(on, save = true) {
   invalidate();
   if (on) closePopovers();
@@ -420,6 +531,7 @@ document.querySelector('#keys-close').addEventListener('click', () => setKeys(fa
 window.addEventListener('pointerdown', (e) => {
   if (!menuEl.hidden && !e.target.closest('#menu, #btn-menu')) setMenu(false);
   if (!keysEl.hidden && !e.target.closest('#keys, #btn-keys')) setKeys(false);
+  if (ordersEl && !ordersEl.hidden && !e.target.closest('#orders, #btn-orders')) setOrders(false);
 }, true);
 let panelFolded = false;
 try { panelFolded = localStorage.getItem(FOLD_KEY) === '1'; } catch { /* storage unavailable */ }
@@ -429,6 +541,58 @@ document.querySelector('#btn-ship').addEventListener('click', () => {
 });
 document.querySelector('.brand b').textContent = 'Maneuvers';
 document.querySelector('#mission-sub').textContent = 'ALG & RUS · signalled drill';
+
+// --- Orders: the briefing's contents column, now a dropdown from the top bar ---------------------------------
+// A tick on each finished order, the current one highlighted, click one to jump to it; the standby time is set at the foot.
+const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+ordersButton = document.createElement('button');
+ordersButton.id = 'btn-orders';
+ordersButton.className = 'icon';
+ordersButton.setAttribute('aria-haspopup', 'true');
+ordersButton.setAttribute('aria-expanded', 'false');
+ordersButton.setAttribute('aria-controls', 'orders');
+ordersButton.title = 'The orders of the drill: jump to one, set the standby time (O)';
+ordersButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.2 1.2L6.8 5M3.5 12l1.2 1.2L6.8 11M3.5 18l1.2 1.2L6.8 17"/></svg><span class="cap">Orders</span>';
+menuButton.parentElement.insertBefore(ordersButton, menuButton);
+ordersEl = document.createElement('div');
+ordersEl.id = 'orders';
+ordersEl.className = 'orders-menu';
+ordersEl.hidden = true;
+ordersEl.innerHTML = '<div class="orders-head"><b>Orders</b><small>Click one to jump to it</small></div>'
+  + `<ol class="orders-list">${PHASES.map((p, i) => `<li><button type="button" class="order" data-i="${i}" title="Jump to just before this order is announced"><span class="chk"></span><span class="name">${p.label}</span><span class="when">${mmss(p.t)}</span></button></li>`).join('')}</ol>`
+  + '<div class="mh-standby" title="How long an order stands by between its announcement and its execution. Changing it reloads the scene at this moment."><span>Standby time</span>'
+  + '<div class="mh-step"><button type="button" data-sb="-1" aria-label="Shorter standby">–</button><b data-sb-val></b><button type="button" data-sb="1" aria-label="Longer standby">+</button></div></div>';
+document.querySelector('#topbar').appendChild(ordersEl);
+ordersButton.addEventListener('click', () => setOrders(ordersEl.hidden));
+const orderButtons = [...ordersEl.querySelectorAll('.order')];
+function updateOrders(t) {
+  const idx = t >= exercise.tEnd ? PHASES.length : PHASES.indexOf(phaseAt(t));
+  if (idx === lastOrderIdx) return;
+  lastOrderIdx = idx;
+  orderButtons.forEach((b, i) => {
+    b.classList.toggle('done', i < idx);
+    b.classList.toggle('current', i === idx);
+    if (i === idx && !ordersEl.hidden) b.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+// --- Sound: horns on the orders and serials, a click per flash of the lamp -------------------------------
+const audio = createManeuverAudio();
+const soundButton = document.querySelector('#btn-sound');
+function setSound(on) {
+  audio.setEnabled(on);
+  soundButton.classList.toggle('active', on);
+  soundButton.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem('intercept.sound', on ? '1' : '0'); } catch { /* storage unavailable */ }
+  invalidate();
+}
+let soundPref = true;
+try { soundPref = localStorage.getItem('intercept.sound') !== '0'; } catch { /* storage unavailable */ }
+audio.setEnabled(soundPref);
+soundButton.classList.toggle('active', soundPref);
+soundButton.setAttribute('aria-pressed', String(soundPref));
+if (!audio.supported) { soundButton.disabled = true; soundButton.title = 'Sound is not available in this browser'; }
+soundButton.addEventListener('click', () => setSound(!audio.enabled));
 
 // --- Clock ------------------------------------------------------------------------------------------------
 const clock = createTimeline(exercise, {
@@ -448,14 +612,49 @@ const clock = createTimeline(exercise, {
     if (key === 't' || key === 'T') setTrails(!tracks.alg.plan.visible);
     if (key === 'm' || key === 'M') setMap(!map.enabled);
     if (key === 'h' || key === 'H') setHud(!hudOn);
+    if (key === 's' || key === 'S') setSound(!audio.enabled);
+    if (key === 'o' || key === 'O') setOrders(ordersEl.hidden);
     if (key === 'c' || key === 'C') setPanelFolded(!document.body.classList.contains('ui-hidden'));
   },
 });
-clock.setSpeed(8); // 38 minutes of exercise: eight times real time by default
-// Deep link: ?t= opens paused at that moment.
+// Standby time: the stepper at the foot of the Orders dropdown. The ships' orders execute at fixed times, so this only moves
+// when each order is announced; it is applied by reloading the scene at this moment, a second after the last click.
+const sbVal = ordersEl.querySelector('[data-sb-val]');
+let sbPending = STANDBY;
+let sbTimer = 0;
+sbVal.textContent = `${STANDBY} s`;
+for (const b of ordersEl.querySelectorAll('[data-sb]')) {
+  b.addEventListener('click', () => {
+    sbPending = Math.min(Math.max(sbPending + Number(b.dataset.sb), STANDBY_LIMITS[0]), STANDBY_LIMITS[1]);
+    sbVal.textContent = `${sbPending} s`;
+    sbVal.classList.toggle('pending', sbPending !== STANDBY);
+    clearTimeout(sbTimer);
+    if (sbPending === STANDBY) return;
+    sbTimer = setTimeout(() => {
+      try {
+        localStorage.setItem('intercept.standby', String(sbPending));
+        sessionStorage.setItem('intercept.skip', '1'); // straight back into the exercise
+        sessionStorage.setItem('intercept.seek', String(clock.t));
+      } catch { toast('Could not save the setting (browser storage is blocked).'); return; }
+      stripShareParams();
+      location.reload();
+    }, 1000);
+  });
+}
+
+// Clicking an order in the list jumps to just before it is announced.
+orderButtons.forEach((b, i) => b.addEventListener('click', () => { clock.seek(Math.max(PHASES[i].t - 1, 0)); setOrders(false); invalidate(); }));
+// 51 minutes of exercise: sixteen times real time by default, slowing to 1.5x from each order's
+// announcement to just after it executes, so the STANDBY and EXECUTE calls can be followed.
+clock.setSpeed(16);
+const SLOW_WINDOWS = PHASES.map((p) => [p.t, p.tx + EXECUTE_FLASH]);
+clock.slow = (t) => (SLOW_WINDOWS.some(([a, b]) => t >= a && t < b) ? 1.5 : Infinity);
+// Deep link: ?t= opens paused at that moment; the standby stepper reloads at the same moment, playing.
 try {
   const t = parseFloat(new URLSearchParams(location.search).get('t'));
-  if (Number.isFinite(t)) { clock.playing = false; clock.seek(t); }
+  const back = parseFloat(sessionStorage.getItem('intercept.seek'));
+  sessionStorage.removeItem('intercept.seek');
+  if (Number.isFinite(t)) { clock.playing = false; clock.seek(t); } else if (Number.isFinite(back)) clock.seek(back);
 } catch { /* no query string */ }
 
 // Opening view: the whole formation from the east, slightly above.
@@ -511,12 +710,16 @@ renderer.setAnimationLoop((now) => {
   ou.uTime.value = t;
   ou.uShipX.value = 1e7; // no single-ship wake: each ship has its own ribbon
   rig.update();
+  applyAutoZoom(dt);
   controls.update();
   if (camera.position.y < 1) camera.position.y = 1;
   const close = rig.id === 'alg' || rig.id === 'rus';
   env.setShadowFocus(close ? targets[rig.id].pos(shadowCenter) : targets.formation.pos(shadowCenter), close ? 150 : 1300);
   clock.renderUI();
   updateReadout(t);
+  updateOrders(t);
+  updateMarkers();
+  audio.update(t, camera, { alg: ships.alg.ship.group.position, rus: ships.rus.ship.group.position }, clock);
   map.update(t);
   if (needsRender()) {
     renderer.render(scene, camera);
@@ -526,7 +729,7 @@ renderer.setAnimationLoop((now) => {
   }
 });
 
-toast('Naval maneuvers: ALG and RUS run the briefing deck. Playing at 8×, use the speed button or [ ] to change it.', 6000);
+toast('Plays at 16×, slowing at each order. Speed: the button or [ ].', 4500);
 
 // Debug / inspection handle (mirrors the intercept scene's).
 window.__scene = { exercise, clock, rig, camera, controls, setFocus, ships, scene, renderer };
