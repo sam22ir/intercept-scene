@@ -386,6 +386,21 @@ button, select, .link-btn, .menu a { touch-action: manipulation; }
   .tbtn.play { width: 34px; }
 }
 
+/* Naval maneuvers mission: the intercept-only controls step aside, and the readout panel carries the
+   signal (serial) text of the briefing deck. */
+body.mission-maneuvers #btn-director, body.mission-maneuvers #btn-sound, body.mission-maneuvers #btn-edit,
+body.mission-maneuvers #btn-engage, body.mission-maneuvers #btn-record, body.mission-maneuvers #btn-link,
+body.mission-maneuvers #trail-legend { display: none; }
+body.mission-maneuvers .hud { width: 300px; max-height: calc(100vh - 2 * var(--gap) - 170px); overflow-y: auto; }
+.serial-box, .serial-speeds {
+  margin-top: 8px; padding: 7px 10px; border: 2px solid rgba(110, 150, 240, 0.7); border-radius: 7px;
+  background: rgba(40, 70, 140, 0.22); font-size: 12px; font-weight: 600; line-height: 1.5;
+}
+.serial-speeds { font-variant-numeric: tabular-nums; }
+.serial-head { color: #ff6b6b; text-decoration: underline; letter-spacing: 0.04em; margin-bottom: 3px; }
+.serial .red { color: #ff5d61; }
+.hud-sec.serial { margin-top: 0; padding-top: 0; }
+
 /* Floating 3D tags (CSS2DRenderer layer sits over the canvas, click-through). */
 .labels-layer { position: fixed; inset: 0; pointer-events: none; }
 .tag {
@@ -432,7 +447,8 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 .ch-step h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 7px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
 .ch-step .n { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: rgba(255, 255, 255, 0.08); color: var(--text); font-size: 10.5px; letter-spacing: 0; }
 
-.missions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.missions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+@media (min-width: 1000px) { .missions { grid-template-columns: repeat(4, 1fr); } }
 .mission {
   display: flex; align-items: center; gap: 10px; padding: 9px 12px; text-align: left; border-radius: 11px;
   background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); transition: border-color 0.15s, background 0.15s;
@@ -448,6 +464,7 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 .mission .i-canopy { stroke: var(--accent); fill: rgba(255, 122, 26, 0.3); }
 .mission .i-line { stroke: var(--muted); stroke-width: 1.2; }
 .mission .i-sea { stroke: #3d7fa6; }
+.mission .i-ship { stroke: var(--ok); stroke-width: 2.2; fill: rgba(61, 220, 132, 0.18); }
 .mission[data-mode='chute'] .i-drone { stroke-width: 2.6; }
 
 .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

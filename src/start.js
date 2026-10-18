@@ -33,7 +33,7 @@ function showFatal(err) {
   document.body.appendChild(box);
 }
 
-const MODES = ['intercept', 'chute', 'pair'];
+const MODES = ['intercept', 'chute', 'pair', 'maneuvers'];
 let mode = 'intercept';
 
 let launched = false;
@@ -41,7 +41,8 @@ async function launch(id) {
   if (launched) return; // Enter on a focused button fires both keydown and click
   launched = true;
   globalThis.__SHIP_VARIANT = id;
-  globalThis.__SCENARIO = mode;
+  // The maneuvers mission has its own scene; scenario.js (which the ship model imports) just sees an intercept.
+  globalThis.__SCENARIO = mode === 'maneuvers' ? 'intercept' : mode;
   write('localStorage', 'intercept.ship', id);
   write('localStorage', 'intercept.mode', mode);
   try {
@@ -58,7 +59,7 @@ async function launch(id) {
   // Let the loading screen paint before the scene's heavy synchronous setup.
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
   try {
-    await import('./main.js');
+    await (mode === 'maneuvers' ? import('./maneuversMain.js') : import('./main.js'));
   } catch (err) {
     showFatal(err);
   }
@@ -67,11 +68,12 @@ async function launch(id) {
 // Two choices (mission, ship) and a Start button. Selection changes only on click or
 // key; hover is visual only, so the summary and the Start target never follow the mouse.
 const SHIP_NAMES = { fwd: 'Forward launcher', aft: 'Aft launcher' };
-const MODE_NAMES = { intercept: 'Intercept', chute: 'Recovery', pair: 'Two drones' };
+const MODE_NAMES = { intercept: 'Intercept', chute: 'Recovery', pair: 'Two drones', maneuvers: 'Naval maneuvers' };
 const MODE_NOTES = {
   intercept: 'Same drone, same shot on either ship. The difference is where the launcher sits.',
   chute: 'The missile is never fired: the drone opens a red parachute and lands in the sea.',
   pair: 'A second drone leaves the same catapult 14 s later, on a wider, higher track.',
+  maneuvers: 'Two frigates, ALG and RUS, run the briefing deck: turns together, a change of station, light and flag serials, a close pass.',
 };
 
 function showChooser(preselect) {
@@ -80,6 +82,8 @@ function showChooser(preselect) {
   const cards = [...chooser.querySelectorAll('[data-ship]')];
   const missions = [...chooser.querySelectorAll('[data-mode]')];
   const summary = $('#ch-summary');
+  const shipStep = chooser.querySelector('[aria-labelledby="ch-step2"]');
+  const startBtn = $('#ch-start');
   const sub = $('#chooser-sub');
   const remembered = read('localStorage', 'intercept.ship');
   const startShip = cards.some((c) => c.dataset.ship === preselect) ? preselect : remembered;
@@ -88,7 +92,11 @@ function showChooser(preselect) {
   const paint = () => {
     cards.forEach((c) => c.setAttribute('aria-checked', String(c.dataset.ship === ship)));
     missions.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === mode)));
-    summary.textContent = `${MODE_NAMES[mode]} · ${SHIP_NAMES[ship]}`;
+    // The maneuvers mission fixes both ships, so the ship step steps aside.
+    const drill = mode === 'maneuvers';
+    shipStep.hidden = drill;
+    startBtn.firstChild.textContent = drill ? 'Start exercise ' : 'Start simulation ';
+    summary.textContent = drill ? 'Naval maneuvers · ALG & RUS' : `${MODE_NAMES[mode]} · ${SHIP_NAMES[ship]}`;
     sub.textContent = MODE_NOTES[mode];
   };
   const setMode = (m) => { mode = m; paint(); };
@@ -112,7 +120,7 @@ function showChooser(preselect) {
       else return;
       e.preventDefault();
     } else if (e.key === 'm' || e.key === 'M') setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]);
-    else if (e.key === '1' || e.key === '2') setShip(cards[Number(e.key) - 1].dataset.ship);
+    else if ((e.key === '1' || e.key === '2') && mode !== 'maneuvers') setShip(cards[Number(e.key) - 1].dataset.ship);
     else if (e.key === 'Enter') { e.preventDefault(); go(); } // also when a card has focus after a click
   };
 
@@ -145,5 +153,5 @@ try {
 const rememberedMode = read('localStorage', 'intercept.mode');
 mode = MODES.includes(modeFromUrl) ? modeFromUrl : (MODES.includes(rememberedMode) ? rememberedMode : 'intercept');
 const validShip = fromUrl === 'fwd' || fromUrl === 'aft';
-if (validShip && !forceChooser && (skipChooser || deepLink)) launch(fromUrl);
+if ((validShip || mode === 'maneuvers') && !forceChooser && (skipChooser || deepLink)) launch(validShip ? fromUrl : 'fwd');
 else showChooser(validShip ? fromUrl : null);

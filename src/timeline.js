@@ -14,7 +14,7 @@ export function createTimeline(scenario, { onKey } = {}) {
   const speedBtn = $('#speed');
   const prevBtn = $('#btn-start');
   const nextBtn = $('#btn-end');
-  const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 4];
+  const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 4, 8, 16];
 
   const clock = {
     t: 0,

@@ -349,7 +349,9 @@ function raft(kit, white, metal, x, y, z) {
   kit.add(new THREE.BoxGeometry(0.7, 0.12, 1.4), metal, { pos: [x, y + 0.06, z] });
 }
 
-export function createShip() {
+// `ensign` picks the stern flag and hull tint: 'alg' (the default) or 'rus' (the second ship of the
+// maneuvers mission).
+export function createShip({ ensign = 'alg' } = {}) {
   const group = new THREE.Group();
   group.name = 'ship';
 
@@ -902,9 +904,17 @@ export function createShip() {
   const flagGeo = new THREE.PlaneGeometry(2.2, 1.4, 16, 6);
   flagGeo.translate(1.1, 0, 0);
   const flagBase = flagGeo.attributes.position.array.slice();
+  if (ensign === 'rus') M.hull.color.setHex(0xaeb9c9); // a slightly bluer grey hull
   const flag = new THREE.Mesh(flagGeo, new THREE.MeshStandardMaterial({
-    // Green/white field, red crescent and star.
-    map: canvasTexture(256, 160, (ctx, w, h) => {
+    // alg: green/white field, red crescent and star. rus: white, blue and red bands.
+    map: ensign === 'rus' ? canvasTexture(256, 160, (ctx, w, h) => {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, w, h / 3);
+      ctx.fillStyle = '#0039a6';
+      ctx.fillRect(0, h / 3, w, h / 3);
+      ctx.fillStyle = '#d52b1e';
+      ctx.fillRect(0, (2 * h) / 3, w, h / 3 + 1);
+    }) : canvasTexture(256, 160, (ctx, w, h) => {
       const field = () => {
         ctx.fillStyle = '#006233';
         ctx.fillRect(0, 0, w / 2, h);
