@@ -124,15 +124,16 @@ export function createTimeline(scenario, { onKey } = {}) {
     return { t, frac, label, el, tick };
   });
 
-  // Greedy placement: each label goes on the first of two rows where it clears its
+  // Greedy placement: each label goes on the first of MAX_ROWS rows where it clears its
   // neighbour by GAP px, clamped inside the bar; a label that fits nowhere is hidden
-  // (its tick stays, and the Now line names it when reached). Re-run on every resize.
+  // (its tick stays, with the name as its tooltip). Re-run on every resize.
   const ROW_H = 16;
   const GAP = 8;
+  const MAX_ROWS = 4;
   function layoutMarkers() {
     const w = markersEl.clientWidth;
     if (!w) return; // hidden (phone layouts show ticks only)
-    const ends = [-Infinity, -Infinity];
+    const ends = new Array(MAX_ROWS).fill(-Infinity);
     let rows = 0;
     for (const m of markerEls) {
       m.el.hidden = false;

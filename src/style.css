@@ -394,6 +394,13 @@ button, select, .link-btn, .menu a { touch-action: manipulation; }
   .tick.stem { height: 12px; }
   .tick { cursor: help; }
 }
+/* Desktop screens: the chapter names above the bar again, as many rows as it takes (see layoutMarkers),
+   each tick with a stem up to its name. Phones and short screens keep ticks and tooltips only. */
+@media (min-width: 641px) and (min-height: 501px) {
+  .markers { display: block; }
+  .track { padding-top: var(--label-rows, 0px); margin-top: 3px; }
+  .tick.stem { height: calc(14px + var(--stem, 0px)); }
+}
 @media (min-width: 641px) and (pointer: fine) {
   .tbtn { width: 30px; height: 28px; }
   .tbtn svg { width: 15px; height: 15px; }
