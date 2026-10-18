@@ -5,6 +5,7 @@ import {
 } from './scenario.js';
 import { createLabels } from './labels.js';
 import { createTrails } from './trails.js';
+import { createMinimap } from './minimap.js';
 import { createParachute } from './models/parachute.js';
 import { createPathEditor, toast } from './pathEditor.js';
 import { createEnvironment } from './environment.js';
@@ -105,6 +106,21 @@ try { trailsPref = localStorage.getItem('intercept.trails') !== '0'; } catch { /
 setTrails(trailsPref);
 trailsButton.addEventListener('click', () => setTrails(!trails.enabled));
 document.querySelectorAll('[data-trail][data-pair-only]').forEach((el) => { el.hidden = scenario.engagements.length < 2; });
+// Mini map: a small round radar, bow up, of the ship, drones and missiles.
+const minimap = createMinimap({ dronePosAt: (t, out, k) => (k ? pair.dronePosAt(t, out) : dronePosAt(t, out)) });
+const mapButton = document.querySelector('#btn-map');
+function setMap(on) {
+  invalidate();
+  minimap.setEnabled(on);
+  mapButton.classList.toggle('active', on);
+  mapButton.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem('intercept.map', on ? '1' : '0'); } catch { /* storage unavailable */ }
+}
+let mapPref = true;
+try { mapPref = localStorage.getItem('intercept.map') !== '0'; } catch { /* storage unavailable */ }
+setMap(mapPref);
+mapButton.addEventListener('click', () => setMap(!minimap.enabled));
+minimap.update(0);
 document.querySelectorAll('[data-trail="missile"]').forEach((el) => { el.hidden = !scenario.hasMissile; });
 
 // --- Applying a moment in time ----------------------------------------------
@@ -416,6 +432,10 @@ const clock = createTimeline(scenario, {
     if (key === 'Escape' && engagePanel.active) { engagePanel.close(); return; }
     if (editor.active) { editor.onKey(key, e); return; }
     if (key === 'e' || key === 'E') { engagePanel.close(); editor.toggle(); return; }
+    if (key === ',') { clock.prevEvent(); return; }
+    if (key === '.') { clock.nextEvent(); return; }
+    if (key === '[') { clock.slower(); return; }
+    if (key === ']') { clock.faster(); return; }
     if (key === 'g' || key === 'G') { if (!editor.active) engagePanel.toggle(); return; }
     if (key === '?') { setKeys(keysEl.hidden); return; }
     if (key === 'Escape') setFocus('free');
@@ -426,6 +446,7 @@ const clock = createTimeline(scenario, {
     if (key === '5' && pair) setFocus('missile2');
     if (key === 'l' || key === 'L') setLabels(!labels.enabled);
     if (key === 't' || key === 'T') setTrails(!trails.enabled);
+    if (key === 'm' || key === 'M') setMap(!minimap.enabled);
     if (key === 'd' || key === 'D') setDirector(!directing);
     if (key === 's' || key === 'S') setSound(!audio.enabled);
     if (key === 'h' || key === 'H') hud.toggle();
@@ -615,6 +636,7 @@ renderer.setAnimationLoop((now) => {
 
   clock.renderUI();
   hud.update(clock.t);
+  minimap.update(clock.t);
   const draw = needsRender();
   if (draw) {
     renderer.render(scene, camera);

@@ -116,9 +116,7 @@ export function createRecorder({
 
     restoreDirector = !isDirecting();
     setDirector(true);
-    const speed = document.querySelector('#speed');
-    if (speed) speed.value = '1';
-    clock.speed = 1;
+    clock.setSpeed(1);
     clock.direction = 1;
     clock.seek(0);
     clock.playing = true;

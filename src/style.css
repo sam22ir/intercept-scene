@@ -12,6 +12,7 @@
   --ok: #3ddc84;
   --bad: #ff5d61;
   --gap: 14px;
+  --map-d: 150px; /* mini map diameter */
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
@@ -347,6 +348,44 @@ button, select, .link-btn, .menu a { touch-action: manipulation; }
   .editor { top: calc(var(--gap) + 52px) !important; bottom: var(--gap) !important; overflow-y: auto; }
 }
 
+/* Compact control panel, every screen wider than a phone in portrait: one slim row of controls
+   with the scrub bar under it. The event names live in the tick tooltips and in the skip
+   buttons' titles; the camera picker, transport and speed fit on one line. */
+@media (min-width: 641px) {
+  .timeline { padding: 5px 10px 7px; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+  .cam { order: 0; width: auto; flex: 0 1 auto; overflow: visible; }
+  .cam button { flex: none; padding: 3px 9px; font-size: 12px; }
+  .transport { order: 1; margin: 0 auto; flex: none; }
+  .clock-box { order: 2; margin-left: 0; display: flex; }
+  .time b { font-size: 14px; }
+  .speed-btn { min-width: 46px; padding: 3px 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .now, .markers { display: none; }
+  .track { padding-top: 0; margin-top: 3px; }
+  .tick.stem { height: 12px; }
+  .tick { cursor: help; }
+}
+@media (min-width: 641px) and (pointer: fine) {
+  .tbtn { width: 30px; height: 28px; }
+  .tbtn svg { width: 15px; height: 15px; }
+  .tbtn.play { width: 36px; height: 32px; margin: 0 3px; }
+  .tbtn.play svg { width: 17px; height: 17px; }
+  #scrub, .ticks { height: 22px; }
+  .tick { bottom: 5px; }
+}
+.speed-btn { text-align: center; }
+/* Narrower windows: tighter chips, and the clock drops its total so the controls stay on one row. */
+@media (min-width: 641px) and (max-width: 900px) {
+  .controls { gap: 4px 8px; }
+  .cam button { padding: 3px 7px; font-size: 11.5px; }
+  .time > span { display: none; }
+  .time b::after { content: ' s'; font-size: 11px; font-weight: 400; color: var(--muted); }
+}
+@media (min-width: 641px) and (max-width: 900px) and (pointer: fine) {
+  .tbtn { width: 28px; }
+  .tbtn.play { width: 34px; }
+}
+
 /* Floating 3D tags (CSS2DRenderer layer sits over the canvas, click-through). */
 .labels-layer { position: fixed; inset: 0; pointer-events: none; }
 .tag {
@@ -507,6 +546,27 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 .ed-actions .primary { background: var(--accent); border-color: var(--accent); color: #1a0d02; font-weight: 700; }
 .ed-actions .primary:hover { filter: brightness(1.1); background: var(--accent); }
 .link-btn[hidden] { display: none; }
+
+/* Mini map: a small translucent round radar, bow up. On a normal screen it sits beside the
+   timeline panel on the same bottom row, so nothing floats over the scene; on a phone the
+   panel is a full-width sheet and the map sits just above it. */
+.minimap {
+  position: fixed; z-index: 9; width: var(--map-d); height: var(--map-d); border-radius: 50%; overflow: hidden; cursor: pointer;
+  left: calc(var(--gap) + var(--safe-l)); bottom: calc(var(--tl-h, 150px) + var(--gap) * 2 + var(--safe-b));
+  background: rgba(8, 13, 20, 0.52); border: 1px solid var(--border); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.minimap[hidden] { display: none; }
+.minimap canvas { display: block; }
+.minimap .mm-scale { position: absolute; left: 0; right: 0; bottom: 9px; text-align: center; font-size: 9px; letter-spacing: 0.08em; color: rgba(255, 255, 255, 0.7); pointer-events: none; }
+body.ui-hidden .minimap, body.editing .minimap { display: none; }
+@media (min-width: 641px) {
+  .minimap { bottom: calc(var(--gap) + var(--safe-b)); }
+  body.has-map .timeline {
+    left: calc(var(--gap) * 2 + var(--safe-l) + var(--map-d)); transform: none;
+    width: min(1000px, calc(100vw - var(--gap) * 3 - var(--safe-l) - var(--safe-r) - var(--map-d)));
+  }
+}
 
 /* Trajectory legend: one coloured chip per trail, under the top bar */
 .trail-legend {

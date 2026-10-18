@@ -11,6 +11,10 @@ export function createTimeline(scenario, { onKey } = {}) {
   const ticksEl = $('#ticks');
   const phaseNow = $('#phase-now');
   const phaseNext = $('#phase-next');
+  const speedBtn = $('#speed');
+  const prevBtn = $('#btn-start');
+  const nextBtn = $('#btn-end');
+  const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 4];
 
   const clock = {
     t: 0,
@@ -39,6 +43,24 @@ export function createTimeline(scenario, { onKey } = {}) {
       this.playing = false;
       this.seek(this.t + dt);
     },
+    // Jump to the previous / next event on the bar (the first and last jump to 0 and the end).
+    prevEvent() {
+      const hit = [...scenario.events].reverse().find((e) => e.t < this.t - 0.15);
+      this.playing = false;
+      this.seek(hit ? hit.t : 0);
+    },
+    nextEvent() {
+      const hit = scenario.events.find((e) => e.t > this.t + 0.05);
+      this.playing = false;
+      this.seek(hit ? hit.t : scenario.tEnd);
+    },
+    setSpeed(v) {
+      this.speed = v;
+      speedBtn.textContent = `${v}×`;
+    },
+    // Step through the speeds, clamped at both ends.
+    faster() { this.setSpeed(SPEEDS[Math.min(SPEEDS.length - 1, SPEEDS.indexOf(this.speed) + 1)] ?? 1); },
+    slower() { this.setSpeed(SPEEDS[Math.max(0, SPEEDS.indexOf(this.speed) - 1)] ?? 1); },
     renderUI() {
       if (!scrubbing) scrub.value = this.t;
       scrub.style.setProperty('--p', (this.t / scenario.tEnd).toFixed(4));
@@ -61,6 +83,12 @@ export function createTimeline(scenario, { onKey } = {}) {
       const nextText = next ? ` · ${next.label} in ${(next.t - this.t).toFixed(1)} s` : '';
       if (phaseNow.textContent !== now) phaseNow.textContent = now;
       if (phaseNext.textContent !== nextText) phaseNext.textContent = nextText;
+      // The skip buttons say where they would go.
+      const nextTitle = next && cur + 1 < markerEls.length ? `Next event: ${next.label} (.)` : 'Jump to the end (.)';
+      if (nextBtn.title !== nextTitle) nextBtn.title = nextTitle;
+      const before = markerEls.filter((m) => m.t < this.t - 0.15).at(-1);
+      const prevTitle = before ? `Previous event: ${before.label} (,)` : 'Back to the start (,)';
+      if (prevBtn.title !== prevTitle) prevBtn.title = prevTitle;
     },
   };
 
@@ -88,6 +116,7 @@ export function createTimeline(scenario, { onKey } = {}) {
     markersEl.appendChild(el);
     const tick = document.createElement('div');
     tick.className = 'tick';
+    tick.title = el.title;
     tick.style.left = `${frac * 100}%`;
     ticksEl.appendChild(tick);
     return { t, frac, label, el, tick };
@@ -149,9 +178,11 @@ export function createTimeline(scenario, { onKey } = {}) {
   revBtn.addEventListener('click', () => clock.play(-1));
   $('#btn-step-back').addEventListener('click', () => clock.step(-0.1));
   $('#btn-step-fwd').addEventListener('click', () => clock.step(0.1));
-  $('#btn-start').addEventListener('click', () => { clock.playing = false; clock.seek(0); });
-  $('#btn-end').addEventListener('click', () => { clock.playing = false; clock.seek(scenario.tEnd); });
-  $('#speed').addEventListener('change', (e) => { clock.speed = parseFloat(e.target.value); });
+  prevBtn.addEventListener('click', () => clock.prevEvent());
+  nextBtn.addEventListener('click', () => clock.nextEvent());
+  // One button: click for the next speed (wrapping back to the slowest), right-click for the previous.
+  speedBtn.addEventListener('click', () => { if (clock.speed >= SPEEDS[SPEEDS.length - 1]) clock.setSpeed(SPEEDS[0]); else clock.faster(); });
+  speedBtn.addEventListener('contextmenu', (e) => { e.preventDefault(); clock.slower(); });
 
   // Keep focus off buttons so Space never double-fires (key handler + button click).
   document.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => b.blur()));

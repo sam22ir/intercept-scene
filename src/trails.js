@@ -6,8 +6,8 @@ import { scenario, planePos, shipPos, missileTrailPoints } from './scenario.js';
 
 // Trajectory trails: the ship's track, each drone's flight path and each missile's
 // path, as thick lines in their own colours. The stretch still ahead of the object
-// keeps its vivid colour (dashed); the stretch it has already consumed turns to a
-// muted, slate-tinted version of that colour (solid). Everything is a pure function
+// is only a faint dashed preview; the stretch it has already consumed turns to a
+// muted, slate-tinted version of its colour (solid). Everything is a pure function
 // of the sim time t, so scrubbing works both ways. The Trails button and the T key
 // switch them off.
 
@@ -48,7 +48,7 @@ export function createTrails(scene) {
     const planGeo = new LineGeometry().setPositions(flat);
     const doneGeo = new LineGeometry().setPositions(flat);
     const spent = new THREE.Color(color).lerp(SPENT, SPENT_MIX);
-    const plan = new Line2(planGeo, mat(color, width * 0.8, { opacity: 0.95, dashed: true, dashSize: dash[0], gapSize: dash[1] }));
+    const plan = new Line2(planGeo, mat(color, width * 0.55, { opacity: 0.3, dashed: true, dashSize: dash[0], gapSize: dash[1] }));
     const done = new Line2(doneGeo, mat(spent, width, { opacity: 0.9 }));
     plan.computeLineDistances();
     for (const l of [plan, done]) { l.frustumCulled = false; l.renderOrder = order; }
