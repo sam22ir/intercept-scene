@@ -160,10 +160,36 @@ body.ui-hidden .panel:not(.editor) { display: none !important; }
 .big-count small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 3px; }
 .deb-head { font-size: 15px; font-weight: 700; margin: 2px 0 8px; }
 .deb-head.bad { color: var(--bad); } .deb-head.ok { color: var(--ok); }
-.deb-rows { display: grid; gap: 3px; }
-.deb-rows div { display: flex; justify-content: space-between; gap: 12px; }
+.deb-rows { display: grid; grid-template-columns: 1fr repeat(var(--cols, 1), auto); gap: 3px 12px; align-items: baseline; }
 .deb-rows span { color: var(--muted); }
-.deb-rows .sub { margin-top: 6px; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+.deb-rows b { text-align: right; white-space: nowrap; }
+.deb-rows .sub { font-style: normal; text-align: right; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
+.deb-rows .sub + .sub { color: #b892ff; } /* drone 2: the violet of its trail */
+/* What the story is doing now, and the next event on the timeline. */
+.hud-phase { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 9px; padding-bottom: 7px; border-bottom: 1px solid var(--hair); }
+.hud-phase b { font-size: 12px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-phase em { font-style: normal; font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.hud-phase em small { margin-left: 1px; }
+/* An inbound drone inside the launch range. */
+.tile.threat b { color: var(--missile); }
+.tile.threat-high b { color: var(--bad); }
+/* Pair mission: the drone the readouts are not following, on one line. */
+.hud-other { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 8px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--hair); }
+.hud-other b { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.hud-other .chip { justify-self: end; }
+.hud-other em { grid-column: 1 / -1; font-style: normal; font-size: 11.5px; }
+/* Range to the ship over the whole run, with a cursor at the current time. */
+.hud-spark { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--hair); }
+.hud-spark:empty { display: none; }
+.spark-cap { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
+.spark-cap small { font-size: 9.5px; color: var(--dim); }
+.hud-spark svg { display: block; width: 100%; height: 36px; margin: 3px 0 2px; overflow: visible; }
+.hud-spark polyline { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.hud-spark .d0 { stroke: var(--accent); }
+.hud-spark .d1 { stroke: #b892ff; }
+.hud-spark .lr { stroke: var(--missile); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.55; vector-effect: non-scaling-stroke; }
+.hud-spark .hit { stroke: var(--bad); stroke-width: 1; opacity: 0.6; vector-effect: non-scaling-stroke; }
+.hud-spark .cur { stroke: var(--text); stroke-width: 1; vector-effect: non-scaling-stroke; }
 body.editing .hud { display: none; }
 
 /* --- Timeline (bottom) ------------------------------------------------------- */
@@ -296,8 +322,8 @@ button, select, .link-btn, .menu a { touch-action: manipulation; }
   .hud-debrief { margin-top: 0; }
   .hud-live + .hud-debrief:not([hidden]) { margin-top: 0; }
   .deb-head { font-size: 13px; margin: 0 0 4px; }
-  .deb-rows { grid-template-columns: 1fr 1fr; column-gap: 14px; font-size: 11.5px; }
-  .deb-rows .sub { grid-column: 1 / -1; margin-top: 2px; }
+  .deb-rows { font-size: 11.5px; column-gap: 10px; }
+  .hud-phase, .hud-other, .hud-spark, .tile.brg { display: none; }
 
   .timeline { width: auto; left: calc(var(--gap) + var(--safe-l)); right: calc(var(--gap) + var(--safe-r)); transform: none; padding: 8px 10px 10px; }
   .controls { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; }
@@ -389,7 +415,7 @@ button, select, .link-btn, .menu a { touch-action: manipulation; }
 /* Naval maneuvers mission: the intercept-only controls step aside, and the readout panel carries the
    signal (serial) text of the briefing deck. */
 body.mission-maneuvers #btn-director, body.mission-maneuvers #btn-edit,
-body.mission-maneuvers #btn-engage, body.mission-maneuvers #btn-record, body.mission-maneuvers #btn-link,
+body.mission-maneuvers #btn-engage, body.mission-maneuvers #btn-record, body.mission-maneuvers #btn-link, body.mission-maneuvers #btn-units,
 body.mission-maneuvers #trail-legend { display: none; }
 /* The readout panel is a transparent holder for two small cards attached under the top bar (the intercept
    readouts are click-through; the cards have buttons, so they take the pointer). */
@@ -430,12 +456,21 @@ body.mission-maneuvers .topbar { padding-left: 6px; }
 .mh-title b { display: block; font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mh-sub { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
 .mh-sub small { font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); white-space: nowrap; }
-.mh-sub .chip { display: none; } /* the banner already carries the state and countdown */
+.mh-sub .chip:not(.shown) { display: none; } /* the banner carries standby and execute */
+.mh-sub .chip { font-size: 9px; padding: 1px 6px; }
 .mh-btns { display: flex; gap: 3px; flex: none; }
 .mh-btns button { width: 22px; height: 22px; padding: 0; border-radius: 6px; font-size: 14px; line-height: 1; }
 .mh-progress { height: 3px; margin: 7px 0 0; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
 .mh-progress i { display: block; width: 0; height: 100%; background: var(--accent); }
-.mh-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.mh-row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 5px; }
+.mh-cell b i, .mh-cell em i { font-style: normal; font-weight: 500; color: var(--missile); margin-left: 2px; }
+.mh-cell b i { font-size: 0.75em; }
+.mh-cell.cpa b { color: var(--missile); }
+.mh-cell span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The debrief card hangs under the order card at the end of the exercise. */
+body.mission-maneuvers .hud-debrief { margin-top: 8px; }
+.mcard-deb { width: 520px; max-width: 100%; pointer-events: auto; }
+.mcard-deb .deb-rows .sub:first-child { text-align: left; }
 .mh-cell { min-width: 0; padding: 4px 6px 5px; border-radius: 8px; background: rgba(0, 0, 0, 0.22); }
 .mh-cell span { display: flex; align-items: center; gap: 4px; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .mh-cell.alg span::before, .mh-cell.rus span::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #3ddc84; }

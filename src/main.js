@@ -421,7 +421,7 @@ canvas.addEventListener('pointermove', (e) => {
   });
 });
 
-const hud = createHud();
+const hud = createHud({ onUnits: (u) => { labels.setUnits(u); invalidate(); } });
 
 // --- Clock + timeline UI ------------------------------------------------------
 
@@ -450,6 +450,7 @@ const clock = createTimeline(scenario, {
     if (key === 'd' || key === 'D') setDirector(!directing);
     if (key === 's' || key === 'S') setSound(!audio.enabled);
     if (key === 'h' || key === 'H') hud.toggle();
+    if (key === 'u' || key === 'U') hud.toggleUnits();
     if (key === 'c' || key === 'C') setPanelFolded(!panelFolded);
   },
 });
@@ -635,7 +636,7 @@ renderer.setAnimationLoop((now) => {
   audio.update(clock.t, camera, clock);
 
   clock.renderUI();
-  hud.update(clock.t);
+  hud.update(clock.t, rig.id);
   minimap.update(clock.t);
   const draw = needsRender();
   if (draw) {

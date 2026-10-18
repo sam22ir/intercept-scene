@@ -13,7 +13,8 @@ import { createManeuverMap } from './maneuverMap.js';
 import { createManeuverAudio } from './maneuverAudio.js';
 import { toast } from './pathEditor.js';
 import {
-  exercise, shipState, relation, headingDeg, phaseAt, orderStatus, PHASES, STANDBY, STANDBY_LIMITS, KT, YD, LIGHT, FLAGS, lampOn,
+  exercise, shipState, headingDeg, phaseAt, orderStatus, PHASES, STANDBY, STANDBY_LIMITS, KT, YD, LIGHT, FLAGS, lampOn,
+  stationAt, orderedAt, DEBRIEF, EXECUTE_FLASH,
 } from './maneuvers.js';
 import { stripShareParams } from './share.js';
 
@@ -279,11 +280,12 @@ function tag(kind, title, color) {
   const obj = new CSS2DObject(el);
   obj.center.set(0.5, 1);
   labelGroup.add(obj);
-  return { obj, body: el.querySelector('.tag-body') };
+  return { obj, title: el.querySelector('.tag-title'), body: el.querySelector('.tag-body') };
 }
 const tags = { alg: tag('ship', 'ALG', '#3ddc84'), rus: tag('ship', 'RUS', '#ff7a1a') };
 const stationTag = tag('missile', 'STATION', '#ffffff');
-const pad3 = (n) => String(Math.round(n)).padStart(3, '0');
+const pad3 = (n) => String(Math.round(n) % 360).padStart(3, '0');
+const NAME = { alg: 'ALG', rus: 'RUS' };
 const fmtTag = (s) => `${pad3(headingDeg(s.heading))}° · ${(s.speed / KT).toFixed(0)}<span> kn</span>`;
 const _mid = new THREE.Vector3();
 function updateTags(t) {
@@ -292,7 +294,9 @@ function updateTags(t) {
     tags[id].obj.position.copy(s.ship.group.position).setY(40);
     tags[id].body.innerHTML = fmtTag(s.state);
   }
-  const rel = relation(t, 'rus', 'alg');
+  const rel = stationAt(t);
+  const stTitle = `${NAME[rel.other]} FROM ${NAME[rel.guide]}`;
+  if (stationTag.title.textContent !== stTitle) stationTag.title.textContent = stTitle;
   stationTag.obj.position.addVectors(ships.alg.ship.group.position, ships.rus.ship.group.position).multiplyScalar(0.5).setY(20);
   stationTag.body.innerHTML = `${Math.round(rel.range / YD)}<span> yd</span> · ${pad3(rel.bearing)}°`;
   stationTag.obj.visible = rel.range > 450; // close together, the two ship tags say enough
@@ -396,7 +400,18 @@ function updateBanner(order) {
   banner.classList.remove('standby', 'execute');
   if (cls) banner.classList.add(cls);
 }
-const mhCell = (name, s, cls) => `<div class="mh-cell ${cls}"><span>${name}</span><b>${pad3(headingDeg(s.heading))}°</b><em>${(s.speed / KT).toFixed(0)} kn</em></div>`;
+// A ship's heading and speed, with the ordered ones after an arrow while she is still turning or working up.
+const angGap = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
+function mhCell(id, s, t) {
+  const o = orderedAt(id, t);
+  const hdg = headingDeg(s.heading);
+  const kn = s.speed / KT;
+  const toHdg = angGap(hdg, o.course) > 0.5 ? `<i>→${pad3(o.course)}°</i>` : '';
+  const toKn = Math.abs(kn - o.speed) > 0.3 ? `<i>→${o.speed}</i>` : '';
+  return `<div class="mh-cell ${id}" title="${NAME[id]}: heading and speed${toHdg || toKn ? ', then the ordered ones' : ''}"><span>${NAME[id]}</span>`
+    + `<b>${pad3(hdg)}°${toHdg}</b><em>${kn.toFixed(0)}${toKn} kn</em></div>`;
+}
+const fmtClock = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
 const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
 function updateReadout(t) {
   const order = orderStatus(t);
@@ -404,14 +419,25 @@ function updateReadout(t) {
   const idx = PHASES.indexOf(phase);
   const chip = t >= exercise.tEnd ? ['Complete', 'ok'] : order.state === 'standby' ? [`${order.moving ? 'Under way' : 'Standby'} ${fmtCount(order.count)}`, 'warn'] : order.state === 'execute' ? ['Execute', 'ok'] : ['Under way', 'live'];
   setText(bar.title, phase.title);
-  setText(bar.step, `Order ${idx + 1} of ${PHASES.length}`);
+  // The plain words under the signal's own shorthand (TURN STBD 9 is a turn of 90 degrees).
+  const plain = phase.label.toUpperCase() !== phase.title.toUpperCase() ? ` · ${phase.label}` : '';
+  setText(bar.step, `Order ${idx + 1} of ${PHASES.length}${plain}`);
   setText(bar.chip, chip[0]);
-  if (bar.chip.dataset.tone !== chip[1]) { bar.chip.dataset.tone = chip[1]; bar.chip.className = `chip ${chip[1]}`; }
+  // The banner carries standby and execute; the rest of the time the chip says where the order stands.
+  const shown = order.state !== 'standby' && order.state !== 'execute' ? ' shown' : '';
+  if (bar.chip.dataset.tone !== chip[1] + shown) { bar.chip.dataset.tone = chip[1] + shown; bar.chip.className = `chip ${chip[1]}${shown}`; }
   const end = PHASES[idx + 1]?.t ?? exercise.tEnd;
   bar.progress.style.width = `${(Math.min(Math.max((t - phase.t) / (end - phase.t), 0), 1) * 100).toFixed(1)}%`;
-  const rel = relation(t, 'rus', 'alg');
-  const html = `<div class="mh-row">${mhCell('ALG', ships.alg.state, 'alg')}${mhCell('RUS', ships.rus.state, 'rus')}`
-    + `<div class="mh-cell"><span>Station</span><b>${Math.round(rel.range / YD)}</b><em>yd · ${pad3(rel.bearing)}°</em></div></div>`;
+  const rel = stationAt(t);
+  // Closest point of approach, through the skim: the range RUS will pass at and when.
+  const pass = exercise.pass;
+  const cpa = phase.id === 'skim' && t < pass.t + 60
+    ? `<div class="mh-cell cpa" title="Closest point of approach of RUS to ALG"><span>CPA</span><b>${Math.round(pass.range / YD)}</b>`
+      + `<em>yd · ${t < pass.t ? `in ${fmtClock(pass.t - t)}` : 'passed'}</em></div>`
+    : '';
+  const html = `<div class="mh-row">${mhCell('alg', ships.alg.state, t)}${mhCell('rus', ships.rus.state, t)}`
+    + `<div class="mh-cell" title="Station: ${NAME[rel.other]}'s range and true bearing from the guide, ${NAME[rel.guide]}">`
+    + `<span>${NAME[rel.other]} from ${NAME[rel.guide]}</span><b>${Math.round(rel.range / YD)}</b><em>yd · ${pad3(rel.bearing)}°</em></div>${cpa}</div>`;
   if (html !== lastLive) { liveEl.innerHTML = html; lastLive = html; }
   if (phase !== lastPhase) {
     lastPhase = phase;
@@ -419,6 +445,31 @@ function updateReadout(t) {
     signalTitle.textContent = phase.title;
   }
   updateBanner(order);
+  updateDebrief(t);
+}
+
+// Debrief, once the last order is done: how long each order took to arrive and how close it ended.
+const debriefFrom = PHASES[PHASES.length - 1].ta + EXECUTE_FLASH;
+function debriefResult(r) {
+  if (r.pass !== undefined) return `Passed at ${Math.round(r.pass / YD)} yd`;
+  if (r.error) {
+    const yd = Math.round(Math.abs(r.error.yd));
+    return yd < 1 && Math.abs(r.error.deg) < 0.5 ? 'On station'
+      : `${yd} yd ${r.error.yd < 0 ? 'inside' : 'outside'} · ${Math.abs(r.error.deg).toFixed(1)}°`;
+  }
+  return r.id === 'light' || r.id === 'flags' ? 'Serial done' : 'Steady';
+}
+const debriefHtml = '<div class="mcard mcard-deb"><div class="hud-head"><b>Debrief</b><span class="chip ok">Complete</span></div>'
+  + `<div class="deb-head ok">Exercise complete · ${fmtClock(exercise.tEnd)}</div>`
+  + '<div class="deb-rows" style="--cols:2"><em class="sub"></em><em class="sub">Arrived after</em><em class="sub">Result</em>'
+  + DEBRIEF.map((r) => `<span>${r.label}</span><b>${fmtClock(r.settle)}</b><b>${debriefResult(r)}</b>`).join('') + '</div></div>';
+let debriefShown = null;
+function updateDebrief(t) {
+  const on = t >= debriefFrom;
+  if (on === debriefShown) return;
+  debriefShown = on;
+  hudDebrief.hidden = !on;
+  if (on && !hudDebrief.firstChild) hudDebrief.innerHTML = debriefHtml;
 }
 
 let hudOn = true;

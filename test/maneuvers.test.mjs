@@ -6,7 +6,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   exercise, shipState, relation, headingDeg, PASS, PHASES, YD, KT, FORMATION_RANGE, EXECUTE_FLASH,
-  orderStatus, lampOn, CUES, LIGHT,
+  orderStatus, lampOn, CUES, LIGHT, guideAt, stationAt, orderedAt, DEBRIEF,
 } from '../src/maneuvers.js';
 
 const P = Object.fromEntries(PHASES.map((p) => [p.id, p]));
@@ -173,5 +173,41 @@ describe('naval maneuvers: orders, signals and timeline', () => {
     for (const p of PHASES) assert.ok(CUES.some((c) => c.kind === 'horn' && c.ship === 'alg' && Math.abs(c.t - p.ta) < 1e-9), `${p.id} horn at arrival`);
     assert.ok(CUES.filter((c) => c.kind === 'click').length > 20);
     assert.ok(CUES.every((c) => c.t >= 0 && c.t <= exercise.tEnd));
+  });
+});
+
+describe('naval maneuvers: guide, ordered course and debrief (the readouts)', () => {
+  it('changes guide with the signals: ALG, RUS from G FORM RUS, ALG again from CORPEN', () => {
+    assert.equal(guideAt(P.gform.tx - 1), 'alg');
+    assert.equal(guideAt(P.gform.tx + 1), 'rus');
+    assert.equal(guideAt(P.corpen.tx - 1), 'rus');
+    assert.equal(guideAt(P.corpen.tx + 1), 'alg');
+  });
+
+  it('measures the station from the guide: RUS 180 from ALG in FORM 1, ALG 180 from RUS after G FORM', () => {
+    const a = stationAt(10);
+    assert.equal(a.other, 'rus');
+    angleNear(a.bearing, 180, 0.5, 'FORM 1');
+    near(a.range / YD, 1000, 2, 'FORM 1 range');
+    const b = stationAt(P.gform.ta + 5);
+    assert.equal(b.other, 'alg');
+    angleNear(b.bearing, 180, 1, 'after G FORM');
+  });
+
+  it('knows the ordered course and speed while a ship is still turning', () => {
+    const o = orderedAt('alg', P.stbd.tx + 20);
+    assert.equal(o.course, 90);
+    assert.equal(o.speed, 12);
+    assert.ok(headingDeg(shipState('alg', P.stbd.tx + 20).heading) < 89, 'still turning');
+    assert.equal(orderedAt('rus', P.gform.tx + 1).speed, 15);
+  });
+
+  it('debriefs every order: station changes end within 10 yds and 2 degrees, the skim passes near 100 m', () => {
+    assert.equal(DEBRIEF.length, PHASES.length - 2);
+    for (const r of DEBRIEF) {
+      assert.ok(r.settle > 0, `${r.id} settles after executing`);
+      if (r.error) { assert.ok(Math.abs(r.error.yd) < 10, `${r.id} yds`); assert.ok(Math.abs(r.error.deg) < 2, `${r.id} deg`); }
+    }
+    near(DEBRIEF.find((r) => r.id === 'skim').pass, PASS.range, 1e-9, 'pass');
   });
 });

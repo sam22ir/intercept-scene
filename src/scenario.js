@@ -922,6 +922,8 @@ export const scenario = {
   engage: { ...ENGAGE },
   customEngage: CUSTOM_ENGAGE,
   autoLaunch: AUTO_LAUNCHES[0],
+  // Range (m) inside which an inbound drone is a threat the box will fire at (the HUD colours it).
+  launchRange: ENGAGE.timing === 'range' ? ENGAGE.range : LAUNCH_RANGE,
   // True if a (custom) path forced a launch while the drone was on the wrong side of the box.
   outOfArc: !CHUTE_MODE && ENGS.some((e) => !inArc(e.tLaunch, e.k ?? ENGS.indexOf(e))),
   customPath: CUSTOM_PATH,

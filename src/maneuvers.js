@@ -305,6 +305,48 @@ export const CUES = (() => {
   return cues.sort((x, y) => x.t - y.t);
 })();
 
+// --- Guide, ordered course and station ---------------------------------------------------------
+// The guide is the ship the other keeps station on: ALG from the start (G FORM ALG), RUS once G FORM RUS
+// executes, ALG again from CORPEN (G FORM ALG). A station is the other ship's range and bearing from it.
+const GUIDES = { form1: 'alg', gform: 'rus', corpen: 'alg' };
+export function guideAt(t) {
+  let g = 'alg';
+  for (const p of PHASES) if (GUIDES[p.id] && t >= p.tx) g = GUIDES[p.id];
+  return g;
+}
+export function stationAt(t) {
+  const guide = guideAt(t);
+  const other = guide === 'alg' ? 'rus' : 'alg';
+  return { guide, other, ...relation(t, guide, other) };
+}
+// The course (deg) and speed (kn) a ship has been ordered to at time t; she may still be turning or
+// working up to them.
+export function orderedAt(id, t) {
+  let course = 0;
+  let speed = 12;
+  for (const o of id === 'rus' ? RUS_ORDERS : ALG_ORDERS) {
+    if (o.t > t) break;
+    if (o.course !== undefined) course = o.course;
+    if (o.speed !== undefined) speed = o.speed;
+  }
+  return { course, speed };
+}
+
+// --- Debrief: how each order went, measured once at import ---------------------------------------
+// `settle` is the time from execution to arrival; for a station change, `error` is how far the other
+// ship was from the ordered station (yards, degrees) at arrival.
+const STATIONS = { gform: [180, 1000], form120: [120, 1000], corpen: [0, 1000] }; // other ship from the guide
+export const DEBRIEF = PHASES.filter((p) => p.id !== 'form1' && p.id !== 'station').map((p) => {
+  const row = { id: p.id, label: p.label, settle: p.ta - p.tx };
+  if (STATIONS[p.id]) {
+    const [brg, yd] = STATIONS[p.id];
+    const st = stationAt(p.ta);
+    row.error = { yd: st.range / YD - yd, deg: ((st.bearing - brg + 540) % 360) - 180 };
+  }
+  if (p.id === 'skim') row.pass = PASS.range;
+  return row;
+});
+
 export const exercise = {
   tEnd,
   phases: PHASES,

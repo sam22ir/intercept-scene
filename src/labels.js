@@ -40,6 +40,8 @@ export function createLabels(scene) {
 
   let enabled = true;
   const fmt = (v, unit, digits = 0) => `${v.toFixed(digits)}<span>${unit}</span>`;
+  let knots = false; // speeds in km/h or knots, as the HUD shows them
+  const spd = (ms) => (knots ? fmt(ms / 0.514444, ' kn') : fmt(ms * 3.6, ' km/h'));
 
   return {
     renderer,
@@ -53,6 +55,7 @@ export function createLabels(scene) {
       renderer.setSize(w, h);
     },
     // d: { t, dronePos, droneSpeed, droneAlt, missilePos, missileSpeed, missileRange, shipPos, shipSpeed, droneRange }
+    setUnits(u) { knots = u === 'kn'; },
     update(d) {
       if (!enabled) return;
       const { t } = d;
@@ -74,14 +77,14 @@ export function createLabels(scene) {
         ? `ALT ${fmt(Math.max(0, d.droneAlt), ' m')}`
         : afloat
           ? `AFLOAT · ${fmt(d.droneRange, ' m')} <em>from ship</em>`
-          : `${fmt(d.droneSpeed * 3.6, ' km/h')} · ALT ${fmt(d.droneAlt, ' m')} · ${fmt(d.droneRange, ' m')} <em>to ship</em>`;
+          : `${spd(d.droneSpeed)} · ALT ${fmt(d.droneAlt, ' m')} · ${fmt(d.droneRange, ' m')} <em>to ship</em>`;
 
       // Missile, only while it flies.
       const flying = t > tLaunch && t < tHit;
       missile.obj.visible = flying;
       if (flying) {
         missile.obj.position.copy(d.missilePos).y += 1.2;
-        missile.body.innerHTML = `${fmt(d.missileSpeed * 3.6, ' km/h')} · ${fmt(d.missileRange, ' m')} <em>to target</em>`;
+        missile.body.innerHTML = `${spd(d.missileSpeed)} · ${fmt(d.missileRange, ' m')} <em>to target</em>`;
       }
 
       // Drone 2 and missile 2 (pair mode): same tags, driven by d.second.
@@ -95,12 +98,12 @@ export function createLabels(scene) {
         second.drone.title.textContent = dead ? 'DRONE 2 · DESTROYED' : 'DRONE 2';
         second.drone.body.innerHTML = dead
           ? `ALT ${fmt(Math.max(0, d2.droneAlt), ' m')}`
-          : `${fmt(d2.droneSpeed * 3.6, ' km/h')} · ALT ${fmt(d2.droneAlt, ' m')} · ${fmt(d2.droneRange, ' m')} <em>to ship</em>`;
+          : `${spd(d2.droneSpeed)} · ALT ${fmt(d2.droneAlt, ' m')} · ${fmt(d2.droneRange, ' m')} <em>to ship</em>`;
         const fly2 = t > e.tLaunch && t < e.tHit;
         second.missile.obj.visible = fly2;
         if (fly2) {
           second.missile.obj.position.copy(d2.missilePos).y += 1.2;
-          second.missile.body.innerHTML = `${fmt(d2.missileSpeed * 3.6, ' km/h')} · ${fmt(d2.missileRange, ' m')} <em>to target</em>`;
+          second.missile.body.innerHTML = `${spd(d2.missileSpeed)} · ${fmt(d2.missileRange, ' m')} <em>to target</em>`;
         }
       }
 
