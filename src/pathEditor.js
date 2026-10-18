@@ -41,6 +41,12 @@ export function toast(msg, ms = 5200) {
 
 // A shared link keeps its path in the hash (and the moment in ?t=): both go before reloading,
 // otherwise the hash would beat the path saved here and the page would reopen paused.
+// The reload after Apply / Restore goes straight back into the scene, not to the start screen.
+function reloadIntoScene() {
+  try { sessionStorage.setItem('intercept.skip', '1'); } catch { /* storage unavailable */ }
+  location.reload();
+}
+
 function dropSharedHash() {
   stripShareParams();
   try { if (location.hash) location.hash = ''; } catch { /* ignore */ }
@@ -613,14 +619,14 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
       return;
     }
     dropSharedHash();
-    location.reload();
+    reloadIntoScene();
   }
 
   function restoreDefault() {
     // Viewing a shared path: "restore" only leaves the link; the viewer's own saved path stays.
     if (!SHARED_PATH) { try { localStorage.removeItem(PATH_STORAGE_KEY); } catch { /* storage unavailable */ } }
     dropSharedHash();
-    location.reload();
+    reloadIntoScene();
   }
 
   function deleteSelected() {

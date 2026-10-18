@@ -508,6 +508,19 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 .ed-actions .primary:hover { filter: brightness(1.1); background: var(--accent); }
 .link-btn[hidden] { display: none; }
 
+/* Trajectory legend: one coloured chip per trail, under the top bar */
+.trail-legend {
+  position: fixed; z-index: 9; top: calc(var(--gap) + var(--safe-t) + 58px); left: calc(var(--gap) + var(--safe-l));
+  display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 5px 10px; border-radius: 9px; font-size: 11.5px; color: var(--muted);
+  background: var(--panel); border: 1px solid var(--border); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.trail-legend[hidden], .trail-legend [hidden] { display: none; }
+.trail-legend i { display: inline-block; width: 18px; height: 4px; margin-right: 6px; vertical-align: middle; border-radius: 2px; background: var(--c); box-shadow: 0 0 6px var(--c); }
+.trail-legend span { white-space: nowrap; }
+body.ui-hidden .trail-legend, body.editing .trail-legend { display: none; }
+#engage:not([hidden]) ~ .trail-legend { display: none; }
+@media (max-width: 640px) and (min-height: 501px) { .trail-legend { top: auto; bottom: calc(var(--gap) + var(--safe-b) + 150px); font-size: 11px; } }
+
 /* Panel sections shared by the engagement panel and the path editor */
 .en-sec { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--hair); border-radius: 10px; background: rgba(255, 255, 255, 0.03); }
 .en-sec h3, .sec-h { margin: 0; font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }

@@ -1,6 +1,10 @@
 import './style.css';
 
-// Entry point. The ship fit and the mission are chosen on a start screen.
+// Entry point. The ship fit and the mission are chosen on a start screen, and the page
+// always opens on it: a ?ship=/?mode= in the URL only preselects the choices. It goes
+// straight into the scene for a shared link that carries a moment (?t, ?focus, ?cam,
+// #path), for ?start=1, and for the app's own reloads (the path editor and the
+// engagement panel set sessionStorage 'intercept.skip' before reloading).
 // scenario.js reads `globalThis.__SHIP_VARIANT` / `__SCENARIO` (set here) or
 // ?ship=fwd|aft and ?mode=intercept|chute|pair at import time, so the scene is
 // imported only after a choice is made: no page reload needed.
@@ -62,15 +66,15 @@ async function launch(id) {
 
 // Two choices (mission, ship) and a Start button. Selection changes only on click or
 // key; hover is visual only, so the summary and the Start target never follow the mouse.
-const SHIP_NAMES = { fwd: '920 · Forward launcher', aft: '921 · Aft launcher' };
+const SHIP_NAMES = { fwd: 'Forward launcher', aft: 'Aft launcher' };
 const MODE_NAMES = { intercept: 'Intercept', chute: 'Recovery', pair: 'Two drones' };
 const MODE_NOTES = {
   intercept: 'Same drone, same shot on either ship. The difference is where the launcher sits.',
-  chute: 'The missile is never fired: the drone opens an orange parachute and lands in the sea.',
+  chute: 'The missile is never fired: the drone opens a red parachute and lands in the sea.',
   pair: 'A second drone leaves the same catapult 14 s later, on a wider, higher track.',
 };
 
-function showChooser() {
+function showChooser(preselect) {
   const chooser = $('#chooser');
   chooser.hidden = false;
   const cards = [...chooser.querySelectorAll('[data-ship]')];
@@ -78,7 +82,8 @@ function showChooser() {
   const summary = $('#ch-summary');
   const sub = $('#chooser-sub');
   const remembered = read('localStorage', 'intercept.ship');
-  let ship = cards.some((c) => c.dataset.ship === remembered) ? remembered : 'fwd';
+  const startShip = cards.some((c) => c.dataset.ship === preselect) ? preselect : remembered;
+  let ship = cards.some((c) => c.dataset.ship === startShip) ? startShip : 'fwd';
 
   const paint = () => {
     cards.forEach((c) => c.setAttribute('aria-checked', String(c.dataset.ship === ship)));
@@ -126,14 +131,19 @@ function showChooser() {
 // URL still names a ship.
 const forceChooser = read('sessionStorage', 'intercept.chooser') === '1';
 write('sessionStorage', 'intercept.chooser', '0');
+const skipChooser = read('sessionStorage', 'intercept.skip') === '1';
+write('sessionStorage', 'intercept.skip', '0');
 let fromUrl = null;
 let modeFromUrl = null;
+let deepLink = false;
 try {
   const params = new URLSearchParams(location.search);
   fromUrl = params.get('ship');
   modeFromUrl = params.get('mode');
+  deepLink = ['t', 'focus', 'cam', 'start'].some((k) => params.has(k)) || /(?:^#|&)path=/.test(location.hash);
 } catch { /* ignore */ }
 const rememberedMode = read('localStorage', 'intercept.mode');
 mode = MODES.includes(modeFromUrl) ? modeFromUrl : (MODES.includes(rememberedMode) ? rememberedMode : 'intercept');
-if ((fromUrl === 'fwd' || fromUrl === 'aft') && !forceChooser) launch(fromUrl);
-else showChooser();
+const validShip = fromUrl === 'fwd' || fromUrl === 'aft';
+if (validShip && !forceChooser && (skipChooser || deepLink)) launch(fromUrl);
+else showChooser(validShip ? fromUrl : null);

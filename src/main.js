@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
-  scenario, planePos, planePose, planeVel, propAngle, propSpin01, missilePose, shipPos, tubeMouth, SHIP_SPEED, SHIP_VARIANT, PENNANT,
+  scenario, planePos, planePose, planeVel, propAngle, propSpin01, missilePose, shipPos, tubeMouth, SHIP_SPEED, SHIP_VARIANT,
 } from './scenario.js';
 import { createLabels } from './labels.js';
+import { createTrails } from './trails.js';
 import { createParachute } from './models/parachute.js';
 import { createPathEditor, toast } from './pathEditor.js';
 import { createEnvironment } from './environment.js';
@@ -87,6 +88,25 @@ try { labelsPref = localStorage.getItem('intercept.labels') !== '0'; } catch { /
 setLabels(labelsPref);
 labelsButton.addEventListener('click', () => setLabels(!labels.enabled));
 
+// Trajectory trails: ship track, drone path and missile path, in their own colours.
+const trails = createTrails(scene);
+const trailsButton = document.querySelector('#btn-trails');
+const legendEl = document.querySelector('#trail-legend');
+function setTrails(on) {
+  invalidate();
+  trails.setEnabled(on);
+  trailsButton.classList.toggle('active', on);
+  trailsButton.setAttribute('aria-pressed', String(on));
+  legendEl.hidden = !on;
+  try { localStorage.setItem('intercept.trails', on ? '1' : '0'); } catch { /* storage unavailable */ }
+}
+let trailsPref = true;
+try { trailsPref = localStorage.getItem('intercept.trails') !== '0'; } catch { /* storage unavailable */ }
+setTrails(trailsPref);
+trailsButton.addEventListener('click', () => setTrails(!trails.enabled));
+document.querySelectorAll('[data-trail][data-pair-only]').forEach((el) => { el.hidden = scenario.engagements.length < 2; });
+document.querySelectorAll('[data-trail="missile"]').forEach((el) => { el.hidden = !scenario.hasMissile; });
+
 // --- Applying a moment in time ----------------------------------------------
 
 const telemetry = { planeAlt: 0, planeSpeed: 0, missileSpeed: null, range: null };
@@ -126,6 +146,7 @@ function applyTime(t) {
     telemetry.range = null;
   }
 
+  trails.update(t);
   labels.update({
     t,
     dronePos: t < tHit ? plane.group.position : debris.fuselagePos(t - tHit, _lPos),
@@ -349,7 +370,7 @@ window.addEventListener('pointerdown', (e) => {
 try { setPanelFolded(localStorage.getItem(FOLD_KEY) === '1', false); } catch { /* storage unavailable */ }
 
 const MISSION_NAME = { intercept: 'Intercept', chute: 'Recovery', pair: 'Two drones' };
-document.querySelector('#mission-sub').textContent = `${PENNANT} · ${SHIP_VARIANT === 'aft' ? 'Aft' : 'Fwd'} launcher · ${MISSION_NAME[scenario.mode] ?? scenario.mode}`;
+document.querySelector('#mission-sub').textContent = `${SHIP_VARIANT === 'aft' ? 'Aft' : 'Fwd'} launcher · ${MISSION_NAME[scenario.mode] ?? scenario.mode}`;
 
 const soundButton = document.querySelector('#btn-sound');
 function setSound(on) {
@@ -407,6 +428,7 @@ const clock = createTimeline(scenario, {
     if (key === '4' && pair) setFocus('plane2');
     if (key === '5' && pair) setFocus('missile2');
     if (key === 'l' || key === 'L') setLabels(!labels.enabled);
+    if (key === 't' || key === 'T') setTrails(!trails.enabled);
     if (key === 'd' || key === 'D') setDirector(!directing);
     if (key === 's' || key === 'S') setSound(!audio.enabled);
     if (key === 'h' || key === 'H') hud.toggle();
@@ -445,10 +467,11 @@ createShare({
 
 // Path editor: pauses at t = 0 and hides the labels while drawing.
 let labelsBeforeEdit = true;
+let trailsBeforeEdit = true;
 const editor = createPathEditor({
   scene, camera, controls, canvas, clock,
-  onEnter() { engagePanel.close(); invalidate(); labelsBeforeEdit = labels.enabled; labels.setEnabled(false); setFocus('free'); },
-  onExit() { invalidate(); labels.setEnabled(labelsBeforeEdit); },
+  onEnter() { engagePanel.close(); invalidate(); labelsBeforeEdit = labels.enabled; labels.setEnabled(false); trailsBeforeEdit = trails.enabled; trails.setEnabled(false); setFocus('free'); },
+  onExit() { invalidate(); labels.setEnabled(labelsBeforeEdit); trails.setEnabled(trailsBeforeEdit); },
 });
 const engagePanel = createEngagePanel({ onOpen: invalidate, onClose: invalidate });
 document.querySelector('#btn-engage').addEventListener('click', () => { if (editor.active) editor.exit(); });
@@ -475,6 +498,7 @@ function resize() {
   const h = window.innerHeight;
   renderer.setSize(w, h, false);
   labels.resize(w, h);
+  trails.resize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   invalidate();

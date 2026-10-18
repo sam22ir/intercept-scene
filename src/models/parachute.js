@@ -2,48 +2,70 @@ import * as THREE from 'three';
 import { canvasTexture } from './kit.js';
 import { scenario } from '../scenario.js';
 
-// Orange recovery parachute (recovery mission only). Everything is a function
+// Red square recovery parachute (recovery mission only). Everything is a function
 // of t: a pilot chute pops out of the drone's back, the lines pay out, the
 // canopy streams and then inflates, the drone hangs below it, and after
 // splashdown the canopy collapses onto the water beside the drone.
+//
+// The canopy is a square sheet, arched like a ram-air wing: it bows up across
+// the span (x) and a little along the chord (z), its four corners drooping to the
+// skirt plane at y = 0. Its local +Z points along the drone's heading.
 
-const R = 2.9; // canopy radius
-const GORES = 24;
-const LINES = 16;
-const CAP = Math.PI * 0.43; // dome angle from the apex down to the skirt
+const HALF = 2.7; // half the side of the square (5.4 m canopy)
+const ARCH_SPAN = 1.15; // rise across x, at the middle of the chord
+const ARCH_CHORD = 0.5; // extra rise along z
+const LINES = 16; // suspension lines, spaced evenly around the square's edge
+const CAP = Math.PI * 0.43; // pilot chute dome angle
 const LINE_LENGTH = 5.0;
+const RED = 0xd3141c;
+
+// Height of the sheet above the skirt plane at (x, z), both within ±HALF.
+const archY = (x, z) => ARCH_SPAN * (1 - (x / HALF) ** 2) + ARCH_CHORD * (1 - (z / HALF) ** 2) * (1 - (x / HALF) ** 2);
+
+// A point on the square's edge, k = 0..LINES-1 going once around, with its sheet height.
+function edgePoint(k, out) {
+  const p = (k / LINES) * 4;
+  const side = Math.floor(p);
+  const f = p - side;
+  const c = [[-HALF, -HALF], [HALF, -HALF], [HALF, HALF], [-HALF, HALF]];
+  const [ax, az] = c[side];
+  const [bx, bz] = c[(side + 1) % 4];
+  const x = ax + (bx - ax) * f;
+  const z = az + (bz - az) * f;
+  return out.set(x, archY(x, z), z);
+}
 
 // Harness points on top of the fuselage, drone frame (nose +Z).
 const HARNESS_FRONT = new THREE.Vector3(0, 0.4, 0.34);
 const HARNESS_REAR = new THREE.Vector3(0, 0.3, -0.62);
 
 function canopyTexture() {
-  // u runs around the canopy (24 gores), v from the skirt (0, bottom) to the apex (1, top).
-  return canvasTexture(1024, 256, (ctx, W, H) => {
-    for (let g = 0; g < GORES; g++) {
-      ctx.fillStyle = g % 2 ? '#ff6a0d' : '#ff7b1f';
-      ctx.fillRect((g / GORES) * W, 0, W / GORES + 1, H);
+  // u runs across the span (x), v along the chord (z): red cells with seams, a white
+  // centre stripe and a darker hem.
+  return canvasTexture(1024, 1024, (ctx, W, H) => {
+    const CELLS = 9;
+    for (let c = 0; c < CELLS; c++) {
+      ctx.fillStyle = c % 2 ? '#c8121a' : '#dd1e26';
+      ctx.fillRect((c / CELLS) * W, 0, W / CELLS + 1, H);
     }
-    // Seams.
-    ctx.strokeStyle = 'rgba(110, 40, 0, 0.55)';
-    ctx.lineWidth = 2;
-    for (let g = 0; g < GORES; g++) {
+    ctx.strokeStyle = 'rgba(70, 0, 4, 0.6)';
+    ctx.lineWidth = 3;
+    for (let c = 0; c <= CELLS; c++) {
       ctx.beginPath();
-      ctx.moveTo((g / GORES) * W, 0);
-      ctx.lineTo((g / GORES) * W, H);
+      ctx.moveTo((c / CELLS) * W, 0);
+      ctx.lineTo((c / CELLS) * W, H);
       ctx.stroke();
     }
-    // Reinforcement tapes and hem band.
-    ctx.fillStyle = 'rgba(255, 235, 200, 0.55)';
-    ctx.fillRect(0, H * 0.78, W, 6);
-    ctx.fillStyle = '#ff5a05';
-    ctx.fillRect(0, H * 0.94, W, H * 0.06);
-    // Apex vent.
-    const v = ctx.createLinearGradient(0, 0, 0, H * 0.1);
-    v.addColorStop(0, '#2a1204');
-    v.addColorStop(1, 'rgba(42, 18, 4, 0)');
-    ctx.fillStyle = v;
-    ctx.fillRect(0, 0, W, H * 0.1);
+    // Chordwise reinforcement tapes and a white centre stripe.
+    ctx.fillStyle = 'rgba(255, 235, 230, 0.5)';
+    ctx.fillRect(0, H * 0.3, W, 5);
+    ctx.fillRect(0, H * 0.7, W, 5);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.82)';
+    ctx.fillRect(W * 0.455, 0, W * 0.09, H);
+    // Hem all round.
+    ctx.strokeStyle = '#9d0a12';
+    ctx.lineWidth = 22;
+    ctx.strokeRect(0, 0, W, H);
   });
 }
 
@@ -54,10 +76,17 @@ export function createParachute() {
 
   const material = new THREE.MeshStandardMaterial({
     map: canopyTexture(), roughness: 0.78, metalness: 0, side: THREE.DoubleSide,
-    emissive: 0x3a1200, emissiveIntensity: 0.6,
+    emissive: 0x3a0508, emissiveIntensity: 0.6,
   });
-  const dome = new THREE.SphereGeometry(R, 48, 20, 0, Math.PI * 2, 0, CAP);
-  dome.translate(0, -R * Math.cos(CAP), 0); // skirt plane at y = 0
+  const pilotMaterial = new THREE.MeshStandardMaterial({
+    color: RED, roughness: 0.78, metalness: 0, side: THREE.DoubleSide, emissive: 0x3a0508, emissiveIntensity: 0.6,
+  });
+  // The square sheet: a flat grid in XZ (u across the span, v along the chord), lifted by archY.
+  const dome = new THREE.PlaneGeometry(2 * HALF, 2 * HALF, 32, 32);
+  dome.rotateX(-Math.PI / 2);
+  const pos = dome.attributes.position;
+  for (let i = 0; i < pos.count; i++) pos.setY(i, archY(pos.getX(i), pos.getZ(i)));
+  dome.computeVertexNormals();
   // The canopy has its own transform (position, tilt, squash); the pilot chute
   // and the lines live in world space directly under `group`.
   const canopyGroup = new THREE.Group();
@@ -65,7 +94,7 @@ export function createParachute() {
   group.add(canopyGroup);
 
   // Pilot chute and its line.
-  const pilot = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 8, 0, Math.PI * 2, 0, CAP), material);
+  const pilot = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 8, 0, Math.PI * 2, 0, CAP), pilotMaterial);
   pilot.visible = false;
   pilot.scale.set(1, 0.8, 1);
   group.add(pilot);
@@ -91,6 +120,7 @@ export function createParachute() {
   const pilotPos = new THREE.Vector3();
   const collapsed = new THREE.Vector3();
   const q = new THREE.Quaternion();
+  const qYaw = new THREE.Quaternion();
   const sm = THREE.MathUtils.smoothstep;
   const lerp = THREE.MathUtils.lerp;
 
@@ -130,16 +160,17 @@ export function createParachute() {
       }
 
       canopyGroup.position.copy(origin);
-      canopyGroup.quaternion.copy(q.setFromUnitVectors(up, dir));
+      // Tilt to the canopy axis, then turn about it so the chord follows the drone's heading.
+      canopyGroup.quaternion.copy(q.setFromUnitVectors(up, dir)).multiply(qYaw.setFromAxisAngle(up, Math.atan2(fwd.x, fwd.z)));
       canopyGroup.scale.set(sxz, sy, sxz);
       canopyGroup.updateMatrix();
 
       // Lines from the skirt to the two harness points (world space).
-      const rimR = R * Math.sin(CAP);
       for (let k = 0; k < LINES; k++) {
-        const a = (k / LINES) * Math.PI * 2;
-        rim.set(Math.cos(a) * rimR, 0, Math.sin(a) * rimR).applyMatrix4(canopyGroup.matrix);
-        const end = Math.cos(a) > 0 ? A : B; // front half to the front point, rear half to the rear
+        edgePoint(k, rim);
+        const front = rim.z > 0; // the canopy's +Z is the drone's heading
+        rim.applyMatrix4(canopyGroup.matrix);
+        const end = front ? A : B; // front half to the front point, rear half to the rear
         linePos.set([rim.x, rim.y, rim.z, end.x, end.y, end.z], k * 6);
       }
 

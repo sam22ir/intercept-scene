@@ -230,16 +230,7 @@ function hullTexture() {
       ctx.fill();
       ctx.fillStyle = 'rgba(110,70,45,0.45)';
       ctx.fillRect(X(52.5) - 6, yToPx(5.4), 12, 130);
-      // Pennant number with drop shadow.
-      ctx.font = 'italic bold 230px "Arial Narrow", Arial, sans-serif';
-      ctx.textBaseline = 'alphabetic';
-      ctx.textAlign = 'center';
-      const nx = X(41);
-      const ny = yToPx(2.3);
-      ctx.fillStyle = 'rgba(40,46,50,0.55)';
-      ctx.fillText(PENNANT, nx + 5, ny + 5);
-      ctx.fillStyle = '#f3f3ee';
-      ctx.fillText(PENNANT, nx, ny);
+      // (No pennant number is painted: the ships are told apart by their launcher.)
       ctx.restore();
     }
   });
