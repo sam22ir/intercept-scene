@@ -369,7 +369,8 @@ hudLive.innerHTML = '<div class="mh-bar"><div class="mh-title"><b data-title></b
   + '<div class="mh-btns"><button type="button" data-min title="Minimise: keep only the readouts" aria-label="Minimise" aria-expanded="true">–</button>'
   + '<button type="button" data-hide title="Hide the panel (H, or the Readouts button)" aria-label="Hide">×</button></div></div>'
   + '<div class="mh-progress" title="How far through this order"><i data-progress></i></div>'
-  + '<div class="hud-sec" data-live></div><div class="hud-sec serial" data-serial></div>';
+  + '<div class="hud-sec" data-live></div>'
+  + '<div class="hud-sec serial"><div class="serial-bar"><span>Signal text</span><button type="button" data-ser aria-expanded="true" title="Hide the signal text" aria-label="Hide the signal text">–</button></div><div data-serial></div></div>';
 const bar = {
   title: hudLive.querySelector('[data-title]'), step: hudLive.querySelector('[data-step]'), chip: hudLive.querySelector('[data-chip]'),
   progress: hudLive.querySelector('[data-progress]'),
@@ -440,6 +441,21 @@ function setHudMin(on) {
   invalidate();
 }
 minButton.addEventListener('click', () => setHudMin(!hudRoot.classList.contains('min')));
+// The signal text can be hidden on its own (the readouts stay); remembered too.
+const serButton = hudLive.querySelector('[data-ser]');
+function setSerialOff(off) {
+  hudRoot.classList.toggle('serial-off', off);
+  serButton.textContent = off ? '+' : '–';
+  serButton.title = off ? 'Show the signal text' : 'Hide the signal text';
+  serButton.setAttribute('aria-label', serButton.title);
+  serButton.setAttribute('aria-expanded', String(!off));
+  try { localStorage.setItem('intercept.serialOff', off ? '1' : '0'); } catch { /* storage unavailable */ }
+  invalidate();
+}
+serButton.addEventListener('click', () => setSerialOff(!hudRoot.classList.contains('serial-off')));
+let serialOffPref = false;
+try { serialOffPref = localStorage.getItem('intercept.serialOff') === '1'; } catch { /* storage unavailable */ }
+setSerialOff(serialOffPref);
 hudLive.querySelector('[data-hide]').addEventListener('click', () => setHud(false));
 hudLive.querySelector('.mh-bar').addEventListener('dblclick', (e) => { if (!e.target.closest('button')) setHudMin(!hudRoot.classList.contains('min')); });
 let hudMinPref = false;
