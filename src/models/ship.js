@@ -975,9 +975,11 @@ export function createShip({ ensign = 'alg' } = {}) {
     group,
     picks,
     launcher,
-    update(t, tLaunch, tLaunch2 = Infinity) {
+    // `opts` (the manual-flight mission): { aim: {yaw, pitch} } overrides the scripted launcher aim and
+    // { cradleT } the catapult clock, so the cradle can fire when the pilot says.
+    update(t, tLaunch, tLaunch2 = Infinity, opts = null) {
       radar.rotation.y = t * 2.1;
-      const { yaw, pitch } = launcherAim(t);
+      const { yaw, pitch } = opts?.aim ?? launcherAim(t);
       yawGroup.rotation.y = yaw;
       pitchGroup.rotation.z = pitch;
       // Tube cap blows off at launch (simple ballistic hop in launcher frame).
@@ -1001,7 +1003,7 @@ export function createShip({ ensign = 'alg' } = {}) {
           fireCap2.rotation.set(0, 0, 0);
         }
       }
-      const s = shuttleStroke(t);
+      const s = shuttleStroke(opts?.cradleT ?? t);
       cradle.position.set(s * Math.cos(RAIL.pitch), s * Math.sin(RAIL.pitch), 0);
       // Flag ripple.
       for (let i = 0; i < flagPos.count; i++) {

@@ -14,17 +14,28 @@ const deckY = deckHeight(-50); // helideck height: where the booster blast hits 
 // drag, which has a closed form, then sink. Each piece is a pure function of
 // tau = t - tHit.
 // ---------------------------------------------------------------------------
-export function createDebris(plane, k = 0) {
+// `hit` (the manual-flight mission, where nothing is scripted): { pos, quat, vel, burstPos, burstDist, prop }
+// gives the drone's state at the moment of impact in place of the scenario's own engagement.
+export function createDebris(plane, k = 0, hit = null) {
   const rng = mulberry32(1337 + k);
-  const { tHit, hitPos: burstPos, burstDist } = scenario.engagements[k]; // k > 0 is the second drone (pair mode)
+  const { tHit, hitPos: burstPos, burstDist } = hit
+    ? { tHit: 0, hitPos: hit.burstPos, burstDist: hit.burstDist }
+    : scenario.engagements[k]; // k > 0 is the second drone (pair mode)
   const hitPos = new THREE.Vector3();
   const hitQuat = new THREE.Quaternion();
-  planePose(tHit, hitPos, hitQuat, k);
-  const vPlane = planeVel(tHit, new THREE.Vector3(), k);
+  let vPlane;
+  if (hit) {
+    hitPos.copy(hit.pos);
+    hitQuat.copy(hit.quat);
+    vPlane = hit.vel.clone();
+  } else {
+    planePose(tHit, hitPos, hitQuat, k);
+    vPlane = planeVel(tHit, new THREE.Vector3(), k);
+  }
   const planeM = new THREE.Matrix4().compose(hitPos, hitQuat, new THREE.Vector3(1, 1, 1));
 
   plane.restoreParts();
-  plane.setProp(propAngle(tHit, k), 1);
+  plane.setProp(hit ? hit.prop : propAngle(tHit, k), 1);
   const pieces = plane.parts.map((part) => {
     part.updateMatrix();
     const world = planeM.clone().multiply(part.matrix);

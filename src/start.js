@@ -33,7 +33,7 @@ function showFatal(err) {
   document.body.appendChild(box);
 }
 
-const MODES = ['intercept', 'chute', 'pair', 'maneuvers'];
+const MODES = ['intercept', 'chute', 'pair', 'maneuvers', 'fly'];
 let mode = 'intercept';
 
 let launched = false;
@@ -41,8 +41,9 @@ async function launch(id) {
   if (launched) return; // Enter on a focused button fires both keydown and click
   launched = true;
   globalThis.__SHIP_VARIANT = id;
-  // The maneuvers mission has its own scene; scenario.js (which the ship model imports) just sees an intercept.
-  globalThis.__SCENARIO = mode === 'maneuvers' ? 'intercept' : mode;
+  // The maneuvers and fly missions have their own scenes; scenario.js (which the ship model imports) just sees
+  // an intercept for the first and a recovery (no scripted missile to simulate) for the second.
+  globalThis.__SCENARIO = mode === 'maneuvers' ? 'intercept' : mode === 'fly' ? 'chute' : mode;
   write('localStorage', 'intercept.ship', id);
   write('localStorage', 'intercept.mode', mode);
   try {
@@ -59,7 +60,7 @@ async function launch(id) {
   // Let the loading screen paint before the scene's heavy synchronous setup.
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
   try {
-    await (mode === 'maneuvers' ? import('./maneuversMain.js') : import('./main.js'));
+    await (mode === 'maneuvers' ? import('./maneuversMain.js') : mode === 'fly' ? import('./flyMain.js') : import('./main.js'));
   } catch (err) {
     showFatal(err);
   }
@@ -68,12 +69,13 @@ async function launch(id) {
 // Two choices (mission, ship) and a Start button. Selection changes only on click or
 // key; hover is visual only, so the summary and the Start target never follow the mouse.
 const SHIP_NAMES = { fwd: 'Forward launcher', aft: 'Aft launcher' };
-const MODE_NAMES = { intercept: 'Intercept', chute: 'Recovery', pair: 'Two drones', maneuvers: 'Naval maneuvers' };
+const MODE_NAMES = { intercept: 'Intercept', chute: 'Recovery', pair: 'Two drones', maneuvers: 'Naval maneuvers', fly: 'Fly the drone' };
 const MODE_NOTES = {
   intercept: 'Same drone, same shot on either ship. The difference is where the launcher sits.',
   chute: 'The missile is never fired: the drone opens a red parachute and lands in the sea.',
   pair: 'A second drone leaves the same catapult 14 s later, on a wider, higher track.',
   maneuvers: 'Two frigates, ALG and RUS, run the briefing deck: turns together, a change of station, light and flag serials, a close pass.',
+  fly: 'You fly it: E starts the engine on the ship, L fires the catapult, the arrow keys fly at 75 m/s, E in the air cuts the engine and opens the parachute, F fires the frigate\'s missile at you.',
 };
 
 function showChooser(preselect) {
@@ -92,11 +94,12 @@ function showChooser(preselect) {
   const paint = () => {
     cards.forEach((c) => c.setAttribute('aria-checked', String(c.dataset.ship === ship)));
     missions.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === mode)));
-    // The maneuvers mission fixes both ships, so the ship step steps aside.
+    // The maneuvers and fly missions fix the ship, so the ship step steps aside.
     const drill = mode === 'maneuvers';
-    shipStep.hidden = drill;
-    startBtn.firstChild.textContent = drill ? 'Start exercise ' : 'Start simulation ';
-    summary.textContent = drill ? 'Naval maneuvers · ALG & RUS' : `${MODE_NAMES[mode]} · ${SHIP_NAMES[ship]}`;
+    const fixed = drill || mode === 'fly';
+    shipStep.hidden = fixed;
+    startBtn.firstChild.textContent = drill ? 'Start exercise ' : mode === 'fly' ? 'Take off ' : 'Start simulation ';
+    summary.textContent = drill ? 'Naval maneuvers · ALG & RUS' : mode === 'fly' ? 'Fly the drone · manual flight' : `${MODE_NAMES[mode]} · ${SHIP_NAMES[ship]}`;
     sub.textContent = MODE_NOTES[mode];
   };
   const setMode = (m) => { mode = m; paint(); };
@@ -120,7 +123,7 @@ function showChooser(preselect) {
       else return;
       e.preventDefault();
     } else if (e.key === 'm' || e.key === 'M') setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]);
-    else if ((e.key === '1' || e.key === '2') && mode !== 'maneuvers') setShip(cards[Number(e.key) - 1].dataset.ship);
+    else if ((e.key === '1' || e.key === '2') && mode !== 'maneuvers' && mode !== 'fly') setShip(cards[Number(e.key) - 1].dataset.ship);
     else if (e.key === 'Enter') { e.preventDefault(); go(); } // also when a card has focus after a click
   };
 
@@ -153,5 +156,5 @@ try {
 const rememberedMode = read('localStorage', 'intercept.mode');
 mode = MODES.includes(modeFromUrl) ? modeFromUrl : (MODES.includes(rememberedMode) ? rememberedMode : 'intercept');
 const validShip = fromUrl === 'fwd' || fromUrl === 'aft';
-if ((validShip || mode === 'maneuvers') && !forceChooser && (skipChooser || deepLink)) launch(validShip ? fromUrl : 'fwd');
+if ((validShip || mode === 'maneuvers' || mode === 'fly') && !forceChooser && (skipChooser || deepLink)) launch(validShip ? fromUrl : 'fwd');
 else showChooser(validShip ? fromUrl : null);

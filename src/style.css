@@ -583,7 +583,7 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 .ch-step .n { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: rgba(255, 255, 255, 0.08); color: var(--text); font-size: 10.5px; letter-spacing: 0; }
 
 .missions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-@media (min-width: 1000px) { .missions { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 1000px) { .missions { grid-template-columns: repeat(3, 1fr); } }
 .mission {
   display: flex; align-items: center; gap: 10px; padding: 9px 12px; text-align: left; border-radius: 11px;
   background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); transition: border-color 0.15s, background 0.15s;
@@ -848,3 +848,23 @@ body.editing .timeline { display: none; }
 .share-box label { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; color: var(--muted); }
 .share-box input { width: 100%; box-sizing: border-box; font: inherit; color: var(--text); background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
 body.editing #btn-link { display: none; }
+
+/* "Fly the drone": no timeline, map, trails or tags (nothing is replayed); the keys for this moment sit at the
+   foot of the screen, and the banner carries the model's messages. */
+body.mission-fly .timeline, body.mission-fly .minimap, body.mission-fly .labels-layer,
+body.mission-fly #btn-director, body.mission-fly #btn-labels, body.mission-fly #btn-trails, body.mission-fly #btn-sound,
+body.mission-fly #btn-edit, body.mission-fly #btn-engage, body.mission-fly #btn-map, body.mission-fly #btn-units,
+body.mission-fly #btn-record, body.mission-fly #btn-link { display: none; }
+body.mission-fly .shot-caption { top: calc(var(--gap) + var(--safe-t) + var(--bar-h, 34px) + 36px); font-weight: 700; letter-spacing: 0.12em; }
+.shot-caption.danger { color: #ff8a8d; border-color: rgba(255, 93, 97, 0.85); background: rgba(48, 12, 14, 0.78); }
+.fly-keys {
+  position: fixed; z-index: 11; left: 50%; bottom: calc(var(--gap) + var(--safe-b)); transform: translateX(-50%);
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; padding: 8px 16px; border-radius: 12px; max-width: calc(100vw - 2 * var(--gap));
+  background: var(--panel); border: 1px solid var(--border); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  font-size: 12px; color: var(--muted); pointer-events: none;
+}
+.fly-keys .fk { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.fly-keys kbd { min-width: 22px; text-align: center; font-size: 11px; }
+.fly-keys .fk.on { color: var(--text); font-weight: 600; }
+.fly-keys .fk.on kbd { background: var(--accent); border-color: var(--accent); color: #1a0d02; }
+body:not(.mission-fly) .fly-keys, body.ui-hidden .fly-keys { display: none; }

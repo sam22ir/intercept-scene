@@ -58,6 +58,7 @@ export function createEnvironment(renderer, scene, { onChange } = {}) {
   scene.add(ocean);
   const clouds = createClouds();
   scene.add(clouds);
+  const CLOUD_PERIOD = 26000; // the cloud field repeats this often, so it never runs out under a far-flying camera
 
   // --- web-ocean (WebGPU) under the three.js canvas, when the browser has WebGPU ---
   // Its own canvas sits behind ours and draws the sea and sky; ours turns transparent, drops the sky,
@@ -140,6 +141,18 @@ export function createEnvironment(renderer, scene, { onChange } = {}) {
   return {
     sunDir,
     ocean,
+    // For a camera that travels far from the origin (the manual-flight mission): the sky dome and the WebGL
+    // sea plane ride along with it, and the clouds wrap around it, so the world never ends.
+    follow(camPos) {
+      sky.position.set(camPos.x, 0, camPos.z);
+      ocean.position.x = camPos.x;
+      ocean.position.z = camPos.z;
+      for (const c of clouds.children) {
+        const b = c.userData.base;
+        c.position.x = b.x + Math.round((camPos.x - b.x) / CLOUD_PERIOD) * CLOUD_PERIOD;
+        c.position.z = b.z + Math.round((camPos.z - b.z) / CLOUD_PERIOD) * CLOUD_PERIOD;
+      }
+    },
     // Draw web-ocean for this frame, if it is in use. Call right before renderer.render.
     renderOcean(t, camera) {
       if (gpu.ocean?.lost && gpu.active) applyGpu();
@@ -458,6 +471,7 @@ function createClouds() {
       color: new THREE.Color(2.3, 2.3, 2.4), // above 1 so tone mapping keeps them as bright as the sky
     }));
     sprite.position.set(Math.cos(a) * d, 900 + rng() * 1400, Math.sin(a) * d);
+    sprite.userData.base = sprite.position.clone();
     sprite.scale.set(size, size * 0.5, 1);
     group.add(sprite);
   }
