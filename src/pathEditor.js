@@ -32,7 +32,10 @@ const SHIP_CENTER_Y = 10;
 let toastEl = null;
 let toastTimer = 0;
 export function toast(msg, ms = 5200) {
-  toastEl ??= Object.assign(document.body.appendChild(document.createElement('div')), { className: 'toast' });
+  if (!toastEl) {
+    toastEl = Object.assign(document.body.appendChild(document.createElement('div')), { className: 'toast', title: 'Click to dismiss' });
+    toastEl.addEventListener('click', () => toastEl.classList.remove('show'));
+  }
   toastEl.textContent = msg;
   toastEl.classList.add('show');
   clearTimeout(toastTimer);

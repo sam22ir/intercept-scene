@@ -386,6 +386,90 @@ button, select, .link-btn, .menu a { touch-action: manipulation; }
   .tbtn.play { width: 34px; }
 }
 
+/* Naval maneuvers mission: the intercept-only controls step aside, and the readout panel carries the
+   signal (serial) text of the briefing deck. */
+body.mission-maneuvers #btn-director, body.mission-maneuvers #btn-edit,
+body.mission-maneuvers #btn-engage, body.mission-maneuvers #btn-record, body.mission-maneuvers #btn-link,
+body.mission-maneuvers #trail-legend { display: none; }
+/* The intercept readouts are click-through; this panel has buttons, so it takes the pointer. */
+body.mission-maneuvers .hud { pointer-events: auto; }
+body.mission-maneuvers .hud { width: 236px; padding: 8px 10px 9px; max-height: calc(100vh - 62px - var(--gap) * 3 - var(--tl-h, 80px) - 6px); overflow-y: auto; }
+body.mission-maneuvers .hud .tile b { font-size: 14px; }
+body.mission-maneuvers .hud .hud-head b { font-size: 11.5px; }
+.serial-box, .serial-speeds {
+  margin-top: 6px; padding: 5px 8px; border: 1.5px solid rgba(110, 150, 240, 0.6); border-radius: 6px;
+  background: rgba(40, 70, 140, 0.2); font-size: 10.5px; font-weight: 600; line-height: 1.4;
+}
+.serial-speeds { font-variant-numeric: tabular-nums; }
+.serial-head { color: #ff6b6b; text-decoration: underline; letter-spacing: 0.04em; margin-bottom: 3px; }
+.serial .red { color: #ff5d61; }
+.hud-sec.serial { margin-top: 0; padding-top: 0; }
+/* The readout panel: a bar with the order, its state and the minimise / hide buttons, a progress line,
+   colour-coded ship readouts and the signal text. */
+/* The panel sits in the top row, beside the top bar; only when the window is too narrow for both side by side does it start below the bar. */
+@media (max-width: 700px) { body.mission-maneuvers .hud { top: calc(var(--gap) + var(--safe-t) + 62px); } }
+.mh-bar { display: flex; align-items: flex-start; gap: 7px; }
+.mh-title { flex: 1; min-width: 0; }
+.mh-title b { display: block; font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mh-sub { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.mh-sub small { font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); }
+.mh-sub .chip { flex: none; }
+.mh-btns { display: flex; gap: 3px; flex: none; }
+.mh-btns button { width: 22px; height: 22px; padding: 0; border-radius: 6px; font-size: 14px; line-height: 1; }
+.mh-progress { height: 3px; margin: 7px 0 7px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.mh-progress i { display: block; width: 0; height: 100%; background: var(--accent); }
+.mh-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.mh-cell { min-width: 0; padding: 4px 6px 5px; border-radius: 8px; background: rgba(0, 0, 0, 0.22); }
+.mh-cell span { display: flex; align-items: center; gap: 4px; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.mh-cell.alg span::before, .mh-cell.rus span::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #3ddc84; }
+.mh-cell.rus span::before { background: #ff7a1a; }
+.mh-cell b { display: block; font-size: 14px; font-variant-numeric: tabular-nums; }
+.mh-cell em { font-style: normal; font-size: 10.5px; color: var(--muted); }
+.mh-standby { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--hair); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.mh-step { display: flex; align-items: center; gap: 4px; letter-spacing: 0; text-transform: none; }
+.mh-step button { width: 22px; height: 22px; padding: 0; border-radius: 6px; font-size: 14px; line-height: 1; }
+.mh-step b { min-width: 38px; text-align: center; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--text); }
+.mh-step b.pending { color: var(--accent); }
+.serial-bar { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.serial-bar button { width: 20px; height: 20px; padding: 0; border-radius: 6px; font-size: 13px; line-height: 1; }
+.hud.serial-off [data-serial] { display: none; }
+.hud.min .serial, .hud.min .mh-standby { display: none; }
+.hud.min .mh-progress { margin-bottom: 6px; }
+.hud.min { padding-bottom: 8px; }
+
+.serial-note { margin-top: 6px; font-size: 10.5px; font-style: italic; color: var(--muted); line-height: 1.35; }
+
+/* The order banner: STANDBY with its countdown, then EXECUTE. */
+body.mission-maneuvers .shot-caption { top: calc(var(--gap) + var(--safe-t) + 66px); font-weight: 700; letter-spacing: 0.16em; }
+.shot-caption.call::before { content: none; }
+.shot-caption.standby { color: #ffd166; border-color: rgba(255, 209, 102, 0.7); }
+.shot-caption.execute { color: #6dffa0; border-color: rgba(109, 255, 160, 0.8); background: rgba(10, 40, 24, 0.7); }
+
+/* The Orders dropdown from the top bar: the briefing's contents column, ticks on the finished orders, and the
+   standby time at the foot. */
+.orders-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 15; width: 268px; padding: 8px 8px 9px;
+  max-height: calc(100vh - 140px - var(--tl-h, 80px)); display: flex; flex-direction: column;
+  background: var(--panel-solid); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+.orders-menu[hidden] { display: none; }
+.orders-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 4px 5px; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.orders-head small { font-size: 10px; letter-spacing: 0; text-transform: none; opacity: 0.8; }
+.orders-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; scrollbar-width: thin; }
+.orders-menu .mh-standby { margin: 8px 4px 0; }
+#btn-orders[aria-expanded='true'] { background: rgba(255, 255, 255, 0.1); color: var(--text); }
+.order {
+  display: grid; grid-template-columns: 14px 1fr auto; gap: 8px; align-items: center; width: 100%; padding: 4px 6px;
+  border: 0; border-radius: 6px; background: none; color: var(--muted); text-align: left; font-size: 12px;
+}
+.order:hover { background: rgba(255, 255, 255, 0.08); color: var(--text); }
+.order .chk { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, 0.3); }
+.order .when { font-variant-numeric: tabular-nums; font-size: 10px; opacity: 0.7; }
+.order.done { color: var(--text); }
+.order.done .chk { border-color: var(--ok); background: var(--ok) center / 8px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 5.3 4.2 7.5 8 3' fill='none' stroke='%230b1118' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.order.current { color: var(--text); background: var(--accent-soft); font-weight: 600; }
+.order.current .chk { border-color: var(--accent); box-shadow: inset 0 0 0 3px var(--accent); }
+
 /* Floating 3D tags (CSS2DRenderer layer sits over the canvas, click-through). */
 .labels-layer { position: fixed; inset: 0; pointer-events: none; }
 .tag {
@@ -432,7 +516,8 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 .ch-step h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 7px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
 .ch-step .n { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: rgba(255, 255, 255, 0.08); color: var(--text); font-size: 10.5px; letter-spacing: 0; }
 
-.missions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.missions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+@media (min-width: 1000px) { .missions { grid-template-columns: repeat(4, 1fr); } }
 .mission {
   display: flex; align-items: center; gap: 10px; padding: 9px 12px; text-align: left; border-radius: 11px;
   background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); transition: border-color 0.15s, background 0.15s;
@@ -448,6 +533,7 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 .mission .i-canopy { stroke: var(--accent); fill: rgba(255, 122, 26, 0.3); }
 .mission .i-line { stroke: var(--muted); stroke-width: 1.2; }
 .mission .i-sea { stroke: #3d7fa6; }
+.mission .i-ship { stroke: var(--ok); stroke-width: 2.2; fill: rgba(61, 220, 132, 0.18); }
 .mission[data-mode='chute'] .i-drone { stroke-width: 2.6; }
 
 .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -632,12 +718,16 @@ input[type='range'] { accent-color: var(--accent); }
 .en-tiles div { padding: 6px 8px; border-radius: 8px; background: rgba(0, 0, 0, 0.22); }
 .en-tiles span { display: block; font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
 .en-tiles b { font-size: 16px; font-variant-numeric: tabular-nums; }
+/* Notices: a compact card above the control bar (it used to cover the top bar and the panels). Click to dismiss. */
 .toast {
-  position: fixed; left: 50%; top: 18px; transform: translate(-50%, -20px); opacity: 0; pointer-events: none;
-  background: rgba(10, 14, 20, 0.9); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 14px;
-  font-size: 13px; transition: opacity 0.2s, transform 0.2s; z-index: 20; max-width: min(520px, 90vw); text-align: center;
+  position: fixed; left: 50%; z-index: 20; max-width: min(380px, calc(100vw - 2 * var(--gap)));
+  bottom: calc(var(--tl-h, 110px) + var(--gap) * 2 + var(--safe-b) + 6px);
+  transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
+  padding: 7px 12px; border-radius: 10px; background: var(--panel-solid); border: 1px solid rgba(255, 122, 26, 0.5);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); font-size: 12px; line-height: 1.35; text-align: left;
+  transition: opacity 0.2s, transform 0.2s;
 }
-.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; cursor: pointer; }
 /* Phones: the editor fills the space under the top bar; the timeline steps aside while
    editing (the editor holds the clock at t = 0), so the sheet never covers the editor. */
 .ed-fold { display: none; justify-self: start; font-size: 12px; }
