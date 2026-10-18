@@ -1,12 +1,24 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { mulberry32 } from './rng.js';
+import { createWebOcean } from './vendor/web-ocean/renderer.js';
 
 const SUN_ELEVATION = 24; // degrees
 const SUN_AZIMUTH = 215;
 const HORIZON = new THREE.Color(0.66, 0.74, 0.84);
 
-export function createEnvironment(renderer, scene) {
+// web-ocean's settings for this scene: a moderate sea, so the flat-hulled ship (cut at the waterline)
+// still reads as sitting in it, and waves running with the wind of the WebGL ocean. The rest are its own.
+const WEB_OCEAN_SETTINGS = {
+  windSpeed: 7, windDir: 37, swellHs: 0.7, swellDir: 20, exposure: 0.55, clouds: 0.3, veil: 0.12,
+  // Speed, measured on an integrated GPU (the water draw went from 86 to 23 ms a frame, about 8 to 20 fps)
+  // without a visible change: half the mesh density (the shading is per pixel from textures anyway),
+  // 4x instead of 16x anisotropic filtering on the wave textures, foam maps advanced every second step,
+  // and one reflected-sky cube face every fourth frame (the clouds drift slowly).
+  grid: 16, aniso: 4, foamEvery: 2, envEvery: 4,
+};
+
+export function createEnvironment(renderer, scene, { onChange } = {}) {
   const sunDir = new THREE.Vector3().setFromSphericalCoords(
     1, THREE.MathUtils.degToRad(90 - SUN_ELEVATION), THREE.MathUtils.degToRad(SUN_AZIMUTH),
   );
@@ -44,11 +56,103 @@ export function createEnvironment(renderer, scene) {
 
   const ocean = createOcean(sunDir, scene.environment);
   scene.add(ocean);
-  scene.add(createClouds());
+  const clouds = createClouds();
+  scene.add(clouds);
+
+  // --- web-ocean (WebGPU) under the three.js canvas, when the browser has WebGPU ---
+  // Its own canvas sits behind ours and draws the sea and sky; ours turns transparent, drops the sky,
+  // clouds and WebGL water (keeping only the ship's wake foam as an overlay), and cuts everything at
+  // the waterline so hulls and sinking debris stop at the surface. Without WebGPU, or while recording a
+  // video (the recorder captures our canvas only), the WebGL ocean stays.
+  const wakeMaterial = ocean.material.clone();
+  wakeMaterial.uniforms = ocean.material.uniforms; // shared, so main.js keeps driving uTime and uShipX
+  wakeMaterial.defines = { ...ocean.material.defines, WAKE_ONLY: '' };
+  wakeMaterial.transparent = true;
+  wakeMaterial.depthWrite = false;
+  const waterMaterial = ocean.material;
+  const waterline = [new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)];
+  // maxRatio: web-ocean renders at most this many pixels per CSS pixel (its canvas is stretched to the
+  // window). Sea and sky have no hard edges, so on high-DPI screens 1 looks the same and costs far less;
+  // the ship and everything else stay at full sharpness on our canvas. ?oceanRatio= overrides it.
+  const gpu = { canvas: null, ocean: null, pref: true, paused: false, active: false, maxRatio: Number(new URLSearchParams(globalThis.location?.search ?? '').get('oceanRatio')) || 1 };
+  const _size = new THREE.Vector2();
+  function applyGpu() {
+    const on = !!gpu.ocean && gpu.pref && !gpu.paused && !gpu.ocean.lost;
+    if (on === gpu.active) return;
+    gpu.active = on;
+    gpu.canvas.hidden = !on;
+    sky.visible = !on;
+    clouds.visible = !on;
+    ocean.material = on ? wakeMaterial : waterMaterial;
+    ocean.position.y = on ? 0.03 : 0;
+    renderer.clippingPlanes = on ? waterline : [];
+    if (on) gpu.ocean.resetFoam();
+    onChange?.();
+  }
+  // The menu's "Realistic ocean" switch (remembered): off keeps the fast WebGL ocean on this machine.
+  const oceanButton = document.querySelector('#btn-ocean');
+  try { gpu.pref = localStorage.getItem('intercept.ocean') !== 'webgl'; } catch { /* storage unavailable */ }
+  const paintButton = () => {
+    if (!oceanButton) return;
+    oceanButton.setAttribute('aria-pressed', String(gpu.pref));
+    oceanButton.firstChild.textContent = gpu.pref ? 'Realistic ocean: on' : 'Realistic ocean: off';
+  };
+  oceanButton?.addEventListener('click', () => {
+    gpu.pref = !gpu.pref;
+    try { localStorage.setItem('intercept.ocean', gpu.pref ? 'gpu' : 'webgl'); } catch { /* storage unavailable */ }
+    paintButton();
+    if (gpu.pref) startGpu();
+    if (gpu.canvas) applyGpu();
+  });
+  paintButton();
+  if (oceanButton && !globalThis.navigator?.gpu) {
+    oceanButton.disabled = true;
+    oceanButton.title = 'Needs WebGPU, which this browser does not have';
+  }
+  const noGpu = new URLSearchParams(globalThis.location?.search ?? '').get('ocean') === 'webgl';
+  // Started on first use only (its shaders take a while to compile), so a machine set to the WebGL ocean
+  // never pays for it.
+  function startGpu() {
+    if (gpu.canvas || noGpu || !globalThis.navigator?.gpu) return;
+    gpu.canvas = document.createElement('canvas');
+    gpu.canvas.id = 'ocean-gpu';
+    gpu.canvas.hidden = true;
+    gpu.canvas.setAttribute('aria-hidden', 'true');
+    renderer.domElement.before(gpu.canvas);
+    // Test switches: ?oceanProfile (GPU timings in __webOcean.stats), ?oceanGrid=, ?oceanEnv=, ?oceanAniso=, ?oceanFoam=,
+    // ?oceanDebug=noSky|noOcean.
+    const q = new URLSearchParams(globalThis.location?.search ?? '');
+    const tune = { profile: q.has('oceanProfile'), debug: q.get('oceanDebug') ?? '' };
+    if (q.get('oceanGrid')) tune.grid = Number(q.get('oceanGrid'));
+    if (q.get('oceanEnv')) tune.envEvery = Number(q.get('oceanEnv'));
+    if (q.get('oceanAniso')) tune.aniso = Number(q.get('oceanAniso'));
+    if (q.get('oceanFoam')) tune.foamEvery = Number(q.get('oceanFoam'));
+    createWebOcean(gpu.canvas, { ...WEB_OCEAN_SETTINGS, ...tune, requestFrame: () => onChange?.() }).then((o) => {
+      gpu.ocean = o;
+      globalThis.__webOcean = o; // inspection handle: __webOcean.stats
+      applyGpu();
+    }, () => {
+      gpu.canvas.remove(); // no WebGPU after all: the WebGL ocean stays
+    });
+  }
+  if (gpu.pref) startGpu();
 
   return {
     sunDir,
     ocean,
+    // Draw web-ocean for this frame, if it is in use. Call right before renderer.render.
+    renderOcean(t, camera) {
+      if (gpu.ocean?.lost && gpu.active) applyGpu();
+      if (!gpu.active) return;
+      renderer.getSize(_size);
+      const ratio = Math.min(renderer.getPixelRatio(), gpu.maxRatio);
+      gpu.ocean.resize(_size.x * ratio, _size.y * ratio);
+      camera.updateMatrixWorld();
+      gpu.ocean.render(t, camera, sunDir);
+    },
+    // Turn web-ocean off (for example while recording) or back on; it only turns on where it loaded.
+    setGpuOcean(on) { gpu.paused = !on; if (gpu.canvas) applyGpu(); },
+    get gpuOcean() { return gpu.active; },
     // Smaller shadow map for the lower quality tiers (the old map is freed and rebuilt on the next frame).
     setShadowSize(n) {
       if (sun.shadow.mapSize.x === n) return;
@@ -227,6 +331,14 @@ function createOcean(sunDir, envMap) {
       void main() {
         vec3 toCam = cameraPosition - vWorld;
         float dist = length(toCam);
+        #ifdef WAKE_ONLY
+          // Overlay over web-ocean: the ship's wake foam alone, faded with the same fog.
+          float wake = wakeFoam(vWorld.xz, dist) * (1.0 - smoothstep(uFogNear, uFogFar, dist));
+          gl_FragColor = vec4(vec3(0.82, 0.87, 0.9) * (0.55 + 0.45 * max(uSunDir.y, 0.0)), wake);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+          return;
+        #endif
         vec3 V = toCam / dist;
         vec2 grad = vec2(0.0);
         // Slope covariance (xx, zz, xz) of everything not drawn in the normal (LEAN).

@@ -30,7 +30,7 @@ const SHIFT = new THREE.Vector3(-3200, 0, -3400);
 const canvas = document.querySelector('#scene');
 const loadingEl = document.querySelector('#loading');
 document.body.classList.add('mission-maneuvers');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true }); // transparent over web-ocean
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.75;
@@ -53,7 +53,7 @@ for (const type of ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown
 }
 canvas.addEventListener('webglcontextrestored', invalidate);
 
-const env = createEnvironment(renderer, scene);
+const env = createEnvironment(renderer, scene, { onChange: invalidate });
 env.setShadowSize(1024);
 
 // --- Ships -------------------------------------------------------------------------------------
@@ -799,6 +799,7 @@ renderer.setAnimationLoop((now) => {
   audio.update(t, camera, { alg: ships.alg.ship.group.position, rus: ships.rus.ship.group.position }, clock);
   map.update(t);
   if (needsRender()) {
+    env.renderOcean(t, camera);
     renderer.render(scene, camera);
     labelRenderer.render(scene, camera);
     drawn.t = t; drawn.inv = invalidations; drawn.mat.set(camera.matrixWorld.elements);
