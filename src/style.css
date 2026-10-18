@@ -405,13 +405,13 @@ body.mission-maneuvers .hud-live:empty { display: none; }
   pointer-events: auto; padding: 8px 10px; border-radius: 12px; background: var(--panel); border: 1px solid var(--border);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
 }
-.mcard-order { width: 240px; }
-.mcard-ships { display: flex; align-items: center; width: 190px; padding: 5px 6px; margin-left: auto; }
-.mcard-ships .mh-row { width: 100%; gap: 3px; }
-.mcard-ships .mh-cell { padding: 3px 4px 4px; }
-.mcard-ships .mh-cell span { font-size: 8.5px; letter-spacing: 0.06em; }
-.mcard-ships .mh-cell b { font-size: 12px; }
-.mcard-ships .mh-cell em { font-size: 9px; }
+.mcard-order { width: 520px; max-width: 100%; box-sizing: border-box; }
+.mh-ships { flex: 0 1 250px; min-width: 0; }
+.mh-ships .mh-row { gap: 4px; }
+.mh-ships .mh-cell { padding: 3px 5px 4px; }
+.mh-ships .mh-cell span { font-size: 9px; letter-spacing: 0.06em; }
+.mh-ships .mh-cell b { font-size: 13px; }
+.mh-ships .mh-cell em { font-size: 9.5px; }
 /* No brand in this mission's top bar: just the controls. */
 body.mission-maneuvers .brand { display: none; }
 body.mission-maneuvers .bar-tools { border-left: 0; padding-left: 0; }
@@ -425,8 +425,8 @@ body.mission-maneuvers .topbar { padding-left: 6px; }
 .serial .red { color: #ff5d61; }
 /* The readout panel: a bar with the order, its state and the minimise / hide buttons, a progress line,
    colour-coded ship readouts and the signal text. */
-.mh-bar { display: flex; align-items: flex-start; gap: 7px; }
-.mh-title { flex: 1; min-width: 0; }
+.mh-bar { display: flex; align-items: center; gap: 10px; }
+.mh-title { flex: 1 0 96px; min-width: 96px; }
 .mh-title b { display: block; font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mh-sub { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
 .mh-sub small { font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); white-space: nowrap; }
@@ -451,7 +451,7 @@ body.mission-maneuvers .topbar { padding-left: 6px; }
 .serial-note { margin-top: 6px; font-size: 10.5px; font-style: italic; color: var(--muted); line-height: 1.35; }
 
 /* The order banner: STANDBY with its countdown, then EXECUTE. */
-body.mission-maneuvers .shot-caption { top: calc(var(--gap) + var(--safe-t) + var(--bar-h, 34px) + 14px); font-weight: 700; letter-spacing: 0.16em; }
+body.mission-maneuvers .shot-caption { top: calc(var(--gap) + var(--safe-t) + var(--bar-h, 34px) + 90px); font-weight: 700; letter-spacing: 0.16em; }
 .shot-caption.call::before { content: none; }
 .shot-caption.standby { color: #ffd166; border-color: rgba(255, 209, 102, 0.7); }
 .shot-caption.execute { color: #6dffa0; border-color: rgba(109, 255, 160, 0.8); background: rgba(10, 40, 24, 0.7); }

@@ -368,9 +368,9 @@ let lastLive = '';
 // Two small cards attached under the top bar: the order's state and the ships' readouts. The signal text is
 // the Signal dropdown of the top bar.
 hudLive.innerHTML = '<div class="mcard mcard-order"><div class="mh-bar"><div class="mh-title"><b data-title></b><div class="mh-sub"><small data-step></small><span class="chip" data-chip></span></div></div>'
+  + '<div class="mh-ships" data-live></div>'
   + '<div class="mh-btns"><button type="button" data-hide title="Hide these cards (H, or the Readouts button)" aria-label="Hide">×</button></div></div>'
-  + '<div class="mh-progress" title="How far through this order"><i data-progress></i></div></div>'
-  + '<div class="mcard mcard-ships" data-live></div>';
+  + '<div class="mh-progress" title="How far through this order"><i data-progress></i></div></div>';
 const bar = {
   title: hudLive.querySelector('[data-title]'), step: hudLive.querySelector('[data-step]'), chip: hudLive.querySelector('[data-chip]'),
   progress: hudLive.querySelector('[data-progress]'),
