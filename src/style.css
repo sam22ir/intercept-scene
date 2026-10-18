@@ -425,14 +425,16 @@ body.mission-maneuvers .hud {
   background: none; border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; pointer-events: none;
 }
 /* The order card sits right of the top bar, the small ships card in the top-right corner. */
-body.mission-maneuvers .hud-live { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: flex-start; }
+body.mission-maneuvers .hud-live { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 8px; align-items: stretch; }
 body.mission-maneuvers .hud-live:empty { display: none; }
 .mcard {
   pointer-events: auto; padding: 8px 10px; border-radius: 12px; background: var(--panel); border: 1px solid var(--border);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
 }
-.mcard-order { width: 520px; max-width: 100%; box-sizing: border-box; }
-.mh-ships { flex: 0 1 250px; min-width: 0; }
+/* The order card, and the ships card right beside it. */
+.mcard-order { flex: 0 1 300px; min-width: 220px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; }
+.mh-ships { flex: 0 1 270px; min-width: 0; box-sizing: border-box; padding: 6px; display: flex; align-items: center; }
+.mh-ships .mh-row { flex: 1; }
 .mh-ships .mh-row { gap: 4px; }
 .mh-ships .mh-cell { padding: 3px 5px 4px; }
 .mh-ships .mh-cell span { font-size: 9px; letter-spacing: 0.06em; }
