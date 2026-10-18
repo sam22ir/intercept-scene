@@ -8,7 +8,7 @@ import { TRAIL_COLORS } from './trails.js';
 // ship's frame (the part already flown is bright, the rest faint). Everything is a pure
 // function of t, so it scrubs both ways. Click it to change the zoom; M hides it.
 
-const SIZE = 124; // CSS px: fits beside the timeline panel
+const SIZE = 150; // CSS px: sits beside the timeline panel
 const SCALES = [300, 500, 750, 1000, 1500, 2000, 3000]; // auto-zoom steps: metres to the rim
 const ZOOMS = ['auto', 500, 1000, 2000]; // what a click cycles through
 const PATH_DT = 0.5; // s between path samples

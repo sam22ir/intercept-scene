@@ -143,6 +143,8 @@
         <dt><kbd>R</kbd></dt><dd>Play backwards</dd>
         <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Step 0.1 s (Shift: 1 s)</dd>
         <dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>Start / end</dd>
+        <dt><kbd>,</kbd> <kbd>.</kbd></dt><dd>Previous / next event</dd>
+        <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Slower / faster</dd>
         <dt><kbd>1</kbd>–<kbd>5</kbd></dt><dd>Drone, missile, ship (pair: drone 2, missile 2)</dd>
         <dt><kbd>Esc</kbd></dt><dd>Free camera</dd>
         <dt><kbd>D</kbd></dt><dd>Cinematic camera</dd>
@@ -304,23 +306,16 @@
           <button data-focus="ship" title="Look at the ship (3)">Ship</button>
         </div>
         <div class="transport" role="group" aria-label="Playback">
-          <button id="btn-start" class="tbtn" title="Back to start (Home)" aria-label="Back to start"><svg><use href="#i-start"/></svg></button>
+          <button id="btn-start" class="tbtn" title="Previous event (,)" aria-label="Previous event"><svg><use href="#i-start"/></svg></button>
           <button id="btn-step-back" class="tbtn" title="Step back (←, Shift = 1 s)" aria-label="Step back"><svg><use href="#i-back"/></svg></button>
           <button id="btn-reverse" class="tbtn" title="Play backwards (R)" aria-label="Play backwards"><svg><use href="#i-rev"/></svg></button>
           <button id="btn-play" class="tbtn play" title="Play / pause (Space)" aria-label="Play"><svg class="i-play"><use href="#i-play"/></svg><svg class="i-pause"><use href="#i-pause"/></svg></button>
           <button id="btn-step-fwd" class="tbtn" title="Step forward (→, Shift = 1 s)" aria-label="Step forward"><svg><use href="#i-fwd"/></svg></button>
-          <button id="btn-end" class="tbtn" title="Jump to end (End)" aria-label="Jump to end"><svg><use href="#i-end"/></svg></button>
+          <button id="btn-end" class="tbtn" title="Next event (.)" aria-label="Next event"><svg><use href="#i-end"/></svg></button>
         </div>
         <div class="clock-box">
           <div class="time"><b id="time-now">0.0</b><span> / <span id="time-end">0</span> s</span></div>
-          <select id="speed" title="Playback speed" aria-label="Playback speed">
-            <option value="0.1">0.1×</option>
-            <option value="0.25">0.25×</option>
-            <option value="0.5">0.5×</option>
-            <option value="1" selected>1×</option>
-            <option value="2">2×</option>
-            <option value="4">4×</option>
-          </select>
+          <button id="speed" class="speed-btn" title="Playback speed: click for the next speed, right-click for the previous ([ and ] too)" aria-label="Playback speed">1×</button>
         </div>
       </div>
       <div class="now"><span class="now-k">Now</span> <b id="phase-now"></b><span id="phase-next" class="now-next"></span></div>

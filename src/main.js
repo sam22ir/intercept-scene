@@ -432,6 +432,10 @@ const clock = createTimeline(scenario, {
     if (key === 'Escape' && engagePanel.active) { engagePanel.close(); return; }
     if (editor.active) { editor.onKey(key, e); return; }
     if (key === 'e' || key === 'E') { engagePanel.close(); editor.toggle(); return; }
+    if (key === ',') { clock.prevEvent(); return; }
+    if (key === '.') { clock.nextEvent(); return; }
+    if (key === '[') { clock.slower(); return; }
+    if (key === ']') { clock.faster(); return; }
     if (key === 'g' || key === 'G') { if (!editor.active) engagePanel.toggle(); return; }
     if (key === '?') { setKeys(keysEl.hidden); return; }
     if (key === 'Escape') setFocus('free');
