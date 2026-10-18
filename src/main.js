@@ -316,9 +316,6 @@ function setDirector(on) {
 directorButton.addEventListener('click', () => { if (!directing && editor.active) return; setDirector(!directing); });
 canvas.addEventListener('pointerdown', () => { if (directing) setFocus('free'); }, true);
 canvas.addEventListener('wheel', () => { if (directing) setFocus('free'); }, { passive: true, capture: true });
-try {
-  if (new URLSearchParams(location.search).get('cam') === 'director') setDirector(true);
-} catch { /* no query string available */ }
 
 // --- Sound ----------------------------------------------------------------------
 
@@ -448,7 +445,10 @@ else {
   } catch { /* storage unavailable */ }
 }
 const sharedFocus = shared.focus === 'plane' || shared.focus === 'ship' || (shared.focus === 'missile' && scenario.hasMissile) ? shared.focus : null;
-if (!directing) setFocus(sharedFocus ?? 'plane'); // default: open on the drone sitting on its cradle
+// The default view is the cinematic camera (the Director). A shared link opens on its own
+// camera: the one it names (?focus=, ?cam=free) or the cinematic cuts (?cam=director).
+if (shared.director || (!sharedFocus && !shared.free)) setDirector(true);
+else setFocus(sharedFocus ?? 'free');
 
 // "Copy link": ship, mission, moment, camera focus and (if custom) the flight path.
 createShare({

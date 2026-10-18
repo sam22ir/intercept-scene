@@ -11,8 +11,10 @@ export function buildShareUrl({ ship, mode, t, focus, director, path }, base = g
   u.searchParams.set('ship', ship);
   u.searchParams.set('mode', mode);
   u.searchParams.set('t', String(Math.round(t * 100) / 100));
+  // The page opens in the cinematic camera by default, so a free camera has to say so.
   if (director) u.searchParams.set('cam', 'director');
   else if (focus && focus !== 'free') u.searchParams.set('focus', focus);
+  else u.searchParams.set('cam', 'free');
   if (path) {
     const points = path.map((p) => p.map((v) => Math.round(v * 10) / 10));
     u.hash = `path=${b64url(JSON.stringify({ points }))}`;
@@ -20,14 +22,15 @@ export function buildShareUrl({ ship, mode, t, focus, director, path }, base = g
   return u.toString();
 }
 
-// Reads ?t= and ?focus= (and ?cam=director) from the page URL.
+// Reads ?t= and ?focus= (and ?cam=director|cinematic, ?cam=free) from the page URL.
 export function readShareParams(search = globalThis.location?.search ?? '') {
   try {
     const q = new URLSearchParams(search);
     const t = q.has('t') ? parseFloat(q.get('t')) : NaN;
-    return { t: Number.isFinite(t) ? t : null, focus: q.get('focus'), director: q.get('cam') === 'director' };
+    const cam = q.get('cam');
+    return { t: Number.isFinite(t) ? t : null, focus: q.get('focus'), director: cam === 'director' || cam === 'cinematic', free: cam === 'free' };
   } catch {
-    return { t: null, focus: null, director: false };
+    return { t: null, focus: null, director: false, free: false };
   }
 }
 

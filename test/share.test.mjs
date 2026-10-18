@@ -21,10 +21,16 @@ describe('share url', () => {
     assert.equal(d.searchParams.get('focus'), null);
     const f = new URL(buildShareUrl({ ship: 'fwd', mode: 'intercept', t: 1, focus: 'free', director: false, path: null }, base));
     assert.equal(f.searchParams.get('focus'), null);
+    assert.equal(f.searchParams.get('cam'), 'free'); // the page defaults to the cinematic camera
+  });
+  it('reads cam=director, cam=cinematic and cam=free', () => {
+    assert.equal(readShareParams('?cam=director').director, true);
+    assert.equal(readShareParams('?cam=cinematic').director, true);
+    assert.deepEqual(readShareParams('?cam=free'), { t: null, focus: null, director: false, free: true });
   });
   it('round-trips t and focus through readShareParams', () => {
     const u = new URL(buildShareUrl({ ship: 'fwd', mode: 'intercept', t: 7.77, focus: 'plane', director: false, path: null }, base));
-    assert.deepEqual(readShareParams(u.search), { t: 7.77, focus: 'plane', director: false });
+    assert.deepEqual(readShareParams(u.search), { t: 7.77, focus: 'plane', director: false, free: false });
   });
 });
 
