@@ -8,7 +8,6 @@ import { TRAIL_COLORS } from './trails.js';
 // ship's frame (the part already flown is bright, the rest faint). Everything is a pure
 // function of t, so it scrubs both ways. Click it to change the zoom; M hides it.
 
-const SIZE = 150; // CSS px: sits beside the timeline panel
 const SCALES = [300, 500, 750, 1000, 1500, 2000, 3000]; // auto-zoom steps: metres to the rim
 const ZOOMS = ['auto', 500, 1000, 2000]; // what a click cycles through
 const PATH_DT = 0.5; // s between path samples
@@ -53,13 +52,20 @@ export function createMinimap({ dronePosAt }) {
   let zoom = 0; // index into ZOOMS
   let lastKey = '';
 
+  // The disc's size comes from the CSS (--map-d: larger on desktop, 150 px on phones), so it is
+  // measured again when the window changes size.
+  let SIZE = 0;
   function size() {
+    const d = Math.round(parseFloat(getComputedStyle(document.body).getPropertyValue('--map-d'))) || 150;
+    if (d === SIZE) return;
+    SIZE = d;
     canvas.width = SIZE * dpr;
     canvas.height = SIZE * dpr;
     canvas.style.width = canvas.style.height = `${SIZE}px`;
     lastKey = '';
   }
   size();
+  window.addEventListener('resize', size);
 
   // The largest distance from the ship of anything the map is following at t.
   function reach(t) {

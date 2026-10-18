@@ -709,14 +709,14 @@ body.ui-hidden .minimap, body.editing .minimap { display: none; }
     width: min(1000px, calc(100vw - var(--gap) * 3 - var(--safe-l) - var(--safe-r) - var(--map-d)));
   }
 }
-/* Naval maneuvers on a desktop: a bigger exercise map, and a narrower timeline kept to the right. */
+/* Desktop screens: a bigger mini map, and a narrower timeline kept to the right. */
 @media (min-width: 641px) and (min-height: 501px) {
-  body.mission-maneuvers { --map-d: 240px; }
-  body.mission-maneuvers.has-map .timeline {
+  body { --map-d: 240px; }
+  body.has-map .timeline {
     left: auto; right: calc(var(--gap) + var(--safe-r));
     width: min(820px, calc(100vw - var(--gap) * 3 - var(--safe-l) - var(--safe-r) - var(--map-d)));
   }
-  body.mission-maneuvers .minimap .mm-scale { font-size: 10px; bottom: 12px; }
+  .minimap .mm-scale { font-size: 10px; bottom: 12px; }
 }
 
 /* Trajectory legend: one coloured chip per trail, under the top bar */
