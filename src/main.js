@@ -92,20 +92,17 @@ labelsButton.addEventListener('click', () => setLabels(!labels.enabled));
 // Trajectory trails: ship track, drone path and missile path, in their own colours.
 const trails = createTrails(scene);
 const trailsButton = document.querySelector('#btn-trails');
-const legendEl = document.querySelector('#trail-legend');
 function setTrails(on) {
   invalidate();
   trails.setEnabled(on);
   trailsButton.classList.toggle('active', on);
   trailsButton.setAttribute('aria-pressed', String(on));
-  legendEl.hidden = !on;
   try { localStorage.setItem('intercept.trails', on ? '1' : '0'); } catch { /* storage unavailable */ }
 }
 let trailsPref = true;
 try { trailsPref = localStorage.getItem('intercept.trails') !== '0'; } catch { /* storage unavailable */ }
 setTrails(trailsPref);
 trailsButton.addEventListener('click', () => setTrails(!trails.enabled));
-document.querySelectorAll('[data-trail][data-pair-only]').forEach((el) => { el.hidden = scenario.engagements.length < 2; });
 // Mini map: a small round radar, bow up, of the ship, drones and missiles.
 const minimap = createMinimap({ dronePosAt: (t, out, k) => (k ? pair.dronePosAt(t, out) : dronePosAt(t, out)) });
 const mapButton = document.querySelector('#btn-map');
@@ -121,7 +118,6 @@ try { mapPref = localStorage.getItem('intercept.map') !== '0'; } catch { /* stor
 setMap(mapPref);
 mapButton.addEventListener('click', () => setMap(!minimap.enabled));
 minimap.update(0);
-document.querySelectorAll('[data-trail="missile"]').forEach((el) => { el.hidden = !scenario.hasMissile; });
 
 // --- Applying a moment in time ----------------------------------------------
 

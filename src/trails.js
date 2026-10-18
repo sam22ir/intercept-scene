@@ -92,10 +92,6 @@ export function createTrails(scene) {
     return { e, k, t0, t1, drone, missile, pts };
   });
 
-  // Legend chips take their colours from the same table.
-  const hex = (c) => `#${c.toString(16).padStart(6, '0')}`;
-  document.querySelectorAll('[data-trail]').forEach((el) => el.style.setProperty('--c', hex(TRAIL_COLORS[el.dataset.trail])));
-
   let enabled = true;
   const api = {
     get enabled() { return enabled; },

@@ -517,8 +517,6 @@ let trailsPref = true;
 try { trailsPref = localStorage.getItem('intercept.trails') !== '0'; } catch { /* storage unavailable */ }
 setTrails(trailsPref);
 trailsButton.addEventListener('click', () => setTrails(!tracks.alg.plan.visible));
-const legendEl = document.querySelector('#trail-legend');
-legendEl.hidden = true; // the map and the tags already name the ships
 
 const map = createManeuverMap();
 const mapButton = document.querySelector('#btn-map');
