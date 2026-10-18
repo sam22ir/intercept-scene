@@ -5,7 +5,6 @@ import { shipState, relation, headingDeg, orderStatus, EXECUTE_FLASH, YD } from 
 // both ships as arrows along their heading, their recent tracks, and the station line with its
 // range in yards. Everything is a pure function of t. Click it to change the zoom; M hides it.
 
-const SIZE = 150; // CSS px
 const SCALES = [600, 1000, 1500, 2500, 4000]; // auto-zoom steps: metres to the rim
 const ZOOMS = ['auto', 1000, 2500];
 const TRACK_SECONDS = 300;
@@ -18,13 +17,24 @@ export function createManeuverMap() {
   const label = root.querySelector('.mm-scale');
   const ctx = canvas.getContext('2d');
   const dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
-  canvas.width = SIZE * dpr;
-  canvas.height = SIZE * dpr;
-  canvas.style.width = canvas.style.height = `${SIZE}px`;
+  // The disc's size comes from the CSS (--map-d: larger on desktop, 150 px on phones), so it is
+  // measured again when the window changes size.
+  let SIZE = 0;
+  function measure() {
+    const d = Math.round(parseFloat(getComputedStyle(document.body).getPropertyValue('--map-d'))) || 150;
+    if (d === SIZE) return;
+    SIZE = d;
+    canvas.width = SIZE * dpr;
+    canvas.height = SIZE * dpr;
+    canvas.style.width = canvas.style.height = `${SIZE}px`;
+    lastKey = '';
+  }
 
   let enabled = true;
-  let zoom = 0;
   let lastKey = '';
+  measure();
+  window.addEventListener('resize', measure);
+  let zoom = 0;
   const a = {};
   const b = {};
   const p = {};
