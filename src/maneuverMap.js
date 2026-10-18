@@ -125,14 +125,10 @@ export function createManeuverMap() {
     ctx.fillStyle = COLORS.rus;
     ctx.fillText('RUS', bx, by - 10);
 
-    // The order's life: an amber countdown while it stands by, a green pulse the moment it executes.
+    // The moment a countdown ends (the ships are in position): a green pulse and EXECUTE.
     const order = orderStatus(t);
     ctx.textAlign = 'center';
-    if (order.state === 'standby') {
-      ctx.fillStyle = 'rgba(255, 205, 90, 0.95)';
-      ctx.font = '700 9.5px system-ui, sans-serif';
-      ctx.fillText(`STANDBY ${Math.ceil(order.count)}`, half, 26);
-    } else if (order.state === 'execute') {
+    if (order.state === 'execute') {
       const u = order.since / EXECUTE_FLASH;
       ctx.strokeStyle = `rgba(110, 255, 160, ${1 - u})`;
       ctx.lineWidth = 3;

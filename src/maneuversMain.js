@@ -13,7 +13,7 @@ import { createManeuverMap } from './maneuverMap.js';
 import { createManeuverAudio } from './maneuverAudio.js';
 import { toast } from './pathEditor.js';
 import {
-  exercise, shipState, relation, headingDeg, phaseAt, orderStatus, EXECUTE_FLASH, PHASES, STANDBY, STANDBY_LIMITS, KT, YD, LIGHT, FLAGS, lampOn,
+  exercise, shipState, relation, headingDeg, phaseAt, orderStatus, PHASES, STANDBY, STANDBY_LIMITS, KT, YD, LIGHT, FLAGS, lampOn,
 } from './maneuvers.js';
 import { stripShareParams } from './share.js';
 
@@ -365,27 +365,30 @@ const tile = (label, value, unit, cls = '') => `<div class="tile ${cls}"><span>$
 const redTokens = (s) => s.replace(/\b(AS|AB|AC|ALG|RUS)\b/g, '<span class="red">$1</span>');
 let lastPhase = null;
 let lastLive = '';
-hudLive.innerHTML = '<div class="mh-bar"><div class="mh-title"><b data-title></b><div class="mh-sub"><small data-step></small><span class="chip" data-chip></span></div></div>'
-  + '<div class="mh-btns"><button type="button" data-min title="Minimise: keep only the readouts" aria-label="Minimise" aria-expanded="true">–</button>'
-  + '<button type="button" data-hide title="Hide the panel (H, or the Readouts button)" aria-label="Hide">×</button></div></div>'
-  + '<div class="mh-progress" title="How far through this order"><i data-progress></i></div>'
-  + '<div class="hud-sec" data-live></div>'
-  + '<div class="hud-sec serial"><div class="serial-bar"><span>Signal text</span><button type="button" data-ser aria-expanded="true" title="Hide the signal text" aria-label="Hide the signal text">–</button></div><div data-serial></div></div>';
+// Two small cards attached under the top bar: the order's state and the ships' readouts. The signal text is
+// the Signal dropdown of the top bar.
+hudLive.innerHTML = '<div class="mcard mcard-order"><div class="mh-bar"><div class="mh-title"><b data-title></b><div class="mh-sub"><small data-step></small><span class="chip" data-chip></span></div></div>'
+  + '<div class="mh-btns"><button type="button" data-hide title="Hide these cards (H, or the Readouts button)" aria-label="Hide">×</button></div></div>'
+  + '<div class="mh-progress" title="How far through this order"><i data-progress></i></div></div>'
+  + '<div class="mcard mcard-ships" data-live></div>';
 const bar = {
   title: hudLive.querySelector('[data-title]'), step: hudLive.querySelector('[data-step]'), chip: hudLive.querySelector('[data-chip]'),
   progress: hudLive.querySelector('[data-progress]'),
 };
 const liveEl = hudLive.querySelector('[data-live]');
-const serialEl = hudLive.querySelector('[data-serial]');
+let serialEl = null; // inside the Signal dropdown
+let signalTitle = null;
 const serialHtml = (phase) => (phase.note ? `<div class="serial-note">${phase.note}</div>` : '') + (phase.speeds ? `<div class="serial-speeds">${phase.speeds.map((s) => `<div>${s}</div>`).join('')}</div>` : '')
   + phase.serial.map((blk) => `<div class="serial-box">${blk.head ? `<div class="serial-head">${blk.head}</div>` : ''}${blk.lines.map((l) => `<div>${redTokens(l)}</div>`).join('')}</div>`).join('');
+// A countdown: seconds under a minute, m:ss above.
+const fmtCount = (sec) => (sec >= 60 ? `${Math.floor(sec / 60)}:${String(Math.ceil(sec % 60) % 60).padStart(2, '0')}` : `${Math.ceil(sec)}`);
 const banner = document.querySelector('#shot-caption');
 banner.classList.add('call');
 let lastBanner = '';
 function updateBanner(order) {
   let text = '';
   let cls = '';
-  if (order.state === 'standby') { text = `STANDBY · ${Math.ceil(order.count)}`; cls = 'standby'; } else if (order.state === 'execute') { text = `EXECUTE · ${order.phase.title}`; cls = 'execute'; }
+  if (order.state === 'standby') { text = `STANDBY · ${fmtCount(order.count)}`; cls = 'standby'; } else if (order.state === 'execute') { text = `EXECUTE · ${order.phase.title}`; cls = 'execute'; }
   if (text + cls === lastBanner) return;
   lastBanner = text + cls;
   banner.hidden = !text;
@@ -399,7 +402,7 @@ function updateReadout(t) {
   const order = orderStatus(t);
   const phase = order.phase;
   const idx = PHASES.indexOf(phase);
-  const chip = t >= exercise.tEnd ? ['Complete', 'ok'] : order.state === 'standby' ? [`Standby ${Math.ceil(order.count)} s`, 'warn'] : order.state === 'execute' ? ['Execute', 'ok'] : ['Under way', 'live'];
+  const chip = t >= exercise.tEnd ? ['Complete', 'ok'] : order.state === 'standby' ? [`${order.moving ? 'Under way' : 'Standby'} ${fmtCount(order.count)}`, 'warn'] : order.state === 'execute' ? ['Execute', 'ok'] : ['Under way', 'live'];
   setText(bar.title, phase.title);
   setText(bar.step, `Order ${idx + 1} of ${PHASES.length}`);
   setText(bar.chip, chip[0]);
@@ -413,6 +416,7 @@ function updateReadout(t) {
   if (phase !== lastPhase) {
     lastPhase = phase;
     serialEl.innerHTML = serialHtml(phase);
+    signalTitle.textContent = phase.title;
   }
   updateBanner(order);
 }
@@ -429,38 +433,7 @@ function setHud(on) {
   if (!on && !hudHint) { hudHint = true; toast('Readouts hidden. The Readouts button or H brings them back.', 3800); }
 }
 hudButton.addEventListener('click', () => setHud(!hudOn));
-// Minimise keeps the header, progress and readouts and drops the signal text; the choice is remembered.
-const minButton = hudLive.querySelector('[data-min]');
-function setHudMin(on) {
-  hudRoot.classList.toggle('min', on);
-  minButton.textContent = on ? '+' : '–';
-  minButton.title = on ? 'Show the signal text again' : 'Minimise: keep only the readouts';
-  minButton.setAttribute('aria-label', on ? 'Expand' : 'Minimise');
-  minButton.setAttribute('aria-expanded', String(!on));
-  try { localStorage.setItem('intercept.hudMin', on ? '1' : '0'); } catch { /* storage unavailable */ }
-  invalidate();
-}
-minButton.addEventListener('click', () => setHudMin(!hudRoot.classList.contains('min')));
-// The signal text can be hidden on its own (the readouts stay); remembered too.
-const serButton = hudLive.querySelector('[data-ser]');
-function setSerialOff(off) {
-  hudRoot.classList.toggle('serial-off', off);
-  serButton.textContent = off ? '+' : '–';
-  serButton.title = off ? 'Show the signal text' : 'Hide the signal text';
-  serButton.setAttribute('aria-label', serButton.title);
-  serButton.setAttribute('aria-expanded', String(!off));
-  try { localStorage.setItem('intercept.serialOff', off ? '1' : '0'); } catch { /* storage unavailable */ }
-  invalidate();
-}
-serButton.addEventListener('click', () => setSerialOff(!hudRoot.classList.contains('serial-off')));
-let serialOffPref = false;
-try { serialOffPref = localStorage.getItem('intercept.serialOff') === '1'; } catch { /* storage unavailable */ }
-setSerialOff(serialOffPref);
 hudLive.querySelector('[data-hide]').addEventListener('click', () => setHud(false));
-hudLive.querySelector('.mh-bar').addEventListener('dblclick', (e) => { if (!e.target.closest('button')) setHudMin(!hudRoot.classList.contains('min')); });
-let hudMinPref = false;
-try { hudMinPref = localStorage.getItem('intercept.hudMin') === '1'; } catch { /* storage unavailable */ }
-setHudMin(hudMinPref);
 
 const labelsButton = document.querySelector('#btn-labels');
 function setLabels(on) {
@@ -515,19 +488,28 @@ const keysEl = document.querySelector('#keys');
 // The Orders button and its dropdown (the list and the standby time) are built below, in the top bar.
 let ordersEl = null;
 let ordersButton = null;
+let signalEl = null;
+let signalButton = null;
 let lastOrderIdx = -2;
 function setOrders(open) {
   if (!ordersEl) return;
   ordersEl.hidden = !open;
   ordersButton.setAttribute('aria-expanded', String(open));
-  if (open) { setMenu(false); lastOrderIdx = -2; } // redraw once, scrolled to the current order
+  if (open) { setMenu(false); setSignal(false); lastOrderIdx = -2; } // redraw once, scrolled to the current order
   invalidate();
 }
-function setMenu(open) { menuEl.hidden = !open; menuButton.setAttribute('aria-expanded', String(open)); if (open) setOrders(false); invalidate(); }
+function setSignal(open) {
+  if (!signalEl) return;
+  signalEl.hidden = !open;
+  signalButton.setAttribute('aria-expanded', String(open));
+  if (open) { setMenu(false); setOrders(false); }
+  invalidate();
+}
+function setMenu(open) { menuEl.hidden = !open; menuButton.setAttribute('aria-expanded', String(open)); if (open) { setOrders(false); setSignal(false); } invalidate(); }
 function setKeys(open) { keysEl.hidden = !open; invalidate(); }
 function closePopovers() {
-  const was = !menuEl.hidden || !keysEl.hidden || !!(ordersEl && !ordersEl.hidden);
-  setMenu(false); setKeys(false); setOrders(false);
+  const was = !menuEl.hidden || !keysEl.hidden || !!(ordersEl && !ordersEl.hidden) || !!(signalEl && !signalEl.hidden);
+  setMenu(false); setKeys(false); setOrders(false); setSignal(false);
   return was;
 }
 function setPanelFolded(on, save = true) {
@@ -548,6 +530,7 @@ window.addEventListener('pointerdown', (e) => {
   if (!menuEl.hidden && !e.target.closest('#menu, #btn-menu')) setMenu(false);
   if (!keysEl.hidden && !e.target.closest('#keys, #btn-keys')) setKeys(false);
   if (ordersEl && !ordersEl.hidden && !e.target.closest('#orders, #btn-orders')) setOrders(false);
+  if (signalEl && !signalEl.hidden && !e.target.closest('#signal, #btn-signal')) setSignal(false);
 }, true);
 let panelFolded = false;
 try { panelFolded = localStorage.getItem(FOLD_KEY) === '1'; } catch { /* storage unavailable */ }
@@ -555,6 +538,14 @@ setPanelFolded(panelFolded, false);
 document.querySelector('#btn-ship').addEventListener('click', () => {
   try { sessionStorage.setItem('intercept.chooser', '1'); location.reload(); } catch { location.search = ''; }
 });
+// The cards hang just under the top bar, whatever its height is at this window width.
+if (typeof ResizeObserver === 'function') {
+  const topbar = document.querySelector('#topbar');
+  new ResizeObserver(() => {
+    document.documentElement.style.setProperty('--bar-h', `${topbar.offsetHeight}px`);
+    document.documentElement.style.setProperty('--bar-w', `${topbar.offsetWidth}px`);
+  }).observe(topbar);
+}
 document.querySelector('.brand b').textContent = 'Maneuvers';
 document.querySelector('#mission-sub').textContent = 'ALG & RUS · signalled drill';
 
@@ -576,10 +567,30 @@ ordersEl.className = 'orders-menu';
 ordersEl.hidden = true;
 ordersEl.innerHTML = '<div class="orders-head"><b>Orders</b><small>Click one to jump to it</small></div>'
   + `<ol class="orders-list">${PHASES.map((p, i) => `<li><button type="button" class="order" data-i="${i}" title="Jump to just before this order is announced"><span class="chk"></span><span class="name">${p.label}</span><span class="when">${mmss(p.t)}</span></button></li>`).join('')}</ol>`
-  + '<div class="mh-standby" title="How long an order stands by between its announcement and its execution. Changing it reloads the scene at this moment."><span>Standby time</span>'
+  + '<div class="mh-standby" title="The warning before the ships start to obey an order. The countdown itself runs on until they are in position. Changing it reloads the scene at this moment."><span>Standby time</span>'
   + '<div class="mh-step"><button type="button" data-sb="-1" aria-label="Shorter standby">–</button><b data-sb-val></b><button type="button" data-sb="1" aria-label="Longer standby">+</button></div></div>';
 document.querySelector('#topbar').appendChild(ordersEl);
 ordersButton.addEventListener('click', () => setOrders(ordersEl.hidden));
+
+// The signal text of the current order: a dropdown from the top bar, beside Orders.
+signalButton = document.createElement('button');
+signalButton.id = 'btn-signal';
+signalButton.className = 'icon';
+signalButton.setAttribute('aria-haspopup', 'true');
+signalButton.setAttribute('aria-expanded', 'false');
+signalButton.setAttribute('aria-controls', 'signal');
+signalButton.title = 'The signal text of the current order (I)';
+signalButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg><span class="cap">Signal</span>';
+ordersButton.parentElement.insertBefore(signalButton, ordersButton);
+signalEl = document.createElement('div');
+signalEl.id = 'signal';
+signalEl.className = 'signal-menu';
+signalEl.hidden = true;
+signalEl.innerHTML = '<div class="orders-head"><b>Signal text</b><small data-signal-title></small></div><div data-serial></div>';
+document.querySelector('#topbar').appendChild(signalEl);
+serialEl = signalEl.querySelector('[data-serial]');
+signalTitle = signalEl.querySelector('[data-signal-title]');
+signalButton.addEventListener('click', () => setSignal(signalEl.hidden));
 const orderButtons = [...ordersEl.querySelectorAll('.order')];
 function updateOrders(t) {
   const idx = t >= exercise.tEnd ? PHASES.length : PHASES.indexOf(phaseAt(t));
@@ -630,6 +641,7 @@ const clock = createTimeline(exercise, {
     if (key === 'h' || key === 'H') setHud(!hudOn);
     if (key === 's' || key === 'S') setSound(!audio.enabled);
     if (key === 'o' || key === 'O') setOrders(ordersEl.hidden);
+    if (key === 'i' || key === 'I') setSignal(signalEl.hidden);
     if (key === 'c' || key === 'C') setPanelFolded(!document.body.classList.contains('ui-hidden'));
   },
 });
@@ -660,11 +672,9 @@ for (const b of ordersEl.querySelectorAll('[data-sb]')) {
 
 // Clicking an order in the list jumps to just before it is announced.
 orderButtons.forEach((b, i) => b.addEventListener('click', () => { clock.seek(Math.max(PHASES[i].t - 1, 0)); setOrders(false); invalidate(); }));
-// 51 minutes of exercise: sixteen times real time by default, slowing to 1.5x from each order's
-// announcement to just after it executes, so the STANDBY and EXECUTE calls can be followed.
+// About 52 minutes of exercise: sixteen times real time by default. Time never slows for an order: its STANDBY
+// countdown simply runs on, through the maneuver, to the moment the ships are in position.
 clock.setSpeed(16);
-const SLOW_WINDOWS = PHASES.map((p) => [p.t, p.tx + EXECUTE_FLASH]);
-clock.slow = (t) => (SLOW_WINDOWS.some(([a, b]) => t >= a && t < b) ? 1.5 : Infinity);
 // Deep link: ?t= opens paused at that moment; the standby stepper reloads at the same moment, playing.
 try {
   const t = parseFloat(new URLSearchParams(location.search).get('t'));
@@ -745,7 +755,7 @@ renderer.setAnimationLoop((now) => {
   }
 });
 
-toast('Plays at 16×, slowing at each order. Speed: the button or [ ].', 4500);
+toast('Plays at 16×. Each order counts down to the ships\' arrival. Speed: the button or [ ].', 4500);
 
 // Debug / inspection handle (mirrors the intercept scene's).
 window.__scene = { exercise, clock, rig, camera, controls, setFocus, ships, scene, renderer };

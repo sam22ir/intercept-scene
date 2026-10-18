@@ -5,7 +5,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  exercise, shipState, relation, headingDeg, PASS, PHASES, YD, KT, FORMATION_RANGE, EXEC_DELAY, EXECUTE_FLASH,
+  exercise, shipState, relation, headingDeg, PASS, PHASES, YD, KT, FORMATION_RANGE, EXECUTE_FLASH,
   orderStatus, lampOn, CUES, LIGHT,
 } from '../src/maneuvers.js';
 
@@ -104,14 +104,48 @@ describe('naval maneuvers: formation geometry', () => {
 });
 
 describe('naval maneuvers: orders, signals and timeline', () => {
-  it('each order is announced, stands by for EXEC_DELAY seconds, executes, then runs', () => {
+  it('each order is announced, counts down to the ships\' arrival without a pause, executes there, then runs', () => {
     for (const p of PHASES) {
       const before = orderStatus(p.t + 1);
       assert.equal(before.state, 'standby');
-      near(before.count, EXEC_DELAY - 1, 1e-9, `${p.id} countdown`);
-      assert.equal(orderStatus(p.tx + 0.5).state, 'execute');
-      assert.equal(orderStatus(p.tx + EXECUTE_FLASH + 0.5).state, 'underway');
+      assert.equal(before.moving, false, `${p.id}: the ships have not started yet`);
+      near(before.count, p.ta - (p.t + 1), 1e-9, `${p.id} countdown runs to arrival`);
+      if (p.ta > p.tx + 5) {
+        const mid = orderStatus((p.tx + p.ta) / 2);
+        assert.equal(mid.state, 'standby', `${p.id} still counting while the ships are under way`);
+        assert.equal(mid.moving, true);
+      }
+      assert.equal(orderStatus(p.ta + 0.5).state, 'execute');
+      assert.equal(orderStatus(p.ta + EXECUTE_FLASH + 0.5).state, 'underway');
     }
+  });
+
+  it('the countdown ends exactly as the ships are in position (the deck\'s time of arrival)', () => {
+    const at = (id, back = 0) => P[id].ta - back;
+    // Turns: both ships on the new course at arrival, and not yet 20 s before.
+    for (const [id, course] of [['stbd', 90], ['port', 0], ['turn045', 45]]) {
+      angleNear(headingDeg(shipState('alg', at(id)).heading), course, 0.7, `${id} ALG on course at TA`);
+      angleNear(headingDeg(shipState('rus', at(id)).heading), course, 0.7, `${id} RUS on course at TA`);
+      assert.ok(Math.abs(((headingDeg(shipState('alg', at(id, 25)).heading) - course + 540) % 360) - 180) > 2, `${id} still turning 25 s before TA`);
+    }
+    // Station changes: on station at arrival.
+    const g = relation(at('gform'));
+    near(g.range / YD, 1000, 5, 'G FORM range at TA');
+    angleNear(g.bearing, 180, 1, 'G FORM bearing at TA');
+    assert.ok(Math.abs(relation(at('gform', 60)).range / YD - 1000) > 20 || Math.abs(((relation(at('gform', 60)).bearing - 180 + 540) % 360) - 180) > 3, 'not yet on station a minute before');
+    const f = relation(at('form120'));
+    near(f.range / YD, 1000, 6, 'FORM 120 range at TA');
+    angleNear(f.bearing, 120, 1.5, 'FORM 120 bearing at TA');
+    const c = relation(at('corpen'));
+    near(c.range / YD, 1000, 9, 'CORPEN range at TA');
+    angleNear(c.bearing, 180, 2, 'CORPEN bearing at TA');
+    // The serials end at arrival and the skim arrives at the closest pass.
+    near(P.light.ta, LIGHT.t1, 1e-9, 'light serial');
+    near(P.skim.ta, PASS.t, 1e-9, 'skim at the pass');
+  });
+
+  it('every order arrives before the next one is announced', () => {
+    for (let i = 1; i < PHASES.length; i++) assert.ok(PHASES[i].t > PHASES[i - 1].ta, `${PHASES[i].id} announced after ${PHASES[i - 1].id} arrived`);
   });
 
   it('is deterministic and covers the whole timeline with its events', () => {
@@ -134,9 +168,9 @@ describe('naval maneuvers: orders, signals and timeline', () => {
     assert.ok(rus > 20 && alg > 20, 'both lamps flash');
   });
 
-  it('has sound cues in time order: a horn per order, the serial ends, and a click per flash', () => {
+  it('has sound cues in time order: a horn as each countdown ends, and a click per flash', () => {
     for (let i = 1; i < CUES.length; i++) assert.ok(CUES[i].t >= CUES[i - 1].t);
-    for (const p of PHASES) assert.ok(CUES.some((c) => c.kind === 'horn' && c.ship === 'alg' && Math.abs(c.t - p.tx) < 1e-9), `${p.id} horn`);
+    for (const p of PHASES) assert.ok(CUES.some((c) => c.kind === 'horn' && c.ship === 'alg' && Math.abs(c.t - p.ta) < 1e-9), `${p.id} horn at arrival`);
     assert.ok(CUES.filter((c) => c.kind === 'click').length > 20);
     assert.ok(CUES.every((c) => c.t >= 0 && c.t <= exercise.tEnd));
   });

@@ -69,11 +69,11 @@ export const PHASES = [
     serial: [{ lines: [GO, 'FORM 120 – B SPEED 10 –', 'TA 12-1- 10', START_STBY] }] },
   { id: 'light', t: 1500, label: 'Flashing light', title: 'FLASHING LIGHT',
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 desig 12030–', 'G SPEED 6'] }, { head: 'END SERIAL :', lines: [GO, 'EX3 – 4 desig 12030'] }] },
-  { id: 'corpen', t: 1610, label: 'Corpen stbd 045', title: 'CORPEN STBD 045', note: 'Both make 12 kn; RUS runs at sierra, 15 kn, to its new station.',
+  { id: 'corpen', t: 1620, label: 'Corpen stbd 045', title: 'CORPEN STBD 045', note: 'Both make 12 kn; RUS runs at sierra, 15 kn, to its new station.',
     serial: [{ lines: [GO, 'CORPEN STBD 045 – B SPEED 12–', 'G FORM ALG – TA 12-1- 10', START_STBY] }] },
-  { id: 'flags', t: 2360, label: 'Flag hoist', title: 'FLAG HOIST',
+  { id: 'flags', t: 2370, label: 'Flag hoist', title: 'FLAG HOIST',
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 desig 12040 –', 'G SPEED 6'] }, { head: 'END SERIAL :', lines: [GO, 'EX3 – 4 desig 12040'] }] },
-  { id: 'skim', t: 2480, label: 'Skimming past', title: 'SKIMMING PAST', note: 'RUS makes sierra, turns away to starboard and comes back past ALG.',
+  { id: 'skim', t: 2490, label: 'Skimming past', title: 'SKIMMING PAST', note: 'RUS makes sierra, turns away to starboard and comes back past ALG.',
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 desig 12050'] }, { head: 'END SERIAL :', lines: ['EX3 – 4 desig 12050'] }] },
 ];
 for (const p of PHASES) { p.tx = p.t + STANDBY_DEFAULT + LEAD; p.t = p.tx - STANDBY; }
@@ -221,14 +221,16 @@ export function relation(t, from = 'rus', to = 'alg') {
 
 export const phaseAt = (t) => PHASES.reduce((cur, p) => (t >= p.t ? p : cur), PHASES[0]);
 
-// Where an order is in its life at time t: 'idle' before the first announcement, 'standby' until it executes (with the seconds to go),
-// 'execute' for a moment as it does, then 'underway'.
+// Where an order is in its life at time t. 'idle' before the first announcement. Then 'standby', which counts
+// down (`count`, seconds) to the moment the ships are in position (`ta`, the deck's time of arrival) and so
+// runs through the maneuver itself (`moving` is true once the ships have started to obey). At `ta` the order is
+// 'execute' for a moment, then 'underway' until the next one.
 export const EXECUTE_FLASH = 4; // s the EXECUTE call stays up
 export function orderStatus(t) {
   const phase = phaseAt(t);
-  if (t < phase.t) return { phase, state: 'idle' }; // before the first announcement
-  if (t < phase.tx) return { phase, state: 'standby', count: phase.tx - t };
-  if (t < phase.tx + EXECUTE_FLASH) return { phase, state: 'execute', since: t - phase.tx };
+  if (t < phase.t) return { phase, state: 'idle' };
+  if (t < phase.ta) return { phase, state: 'standby', count: phase.ta - t, moving: t >= phase.tx };
+  if (t < phase.ta + EXECUTE_FLASH) return { phase, state: 'execute', since: t - phase.ta };
   return { phase, state: 'underway' };
 }
 
@@ -236,6 +238,41 @@ export function orderStatus(t) {
 export const LIGHT = { t0: X.light + 10, t1: X.light + 90 };
 // Flag hoist (serial 12040): the flags are up between these times.
 export const FLAGS = { t0: X.flags + 10, t1: X.flags + 90 };
+// --- Arrival: the deck's TA, time of arrival --------------------------------------------------------------
+// An order's countdown runs on until the ships are in position, so zero is arrival. `ta` is found from the
+// ships' own motion: the first moment after which they stay on the ordered course (and station, for a
+// station change) for ARRIVAL_HOLD seconds. Orders that only signal (the start, the form 1 stations) arrive as
+// the ships start to obey; a serial arrives when it ends and the skim when RUS passes ALG.
+const ARRIVAL_HOLD = 10;
+const angDiff = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
+const headingOf = (id, t) => headingDeg(shipState(id, t).heading);
+const both = (t, course, tol) => angDiff(headingOf('alg', t), course) <= tol && angDiff(headingOf('rus', t), course) <= tol;
+const onStation = (t, bearing, yd, tolYd, tolDeg) => {
+  const r = relation(t);
+  return Math.abs(r.range / YD - yd) <= tolYd && angDiff(r.bearing, bearing) <= tolDeg;
+};
+const settledAfter = (t0, ok) => {
+  let since = null;
+  for (let t = t0; t < FULL; t += 0.5) {
+    if (ok(t)) { since ??= t; if (t - since >= ARRIVAL_HOLD) return since; } else since = null;
+  }
+  return t0;
+};
+const ARRIVAL = {
+  form1: (p) => p.tx,
+  station: (p) => p.tx,
+  stbd: (p) => settledAfter(p.tx, (t) => both(t, 90, 0.6)),
+  port: (p) => settledAfter(p.tx, (t) => both(t, 0, 0.6)),
+  gform: (p) => settledAfter(p.tx, (t) => both(t, 0, 1) && onStation(t, 180, 1000, 4, 0.8)),
+  turn045: (p) => settledAfter(p.tx, (t) => both(t, 45, 0.6)),
+  form120: (p) => settledAfter(p.tx, (t) => both(t, 45, 1) && onStation(t, 120, 1000, 5, 1.2)),
+  light: () => LIGHT.t1,
+  corpen: (p) => settledAfter(p.tx, (t) => both(t, 90, 1) && onStation(t, 180, 1000, 8, 1.5)),
+  flags: () => FLAGS.t1,
+  skim: () => PASS.t,
+};
+for (const p of PHASES) p.ta = ARRIVAL[p.id](p);
+
 // The signal lamp: RUS flashes in the first half of the light window, ALG answers in the second half.
 // The pattern is dots and dashes, a pure function of t (units of the 8-unit pattern run at 2.2 per second).
 const LAMP_PATTERN = [[0, 0.6], [1.2, 2.6], [3.2, 3.8], [4.4, 6]];
@@ -251,17 +288,12 @@ export function lampOn(t, id) {
   return LAMP_PATTERN.some(([from, to]) => u >= from && u < to);
 }
 
-// Sound cues the scene plays, in time order: one long blast of ALG's horn as each order executes, one
-// shorter blast at the end of each serial, and a click at the start of every flash of the lamp.
+// Sound cues the scene plays, in time order: one long blast of ALG's horn as each countdown ends (the
+// ships are in position, which for a serial is its end), and a click at the start of every flash of the lamp.
 // {t, kind: 'horn' | 'click', ship, len (s, horns)}
 export const CUES = (() => {
   const cues = [];
-  for (const p of PHASES) {
-    cues.push({ t: p.tx, kind: 'horn', ship: 'alg', len: 2.2 });
-  }
-  for (const end of [LIGHT.t1, FLAGS.t1]) {
-    cues.push({ t: end, kind: 'horn', ship: 'alg', len: 1.2 });
-  }
+  for (const p of PHASES) cues.push({ t: p.ta, kind: 'horn', ship: 'alg', len: 2.2 });
   for (const id of ['rus', 'alg']) {
     let on = false;
     for (let t = LAMP_WINDOW[id][0]; t < LAMP_WINDOW[id][1]; t += 0.05) {

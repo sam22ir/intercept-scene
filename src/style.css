@@ -391,11 +391,31 @@ button, select, .link-btn, .menu a { touch-action: manipulation; }
 body.mission-maneuvers #btn-director, body.mission-maneuvers #btn-edit,
 body.mission-maneuvers #btn-engage, body.mission-maneuvers #btn-record, body.mission-maneuvers #btn-link,
 body.mission-maneuvers #trail-legend { display: none; }
-/* The intercept readouts are click-through; this panel has buttons, so it takes the pointer. */
-body.mission-maneuvers .hud { pointer-events: auto; }
-body.mission-maneuvers .hud { width: 236px; padding: 8px 10px 9px; max-height: calc(100vh - 62px - var(--gap) * 3 - var(--tl-h, 80px) - 6px); overflow-y: auto; }
-body.mission-maneuvers .hud .tile b { font-size: 14px; }
-body.mission-maneuvers .hud .hud-head b { font-size: 11.5px; }
+/* The readout panel is a transparent holder for two small cards attached under the top bar (the intercept
+   readouts are click-through; the cards have buttons, so they take the pointer). */
+body.mission-maneuvers .hud {
+  top: calc(var(--gap) + var(--safe-t)); left: calc(var(--gap) + var(--safe-l) + var(--bar-w, 660px) + 8px);
+  right: calc(var(--gap) + var(--safe-r)); width: auto; padding: 0;
+  background: none; border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; pointer-events: none;
+}
+/* The order card sits right of the top bar, the small ships card in the top-right corner. */
+body.mission-maneuvers .hud-live { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: flex-start; }
+body.mission-maneuvers .hud-live:empty { display: none; }
+.mcard {
+  pointer-events: auto; padding: 8px 10px; border-radius: 12px; background: var(--panel); border: 1px solid var(--border);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+}
+.mcard-order { width: 240px; }
+.mcard-ships { display: flex; align-items: center; width: 190px; padding: 5px 6px; margin-left: auto; }
+.mcard-ships .mh-row { width: 100%; gap: 3px; }
+.mcard-ships .mh-cell { padding: 3px 4px 4px; }
+.mcard-ships .mh-cell span { font-size: 8.5px; letter-spacing: 0.06em; }
+.mcard-ships .mh-cell b { font-size: 12px; }
+.mcard-ships .mh-cell em { font-size: 9px; }
+/* No brand in this mission's top bar: just the controls. */
+body.mission-maneuvers .brand { display: none; }
+body.mission-maneuvers .bar-tools { border-left: 0; padding-left: 0; }
+body.mission-maneuvers .topbar { padding-left: 6px; }
 .serial-box, .serial-speeds {
   margin-top: 6px; padding: 5px 8px; border: 1.5px solid rgba(110, 150, 240, 0.6); border-radius: 6px;
   background: rgba(40, 70, 140, 0.2); font-size: 10.5px; font-weight: 600; line-height: 1.4;
@@ -403,20 +423,17 @@ body.mission-maneuvers .hud .hud-head b { font-size: 11.5px; }
 .serial-speeds { font-variant-numeric: tabular-nums; }
 .serial-head { color: #ff6b6b; text-decoration: underline; letter-spacing: 0.04em; margin-bottom: 3px; }
 .serial .red { color: #ff5d61; }
-.hud-sec.serial { margin-top: 0; padding-top: 0; }
 /* The readout panel: a bar with the order, its state and the minimise / hide buttons, a progress line,
    colour-coded ship readouts and the signal text. */
-/* The panel sits in the top row, beside the top bar; only when the window is too narrow for both side by side does it start below the bar. */
-@media (max-width: 700px) { body.mission-maneuvers .hud { top: calc(var(--gap) + var(--safe-t) + 62px); } }
 .mh-bar { display: flex; align-items: flex-start; gap: 7px; }
 .mh-title { flex: 1; min-width: 0; }
 .mh-title b { display: block; font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mh-sub { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
-.mh-sub small { font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); }
-.mh-sub .chip { flex: none; }
+.mh-sub small { font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); white-space: nowrap; }
+.mh-sub .chip { display: none; } /* the banner already carries the state and countdown */
 .mh-btns { display: flex; gap: 3px; flex: none; }
 .mh-btns button { width: 22px; height: 22px; padding: 0; border-radius: 6px; font-size: 14px; line-height: 1; }
-.mh-progress { height: 3px; margin: 7px 0 7px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.mh-progress { height: 3px; margin: 7px 0 0; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
 .mh-progress i { display: block; width: 0; height: 100%; background: var(--accent); }
 .mh-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .mh-cell { min-width: 0; padding: 4px 6px 5px; border-radius: 8px; background: rgba(0, 0, 0, 0.22); }
@@ -430,29 +447,31 @@ body.mission-maneuvers .hud .hud-head b { font-size: 11.5px; }
 .mh-step button { width: 22px; height: 22px; padding: 0; border-radius: 6px; font-size: 14px; line-height: 1; }
 .mh-step b { min-width: 38px; text-align: center; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--text); }
 .mh-step b.pending { color: var(--accent); }
-.serial-bar { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
-.serial-bar button { width: 20px; height: 20px; padding: 0; border-radius: 6px; font-size: 13px; line-height: 1; }
-.hud.serial-off [data-serial] { display: none; }
-.hud.min .serial, .hud.min .mh-standby { display: none; }
-.hud.min .mh-progress { margin-bottom: 6px; }
-.hud.min { padding-bottom: 8px; }
 
 .serial-note { margin-top: 6px; font-size: 10.5px; font-style: italic; color: var(--muted); line-height: 1.35; }
 
 /* The order banner: STANDBY with its countdown, then EXECUTE. */
-body.mission-maneuvers .shot-caption { top: calc(var(--gap) + var(--safe-t) + 66px); font-weight: 700; letter-spacing: 0.16em; }
+body.mission-maneuvers .shot-caption { top: calc(var(--gap) + var(--safe-t) + var(--bar-h, 34px) + 14px); font-weight: 700; letter-spacing: 0.16em; }
 .shot-caption.call::before { content: none; }
 .shot-caption.standby { color: #ffd166; border-color: rgba(255, 209, 102, 0.7); }
 .shot-caption.execute { color: #6dffa0; border-color: rgba(109, 255, 160, 0.8); background: rgba(10, 40, 24, 0.7); }
 
 /* The Orders dropdown from the top bar: the briefing's contents column, ticks on the finished orders, and the
    standby time at the foot. */
+.signal-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 15; width: 292px; padding: 8px 8px 9px;
+  max-height: calc(100vh - 140px - var(--tl-h, 80px)); overflow-y: auto;
+  background: var(--panel-solid); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+.signal-menu .serial-box { margin-top: 6px; }
+.signal-menu .serial-note { margin: 2px 4px 0; }
+#btn-signal[aria-expanded='true'] { background: rgba(255, 255, 255, 0.1); color: var(--text); }
 .orders-menu {
   position: absolute; top: calc(100% + 6px); right: 0; z-index: 15; width: 268px; padding: 8px 8px 9px;
   max-height: calc(100vh - 140px - var(--tl-h, 80px)); display: flex; flex-direction: column;
   background: var(--panel-solid); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
 }
-.orders-menu[hidden] { display: none; }
+.orders-menu[hidden], .signal-menu[hidden] { display: none; }
 .orders-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 4px 5px; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
 .orders-head small { font-size: 10px; letter-spacing: 0; text-transform: none; opacity: 0.8; }
 .orders-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; scrollbar-width: thin; }
