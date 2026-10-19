@@ -776,16 +776,70 @@ signalTitle = signalEl.querySelector('[data-signal-title]');
 signalButton.addEventListener('click', () => setSignal(signalEl.hidden));
 const orderButtons = [...ordersEl.querySelectorAll('.order')];
 
-// The steps of the exercise, always in view down the left side (desktop): transparent, a tick on each finished
-// order, the current one lit, a click jumps to just before it is announced.
-const stepsEl = document.createElement('nav');
-stepsEl.id = 'steps';
-stepsEl.className = 'steps';
-stepsEl.setAttribute('aria-label', 'Steps of the exercise');
-stepsEl.innerHTML = `<ol class="orders-list">${PHASES.map((p, i) => `<li><button type="button" class="order" data-i="${i}" title="Jump to just before this order is announced"><span class="chk"></span><span class="name">${rn(p.label)}</span><span class="when">${mmss(p.t)}</span></button></li>`).join('')}</ol>`;
-document.body.appendChild(stepsEl);
-const stepButtons = [...stepsEl.querySelectorAll('.order')];
-stepButtons.forEach((b, i) => b.addEventListener('click', () => { clock.seek(Math.max(PHASES[i].t - 1, 0)); invalidate(); }));
+// The timeline stands on end down the left side (wide windows): the same line with its chapters, laid out
+// vertically, time running downward. Names are pushed apart so they never overlap, each joined to its tick by a
+// short leader. Drag the line or click a name to move through time. (The horizontal bar in the playback panel
+// is hidden then, so there is one timeline, not two.)
+const vtrack = document.createElement('div');
+vtrack.id = 'vtrack';
+vtrack.className = 'vtrack';
+vtrack.innerHTML = '<div class="vt-rail"><i class="vt-fill"></i><i class="vt-thumb"></i></div><svg class="vt-lead" aria-hidden="true"></svg><div class="vt-labels"></div>';
+document.body.appendChild(vtrack);
+const vtRail = vtrack.querySelector('.vt-rail');
+const vtLead = vtrack.querySelector('.vt-lead');
+const vtLabels = vtrack.querySelector('.vt-labels');
+const vtEvents = exercise.events.map((e) => {
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = 'vt-label';
+  el.textContent = rn(e.label);
+  el.title = `${rn(e.label)} · ${mmss(e.t)}`;
+  el.addEventListener('click', () => { clock.playing = false; clock.seek(e.t); invalidate(); });
+  vtLabels.appendChild(el);
+  return { t: e.t, el };
+});
+let vtH = 0;
+let vtDone = -2;
+function layoutVTrack() {
+  vtH = vtrack.clientHeight;
+  if (vtH < 40) return;
+  const GAP = 19;
+  const ys = vtEvents.map((e) => (e.t / exercise.tEnd) * (vtH - 12) + 6);
+  const ly = ys.slice();
+  for (let i = 1; i < ly.length; i++) ly[i] = Math.max(ly[i], ly[i - 1] + GAP); // push down
+  const over = ly[ly.length - 1] - (vtH - 8);
+  if (over > 0) for (let i = ly.length - 1; i >= 0; i--) { ly[i] -= over; if (i < ly.length - 1) ly[i] = Math.min(ly[i], ly[i + 1] - GAP); } // pull back up
+  let d = '';
+  vtEvents.forEach((e, i) => {
+    e.el.style.top = `${ly[i] - 9}px`;
+    d += `<path d="M13 ${ys[i].toFixed(1)} H20 L28 ${ly[i].toFixed(1)}"/><circle cx="13" cy="${ys[i].toFixed(1)}" r="2.6"/>`;
+  });
+  vtLead.innerHTML = d;
+  vtDone = -2;
+}
+function seekFromRail(e) {
+  const r = vtRail.getBoundingClientRect();
+  clock.playing = false;
+  clock.seek(Math.min(Math.max((e.clientY - r.top) / r.height, 0), 1) * exercise.tEnd);
+  invalidate();
+}
+let vtDrag = false;
+vtrack.querySelector('.vt-rail').addEventListener('pointerdown', (e) => { vtDrag = true; vtRail.setPointerCapture?.(e.pointerId); seekFromRail(e); });
+vtRail.addEventListener('pointermove', (e) => { if (vtDrag) seekFromRail(e); });
+vtRail.addEventListener('pointerup', () => { vtDrag = false; });
+vtRail.addEventListener('pointercancel', () => { vtDrag = false; });
+function updateVTrack(t) {
+  const p = Math.min(Math.max(t / exercise.tEnd, 0), 1);
+  vtrack.style.setProperty('--p', p.toFixed(4));
+  let cur = -1;
+  vtEvents.forEach((e, i) => { if (t >= e.t) cur = i; });
+  if (cur !== vtDone) {
+    vtDone = cur;
+    vtEvents.forEach((e, i) => { e.el.classList.toggle('passed', i <= cur); e.el.classList.toggle('current', i === cur); });
+  }
+}
+if (typeof ResizeObserver === 'function') new ResizeObserver(layoutVTrack).observe(vtrack);
+window.addEventListener('resize', layoutVTrack);
 
 // The camera buttons move to a strip at the top centre on wide windows (the playback panel keeps them otherwise).
 {
@@ -809,10 +863,7 @@ function updateOrders(t) {
     b.classList.toggle('current', i === idx);
     if (i === idx && !ordersEl.hidden) b.scrollIntoView({ block: 'nearest' });
   });
-  stepButtons.forEach((b, i) => {
-    b.classList.toggle('done', i < idx);
-    b.classList.toggle('current', i === idx);
-  });
+
 }
 
 // --- Sound: horns on the orders and serials, a click per flash of the lamp -------------------------------
@@ -1053,6 +1104,7 @@ renderer.setAnimationLoop((now) => {
   clock.renderUI();
   updateReadout(t);
   updateOrders(t);
+  updateVTrack(t);
   updateMarkers();
   audio.update(t, camera, { alg: ships.alg.ship.group.position, rus: ships.rus.ship.group.position }, clock);
   map.update(t);
