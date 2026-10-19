@@ -951,3 +951,40 @@ body:not(.mission-fly) .fly-keys, body.ui-hidden .fly-keys { display: none; }
 .tag.tag-range::after, .tag-range .tag-title { display: none; }
 .mh-cell .rename { cursor: pointer; }
 .mh-cell .rename:hover { text-decoration: underline dotted; }
+
+/* --- Drill: the playback panel, redesigned ---------------------------------------------------------------
+   Camera pills on the left, a round Play in the middle, the clock and speed on the right; on a narrow window the
+   pills drop to their own row. A thicker bar with its chapter ticks underneath. */
+body.mission-maneuvers .timeline {
+  padding: 10px 18px 12px; border-radius: 18px; background: rgba(9, 14, 21, 0.74); border-color: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 10px 34px rgba(0, 0, 0, 0.35);
+}
+body.mission-maneuvers .controls { flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; }
+body.mission-maneuvers .seg { flex: none; order: 1; gap: 6px; padding: 0; background: none; border: 0; }
+body.mission-maneuvers .seg button {
+  padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04);
+  color: var(--muted); font-size: 12.5px; font-weight: 600; transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+body.mission-maneuvers .seg button:hover { color: var(--text); background: rgba(255, 255, 255, 0.1); }
+body.mission-maneuvers .seg button.active { background: var(--accent); border-color: var(--accent); color: #1a0d02; }
+body.mission-maneuvers .transport { order: 2; margin: 0; gap: 6px; }
+body.mission-maneuvers .tbtn { width: 38px; height: 38px; border-radius: 50%; border: 1px solid transparent; color: var(--muted); }
+body.mission-maneuvers .tbtn:hover { color: var(--text); background: rgba(255, 255, 255, 0.1); }
+body.mission-maneuvers .tbtn svg { width: 16px; height: 16px; }
+body.mission-maneuvers .tbtn.play { width: 54px; height: 54px; margin: 0 6px; background: var(--accent); border-color: var(--accent); color: #1a0d02; box-shadow: 0 4px 16px rgba(255, 122, 26, 0.35); }
+body.mission-maneuvers .tbtn.play:hover { background: #ff8d3a; color: #1a0d02; }
+body.mission-maneuvers .tbtn.play svg { width: 22px; height: 22px; }
+body.mission-maneuvers .tbtn.active:not(.play) { background: rgba(255, 122, 26, 0.2); border-color: var(--accent); color: var(--accent); }
+body.mission-maneuvers .clock-box { order: 3; gap: 10px; }
+body.mission-maneuvers .time { font-size: 13px; }
+body.mission-maneuvers .time b { font-size: 20px; font-weight: 700; letter-spacing: 0.01em; }
+body.mission-maneuvers #speed { min-width: 46px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--accent); background: rgba(255, 122, 26, 0.12); color: var(--accent); font-weight: 700; font-size: 12.5px; }
+body.mission-maneuvers #speed:hover { background: rgba(255, 122, 26, 0.24); }
+body.mission-maneuvers .now { margin-top: 10px; }
+body.mission-maneuvers #scrub::-webkit-slider-runnable-track { height: 8px; border-radius: 4px; }
+body.mission-maneuvers #scrub::-moz-range-track, body.mission-maneuvers #scrub::-moz-range-progress { height: 8px; border-radius: 4px; }
+body.mission-maneuvers #scrub::-webkit-slider-thumb { width: 18px; height: 18px; margin-top: -5px; }
+body.mission-maneuvers .tick { width: 3px; height: 8px; margin-left: -1.5px; bottom: 7px; background: rgba(255, 255, 255, 0.5); }
+body.mission-maneuvers .tick.stem { height: calc(8px + var(--stem, 0px)); }
+body.mission-maneuvers .tick.passed { background: #ffd2a8; }
+body.mission-maneuvers .marker { font-size: 11px; font-weight: 500; }

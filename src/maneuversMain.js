@@ -928,6 +928,13 @@ orderButtons.forEach((b, i) => b.addEventListener('click', () => { clock.seek(Ma
 // About 51 minutes of exercise: four times real time by default. Time never slows for an order: STANDBY
 // counts down to EXECUTE, the ships maneuver, and A STATION is called when they are in position.
 clock.setSpeed(4);
+// The playback panel reads m:ss (the exercise is 51 minutes long), not seconds.
+{
+  const mmss = (v) => `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, '0')}`;
+  clock.fmt = mmss;
+  const end = document.querySelector('#time-end');
+  if (end) end.parentElement.innerHTML = ` / <span id="time-end">${mmss(exercise.tEnd)}</span>`;
+}
 // Copy link: this moment, the camera on a ship or the formation, and the ships' names.
 {
   const linkBtn = document.querySelector('#btn-link');

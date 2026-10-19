@@ -67,7 +67,7 @@ export function createTimeline(scenario, { onKey } = {}) {
     renderUI() {
       if (!scrubbing) scrub.value = this.t;
       scrub.style.setProperty('--p', (this.t / scenario.tEnd).toFixed(4));
-      timeNow.textContent = this.t.toFixed(1);
+      timeNow.textContent = this.fmt ? this.fmt(this.t) : this.t.toFixed(1); // `fmt(seconds)` may show m:ss
       const fwd = this.playing && this.direction > 0;
       const rev = this.playing && this.direction < 0;
       playBtn.classList.toggle('active', fwd);
