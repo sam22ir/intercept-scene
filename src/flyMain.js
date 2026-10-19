@@ -397,7 +397,6 @@ setFolded(folded, false);
 document.querySelector('#btn-ship').addEventListener('click', () => {
   try { sessionStorage.setItem('intercept.chooser', '1'); location.reload(); } catch { location.search = ''; }
 });
-document.querySelector('#btn-ship').textContent = 'Change mission';
 {
   const t = menuText('fly'); // the same words as the start screen (menu.js)
   document.querySelector('.brand b').textContent = t.brand;

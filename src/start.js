@@ -176,3 +176,6 @@ mode = MODES.includes(modeFromUrl) ? modeFromUrl : (MODES.includes(rememberedMod
 const validShip = fromUrl === 'fwd' || fromUrl === 'aft';
 if ((validShip || mode === 'maneuvers' || mode === 'fly') && !forceChooser && (skipChooser || scripted)) launch(validShip ? fromUrl : 'fwd');
 else showChooser(validShip ? fromUrl : null);
+
+// The top bar's Menu button goes back to the main menu through each scene's own handler on #btn-ship.
+document.querySelector('#btn-home')?.addEventListener('click', () => document.querySelector('#btn-ship')?.click());
