@@ -219,7 +219,6 @@ function createLamp(ship) {
 const lamps = { alg: createLamp(ships.alg.ship), rus: createLamp(ships.rus.ship) };
 const _from = new THREE.Vector3();
 const _to = new THREE.Vector3();
-const _dir = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 const _flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI);
 function updateLamps(t) {
@@ -338,7 +337,7 @@ function updateTags(t) {
     // The tag rides higher the farther the camera is, and a ship's own tag is hidden from her bridge.
     const dist = camera.position.distanceTo(s.ship.group.position);
     tags[id].obj.position.copy(s.ship.group.position).setY(Math.min(Math.max(dist * 0.05, 26), 60));
-    tags[id].obj.visible = !(bridgeId === id && rig.id === id);
+    tags[id].obj.visible = true;
     tags[id].body.innerHTML = fmtTag(s.state);
   }
   const rel = stationAt(t);
@@ -363,19 +362,15 @@ function updateStationLine() {
 
 // --- Camera focus --------------------------------------------------------------------------------------
 const rig = new CameraRig(camera, controls);
-const BRIDGE_X = 15; // the bridge windows, in the ship's own frame (bow +X)
-const BRIDGE_Y = 11;
-const LOOK_X = 48;
-const LOOK_Y = 9;
 function shipPoint(sh, x, y, out) {
   const g = sh.ship.group, th = g.rotation.y;
   return out.set(g.position.x + x * Math.cos(th), g.position.y + y, g.position.z - x * Math.sin(th));
 }
 const targets = {
-  // A ship's view starts on its bridge, looking ahead over the foredeck: the target is a point ahead of the
-  // bridge, the camera sits at the bridge window (BRIDGE_X back from it).
-  alg: { pos: (out) => shipPoint(ships.alg, LOOK_X, LOOK_Y, out), distance: LOOK_X - BRIDGE_X, minDistance: 3 },
-  rus: { pos: (out) => shipPoint(ships.rus, LOOK_X, LOOK_Y, out), distance: LOOK_X - BRIDGE_X, minDistance: 3 },
+  // A ship's view (above it, looking at the other ship) is placed by applyBridge each frame; the rig only
+  // carries the ship's position for the shadow and the focus buttons.
+  alg: { pos: (out) => out.copy(ships.alg.ship.group.position).setY(12), distance: 150, minDistance: 40 },
+  rus: { pos: (out) => out.copy(ships.rus.ship.group.position).setY(12), distance: 150, minDistance: 40 },
   formation: {
     pos: (out) => out.addVectors(ships.alg.ship.group.position, ships.rus.ship.group.position).multiplyScalar(0.5).setY(0),
     distance: 1000, minDistance: 120,
@@ -409,19 +404,22 @@ function setFocus(id, distance) {
 }
 for (const b of focusButtons) b.addEventListener('click', () => setFocus(b.dataset.focus));
 canvas.addEventListener('wheel', () => { autoZoom = false; }, { passive: true });
-// The bridge view: the camera sits at the bridge window and turns with the ship. Dragging looks around from
-// the window (left / right, up / down), a double click looks ahead again, and the wheel leaves the bridge for
-// the usual orbit.
-let bridgeId = null;
-let bridgeYaw = 0;
-let bridgePitch = -0.05;
+// A ship's view: the camera hangs above and behind that ship and looks at the other one, so the other ship stays
+// in the middle of the picture however they move. Drag to swing round, wheel to move in and out, double click
+// to go back to the default view.
+let bridgeId = null; // the ship whose view this is
+const CHASE = { yaw: 0, pitch: 0.5, dist: 150 };
+let chaseYaw = CHASE.yaw;
+let chasePitch = CHASE.pitch;
+let chaseDist = CHASE.dist;
 const _eye = new THREE.Vector3();
 function enterBridge(id) {
   bridgeId = id;
-  bridgeYaw = 0;
-  bridgePitch = -0.05;
+  chaseYaw = CHASE.yaw;
+  chasePitch = CHASE.pitch;
+  chaseDist = CHASE.dist;
   controls.enabled = false;
-  rig.transition = null; // straight onto the bridge, no fly-in
+  rig.transition = null; // straight into the view, no fly-in
   rig.getPos(rig.last);
   applyBridge();
 }
@@ -430,27 +428,37 @@ function leaveBridge() {
   bridgeId = null;
   controls.enabled = true;
 }
-canvas.addEventListener('wheel', () => leaveBridge(), { capture: true, passive: true });
-canvas.addEventListener('dblclick', () => { if (bridgeId) { bridgeYaw = 0; bridgePitch = -0.05; invalidate(); } });
+canvas.addEventListener('wheel', (e) => {
+  if (!bridgeId) return;
+  chaseDist = Math.min(Math.max(chaseDist * Math.exp(e.deltaY * 0.001), 40), 1500);
+  invalidate();
+}, { passive: true });
+canvas.addEventListener('dblclick', () => { if (bridgeId) { chaseYaw = CHASE.yaw; chasePitch = CHASE.pitch; chaseDist = CHASE.dist; invalidate(); } });
 let lookDrag = null;
 canvas.addEventListener('pointerdown', (e) => { if (bridgeId && e.button === 0) lookDrag = { x: e.clientX, y: e.clientY }; });
 window.addEventListener('pointerup', () => { lookDrag = null; });
 window.addEventListener('pointermove', (e) => {
   if (!bridgeId || !lookDrag) return;
-  bridgeYaw -= (e.clientX - lookDrag.x) * 0.004; // dragging right looks to starboard
-  bridgePitch = Math.min(Math.max(bridgePitch + (e.clientY - lookDrag.y) * 0.003, -0.9), 0.9);
+  chaseYaw -= (e.clientX - lookDrag.x) * 0.005;
+  chasePitch = Math.min(Math.max(chasePitch + (e.clientY - lookDrag.y) * 0.004, 0.05), 1.45);
   lookDrag.x = e.clientX;
   lookDrag.y = e.clientY;
   invalidate();
 });
 function applyBridge() {
   if (!bridgeId || rig.id !== bridgeId) return;
-  const sh = ships[bridgeId];
-  const th = sh.ship.group.rotation.y + bridgeYaw;
-  const cp = Math.cos(bridgePitch);
-  shipPoint(sh, BRIDGE_X, BRIDGE_Y, _eye);
+  const own = ships[bridgeId].ship.group.position;
+  const other = ships[bridgeId === 'alg' ? 'rus' : 'alg'].ship.group.position;
+  // From the other ship back toward this one, level: the camera sits behind this ship on that line.
+  _dir.set(own.x - other.x, 0, own.z - other.z);
+  if (_dir.lengthSq() < 1) _dir.set(-1, 0, 0);
+  _dir.normalize();
+  const c = Math.cos(chaseYaw), n = Math.sin(chaseYaw);
+  const dx = _dir.x * c + _dir.z * n, dz = -_dir.x * n + _dir.z * c;
+  const cp = Math.cos(chasePitch);
+  _eye.set(own.x + dx * chaseDist * cp, 14 + Math.sin(chasePitch) * chaseDist, own.z + dz * chaseDist * cp);
   camera.position.copy(_eye);
-  controls.target.set(_eye.x + Math.cos(th) * cp * 40, _eye.y + Math.sin(bridgePitch) * 40, _eye.z - Math.sin(th) * cp * 40);
+  controls.target.set(other.x, 10, other.z); // the other ship in the middle of the view
 }
 // The Formation view keeps its angle to the ships' course: the camera turns about the formation as the ships
 // turn, following their mean heading (the mid point of the two when the courses differ).
@@ -520,7 +528,11 @@ function updateBanner(order) {
   let text = '';
   let cls = '';
   // STANDBY counts down to EXECUTE (getting ready); EXECUTE starts the maneuver; A STATION when in position.
-  if (order.state === 'standby') { text = `STANDBY · ${fmtCount(order.count)}`; cls = 'standby'; } else if (order.state === 'execute') { text = `EXECUTE · ${order.phase.title}`; cls = 'execute'; } else if (order.state === 'station') { text = 'A STATION'; cls = 'station'; }
+  // The call stays up until the next STANDBY: EXECUTE through the maneuver, then A STATION (an order that only
+  // signals has no station, so its EXECUTE stays).
+  if (order.state === 'standby') { text = `STANDBY · ${fmtCount(order.count)}`; cls = 'standby'; }
+  else if (order.state === 'execute' || order.state === 'underway' || (order.state === 'onstation' && !order.phase.hasStation)) { text = `EXECUTE · ${order.phase.title}`; cls = 'execute'; }
+  else if (order.state === 'station' || order.state === 'onstation') { text = 'A STATION'; cls = 'station'; }
   if (text + cls === lastBanner) return;
   lastBanner = text + cls;
   banner.hidden = !text;
