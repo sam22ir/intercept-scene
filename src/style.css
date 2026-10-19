@@ -494,7 +494,8 @@ body.mission-maneuvers .hud-debrief { margin-top: 8px; }
 .serial-note { margin-top: 6px; font-size: 10.5px; font-style: italic; color: var(--muted); line-height: 1.35; }
 
 /* The order banner: STANDBY with its countdown, then EXECUTE. */
-body.mission-maneuvers .shot-caption { top: calc(var(--gap) + var(--safe-t) + var(--bar-h, 34px) + 90px); font-weight: 700; letter-spacing: 0.16em; }
+/* Just under the options bar, at its left edge, so it never covers the ships. */
+body.mission-maneuvers .shot-caption { top: calc(var(--gap) + var(--safe-t) + var(--bar-h, 34px) + 8px); left: calc(var(--gap) + var(--safe-l) + 8px); transform: none; font-weight: 700; letter-spacing: 0.16em; }
 .shot-caption.call::before { content: none; }
 .shot-caption.standby { color: #ffd166; border-color: rgba(255, 209, 102, 0.7); }
 .shot-caption.execute { color: #6dffa0; border-color: rgba(109, 255, 160, 0.8); background: rgba(10, 40, 24, 0.7); }
