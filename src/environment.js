@@ -6,7 +6,10 @@ const SUN_ELEVATION = 24; // degrees
 const SUN_AZIMUTH = 215;
 const HORIZON = new THREE.Color(0.66, 0.74, 0.84);
 const ZENITH = new THREE.Color(0.2, 0.38, 0.66);
-const CALM_HORIZON = new THREE.Color(0.42, 0.6, 0.86);
+// Linear colours picked so that, after the ACES tone mapping the renderer uses, they come out as a true blue
+// (about sRGB 135 190 245 at the horizon and 28 102 229 overhead). Plain mid-range values come out grey.
+const CALM_HORIZON = new THREE.Color(0.06, 0.56, 3.0);
+const CALM_ZENITH = new THREE.Color(0, 0.16, 1.4);
 
 // `calm` is the drill's look: a deeper, quieter sea and a bluer sky, so ships and readouts stand out (flatter
 // distant waves with no moire stripes, less sky reflection and glitter).
@@ -25,6 +28,35 @@ export function createEnvironment(renderer, scene, { calm = false } = {}) {
   u.mieDirectionalG.value = 0.82;
   u.sunPosition.value.copy(sunDir);
   scene.add(sky);
+  // The drill's sky: a gradient dome in saturated blue instead of the physical Sky (which tone-maps to grey). The
+  // Sky object still lights the scene through the environment map below.
+  let dome = null;
+  if (calm) {
+    sky.visible = false;
+    dome = new THREE.Mesh(
+      new THREE.SphereGeometry(20000, 32, 16),
+      new THREE.ShaderMaterial({
+        side: THREE.BackSide, depthWrite: false, fog: false,
+        uniforms: { uHorizon: { value: CALM_HORIZON }, uZenith: { value: CALM_ZENITH }, uSun: { value: sunDir } },
+        vertexShader: 'varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: `
+          uniform vec3 uHorizon, uZenith, uSun;
+          varying vec3 vDir;
+          void main() {
+            float h = clamp(vDir.y, 0.0, 1.0);
+            vec3 col = mix(uHorizon, uZenith, pow(h, 0.45));
+            float s = max(dot(normalize(vDir), uSun), 0.0);
+            col += vec3(1.0, 0.85, 0.55) * (pow(s, 40.0) * 0.5 + pow(s, 900.0) * 6.0);
+            gl_FragColor = vec4(col, 1.0);
+            #include <tonemapping_fragment>
+            #include <colorspace_fragment>
+          }`,
+      }),
+    );
+    dome.renderOrder = -2;
+    dome.frustumCulled = false;
+    scene.add(dome);
+  }
 
   // Image-based lighting from the same sky.
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -61,6 +93,7 @@ export function createEnvironment(renderer, scene, { calm = false } = {}) {
     // sea plane ride along with it, and the clouds wrap around it, so the world never ends.
     follow(camPos) {
       sky.position.set(camPos.x, 0, camPos.z);
+      dome?.position.set(camPos.x, 0, camPos.z);
       ocean.position.x = camPos.x;
       ocean.position.z = camPos.z;
       for (const c of clouds.children) {
@@ -132,7 +165,7 @@ function createOcean(sunDir, calm, horizon) {
       uDeep: { value: calm ? new THREE.Color(0.012, 0.075, 0.13) : new THREE.Color(0.006, 0.045, 0.085) },
       uScatter: { value: calm ? new THREE.Color(0.03, 0.18, 0.24) : new THREE.Color(0.02, 0.13, 0.16) },
       uHorizon: { value: horizon },
-      uZenith: { value: ZENITH },
+      uZenith: { value: calm ? CALM_ZENITH : ZENITH },
       uFogNear: { value: 3000 },
       uFogFar: { value: 16000 },
       uShipX: { value: 0 }, // ship position along +X, drives the wake
