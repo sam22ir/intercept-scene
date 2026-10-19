@@ -911,9 +911,32 @@ const clock = createTimeline(exercise, {
     if (key === 's' || key === 'S') setSound(!audio.enabled);
     if (key === 'o' || key === 'O') setOrders(ordersEl.hidden);
     if (key === 'i' || key === 'I') setSignal(signalEl.hidden);
+    if (key === 'f' || key === 'F') toggleFullscreen();
     if (key === 'c' || key === 'C') setPanelFolded(!document.body.classList.contains('ui-hidden'));
   },
 });
+// Fullscreen (the widest view), from the More menu or F.
+function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen?.();
+  } catch { /* not allowed here */ }
+}
+{
+  const fsBtn = document.querySelector('#btn-fullscreen');
+  if (!document.fullscreenEnabled) fsBtn.hidden = true;
+  fsBtn.addEventListener('click', () => { toggleFullscreen(); setMenu(false); });
+  document.addEventListener('fullscreenchange', invalidate);
+}
+// The shortcuts sheet lists this drill's own keys.
+keysEl.querySelector('dl').innerHTML = [
+  ['<kbd>Space</kbd>', 'Play / pause'], ['<kbd>R</kbd>', 'Play backwards'], ['<kbd>←</kbd> <kbd>→</kbd>', 'Step 0.1 s (Shift: 1 s)'],
+  ['<kbd>Home</kbd> <kbd>End</kbd>', 'Start / end'], ['<kbd>,</kbd> <kbd>.</kbd>', 'Previous / next event'], ['<kbd>[</kbd> <kbd>]</kbd>', 'Slower / faster'],
+  ['<kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>', `View from above ${NAME.alg}, from above ${NAME.rus}, the formation`], ['<kbd>Esc</kbd>', 'Free camera'],
+  ['<kbd>O</kbd> <kbd>I</kbd>', 'The orders, the signal text'], ['<kbd>L</kbd> <kbd>T</kbd> <kbd>M</kbd>', 'Tags, tracks, map'],
+  ['<kbd>H</kbd> <kbd>S</kbd>', 'Readouts, sound'], ['<kbd>F</kbd>', 'Fullscreen'], ['<kbd>C</kbd>', 'Hide / show the interface'],
+].map(([k, d]) => `<dt>${k}</dt><dd>${d}</dd>`).join('');
+keysEl.querySelector('.keys-note').textContent = 'Drag to swing the ship view round · wheel to zoom · double click resets it';
 // Rename the ships: store the names and reload the scene at this moment (names are read once at import).
 function applyNames(alg, rus) {
   const a = alg.toUpperCase().trim() || 'ALG';

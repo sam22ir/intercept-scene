@@ -1113,3 +1113,8 @@ body.mission-maneuvers.playing::before {
   background: linear-gradient(180deg, rgba(5, 10, 18, 0.55), rgba(5, 10, 18, 0) 230px), linear-gradient(90deg, rgba(5, 10, 18, 0.4), rgba(5, 10, 18, 0) 300px);
 }
 body.mission-maneuvers.ui-hidden::before { display: none; }
+
+/* The More menu in the drill: only what matters here (the Menu button already goes back to the main menu). */
+#btn-fullscreen { display: none; }
+body.mission-maneuvers #btn-fullscreen:not([hidden]) { display: flex; }
+body.mission-maneuvers #btn-ship, body.mission-maneuvers #dl-offline, body.mission-maneuvers #menu hr { display: none; }
