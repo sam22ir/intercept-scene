@@ -738,7 +738,7 @@ try {
   const t = parseFloat(new URLSearchParams(location.search).get('t'));
   const back = parseFloat(sessionStorage.getItem('intercept.seek'));
   sessionStorage.removeItem('intercept.seek');
-  if (Number.isFinite(t)) { clock.playing = false; clock.seek(t); } else if (Number.isFinite(back)) clock.seek(back);
+  if (Number.isFinite(t)) { clock.playing = false; clock.seek(t); } else if (Number.isFinite(back)) { clock.seek(back); clock.playing = true; }
 } catch { /* no query string */ }
 
 // Opening view: the whole formation from the east, slightly above.

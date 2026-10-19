@@ -18,7 +18,7 @@ export function createTimeline(scenario, { onKey } = {}) {
 
   const clock = {
     t: 0,
-    playing: true,
+    playing: false, // a mission opens paused; Play (or Space) starts it
     direction: 1,
     speed: 1,
     tick(dt) {

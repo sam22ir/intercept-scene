@@ -464,7 +464,7 @@ else {
   try {
     const seek = parseFloat(sessionStorage.getItem(SEEK_KEY));
     sessionStorage.removeItem(SEEK_KEY);
-    if (Number.isFinite(seek)) clock.seek(Math.min(Math.max(seek, 0), scenario.tEnd));
+    if (Number.isFinite(seek)) { clock.seek(Math.min(Math.max(seek, 0), scenario.tEnd)); clock.playing = true; }
   } catch { /* storage unavailable */ }
 }
 const sharedFocus = shared.focus === 'plane' || shared.focus === 'ship' || (shared.focus === 'missile' && scenario.hasMissile) ? shared.focus : null;
