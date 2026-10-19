@@ -572,7 +572,7 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 }
 .chooser[hidden] { display: none; }
 /* margin: auto centres when there is room and never clips the top when there is not. */
-.menu { width: min(1080px, 100%); margin: auto; display: grid; gap: 16px; }
+.mm { width: min(1080px, 100%); margin: auto; display: grid; gap: 16px; }
 .menu-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .menu-brand { display: flex; align-items: baseline; gap: 10px; color: var(--muted); font-size: 12.5px; }
 .menu-brand b { font-size: 15px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text); }
@@ -671,7 +671,7 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 /* Phones, portrait: one column, compact rows, Start pinned to the bottom. */
 @media (max-width: 640px) and (min-height: 501px) {
   .chooser { padding: calc(16px + var(--safe-t)) 12px 0; }
-  .menu { gap: 12px; margin-top: 0; }
+  .mm { gap: 12px; margin-top: 0; }
   .menu-hint { display: none; }
   .missions { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .mission { padding: 8px 10px; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; }
@@ -696,7 +696,7 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 /* Phones, landscape: list on the left, briefing on the right, Start pinned to the bottom. */
 @media (max-height: 500px) {
   .chooser { padding: calc(10px + var(--safe-t)) calc(14px + var(--safe-r)) 0 calc(14px + var(--safe-l)); }
-  .menu { width: 100%; margin-top: 0; gap: 10px; }
+  .mm { width: 100%; margin-top: 0; gap: 10px; }
   .menu-head { gap: 12px; }
   .menu-hint, .menu-brand span, .chooser-sub, .brief-keys, .brief-facts { display: none; }
   .menu-body { grid-template-columns: 0.8fr 1.2fr; gap: 10px 14px; }
