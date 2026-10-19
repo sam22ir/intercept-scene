@@ -13,6 +13,11 @@ export function cleanName(s, fallback) {
 
 function load() {
   try {
+    // A shared link carries its own names (?names=ALPHA,BRAVO); they apply to that visit only.
+    const q = new URLSearchParams(globalThis.location?.search ?? '').get('names');
+    if (q) { const [a, b] = q.split(','); return { alg: cleanName(a, DEFAULTS.alg), rus: cleanName(b, DEFAULTS.rus) }; }
+  } catch { /* no address */ }
+  try {
     const raw = JSON.parse(globalThis.localStorage?.getItem(KEY) ?? 'null');
     if (raw) return { alg: cleanName(raw.alg, DEFAULTS.alg), rus: cleanName(raw.rus, DEFAULTS.rus) };
   } catch { /* no storage, or not JSON */ }

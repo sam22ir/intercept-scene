@@ -422,7 +422,7 @@ button, select, .link-btn, .menu a { touch-action: manipulation; }
 /* Naval maneuvers mission: the intercept-only controls step aside, and the readout panel carries the
    signal (serial) text of the briefing deck. */
 body.mission-maneuvers #btn-director, body.mission-maneuvers #btn-edit,
-body.mission-maneuvers #btn-engage, body.mission-maneuvers #btn-record, body.mission-maneuvers #btn-link, body.mission-maneuvers #btn-units { display: none; }
+body.mission-maneuvers #btn-engage, body.mission-maneuvers #btn-record, body.mission-maneuvers #btn-units { display: none; }
 /* The readout panel is a transparent holder for two small cards attached under the top bar (the intercept
    readouts are click-through; the cards have buttons, so they take the pointer). */
 body.mission-maneuvers .hud {
@@ -938,3 +938,7 @@ body:not(.mission-fly) .fly-keys, body.ui-hidden .fly-keys { display: none; }
 .names-form button { flex: none; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent); }
 .mh-next { margin-top: 6px; font-size: 11.5px; color: var(--muted); }
 .mh-next[hidden] { display: none; }
+.mh-fast { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; margin-top: 8px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04); color: var(--text); font: inherit; font-size: 12px; text-align: left; }
+.mh-fast b { color: var(--muted); }
+.mh-fast[aria-pressed='true'] { border-color: var(--accent); }
+.mh-fast[aria-pressed='true'] b { color: var(--accent); }

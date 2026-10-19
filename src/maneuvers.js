@@ -348,7 +348,7 @@ export function orderedAt(id, t) {
 // --- Debrief: how each order went, measured once at import ---------------------------------------
 // `settle` is the time from execution to arrival; for a station change, `error` is how far the other
 // ship was from the ordered station (yards, degrees) at arrival.
-const STATIONS = { gform: [180, STATION_YD], form120: [120, STATION_YD], corpen: [0, STATION_YD] }; // other ship from the guide
+export const STATIONS = { gform: [180, STATION_YD], form120: [120, STATION_YD], corpen: [0, STATION_YD] }; // other ship from the guide
 export const DEBRIEF = PHASES.filter((p) => p.id !== 'form1' && p.id !== 'station').map((p) => {
   const row = { id: p.id, label: p.label, settle: p.ta - p.tx };
   if (STATIONS[p.id]) {

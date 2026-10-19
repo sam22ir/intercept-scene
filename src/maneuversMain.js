@@ -14,9 +14,9 @@ import { createManeuverAudio } from './maneuverAudio.js';
 import { toast } from './pathEditor.js';
 import {
   exercise, shipState, headingDeg, phaseAt, orderStatus, PHASES, STANDBY, STANDBY_LIMITS, KT, YD, LIGHT, FLAGS, lampOn,
-  stationAt, orderedAt, DEBRIEF, STATION_FLASH,
+  stationAt, orderedAt, DEBRIEF, STATION_FLASH, STATIONS,
 } from './maneuvers.js';
-import { stripShareParams } from './share.js';
+import { stripShareParams, createShare, readShareParams } from './share.js';
 import { menuText } from './menu.js';
 import { shipNames, rn, saveNames, NAME_MAX } from './shipNames.js';
 
@@ -100,20 +100,63 @@ function createWake() {
   return { pos, col, geo };
 }
 const wakes = { alg: createWake(), rus: createWake() };
+
+// --- Station markers: where the ordered station is, drawn on the sea for the order in progress ------------------
+// A ring at the spot the other ship is to take up (the ordered range and bearing from the guide), in that
+// ship's colour while she works toward it, green when she arrives. A pure function of t: the guide's position
+// at t plus the station's offset.
+const stationPhases = PHASES.filter((p) => STATIONS[p.id]).map((p) => {
+  const g = stationAt(p.ta);
+  // The ship that maneuvers is RUS in all three station changes: its goal is a point off ALG. STATIONS gives the
+  // other ship's bearing from the guide, so with RUS as the guide the bearing of RUS from ALG is the reverse.
+  const b = STATIONS[p.id][0] * Math.PI / 180;
+  return { p, bearing: g.guide === 'alg' ? b : b + Math.PI, range: STATIONS[p.id][1] * YD };
+});
+const stationRing = new THREE.Mesh(
+  new THREE.RingGeometry(0.82, 1, 48).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, fog: false }),
+);
+stationRing.renderOrder = 5;
+stationRing.visible = false;
+scene.add(stationRing);
+const _stCol = new THREE.Color();
+function updateStationMarker(t) {
+  const order = orderStatus(t);
+  const sp = stationPhases.find((x) => x.p === order.phase);
+  const live = sp && (order.state === 'standby' || order.state === 'execute' || order.state === 'underway' || (order.state === 'station' && order.since < STATION_FLASH));
+  stationRing.visible = Boolean(live);
+  if (!live) return;
+  const g = ships.alg.ship.group.position;
+  const dist = camera.position.distanceTo(g);
+  const r = Math.min(Math.max(dist / 22, 40), 160); // keeps its size on screen once you pull away
+  stationRing.position.set(g.x + Math.cos(sp.bearing) * sp.range, 2.6, g.z + Math.sin(sp.bearing) * sp.range);
+  stationRing.scale.setScalar(r * (1 + 0.06 * Math.sin(t * 2.4)));
+  if (order.state === 'station') _stCol.set(0x3ddc84); else _stCol.set(COLORS.rus);
+  stationRing.material.color.copy(_stCol);
+  stationRing.material.opacity = order.state === 'standby' ? 0.45 : 0.85;
+}
 const _w = {};
+const _w2 = {};
 function updateWake(id, t) {
   const w = wakes[id];
   for (let i = 0; i < WAKE_STEPS; i++) {
     const u = i / (WAKE_STEPS - 1);
     const age = u * WAKE_SPAN;
     shipState(id, Math.max(t - age, 0), _w);
-    const half = 3 + 11 * Math.sqrt(u); // a few metres at the stern, spreading slowly
+    // Wider, and a little stronger, where the ship was turning when she made it.
+    const tt = Math.max(t - age, 0);
+    shipState(id, Math.max(tt - 2, 0), _w2);
+    let dh = _w.heading - _w2.heading;
+    while (dh > Math.PI) dh -= 2 * Math.PI;
+    while (dh < -Math.PI) dh += 2 * Math.PI;
+    const turn = Math.min(Math.abs(dh) * 90 / Math.PI / 1.2, 1.4); // 0 straight, 1 at the standard turn rate
+    const half = (3 + 11 * Math.sqrt(u)) * (1 + 0.7 * turn);
     const sx = -Math.sin(_w.heading); // to starboard of the heading
     const sz = Math.cos(_w.heading);
     const bx = _w.x + SHIFT.x - Math.cos(_w.heading) * 55; // from the stern, at each moment
     const bz = _w.z + SHIFT.z - Math.sin(_w.heading) * 55;
     w.pos.set([bx + sx * half, 0.5, bz + sz * half, bx, 0.5, bz, bx - sx * half, 0.5, bz - sz * half], i * 9);
-    const a = t - age < 0 ? 0 : 0.5 * (1 - u) ** 2;
+    const a = t - age < 0 ? 0 : Math.min(0.5 * (1 - u) ** 2 * (1 + 0.5 * turn), 0.85);
     w.col.set([0.95, 0.98, 1, 0, 0.95, 0.98, 1, a, 0.95, 0.98, 1, 0], i * 12);
   }
   w.geo.attributes.position.needsUpdate = true;
@@ -714,6 +757,7 @@ ordersEl.className = 'orders-menu';
 ordersEl.hidden = true;
 ordersEl.innerHTML = '<div class="orders-head"><b>Orders</b><small>Click one to jump to it</small></div>'
   + `<ol class="orders-list">${PHASES.map((p, i) => `<li><button type="button" class="order" data-i="${i}" title="Jump to just before this order is announced"><span class="chk"></span><span class="name">${rn(p.label)}</span><span class="when">${mmss(p.t)}</span></button></li>`).join('')}</ol>`
+  + '<button type="button" class="mh-fast" data-fast aria-pressed="false" title="Play fast (16x) through the long quiet stretches, and at the speed you set from just before each order is announced until A STATION"><span>Fast between orders</span><b data-fast-val>Off</b></button>'
   + '<div class="mh-standby" title="The time to get ready between the announcement of an order and EXECUTE, when the ships start to maneuver. Changing it reloads the scene at this moment."><span>Standby time</span>'
   + '<div class="mh-step"><button type="button" data-sb="-1" aria-label="Shorter standby">–</button><b data-sb-val></b><button type="button" data-sb="1" aria-label="Longer standby">+</button></div></div>';
 document.querySelector('#topbar').appendChild(ordersEl);
@@ -847,11 +891,48 @@ for (const b of ordersEl.querySelectorAll('[data-sb]')) {
   });
 }
 
+// Fast between orders: 16x while nothing is happening, the chosen speed around each order (from a little before it
+// is announced to a little after A STATION). Remembered; it only changes how fast the clock runs, not what t shows.
+{
+  const FAST = 16;
+  const windows = PHASES.map((p) => [p.t - 6, p.ta + STATION_FLASH + 6]);
+  const fastBtn = ordersEl.querySelector('[data-fast]');
+  const fastVal = ordersEl.querySelector('[data-fast-val]');
+  let fastOn = false;
+  try { fastOn = localStorage.getItem('intercept.autoFast') === '1'; } catch { /* storage unavailable */ }
+  const apply = () => {
+    fastBtn.setAttribute('aria-pressed', String(fastOn));
+    fastVal.textContent = fastOn ? 'On' : 'Off';
+    clock.boost = fastOn ? (t, speed) => (windows.some(([a, b]) => t >= a && t <= b) ? speed : Math.max(speed, FAST)) : null;
+  };
+  apply();
+  fastBtn.addEventListener('click', () => {
+    fastOn = !fastOn;
+    try { localStorage.setItem('intercept.autoFast', fastOn ? '1' : '0'); } catch { /* storage unavailable */ }
+    apply();
+    toast(fastOn ? 'Fast between orders: on' : 'Fast between orders: off', 2200);
+  });
+}
+
 // Clicking an order in the list jumps to just before it is announced.
 orderButtons.forEach((b, i) => b.addEventListener('click', () => { clock.seek(Math.max(PHASES[i].t - 1, 0)); setOrders(false); invalidate(); }));
 // About 51 minutes of exercise: four times real time by default. Time never slows for an order: STANDBY
 // counts down to EXECUTE, the ships maneuver, and A STATION is called when they are in position.
 clock.setSpeed(4);
+// Copy link: this moment, the camera on a ship or the formation, and the ships' names.
+{
+  const linkBtn = document.querySelector('#btn-link');
+  document.body.classList.add('drill-link');
+  createShare({
+    button: linkBtn,
+    toast,
+    onChange: invalidate,
+    getState: () => ({
+      ship: 'fwd', mode: 'maneuvers', t: clock.t, focus: rig.id, director: false,
+      extra: shipNames.alg !== 'ALG' || shipNames.rus !== 'RUS' ? { names: `${shipNames.alg},${shipNames.rus}` } : {},
+    }),
+  });
+}
 // Deep link: ?t= opens paused at that moment; the standby stepper reloads at the same moment, playing.
 try {
   const t = parseFloat(new URLSearchParams(location.search).get('t'));
@@ -868,7 +949,10 @@ placeShip(ships.rus, clock.t);
   controls.target.copy(mid);
   camera.position.copy(mid).add(new THREE.Vector3(-300, 380, 680));
 }
-setFocus('formation');
+{
+  const f = readShareParams().focus; // a shared link may open on a ship's bridge
+  setFocus(f === 'alg' || f === 'rus' ? f : 'formation');
+}
 
 // --- Loop -------------------------------------------------------------------------------------------------
 function resize() {
@@ -904,6 +988,7 @@ renderer.setAnimationLoop((now) => {
   placeShip(ships.rus, t);
   updateWake('alg', t);
   updateWake('rus', t);
+  updateStationMarker(t);
   for (const k of Object.values(tracks)) k.set(t);
   updateLamps(t);
   updateFlags(t);
