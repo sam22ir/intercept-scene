@@ -852,7 +852,7 @@ body.editing #btn-link { display: none; }
 /* "Fly the drone": no timeline, map, trails or tags (nothing is replayed); the keys for this moment sit at the
    foot of the screen, and the banner carries the model's messages. */
 body.mission-fly .timeline, body.mission-fly .labels-layer,
-body.mission-fly #btn-director, body.mission-fly #btn-labels, body.mission-fly #btn-trails, body.mission-fly #btn-sound,
+body.mission-fly #btn-director, body.mission-fly #btn-labels, body.mission-fly #btn-trails,
 body.mission-fly #btn-edit, body.mission-fly #btn-engage, body.mission-fly #btn-units,
 body.mission-fly #btn-record, body.mission-fly #btn-link { display: none; }
 body.mission-fly .shot-caption { top: calc(var(--gap) + var(--safe-t) + var(--bar-h, 34px) + 36px); font-weight: 700; letter-spacing: 0.12em; }

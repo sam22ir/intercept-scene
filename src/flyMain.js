@@ -11,6 +11,7 @@ import { createLiveFx } from './fx/liveFx.js';
 import { pointScale } from './fx/particles.js';
 import { CameraRig } from './cameraRig.js';
 import { createFlyMap } from './flyMap.js';
+import { createFlyAudio } from './flyAudio.js';
 import {
   FlySim, T_SPOOL, T_RELEASE, BOOST_TIME, DEFAULT_SPEED, MISSILE_RANGE,
 } from './fly.js';
@@ -51,6 +52,7 @@ scene.add(missile.group);
 const chute = createParachute();
 scene.add(chute.group);
 const fx = createLiveFx(scene);
+const audio = createFlyAudio();
 
 // The cruise speed is remembered (default 75 m/s).
 const SPEED_KEY = 'intercept.fly.speed';
@@ -97,12 +99,19 @@ function startWreck() {
   plane.restoreParts();
   debris = createDebris(plane, 0, w);
   fx.startWreck(debris, w.t);
+  // The heavy fuselage's splash, when it reaches the water.
+  for (const pc of debris.pieces) {
+    if (pc.part.name !== 'fuselage') continue;
+    debris.piecePos(pc, pc.tauWater, _a);
+    audio.later('splash', _a, pc.tauWater);
+  }
   chute.group.visible = false;
   scenario.tChute = Infinity;
 }
 
 function handleEvents() {
   for (const e of sim.takeEvents()) {
+    audio.event(e, sim);
     switch (e.type) {
       case 'say': say(e.text, e.tone); break;
       case 'chute':
@@ -391,6 +400,23 @@ document.querySelector('#btn-ship').textContent = 'Change mission';
 document.querySelector('.brand b').textContent = 'Fly';
 document.querySelector('#mission-sub').textContent = 'manual flight';
 
+// Sound (the Sound button and S): remembered like the other missions'. The context starts at the first key or click.
+const soundButton = document.querySelector('#btn-sound');
+function setSound(on) {
+  audio.setEnabled(on);
+  soundButton.classList.toggle('active', on);
+  soundButton.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem('intercept.sound', on ? '1' : '0'); } catch { /* storage unavailable */ }
+}
+let soundPref = true;
+try { soundPref = localStorage.getItem('intercept.sound') !== '0'; } catch { /* storage unavailable */ }
+audio.setEnabled(soundPref);
+soundButton.classList.toggle('active', soundPref);
+soundButton.setAttribute('aria-pressed', String(soundPref));
+soundButton.title = 'Sound: engine, catapult, missile, explosion, wind and surf (S)';
+if (!audio.supported) { soundButton.disabled = true; soundButton.title = 'Sound is not available in this browser'; }
+soundButton.addEventListener('click', () => setSound(!audio.enabled));
+
 // A "Fly again" entry in the menu, and the readouts button.
 const restartButton = document.createElement('button');
 restartButton.id = 'btn-restart';
@@ -434,6 +460,7 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>V</kbd>', 'Camera: chase, orbit, tower'],
   ['<kbd>[</kbd> <kbd>]</kbd>', 'Cruise speed (default 75 m/s)'],
   ['<kbd>M</kbd>', 'Map (click it to change the zoom)'],
+  ['<kbd>S</kbd>', 'Sound on / off'],
   ['<kbd>H</kbd> <kbd>C</kbd>', 'Readouts, hide the interface'],
 ].map(([k, d]) => `<dt>${k}</dt><dd>${d}</dd>`).join('');
 keysSheet.querySelector('.keys-note').textContent = 'Fly with the arrow keys · the engine only starts on the ship · the missile always finds you';
@@ -445,6 +472,7 @@ function restart() {
   plane.restoreParts();
   debris = null;
   fx.clear();
+  audio.reset();
   scenario.tChute = Infinity;
   scenario.tSplash = Infinity;
   chute.group.visible = false;
@@ -476,6 +504,7 @@ window.addEventListener('keydown', (e) => {
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
     case 'h': setHud(!hudOn); break;
     case 'm': setMap(!map.enabled); break;
+    case 's': setSound(!audio.enabled); break;
     case 'c': setFolded(!document.body.classList.contains('ui-hidden')); break;
     case '[': case ']': {
       sim.setSpeed(sim.speedTarget + (key === ']' ? 5 : -5));
@@ -517,6 +546,7 @@ renderer.setAnimationLoop((now) => {
   handleEvents();
   applyState(dt);
   updateCamera(dt);
+  audio.update(sim, camera, dt);
   env.follow(camera.position);
   droneFocus(focus);
   env.setShadowFocus(sim.phase === 'deck' || sim.phase === 'cat' ? ship.group.position : focus, sim.phase === 'deck' ? 70 : 45);
