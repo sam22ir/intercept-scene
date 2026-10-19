@@ -23,7 +23,7 @@ const COMBOS = [
 // Thresholds (metres unless noted), with the value measured at the time of writing.
 const INTERCEPT_MISS_MAX = 2.5; // measured 2.20 (fwd) / 1.96 (aft). The sim stops inside 2.5 m by design, so this also catches a timeout exit.
 const HIT_GAP_MAX = 1e-3; // measured 0 (the last sample is snapped onto the drone)
-const RELEASE_STEP_MAX = 0.1; // max distance per 1 ms step across release. Measured 0.034 (about 32 m/s). Allows about 3x margin.
+const RELEASE_STEP_MAX = 0.1; // max distance per 1 ms step across release. Measured 0.034 (about 32 m/s on the old 9 m stroke; the 3.6 m one leaves at about 26 m/s). Allows about 3x margin.
 const ALT_TOLERANCE = 0.5; // allowed dip below MIN_ALT. Measured minimum is 11.41 m, at release.
 
 const LAUNCH_GAP_MIN = 2; // s between the two launches (the launcher must slew and reload). Measured about 17 s.

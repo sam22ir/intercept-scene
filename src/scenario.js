@@ -69,7 +69,7 @@ const RAIL_YAW = THREE.MathUtils.degToRad(50); // from the bow toward port
 const RAIL_PITCH = THREE.MathUtils.degToRad(18); // nose-up launch rail (with the spline blend after release the drone stays under 20 degrees of pitch)
 export const RAIL = {
   start: new THREE.Vector3(-52, deckHeight(-52) + 1.35, -1.2),
-  length: 9,
+  length: 3.6, // the stroke: a compact launcher, about the length of the drone's own body (as in the launch photos)
   dir: new THREE.Vector3(
     Math.cos(RAIL_PITCH) * Math.cos(RAIL_YAW), Math.sin(RAIL_PITCH), -Math.cos(RAIL_PITCH) * Math.sin(RAIL_YAW),
   ),
@@ -82,9 +82,9 @@ export const RAIL = {
 };
 
 const T_SPOOL = 3.0; // engine run-up on the cradle
-const CAT_ACCEL = 57; // m/s², pneumatic stroke (~6 g)
-const T_RELEASE = T_SPOOL + Math.sqrt((2 * RAIL.length) / CAT_ACCEL);
-const V_RELEASE = CAT_ACCEL * (T_RELEASE - T_SPOOL); // ~32 m/s relative to the ship
+const CAT_ACCEL = 94; // m/s² (~9.6 g): the booster ignites with the stroke, so the short rail is a kick, not a long pull
+const T_RELEASE = T_SPOOL + Math.sqrt((2 * RAIL.length) / CAT_ACCEL); // ~0.28 s of stroke
+const V_RELEASE = CAT_ACCEL * (T_RELEASE - T_SPOOL); // ~26 m/s relative to the ship
 
 function railStroke(t) {
   if (t <= T_SPOOL) return 0;
@@ -272,6 +272,7 @@ export const ENGAGE = LOADED_ENGAGE ?? { ...ENGAGE_DEFAULTS };
 // Kept low enough that the default path's turns (R = 190 m) stay under 50 degrees of bank.
 const SPEED_KEYS = [
   [0, V_RELEASE],
+  [1.3, 36], // the booster takes it from the rail speed up to cruise (it burns for 1.2 s)
   [3, 36],
   [10, 38],
   [25, 40],

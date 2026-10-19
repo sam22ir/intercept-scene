@@ -708,18 +708,18 @@ export function createShip({ ensign = 'alg' } = {}) {
   const deckLocalY = deckHeight(-52) - RAIL.start.y;
   const plateY = deckLocalY + 0.03;
   const frameY = plateY + 0.06;
-  const FX0 = -1.2, FX1 = 5.0, FZ = 1.7; // base frame rectangle
+  const FX0 = -1.0, FX1 = 3.2, FZ = 1.15; // base frame rectangle: about 4.2 x 2.3 m, a little longer than the drone
   const along = (len, h, w, s, y, z, material) => ck.add(
     new THREE.BoxGeometry(len, h, w), material, toMatrix({ pos: railPt(s, y, z), rot: [0, 0, PITCH] }),
   );
 
   // Blast plate: polished stainless, rear edge bent up, slightly rippled.
   {
-    const plate = new THREE.PlaneGeometry(6.9, 4.8, 36, 24);
+    const plate = new THREE.PlaneGeometry(5.0, 3.2, 28, 18);
     plate.rotateX(-Math.PI / 2);
     const pp = plate.attributes.position;
     for (let i = 0; i < pp.count; i++) {
-      const x = pp.getX(i) + 1.55;
+      const x = pp.getX(i) + 1.1;
       const z = pp.getZ(i);
       const flap = 0.2 * THREE.MathUtils.smoothstep(-x, 0.9, 1.9);
       pp.setXYZ(i, x, plateY + flap + 0.012 * Math.sin(x * 2.4 + z * 1.9), z);
@@ -731,25 +731,25 @@ export function createShip({ ensign = 'alg' } = {}) {
   // Base frame (angle iron) with corner and mid bolts.
   const barLen = FX1 - FX0;
   for (const z of [-FZ, FZ]) ck.add(new THREE.BoxGeometry(barLen, 0.12, 0.13), M.steelDark, { pos: [(FX0 + FX1) / 2, frameY, z] });
-  for (const x of [FX0, FX1, 2.0]) ck.add(new THREE.BoxGeometry(0.13, 0.12, 2 * FZ), M.steelDark, { pos: [x, frameY, 0] });
+  for (const x of [FX0, FX1, 1.1]) ck.add(new THREE.BoxGeometry(0.13, 0.12, 2 * FZ), M.steelDark, { pos: [x, frameY, 0] });
   ck.rod([FX0, frameY, -FZ], [FX1, frameY, FZ], 0.035, M.steelDark, 5);
   for (const x of [FX0, FX1]) for (const z of [-FZ, FZ]) {
     ck.add(new THREE.CylinderGeometry(0.08, 0.08, 0.1, 6), M.rust, { pos: [x, frameY + 0.09, z] });
   }
-  for (const x of [0.8, 2.0, 3.2]) for (const z of [-FZ, FZ]) {
+  for (const x of [0.3, 1.1, 1.9, 2.6]) for (const z of [-FZ, FZ]) {
     ck.add(new THREE.CylinderGeometry(0.05, 0.05, 0.06, 6), M.rust, { pos: [x, frameY + 0.08, z] });
   }
 
   // Inclined ladder-frame beam: two box rails, polished tracks, cross members
   // and plan bracing.
-  const S0 = -0.8;
-  const S1 = L + 0.45;
+  const S0 = -0.5;
+  const S1 = L + 0.3;
   for (const z of [-0.36, 0.36]) {
     along(S1 - S0, 0.22, 0.17, (S0 + S1) / 2, -0.13, z, M.steelDark);
     along(S1 - S0 - 0.4, 0.035, 0.11, (S0 + S1) / 2, 0.0, z, M.steel);
   }
   const bays = [];
-  for (let s = S0 + 0.3; s <= S1 - 0.2; s += 0.85) bays.push(s);
+  for (let s = S0 + 0.25; s <= S1 - 0.15; s += 0.7) bays.push(s);
   for (const s of bays) along(0.09, 0.08, 0.72, s, -0.2, 0, M.steelDark);
   for (let i = 0; i < bays.length - 1; i++) {
     const a = railPt(bays[i], -0.2, -0.36), b = railPt(bays[i + 1], -0.2, 0.36);
@@ -759,7 +759,7 @@ export function createShip({ ensign = 'alg' } = {}) {
   }
 
   // Tubular A-frame legs from the beam down to the base frame.
-  for (const [s, gx] of [[6.3, 4.8], [3.4, 2.4]]) {
+  for (const [s, gx] of [[2.75, 2.15], [1.35, 0.95]]) {
     for (const side of [-1, 1]) {
       const top = railPt(s, -0.25, side * 0.36);
       ck.rod(top, [gx, frameY + 0.04, side * (FZ - 0.1)], 0.05, M.steelDark, 8);
@@ -800,10 +800,10 @@ export function createShip({ ensign = 'alg' } = {}) {
   // Hydraulic strut along the beam, gas bottle and hose at the rear.
   ck.add(new THREE.CylinderGeometry(0.065, 0.065, L - 0.6, 12), M.steel, toMatrix({ pos: railPt(L / 2 + 0.1, 0.12, -0.66), rot: [0, 0, PITCH - Math.PI / 2] }));
   ck.add(new THREE.CylinderGeometry(0.085, 0.085, 0.3, 12), M.brass, toMatrix({ pos: railPt(0.45, 0.12, -0.66), rot: [0, 0, PITCH - Math.PI / 2] }));
-  ck.add(new THREE.CylinderGeometry(0.15, 0.15, 1.05, 14), M.yellow, { pos: [-0.2, frameY + 0.58, 1.25] });
-  ck.add(new THREE.SphereGeometry(0.15, 14, 8), M.yellow, { pos: [-0.2, frameY + 1.1, 1.25] });
-  ck.add(new THREE.CylinderGeometry(0.04, 0.04, 0.14, 8), M.brass, { pos: [-0.2, frameY + 1.28, 1.25] });
-  ck.rod([-0.2, frameY + 1.3, 1.25], railPt(0.3, 0.12, -0.66), 0.018, M.black, 5);
+  ck.add(new THREE.CylinderGeometry(0.15, 0.15, 1.05, 14), M.yellow, { pos: [-0.3, frameY + 0.58, 0.95] });
+  ck.add(new THREE.SphereGeometry(0.15, 14, 8), M.yellow, { pos: [-0.3, frameY + 1.1, 0.95] });
+  ck.add(new THREE.CylinderGeometry(0.04, 0.04, 0.14, 8), M.brass, { pos: [-0.3, frameY + 1.28, 0.95] });
+  ck.rod([-0.3, frameY + 1.3, 0.95], railPt(0.3, 0.12, -0.66), 0.018, M.black, 5);
 
   // Buffers with yellow/black hazard ends.
   const endP = railPt(L + 0.25, -0.1, 0);
@@ -826,7 +826,7 @@ export function createShip({ ensign = 'alg' } = {}) {
     const Xaxis = new THREE.Vector3(1, 0, 0);
     for (const [cx, cz, ox, oz] of [[FX1, -FZ, 0.8, -0.6], [FX1, FZ, 0.6, 0.8], [FX0, -FZ, -0.7, -0.7], [FX0, FZ, -0.7, 0.7]]) {
       const n = Math.hypot(ox, oz);
-      let len = 2.9;
+      let len = 2.3;
       for (; len > 0.6; len -= 0.1) {
         const [wx, wz] = toWorld(cx + (ox / n) * len, cz + (oz / n) * len);
         if (Math.abs(wz) < 6.2 && wx > -58.5 && wx < -38) break;
@@ -860,17 +860,17 @@ export function createShip({ ensign = 'alg' } = {}) {
   // metal flight case, as in the launch photos.
   {
     const gy = deckLocalY + 0.03;
-    ck.add(new THREE.BoxGeometry(0.95, 0.42, 0.5), M.olive, { pos: [-2.0, gy + 0.21, 3.0], rot: [0, 0.2, 0] });
-    ck.add(new THREE.BoxGeometry(0.97, 0.05, 0.52), M.black, { pos: [-2.0, gy + 0.44, 3.0], rot: [0, 0.2, 0] });
+    ck.add(new THREE.BoxGeometry(0.95, 0.42, 0.5), M.olive, { pos: [-1.75, gy + 0.21, 2.25], rot: [0, 0.2, 0] });
+    ck.add(new THREE.BoxGeometry(0.97, 0.05, 0.52), M.black, { pos: [-1.75, gy + 0.44, 2.25], rot: [0, 0.2, 0] });
     for (const dz of [-0.14, 0.14]) {
-      ck.add(new THREE.CylinderGeometry(0.035, 0.035, 0.07, 8), dz < 0 ? M.red : M.black, { pos: [-2.15, gy + 0.5, 3.0 + dz] });
+      ck.add(new THREE.CylinderGeometry(0.035, 0.035, 0.07, 8), dz < 0 ? M.red : M.black, { pos: [-1.9, gy + 0.5, 2.25 + dz] });
     }
-    ck.rod([-2.15, gy + 0.5, 2.9], [-1.7, gy + 0.2, 2.5], 0.018, M.red, 4);
-    ck.rod([-1.7, gy + 0.2, 2.5], [FX0, frameY + 0.1, FZ], 0.018, M.red, 4);
-    ck.rod([-2.15, gy + 0.5, 3.1], [-1.5, gy + 0.08, 2.7], 0.018, M.black, 4);
-    ck.rod([-1.5, gy + 0.08, 2.7], [FX0, frameY + 0.05, FZ - 0.1], 0.018, M.black, 4);
-    ck.add(new THREE.BoxGeometry(0.75, 0.28, 0.5), M.steel, { pos: [2.6, gy + 0.14, 4.2], rot: [0, -0.3, 0] });
-    for (const dz of [-0.17, 0.17]) ck.add(new THREE.BoxGeometry(0.06, 0.06, 0.05), M.black, { pos: [2.6 + dz * 0.3, gy + 0.2, 4.2 + dz * 0.95], rot: [0, -0.3, 0] });
+    ck.rod([-1.9, gy + 0.5, 2.15], [-1.5, gy + 0.2, 1.8], 0.018, M.red, 4);
+    ck.rod([-1.5, gy + 0.2, 1.8], [FX0, frameY + 0.1, FZ], 0.018, M.red, 4);
+    ck.rod([-1.9, gy + 0.5, 2.35], [-1.3, gy + 0.08, 2.0], 0.018, M.black, 4);
+    ck.rod([-1.3, gy + 0.08, 2.0], [FX0, frameY + 0.05, FZ - 0.1], 0.018, M.black, 4);
+    ck.add(new THREE.BoxGeometry(0.75, 0.28, 0.5), M.steel, { pos: [2.0, gy + 0.14, 3.0], rot: [0, -0.3, 0] });
+    for (const dz of [-0.17, 0.17]) ck.add(new THREE.BoxGeometry(0.06, 0.06, 0.05), M.black, { pos: [2.0 + dz * 0.3, gy + 0.2, 3.0 + dz * 0.95], rot: [0, -0.3, 0] });
   }
   rail.add(ck.build({ name: 'catapult' }));
 

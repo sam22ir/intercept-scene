@@ -40,8 +40,8 @@ export function createDirector({ dronePos, tWater, second = null }) {
   // Beside the catapult rail, inboard of it so the blast plume goes past, pushing in.
   const railH = new THREE.Vector3(RAIL.dir.x, 0, RAIL.dir.z).normalize();
   const railSide = new THREE.Vector3(-railH.z, 0, railH.x); // toward the centre line
-  const catapultCam = RAIL.start.clone().addScaledVector(RAIL.dir, 4)
-    .addScaledVector(railSide, 9).addScaledVector(railH, -1.5).add(new THREE.Vector3(0, 2.4, 0));
+  const catapultCam = RAIL.start.clone().addScaledVector(RAIL.dir, RAIL.length * 0.5)
+    .addScaledVector(railSide, 7.5).addScaledVector(railH, -1.2).add(new THREE.Vector3(0, 2.2, 0)); // mid-rail, the whole launcher in frame
   const catapult = (k = 0) => {
     const d = scenario.drones?.[k] ?? { tSpool: 0, tRelease: tR };
     const t0 = k ? d.tSpool - 1 : 0;

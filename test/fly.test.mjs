@@ -63,7 +63,7 @@ describe('fly: the deck, the engine and the catapult', () => {
     assert.notEqual(sim.phase, 'deck', 'fired by itself at full power');
   });
 
-  it('fires the 9 m stroke in the scenario\'s own time and leaves the rail at about 32 m/s relative to the ship', () => {
+  it('fires the scenario short stroke in its own time and leaves the rail at its release speed relative to the ship', () => {
     const sim = new F.FlySim();
     sim.toggleEngine();
     run(sim, F.T_SPOOL + 0.2);
@@ -75,7 +75,10 @@ describe('fly: the deck, the engine and the catapult', () => {
     assert.equal(sim.phase, 'flight');
     const rel = sim.vel.clone();
     rel.x -= S.SHIP_SPEED;
-    near(rel.length(), 32, 0.5, 'release speed relative to the ship');
+    const vRelease = (2 * S.RAIL.length) / (F.T_RELEASE - F.T_SPOOL); // v = a t and s = a t^2 / 2
+    near(rel.length(), vRelease, 0.5, 'release speed relative to the ship');
+    assert.ok(vRelease > 22 && vRelease < 30, 'about 26 m/s, not ' + vRelease.toFixed(1));
+    near(S.RAIL.length, 3.6, 1e-9, 'a compact rail');
     near(sim.cradleT, F.T_SPOOL + (sim.t - sim.tLaunch), 1e-9, 'cradle clock');
   });
 

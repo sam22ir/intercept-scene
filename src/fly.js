@@ -6,7 +6,7 @@
 //  deck    the drone sits on the catapult cradle, engine off. E starts the engine (it runs up over the same
 //          3 s as the scripted launch). L fires the catapult once the engine is at full power (pressed
 //          earlier, it arms and fires as soon as the engine is ready). The engine can only be started here.
-//  cat     the 9 m pneumatic stroke (the scenario's own numbers), about half a second.
+//  cat     the short catapult stroke (the scenario's own numbers: 3.6 m in about 0.28 s, 26 m/s off the rail).
 //  flight  off the rail the booster burns for 1.2 s and the drone settles at its cruise speed (75 m/s by
 //          default). Left / right bank and turn it (a coordinated turn: rate = g tan(bank) / v), up / down
 //          pitch it. E cuts the engine for good: the parachute opens by itself.
