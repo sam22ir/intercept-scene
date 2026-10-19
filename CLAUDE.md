@@ -20,7 +20,7 @@ pnpm cf-deploy    # build + `wrangler deploy` (static-assets Worker, see wrangle
 
 `scripts/build-offline.mjs` runs after `vite build`. It inlines the single JS bundle and the CSS into `dist/intercept-offline.html`, which opens by double-click from disk with no internet. The site links to it ("Download offline version", `#dl-offline`), and the script strips that link from the offline copy. Keep the app free of runtime network loads (fonts, CDN scripts, fetched assets) and of code splitting, or the offline file breaks. The script fails the build if it finds more than one bundle.
 
-Live at https://intercept-scene.nafaa-store.workers.dev. Deploying is public, so ask before running it.
+Live at https://intercept-scene.nafaa-store.workers.dev. The owner has asked that every finished, tested change is pushed and deployed straight away, without asking first (deploying is public, so run the tests and the build first, and do not deploy if they fail): `git push`, then `node scripts/build-offline.mjs` after `vite build`, then `npx wrangler@4 deploy` (pnpm and a local wrangler are not installed on this machine).
 
 `src/scenario.js` imports only `three`, so timings and clearances can be checked in Node without a browser. Import it and sample `planeRelPos`, `missilePos` and `shipPos`.
 
