@@ -796,7 +796,7 @@ for (const b of ordersEl.querySelectorAll('[data-sb]')) {
 
 // Clicking an order in the list jumps to just before it is announced.
 orderButtons.forEach((b, i) => b.addEventListener('click', () => { clock.seek(Math.max(PHASES[i].t - 1, 0)); setOrders(false); invalidate(); }));
-// About 52 minutes of exercise: sixteen times real time by default. Time never slows for an order: STANDBY
+// About 51 minutes of exercise: sixteen times real time by default. Time never slows for an order: STANDBY
 // counts down to EXECUTE, the ships maneuver, and A STATION is called when they are in position.
 clock.setSpeed(16);
 // Deep link: ?t= opens paused at that moment; the standby stepper reloads at the same moment, playing.

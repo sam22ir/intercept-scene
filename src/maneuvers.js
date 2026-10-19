@@ -1,5 +1,5 @@
 // Naval maneuvers: the second mission, after the "Tactical maneuvers" briefing deck. Two frigates,
-// ALG and RUS, start in FORM 1 (a column, 1000 yards apart, heading 000) and run through a series
+// ALG and RUS, start in FORM 1 (a column, 500 yards apart, heading 000) and run through a series
 // of signalled maneuvers: turn together, change station, flashing-light and flag-hoist serials,
 // and a final skim past on reciprocal courses. No drone and no missile.
 //
@@ -18,7 +18,8 @@
 
 export const YD = 0.9144; // metres per yard
 export const KT = 0.514444; // metres per second per knot
-export const FORMATION_RANGE = 1000 * YD; // the 1000 YDS of the diagrams
+export const STATION_YD = 500; // the ships' station range (the deck says 1000 YDS; the scene keeps them closer so both read on screen)
+export const FORMATION_RANGE = STATION_YD * YD;
 
 const DT = 0.25; // s between table entries
 const TURN_RATE = 1.2; // deg/s: a standard turn at 12 knots
@@ -81,21 +82,21 @@ const X = Object.fromEntries(PHASES.map((p) => [p.id, p.tx]));
 
 // --- The orders ---------------------------------------------------------------------------------
 // {t, course (deg), speed (kn), dir: 'stbd' | 'port' | undefined (the shorter way), rate (deg/s)}
-// G FORM RUS: ALG slows to 6 kn, RUS runs course 340 then 020 at 15 kn (to abeam of ALG at 520 m to
-// port, then in again) and falls in 1000 yds ahead; ALG makes 12 knots again once RUS is there.
-const G1 = 199.6;
-const G2 = 216.2;
+// G FORM RUS: ALG slows to 6 kn, RUS runs course 340 then 020 at 15 kn (to abeam of ALG well out to
+// port, then in again) and falls in 500 yds ahead; ALG makes 12 knots again once RUS is there.
+const G1 = 89.9;
+const G2 = 106.3;
 const G_RESUME = G1 + G2 + 30;
 // FORM 120: RUS drops back at 6 kn on course 035 while ALG makes 10 kn.
-const F_C = 35.2;
-const F_T = 431.8;
+const F_C = 35.8;
+const F_T = 222.6;
 // CORPEN STBD 045: RUS runs course 083.6 at sierra to catch up to ALG's new bearing-000 station.
 const C_C = 83.6;
-const C_T = 565;
+const C_T = 303.2;
 // SKIMMING PAST: RUS makes 15 kn east, then a wide right turn (a U-turn whose diameter takes it from
-// 1000 yds north of ALG to 100 m south of it) and runs back west past ALG.
+// 500 yds north of ALG to 100 m south of it) and runs back west past ALG.
 const SKIM_SPEED = 15; // kn
-const SKIM_RADIUS = 507; // m
+const SKIM_RADIUS = (FORMATION_RANGE + 100) / 2; // m: a U-turn from the station to 100 m past ALG
 const SKIM_RUN = 250; // s eastward before the U-turn, so the two meet on the way back
 
 const COMMON = [
@@ -272,11 +273,11 @@ const ARRIVAL = {
   station: (p) => p.tx,
   stbd: (p) => settledAfter(p.tx, (t) => both(t, 90, 0.6)),
   port: (p) => settledAfter(p.tx, (t) => both(t, 0, 0.6)),
-  gform: (p) => settledAfter(p.tx, (t) => both(t, 0, 1) && onStation(t, 180, 1000, 4, 0.8)),
+  gform: (p) => settledAfter(p.tx, (t) => both(t, 0, 1) && onStation(t, 180, STATION_YD, 4, 0.8)),
   turn045: (p) => settledAfter(p.tx, (t) => both(t, 45, 0.6)),
-  form120: (p) => settledAfter(p.tx, (t) => both(t, 45, 1) && onStation(t, 120, 1000, 5, 1.2)),
+  form120: (p) => settledAfter(p.tx, (t) => both(t, 45, 1) && onStation(t, 120, STATION_YD, 5, 1.2)),
   light: () => LIGHT.t1,
-  corpen: (p) => settledAfter(p.tx, (t) => both(t, 90, 1) && onStation(t, 180, 1000, 8, 1.5)),
+  corpen: (p) => settledAfter(p.tx, (t) => both(t, 90, 1) && onStation(t, 180, STATION_YD, 8, 1.5)),
   flags: () => FLAGS.t1,
   skim: () => PASS.t,
 };
@@ -347,7 +348,7 @@ export function orderedAt(id, t) {
 // --- Debrief: how each order went, measured once at import ---------------------------------------
 // `settle` is the time from execution to arrival; for a station change, `error` is how far the other
 // ship was from the ordered station (yards, degrees) at arrival.
-const STATIONS = { gform: [180, 1000], form120: [120, 1000], corpen: [0, 1000] }; // other ship from the guide
+const STATIONS = { gform: [180, STATION_YD], form120: [120, STATION_YD], corpen: [0, STATION_YD] }; // other ship from the guide
 export const DEBRIEF = PHASES.filter((p) => p.id !== 'form1' && p.id !== 'station').map((p) => {
   const row = { id: p.id, label: p.label, settle: p.ta - p.tx };
   if (STATIONS[p.id]) {

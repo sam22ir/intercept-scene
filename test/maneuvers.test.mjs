@@ -15,49 +15,49 @@ const angleNear = (a, b, tol, msg) => { const d = Math.abs(((a - b + 540) % 360)
 const speedKn = (id, t) => shipState(id, t).speed / KT;
 
 describe('naval maneuvers: formation geometry', () => {
-  it('starts in FORM 1: a column heading 000, ALG ahead of RUS by 1000 yds, 12 knots', () => {
+  it('starts in FORM 1: a column heading 000, ALG ahead of RUS by 500 yds, 12 knots', () => {
     angleNear(headingDeg(shipState('alg', 5).heading), 0, 0.5, 'ALG heading');
     angleNear(headingDeg(shipState('rus', 5).heading), 0, 0.5, 'RUS heading');
     near(speedKn('alg', 5), 12, 0.2, 'ALG speed');
     const rel = relation(5);
-    near(rel.range / YD, 1000, 1, 'range (yd)');
+    near(rel.range / YD, 500, 1, 'range (yd)');
     angleNear(rel.bearing, 0, 0.5, 'bearing RUS to ALG');
   });
 
   it('turns stbd 90 together (line abreast), back to port 90 (column)', () => {
     const abreast = P.stbd.tx + 120;
     angleNear(headingDeg(shipState('alg', abreast).heading), 90, 1, 'ALG heading after TURN STBD 9');
-    near(relation(abreast).range / YD, 1000, 1, 'range after the turn');
+    near(relation(abreast).range / YD, 500, 1, 'range after the turn');
     const column = P.port.tx + 110;
     angleNear(headingDeg(shipState('alg', column).heading), 0, 1, 'ALG heading after TURN PORT 9');
     angleNear(relation(column).bearing, 0, 1, 'column again');
   });
 
-  it('G FORM RUS: ALG slows to 6 kn, RUS runs at sierra 15 kn past ALG to port and takes station 1000 yds ahead', () => {
-    // RUS passes abeam of ALG on ALG's port side (the west), about 520 m out.
+  it('G FORM RUS: ALG slows to 6 kn, RUS runs at sierra 15 kn past ALG to port and takes station 500 yds ahead', () => {
+    // RUS passes abeam of ALG on ALG's port side (the west), about 210 m out.
     let abeam = null;
     for (let t = P.gform.tx; t < P.gform.tx + 420; t += 1) {
       const a = shipState('alg', t);
       const r = shipState('rus', t);
       if (!abeam || Math.abs(r.x - a.x) < Math.abs(abeam.dx)) abeam = { t, dx: r.x - a.x, dz: r.z - a.z };
     }
-    near(abeam.dz, -520, 40, 'RUS passes about 520 m to port');
+    near(abeam.dz, -212, 40, 'RUS passes about 210 m to port');
     near(speedKn('alg', P.gform.tx + 150), 6, 0.3, 'ALG at G speed 6');
     near(speedKn('rus', P.gform.tx + 150), 15, 0.3, 'RUS at sierra');
     const end = relation(P.gform.tx + 520);
-    near(end.range / YD, 1000, 2, 'range');
+    near(end.range / YD, 500, 2, 'range');
     angleNear(end.bearing, 180, 0.5, 'ALG is astern of RUS');
     near(speedKn('alg', P.gform.tx + 520), 12, 0.2, 'B speed 12 again');
   });
 
   it('TURN 045 keeps the station; FORM 120 puts ALG on bearing 120 from RUS at 10 knots', () => {
     angleNear(headingDeg(shipState('alg', P.form120.tx - 5).heading), 45, 1, 'course 045');
-    near(relation(P.form120.tx - 5).range / YD, 1000, 2, 'range kept through the turn');
+    near(relation(P.form120.tx - 5).range / YD, 500, 2, 'range kept through the turn');
     const f = relation(P.form120.tx + 620);
-    near(f.range / YD, 1000, 4, 'range');
+    near(f.range / YD, 500, 4, 'range');
     angleNear(f.bearing, 120, 0.7, 'bearing 120');
     near(speedKn('alg', P.form120.tx + 300), 10, 0.2, 'B speed 10');
-    near(speedKn('rus', P.form120.tx + 300), 6, 0.3, 'RUS drops back at 6 kn');
+    near(speedKn('rus', P.form120.tx + 150), 6, 0.3, 'RUS drops back at 6 kn');
   });
 
   it('CORPEN STBD 045 ends on course 090 with ALG on bearing 180; the serials run at 6 knots', () => {
@@ -66,7 +66,7 @@ describe('naval maneuvers: formation geometry', () => {
     angleNear(headingDeg(shipState('rus', c).heading), 90, 1, 'RUS course 090');
     const rel = relation(c);
     angleNear(rel.bearing, 180, 1, 'bearing 180');
-    near(rel.range / YD, 1000, 5, 'range');
+    near(rel.range / YD, 500, 5, 'range');
     near(speedKn('alg', P.light.tx + 60), 6, 0.3, 'flashing light at G SPEED 6');
     near(speedKn('rus', P.flags.tx + 60), 6, 0.3, 'flag hoist at G SPEED 6');
   });
@@ -93,13 +93,13 @@ describe('naval maneuvers: formation geometry', () => {
       }
     }
     assert.ok(maxKn <= 15.05, `${maxKn.toFixed(2)} kn`);
-    assert.ok(maxRate <= 1.25, `${maxRate.toFixed(2)} deg/s`);
+    assert.ok(maxRate <= 1.65, `${maxRate.toFixed(2)} deg/s`);
   });
 
-  it('never closes inside 300 m before the skim (no near collision during the station changes)', () => {
+  it('never closes inside 150 m before the skim (no near collision during the station changes)', () => {
     let min = Infinity;
     for (let t = 0; t < PASS.t - 60; t += 1) min = Math.min(min, relation(t).range);
-    assert.ok(min > 300, `${min.toFixed(0)} m`);
+    assert.ok(min > 150, `${min.toFixed(0)} m`);
   });
 });
 
@@ -134,14 +134,14 @@ describe('naval maneuvers: orders, signals and timeline', () => {
     }
     // Station changes: on station at arrival.
     const g = relation(at('gform'));
-    near(g.range / YD, 1000, 5, 'G FORM range at TA');
+    near(g.range / YD, 500, 5, 'G FORM range at TA');
     angleNear(g.bearing, 180, 1, 'G FORM bearing at TA');
-    assert.ok(Math.abs(relation(at('gform', 60)).range / YD - 1000) > 20 || Math.abs(((relation(at('gform', 60)).bearing - 180 + 540) % 360) - 180) > 3, 'not yet on station a minute before');
+    assert.ok(Math.abs(relation(at('gform', 60)).range / YD - 500) > 20 || Math.abs(((relation(at('gform', 60)).bearing - 180 + 540) % 360) - 180) > 3, 'not yet on station a minute before');
     const f = relation(at('form120'));
-    near(f.range / YD, 1000, 6, 'FORM 120 range at TA');
+    near(f.range / YD, 500, 6, 'FORM 120 range at TA');
     angleNear(f.bearing, 120, 1.5, 'FORM 120 bearing at TA');
     const c = relation(at('corpen'));
-    near(c.range / YD, 1000, 9, 'CORPEN range at TA');
+    near(c.range / YD, 500, 9, 'CORPEN range at TA');
     angleNear(c.bearing, 180, 2, 'CORPEN bearing at TA');
     // The serials end at arrival and the skim arrives at the closest pass.
     near(P.light.ta, LIGHT.t1, 1e-9, 'light serial');
@@ -157,7 +157,7 @@ describe('naval maneuvers: orders, signals and timeline', () => {
     assert.equal(exercise.events[0].t, 0);
     assert.ok(exercise.events.at(-1).t < exercise.tEnd);
     assert.equal(exercise.events.length, PHASES.length + 1);
-    assert.ok(FORMATION_RANGE > 900 && FORMATION_RANGE < 930);
+    assert.ok(FORMATION_RANGE > 450 && FORMATION_RANGE < 465);
     for (let i = 1; i < PHASES.length; i++) assert.ok(PHASES[i].t > PHASES[i - 1].t + 20);
   });
 
@@ -192,7 +192,7 @@ describe('naval maneuvers: guide, ordered course and debrief (the readouts)', ()
     const a = stationAt(10);
     assert.equal(a.other, 'rus');
     angleNear(a.bearing, 180, 0.5, 'FORM 1');
-    near(a.range / YD, 1000, 2, 'FORM 1 range');
+    near(a.range / YD, 500, 2, 'FORM 1 range');
     const b = stationAt(P.gform.ta + 5);
     assert.equal(b.other, 'alg');
     angleNear(b.bearing, 180, 1, 'after G FORM');
