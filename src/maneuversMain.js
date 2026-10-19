@@ -663,8 +663,8 @@ try { mapPref = localStorage.getItem('intercept.map') !== '0'; } catch { /* stor
 setMap(mapPref);
 mapButton.addEventListener('click', () => setMap(!map.enabled));
 
-// The tactical grid: 500 yd squares on the sea (north up) and dashed range rings at 250, 500 and 1000 yd round the
-// guide ship, in a yellow-green that is not ALG's green. Drawn inside the sea shader, so it costs no geometry.
+// The tactical grid: 500 yd squares on the sea (north up) and faint solid range rings at 250, 500 and 1000 yd round
+// ALG, in a yellow-green that is not ALG's green. Drawn inside the sea shader, so it costs no geometry.
 const gridButton = document.querySelector('#btn-grid');
 const gridU = env.ocean.material.uniforms;
 const ringLabels = [250, 500, 1000].map((yd) => ({ yd, tag: tag('range', '', '#ffffff') }));
@@ -681,7 +681,7 @@ function setGrid(on) {
 }
 function updateGrid(t) {
   if (!gridOn) return;
-  const g = ships[stationAt(t).guide].ship.group.position;
+  const g = ships.alg.ship.group.position; // the rings stay on ALG, whoever is the guide
   gridU.uRingC.value.set(g.x, g.z);
   for (const r of ringLabels) r.tag.obj.position.set(g.x + r.yd * YD, 1, g.z);
 }

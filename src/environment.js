@@ -128,7 +128,7 @@ function createOcean(sunDir, calm, horizon) {
       uCalm: { value: calm ? 1 : 0 },
       uGrid: { value: 0 }, // the drill's tactical grid: on or off
       uGridCell: { value: 457.2 }, // 500 yd squares, north up
-      uRingC: { value: new THREE.Vector2() }, // the range rings' centre (the guide ship), world x z
+      uRingC: { value: new THREE.Vector2() }, // the range rings' centre (ALG), world x z
       uDeep: { value: calm ? new THREE.Color(0.012, 0.075, 0.13) : new THREE.Color(0.006, 0.045, 0.085) },
       uScatter: { value: calm ? new THREE.Color(0.03, 0.18, 0.24) : new THREE.Color(0.02, 0.13, 0.16) },
       uHorizon: { value: horizon },
@@ -232,8 +232,8 @@ function createOcean(sunDir, calm, horizon) {
         vec3 foamCol = vec3(0.82, 0.87, 0.9) * (0.55 + 0.45 * max(uSunDir.y, 0.0));
         col = mix(col, foamCol, foam);
         if (uGrid > 0.5) {
-          // Tactical grid: 500 yd squares (every second line brighter) aligned to north, and dashed range rings
-          // at 250, 500 and 1000 yd round the guide ship. Antialiased by the pixel footprint, fading with distance.
+          // Tactical grid: 500 yd squares (every second line brighter) aligned to north, and solid range rings
+          // at 250, 500 and 1000 yd round ALG. Antialiased by the pixel footprint, fading with distance.
           vec2 g = vWorld.xz / uGridCell;
           vec2 w = max(fwidth(g), vec2(1e-5));
           vec2 dm = abs(fract(g - 0.5) - 0.5) / w;
@@ -242,15 +242,14 @@ function createOcean(sunDir, calm, horizon) {
           vec2 w2 = max(fwidth(g2), vec2(1e-5));
           vec2 dM = abs(fract(g2 - 0.5) - 0.5) / w2;
           float major = 1.0 - min(min(dM.x, dM.y), 1.0);
-          float dense = 1.0 - smoothstep(0.15, 0.4, max(w.x, w.y));
-          float vis = (1.0 - smoothstep(1500.0, 6000.0, dist)) * dense;
+          float dense = 1.0 - smoothstep(0.06, 0.2, max(w.x, w.y)); // lines packed closer than a few pixels vanish: no shimmer
+          float vis = (1.0 - smoothstep(700.0, 3200.0, dist)) * dense;
           vec2 rp = vWorld.xz - uRingC;
           float rr = length(rp);
           float wr = max(fwidth(rr), 1e-4);
           float ring = max(max(ringAt(rr, 228.6, wr), ringAt(rr, 457.2, wr)), ringAt(rr, 914.4, wr));
-          ring *= step(0.5, fract(atan(rp.y, rp.x) * 11.459)); // 72 dashes
-          float rv = 1.0 - smoothstep(2500.0, 9000.0, dist);
-          float a = max((minor * 0.2 + major * 0.26) * vis, ring * 0.6 * rv);
+          float rv = 1.0 - smoothstep(1500.0, 5000.0, dist);
+          float a = max((minor * 0.09 + major * 0.15) * vis, ring * 0.32 * rv);
           col = mix(col, vec3(0.68, 0.94, 0.3), a);
         }
         col = mix(col, uHorizon, smoothstep(uFogNear, uFogFar, dist));
