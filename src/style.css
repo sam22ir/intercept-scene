@@ -30,10 +30,7 @@ html, body {
   font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
-#scene { display: block; width: 100vw; height: 100vh; position: relative; z-index: 1; }
-/* web-ocean's WebGPU sea and sky, drawn under the (then transparent) three.js canvas. */
-#ocean-gpu { position: fixed; inset: 0; z-index: 0; display: block; width: 100vw; height: 100vh; pointer-events: none; }
-#ocean-gpu[hidden] { display: none; }
+#scene { display: block; width: 100vw; height: 100vh; }
 
 /* Panels sit above the 3D tag layer (z 5) and below toast, share box and errors (20+). */
 .panel {

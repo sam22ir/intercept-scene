@@ -26,7 +26,7 @@ import { createEngagePanel, SEEK_KEY } from './engagePanel.js';
 
 const canvas = document.querySelector('#scene');
 const loadingEl = document.querySelector('#loading');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true }); // transparent over web-ocean
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 const PIXEL_RATIO_CAP = { high: 2, medium: 1.5, low: 1 };
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, PIXEL_RATIO_CAP.high));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -56,7 +56,7 @@ for (const type of ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown
 }
 canvas.addEventListener('webglcontextrestored', invalidate);
 
-const env = createEnvironment(renderer, scene, { onChange: invalidate });
+const env = createEnvironment(renderer, scene);
 
 const ship = createShip();
 scene.add(ship.group);
@@ -507,7 +507,6 @@ if (scenario.sharedPath) {
 
 createRecorder({
   canvas, clock, audio, scenario, setDirector, isDirecting: () => directing, isBusy: () => editor.active,
-  onRecording: (on) => env.setGpuOcean(!on), // the recording captures this canvas only
 });
 
 // --- Loop -------------------------------------------------------------------
@@ -637,7 +636,6 @@ renderer.setAnimationLoop((now) => {
   minimap.update(clock.t);
   const draw = needsRender();
   if (draw) {
-    env.renderOcean(clock.t, camera);
     renderer.render(scene, camera);
     labels.render(scene, camera);
     markDrawn();

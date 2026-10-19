@@ -17,7 +17,7 @@ function pickMime(withAudio) {
 }
 
 export function createRecorder({
-  canvas, clock, scenario, audio, setDirector, isDirecting, isBusy, onRecording,
+  canvas, clock, scenario, audio, setDirector, isDirecting, isBusy,
 }) {
   const button = document.querySelector('#btn-record');
   const box = document.querySelector('#rec-box');
@@ -74,7 +74,6 @@ export function createRecorder({
     rec = null;
     chunks = [];
     stopping = false;
-    onRecording?.(false);
     setButton(false);
     if (restoreDirector) setDirector(false);
     if (!blob.size) { show('Recording produced no data.'); return; }
@@ -99,7 +98,6 @@ export function createRecorder({
     if (isBusy?.()) { show('Close the path editor before recording.'); return; }
     clearLink();
     chunks = [];
-    onRecording?.(true);
     let stream;
     try {
       stream = canvas.captureStream(30);
@@ -109,7 +107,6 @@ export function createRecorder({
       rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 8_000_000 } : undefined);
     } catch (err) {
       rec = null;
-      onRecording?.(false);
       show(`Could not start recording: ${err?.message ?? err}`);
       return;
     }

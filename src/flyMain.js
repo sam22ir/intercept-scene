@@ -23,7 +23,7 @@ import {
 const canvas = document.querySelector('#scene');
 const loadingEl = document.querySelector('#loading');
 document.body.classList.add('mission-fly');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true }); // transparent over web-ocean
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.75;
@@ -559,7 +559,6 @@ renderer.setAnimationLoop((now) => {
   const keys = keysHtml();
   if (keys !== lastKeys) { keysEl.innerHTML = keys; lastKeys = keys; }
   if (!banner.hidden && performance.now() > bannerUntil) banner.hidden = true;
-  env.renderOcean(sim.t, camera);
   renderer.render(scene, camera);
   if (frames++ === 0) loadingEl?.remove(); // the first frame is on screen
 });
