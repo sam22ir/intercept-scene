@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Interactive Three.js scene: an orange target drone is launched off a side rail (18°) with a rocket booster under its tail, on a steaming stealth frigate (C28A style, pennant 920). It flies a loop, makes a low close pass along the port side, climbs out slowly ahead, then turns back for an inbound run at the ship. On that run, a missile from the frigate's forward box launcher shoots it down. The user can scrub time forwards and backwards and click the drone, missile or ship to focus the camera on it. Vanilla JS (ES modules), Vite, `three@0.186.1`. Node regression tests for `scenario.js` (`pnpm test`, also run by `pnpm build`); no linter.
 
+Catch undeclared variables (a runtime error the build and tests miss) with `npx --yes eslint@9` and a flat config that turns on only `no-undef` (browser globals declared), run over `src`.
+
 The folder name ends with a **trailing space** (`/home/saadi/plane sceen `). Quote every path in shell commands.
 
 ## Commands
