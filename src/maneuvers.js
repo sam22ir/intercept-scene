@@ -168,6 +168,10 @@ function integrate(orders, until, start) {
 const FULL = 3800; // s baked; the exercise ends well before
 const ALG_FULL = integrate(ALG_ORDERS, FULL, { x: 0, z: 0, psi: 0, v: 12 * KT });
 const RUS_FULL = integrate(RUS_ORDERS, FULL, { x: -FORMATION_RANGE, z: 0, psi: 0, v: 12 * KT });
+// The third ship, the unit the others work around: it keeps ALG's course and speed, one station (500 yds) to
+// starboard of her, so it sails straight alongside whatever ALG does. (Its own orders come with the screens.)
+const UNIT_FULL = integrate(ALG_ORDERS, FULL, { x: 0, z: FORMATION_RANGE, psi: 0, v: 12 * KT });
+export const SHIP_IDS = ['alg', 'rus', 'unit'];
 
 function lookup(rows, t) {
   const f = Math.min(Math.max(t / DT, 0), rows.length - 1);
@@ -193,7 +197,7 @@ export const PASS = { t: tPass, range: dMin };
 export const tEnd = Math.ceil((tPass + 100) / 5) * 5;
 
 // Unwrap each heading so interpolation never spins the long way round.
-for (const rows of [ALG_FULL, RUS_FULL]) {
+for (const rows of [ALG_FULL, RUS_FULL, UNIT_FULL]) {
   for (let i = 1; i < rows.length; i++) {
     let d = rows[i].psi - rows[i - 1].psi;
     while (d > Math.PI) { rows[i].psi -= 2 * Math.PI; d -= 2 * Math.PI; }
@@ -204,7 +208,7 @@ for (const rows of [ALG_FULL, RUS_FULL]) {
 // --- Public API -------------------------------------------------------------------------------
 // A ship's state at time t: x (North, m), z (East, m), heading (rad, clockwise from North), speed (m/s).
 export function shipState(id, t, out = {}) {
-  const s = lookup(id === 'rus' ? RUS_FULL : ALG_FULL, t);
+  const s = lookup(id === 'rus' ? RUS_FULL : id === 'unit' ? UNIT_FULL : ALG_FULL, t);
   out.x = s.x; out.z = s.z; out.heading = s.psi; out.speed = s.v;
   return out;
 }

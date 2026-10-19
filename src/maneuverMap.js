@@ -10,7 +10,7 @@ const SCALES = [600, 1000, 1500, 2500, 4000]; // auto-zoom steps: metres to the 
 const ZOOMS = ['auto', 1000, 2500];
 const TRACK_SECONDS = 300;
 const TRACK_STEP = 6;
-const COLORS = { alg: '#3ddc84', rus: '#ff7a1a' };
+const COLORS = { alg: '#3ddc84', rus: '#ff7a1a', unit: '#5ab4ff' };
 
 export function createManeuverMap() {
   const root = document.querySelector('#minimap');
@@ -38,16 +38,18 @@ export function createManeuverMap() {
   let zoom = 0;
   const a = {};
   const b = {};
+  const u = {};
   const p = {};
 
   function draw(t) {
     shipState('alg', t, a);
     shipState('rus', t, b);
-    const cx = (a.x + b.x) / 2; // map centre, metres North
-    const cz = (a.z + b.z) / 2; // metres East
+    shipState('unit', t, u);
+    const cx = (a.x + b.x + u.x) / 3; // map centre (the middle of the three), metres North
+    const cz = (a.z + b.z + u.z) / 3; // metres East
     const half = SIZE / 2;
     const rim = half - 7;
-    const span = Math.hypot(a.x - b.x, a.z - b.z) / 2;
+    const span = Math.max(Math.hypot(a.x - b.x, a.z - b.z), Math.hypot(a.x - u.x, a.z - u.z), Math.hypot(b.x - u.x, b.z - u.z)) / 2;
     const R = ZOOMS[zoom] === 'auto' ? (SCALES.find((s) => s >= span * 1.45) ?? SCALES[SCALES.length - 1]) : ZOOMS[zoom];
     const k = rim / R;
     const sx = (z) => half + (z - cz) * k;
@@ -80,7 +82,7 @@ export function createManeuverMap() {
     ctx.fillText('W', 8, half + 3);
 
     // Recent tracks (the part already steamed).
-    for (const id of ['alg', 'rus']) {
+    for (const id of ['alg', 'rus', 'unit']) {
       ctx.strokeStyle = COLORS[id];
       ctx.lineWidth = 1.4;
       ctx.globalAlpha = 0.5;
@@ -130,11 +132,15 @@ export function createManeuverMap() {
     };
     arrow(ax, ay, a.heading, COLORS.alg);
     arrow(bx, by, b.heading, COLORS.rus);
+    const ux2 = sx(u.z); const uy2 = sy(u.x);
+    arrow(ux2, uy2, u.heading, COLORS.unit);
     ctx.font = '600 9px system-ui, sans-serif';
     ctx.fillStyle = COLORS.alg;
     ctx.fillText(shipNames.alg, ax, ay - 10);
     ctx.fillStyle = COLORS.rus;
     ctx.fillText(shipNames.rus, bx, by - 10);
+    ctx.fillStyle = COLORS.unit;
+    ctx.fillText(shipNames.unit, ux2, uy2 - 10);
 
     // EXECUTE (the ships start the maneuver): a green pulse; A STATION (they are in position): a white one.
     const order = orderStatus(t);

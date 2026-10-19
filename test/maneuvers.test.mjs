@@ -5,7 +5,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  exercise, shipState, relation, headingDeg, PASS, PHASES, YD, KT, FORMATION_RANGE, EXECUTE_FLASH, STATION_FLASH,
+  exercise, shipState, SHIP_IDS, relation, headingDeg, PASS, PHASES, YD, KT, FORMATION_RANGE, EXECUTE_FLASH, STATION_FLASH,
   orderStatus, lampOn, CUES, LIGHT, guideAt, stationAt, orderedAt, DEBRIEF,
 } from '../src/maneuvers.js';
 
@@ -69,6 +69,21 @@ describe('naval maneuvers: formation geometry', () => {
     near(rel.range / YD, 500, 5, 'range');
     near(speedKn('alg', P.light.tx + 60), 6, 0.3, 'flashing light at G SPEED 6');
     near(speedKn('rus', P.flags.tx + 60), 6, 0.3, 'flag hoist at G SPEED 6');
+  });
+
+  it('the third ship, the unit, keeps the course and speed one station (500 yds) to her east, and RUS never fouls it', () => {
+    assert.deepEqual(SHIP_IDS, ['alg', 'rus', 'unit']);
+    let minRus = Infinity;
+    for (let t = 0; t < exercise.tEnd; t += 1) {
+      const a = shipState('alg', t);
+      const u = shipState('unit', t);
+      near(u.x - a.x, 0, 1e-6, 'abeam in the world frame');
+      near(u.z - a.z, FORMATION_RANGE, 1e-6, 'one station east of ALG');
+      near(headingDeg(u.heading), headingDeg(a.heading), 1e-6, 'same heading');
+      const r = shipState('rus', t);
+      minRus = Math.min(minRus, Math.hypot(r.x - u.x, r.z - u.z));
+    }
+    assert.ok(minRus > 80, `RUS passes the unit at ${minRus.toFixed(0)} m`);
   });
 
   it('SKIMMING PAST: RUS passes ALG on a reciprocal course about 100 m away', () => {
