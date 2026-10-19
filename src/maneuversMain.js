@@ -292,7 +292,10 @@ const _mid = new THREE.Vector3();
 function updateTags(t) {
   for (const id of ['alg', 'rus']) {
     const s = ships[id];
-    tags[id].obj.position.copy(s.ship.group.position).setY(40);
+    // The tag rides higher the farther the camera is, and a ship's own tag is hidden from her bridge.
+    const dist = camera.position.distanceTo(s.ship.group.position);
+    tags[id].obj.position.copy(s.ship.group.position).setY(Math.min(Math.max(dist * 0.05, 26), 60));
+    tags[id].obj.visible = !(bridgeId === id && rig.id === id);
     tags[id].body.innerHTML = fmtTag(s.state);
   }
   const rel = stationAt(t);
@@ -356,27 +359,55 @@ function setFocus(id, distance) {
     const t = targets[id];
     rig.focus(id, t.pos, distance ?? t.distance, t.minDistance);
     if (id === 'alg' || id === 'rus') enterBridge(id);
-    else bridgeId = null;
+    else leaveBridge();
   }
-  if (id === 'free' || !targets[id]) bridgeId = null;
+  if (id === 'free' || !targets[id]) leaveBridge();
   focusButtons.forEach((b) => b.classList.toggle('active', b.dataset.focus === rig.id));
 }
 for (const b of focusButtons) b.addEventListener('click', () => setFocus(b.dataset.focus));
-canvas.addEventListener('wheel', () => { autoZoom = false; bridgeId = null; }, { passive: true });
-canvas.addEventListener('pointerdown', () => { bridgeId = null; }); // dragging the view leaves the bridge's fixed look
-// The bridge view: the camera sits at the bridge window and turns with the ship.
+canvas.addEventListener('wheel', () => { autoZoom = false; }, { passive: true });
+// The bridge view: the camera sits at the bridge window and turns with the ship. Dragging looks around from
+// the window (left / right, up / down), a double click looks ahead again, and the wheel leaves the bridge for
+// the usual orbit.
 let bridgeId = null;
-let bridgeRot = 0;
+let bridgeYaw = 0;
+let bridgePitch = -0.05;
+const _eye = new THREE.Vector3();
 function enterBridge(id) {
-  const sh = ships[id];
   bridgeId = id;
-  bridgeRot = sh.ship.group.rotation.y;
-  const look = shipPoint(sh, LOOK_X, LOOK_Y, new THREE.Vector3());
-  const eye = shipPoint(sh, BRIDGE_X, BRIDGE_Y, new THREE.Vector3());
-  controls.target.copy(look);
-  camera.position.copy(eye);
+  bridgeYaw = 0;
+  bridgePitch = -0.05;
+  controls.enabled = false;
   rig.transition = null; // straight onto the bridge, no fly-in
   rig.getPos(rig.last);
+  applyBridge();
+}
+function leaveBridge() {
+  if (!bridgeId) return;
+  bridgeId = null;
+  controls.enabled = true;
+}
+canvas.addEventListener('wheel', () => leaveBridge(), { capture: true, passive: true });
+canvas.addEventListener('dblclick', () => { if (bridgeId) { bridgeYaw = 0; bridgePitch = -0.05; invalidate(); } });
+let lookDrag = null;
+canvas.addEventListener('pointerdown', (e) => { if (bridgeId && e.button === 0) lookDrag = { x: e.clientX, y: e.clientY }; });
+window.addEventListener('pointerup', () => { lookDrag = null; });
+window.addEventListener('pointermove', (e) => {
+  if (!bridgeId || !lookDrag) return;
+  bridgeYaw -= (e.clientX - lookDrag.x) * 0.004; // dragging right looks to starboard
+  bridgePitch = Math.min(Math.max(bridgePitch + (e.clientY - lookDrag.y) * 0.003, -0.9), 0.9);
+  lookDrag.x = e.clientX;
+  lookDrag.y = e.clientY;
+  invalidate();
+});
+function applyBridge() {
+  if (!bridgeId || rig.id !== bridgeId) return;
+  const sh = ships[bridgeId];
+  const th = sh.ship.group.rotation.y + bridgeYaw;
+  const cp = Math.cos(bridgePitch);
+  shipPoint(sh, BRIDGE_X, BRIDGE_Y, _eye);
+  camera.position.copy(_eye);
+  controls.target.set(_eye.x + Math.cos(th) * cp * 40, _eye.y + Math.sin(bridgePitch) * 40, _eye.z - Math.sin(th) * cp * 40);
 }
 // The Formation view keeps its angle to the ships' course: the camera turns about the formation as the ships
 // turn, following their mean heading (the mid point of the two when the courses differ).
@@ -402,17 +433,6 @@ function applyFormationTurn() {
   camera.position.copy(controls.target).add(_off);
   if (rig.transition) turn(rig.transition.fromOffset);
 }
-function applyBridge() {
-  if (!bridgeId || rig.id !== bridgeId) return;
-  const g = ships[bridgeId].ship.group;
-  const d = g.rotation.y - bridgeRot;
-  if (d === 0) return;
-  bridgeRot = g.rotation.y;
-  // Turn the camera about the look point with the ship (positive rotation.y turns about +Y).
-  _off.subVectors(camera.position, controls.target);
-  const c = Math.cos(d), n = Math.sin(d);
-  camera.position.set(controls.target.x + _off.x * c + _off.z * n, camera.position.y, controls.target.z - _off.x * n + _off.z * c);
-}
 function applyAutoZoom(dt) {
   if (!autoZoom || rig.id !== 'formation' || rig.transition) return;
   const range = ships.alg.ship.group.position.distanceTo(ships.rus.ship.group.position);
@@ -437,11 +457,11 @@ let lastLive = '';
 // the Signal dropdown of the top bar.
 hudLive.innerHTML = '<div class="mcard mcard-order"><div class="mh-bar"><div class="mh-title"><b data-title></b><div class="mh-sub"><small data-step></small><span class="chip" data-chip></span></div></div>'
   + '<div class="mh-btns"><button type="button" data-hide title="Hide these cards (H, or the Readouts button)" aria-label="Hide">×</button></div></div>'
-  + '<div class="mh-progress" title="How far through this order"><i data-progress></i></div></div>'
+  + '<div class="mh-progress" title="How far through this order"><i data-progress></i></div><div class="mh-next" data-next></div></div>'
   + '<div class="mcard mcard-ships mh-ships" data-live></div>';
 const bar = {
   title: hudLive.querySelector('[data-title]'), step: hudLive.querySelector('[data-step]'), chip: hudLive.querySelector('[data-chip]'),
-  progress: hudLive.querySelector('[data-progress]'),
+  progress: hudLive.querySelector('[data-progress]'), next: hudLive.querySelector('[data-next]'),
 };
 const liveEl = hudLive.querySelector('[data-live]');
 let serialEl = null; // inside the Signal dropdown
@@ -497,6 +517,12 @@ function updateReadout(t) {
   if (bar.chip.dataset.tone !== chip[1] + shown) { bar.chip.dataset.tone = chip[1] + shown; bar.chip.className = `chip ${chip[1]}${shown}`; }
   const end = PHASES[idx + 1]?.t ?? exercise.tEnd;
   bar.progress.style.width = `${(Math.min(Math.max((t - phase.t) / (end - phase.t), 0), 1) * 100).toFixed(1)}%`;
+  // What comes next, and when it will be announced.
+  const nextPhase = PHASES[idx + 1];
+  const nextText = nextPhase && t < nextPhase.t ? `Next: ${nextPhase.label} · announced in ${fmtCount(nextPhase.t - t)}` : '';
+  setText(bar.next, nextText);
+  bar.next.hidden = !nextText;
+  if (nextPhase) bar.next.title = nextPhase.note ? rn(nextPhase.note) : '';
   const rel = stationAt(t);
   // Closest point of approach, through the skim: the range RUS will pass at and when.
   const pass = exercise.pass;
@@ -773,7 +799,8 @@ const clock = createTimeline(exercise, {
   box.className = 'names-form';
   box.innerHTML = '<span>Ship names</span><div><label>1 <input name="alg" maxlength="' + NAME_MAX + '" autocomplete="off" spellcheck="false" aria-label="Name of the first ship"></label>'
     + '<label>2 <input name="rus" maxlength="' + NAME_MAX + '" autocomplete="off" spellcheck="false" aria-label="Name of the second ship"></label>'
-    + '<button type="submit" title="Rename the ships (reloads the scene at this moment)">Set</button></div>';
+    + '<button type="submit" title="Rename the ships (reloads the scene at this moment)">Set</button>'
+    + '<button type="button" data-reset title="Back to ALG and RUS">Reset</button></div>';
   const inAlg = box.querySelector('[name=alg]');
   const inRus = box.querySelector('[name=rus]');
   inAlg.value = shipNames.alg;
@@ -785,10 +812,12 @@ const clock = createTimeline(exercise, {
       if (!saveNames(inAlg.value, inRus.value)) throw new Error('storage');
       sessionStorage.setItem('intercept.skip', '1');
       sessionStorage.setItem('intercept.seek', String(clock.t));
+      sessionStorage.setItem('intercept.renamed', `${inAlg.value.toUpperCase().trim() || 'ALG'} and ${inRus.value.toUpperCase().trim() || 'RUS'}`);
     } catch { toast('Could not save the names (browser storage is blocked).'); return; }
     stripShareParams();
     location.reload();
   });
+  box.querySelector('[data-reset]').addEventListener('click', () => { inAlg.value = 'ALG'; inRus.value = 'RUS'; box.requestSubmit(); });
   box.addEventListener('keydown', (e) => e.stopPropagation()); // typing a name is never a shortcut
   menuEl.insertBefore(box, menuEl.querySelector('hr'));
 }
@@ -905,6 +934,11 @@ renderer.setAnimationLoop((now) => {
   }
 });
 
+try {
+  const renamed = sessionStorage.getItem('intercept.renamed');
+  sessionStorage.removeItem('intercept.renamed');
+  if (renamed) toast(`Ships renamed: ${renamed}.`, 3500);
+} catch { /* storage unavailable */ }
 toast('Plays at 4×. Each order: STANDBY, then EXECUTE (the ships start), then A STATION. Speed: the button or [ ].', 4500);
 
 // Debug / inspection handle (mirrors the intercept scene's).
