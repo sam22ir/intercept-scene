@@ -82,7 +82,8 @@ export function createEnvironment(renderer, scene, { calm = false } = {}) {
   const ocean = createOcean(sunDir, calm, horizon);
   scene.add(ocean);
   const clouds = createClouds(calm);
-  if (calm) scene.add(createMountains());
+  const mountains = calm ? createMountains() : null;
+  if (mountains) scene.add(mountains);
   scene.add(clouds);
   const CLOUD_PERIOD = 26000; // the cloud field repeats this often, so it never runs out under a far-flying camera
 
@@ -94,6 +95,7 @@ export function createEnvironment(renderer, scene, { calm = false } = {}) {
     follow(camPos) {
       sky.position.set(camPos.x, 0, camPos.z);
       dome?.position.set(camPos.x, 0, camPos.z);
+      mountains?.position.set(camPos.x, 0, camPos.z); // a backdrop at infinity: the ships can never sail into it
       ocean.position.x = camPos.x;
       ocean.position.z = camPos.z;
       for (const c of clouds.children) {

@@ -1173,6 +1173,7 @@ renderer.setAnimationLoop((now) => {
   applyAutoZoom(dt);
   controls.update();
   if (camera.position.y < 1) camera.position.y = 1;
+  env.follow(camera.position); // sky, mountains and the far sea ride with the camera, so the ships can never reach them
   const close = rig.id === 'alg' || rig.id === 'rus';
   env.setShadowFocus(close ? targets[rig.id].pos(shadowCenter) : targets.formation.pos(shadowCenter), close ? 150 : 1300);
   clock.renderUI();
