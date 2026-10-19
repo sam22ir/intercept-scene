@@ -820,9 +820,9 @@ for (const b of ordersEl.querySelectorAll('[data-sb]')) {
 
 // Clicking an order in the list jumps to just before it is announced.
 orderButtons.forEach((b, i) => b.addEventListener('click', () => { clock.seek(Math.max(PHASES[i].t - 1, 0)); setOrders(false); invalidate(); }));
-// About 51 minutes of exercise: sixteen times real time by default. Time never slows for an order: STANDBY
+// About 51 minutes of exercise: four times real time by default. Time never slows for an order: STANDBY
 // counts down to EXECUTE, the ships maneuver, and A STATION is called when they are in position.
-clock.setSpeed(16);
+clock.setSpeed(4);
 // Deep link: ?t= opens paused at that moment; the standby stepper reloads at the same moment, playing.
 try {
   const t = parseFloat(new URLSearchParams(location.search).get('t'));
@@ -905,7 +905,7 @@ renderer.setAnimationLoop((now) => {
   }
 });
 
-toast('Plays at 16×. Each order: STANDBY, then EXECUTE (the ships start), then A STATION. Speed: the button or [ ].', 4500);
+toast('Plays at 4×. Each order: STANDBY, then EXECUTE (the ships start), then A STATION. Speed: the button or [ ].', 4500);
 
 // Debug / inspection handle (mirrors the intercept scene's).
 window.__scene = { exercise, clock, rig, camera, controls, setFocus, ships, scene, renderer };
