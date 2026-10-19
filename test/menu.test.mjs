@@ -136,7 +136,7 @@ describe('the words are true of the missions', () => {
     assert.ok(m.tagline.includes(`${M.PHASES.length} orders, about ${minutes} minutes`), `${M.PHASES.length} orders, ${minutes} min`);
     assert.ok(m.facts.includes(`${M.PHASES.length} orders`));
     assert.ok(m.facts.includes(`About ${minutes} minutes`));
-    assert.match(src.maneuvers, /clock\.setSpeed\(16\)/);
+    assert.match(src.maneuvers, /clock\.setSpeed\(4\)/);
     assert.match(m.tagline, /4×/);
     for (const id of ['ALG', 'RUS']) assert.ok(m.facts[0].includes(id) && m.tagline.includes(id));
   });
