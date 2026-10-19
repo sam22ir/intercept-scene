@@ -49,7 +49,8 @@ export function createEnvironment(renderer, scene, { calm = false } = {}) {
 
   const ocean = createOcean(sunDir, calm, horizon);
   scene.add(ocean);
-  const clouds = createClouds();
+  const clouds = createClouds(calm);
+  if (calm) scene.add(createMountains());
   scene.add(clouds);
   const CLOUD_PERIOD = 26000; // the cloud field repeats this often, so it never runs out under a far-flying camera
 
@@ -240,7 +241,7 @@ function createOcean(sunDir, calm, horizon) {
 
 // Scattered fair-weather cumulus: soft billboard sprites from a generated
 // texture, far enough away that parallax sells them.
-function createClouds() {
+function createClouds(calm = false) {
   const rng = mulberry32(77);
   const textures = [0, 1, 2].map((seed) => {
     const r = mulberry32(seed + 5);
@@ -264,18 +265,63 @@ function createClouds() {
     return tex;
   });
   const group = new THREE.Group();
-  for (let i = 0; i < 38; i++) {
+  for (let i = 0; i < (calm ? 70 : 38); i++) {
     const a = rng() * Math.PI * 2;
-    const d = 2500 + rng() * 9000;
-    const size = 700 + rng() * 1300;
+    const d = 2500 + rng() * (calm ? 11000 : 9000);
+    const size = calm ? 900 + rng() * 1600 : 700 + rng() * 1300;
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
       map: textures[i % 3], transparent: true, depthWrite: false, fog: false, opacity: 0.75 + rng() * 0.25,
       color: new THREE.Color(2.3, 2.3, 2.4), // above 1 so tone mapping keeps them as bright as the sky
     }));
-    sprite.position.set(Math.cos(a) * d, 900 + rng() * 1400, Math.sin(a) * d);
+    sprite.position.set(Math.cos(a) * d, (calm ? 450 : 900) + rng() * (calm ? 1700 : 1400), Math.sin(a) * d);
     sprite.userData.base = sprite.position.clone();
     sprite.scale.set(size, size * 0.5, 1);
     group.add(sprite);
   }
   return group;
+}
+
+// Distant mountains for the drill: three ridge lines on the horizon in an arc, each a strip of flat-coloured
+// triangles (about 1,500 in all, one mesh, no textures, no lighting), paler the farther away so the air seems to
+// thicken. Static, far enough that moving the camera barely shifts them.
+function createMountains() {
+  const rng = mulberry32(31);
+  const layers = [
+    { r: 13000, h: 620, col: [0.5, 0.6, 0.72], n: 260 },
+    { r: 10600, h: 470, col: [0.34, 0.45, 0.58], n: 260 },
+    { r: 8800, h: 330, col: [0.2, 0.3, 0.42], n: 260 },
+  ];
+  const A0 = -0.3;
+  const A1 = 3.4; // radians: an arc of about 210 degrees
+  const pos = [];
+  const col = [];
+  const idx = [];
+  for (const L of layers) {
+    const p = [rng() * 6.28, rng() * 6.28, rng() * 6.28];
+    const base = pos.length / 3;
+    for (let i = 0; i <= L.n; i++) {
+      const t = i / L.n;
+      const a = A0 + (A1 - A0) * t;
+      const n = 0.5 * Math.sin(a * 7 + p[0]) + 0.3 * Math.sin(a * 17 + p[1]) + 0.2 * Math.sin(a * 41 + p[2]);
+      const env = Math.sin(Math.PI * t) ** 0.6; // the range tapers into the sea at both ends
+      const top = L.h * (0.3 + 0.7 * (0.5 + 0.5 * n)) * env;
+      const x = Math.cos(a) * L.r;
+      const z = Math.sin(a) * L.r;
+      pos.push(x, -40, z, x, top, z);
+      col.push(L.col[0] * 0.8, L.col[1] * 0.8, L.col[2] * 0.85, L.col[0] * 1.1, L.col[1] * 1.1, L.col[2] * 1.08);
+    }
+    for (let i = 0; i < L.n; i++) {
+      const k = base + i * 2;
+      idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setIndex(idx);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide }));
+  mesh.name = 'mountains';
+  mesh.frustumCulled = false;
+  mesh.renderOrder = -1; // behind the sea and the ships
+  return mesh;
 }
