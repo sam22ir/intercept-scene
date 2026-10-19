@@ -19,6 +19,7 @@ import { createTimeline } from './timeline.js';
 import { createDirector } from './director.js';
 import { createAudio } from './audio.js';
 import { createHud } from './hud.js';
+import { menuText } from './menu.js';
 import { createRecorder } from './recorder.js';
 import { createPair } from './pair.js';
 import { createShare, readShareParams, stripShareParams } from './share.js';
@@ -378,8 +379,12 @@ window.addEventListener('pointerdown', (e) => {
 }, true);
 try { setPanelFolded(localStorage.getItem(FOLD_KEY) === '1', false); } catch { /* storage unavailable */ }
 
-const MISSION_NAME = { intercept: 'Intercept', chute: 'Recovery', pair: 'Two drones' };
-document.querySelector('#mission-sub').textContent = `${SHIP_VARIANT === 'aft' ? 'Aft' : 'Fwd'} launcher · ${MISSION_NAME[scenario.mode] ?? scenario.mode}`;
+{
+  // The top bar's title and subtitle come from the same words as the start screen (menu.js).
+  const t = menuText(scenario.mode, SHIP_VARIANT);
+  document.querySelector('.brand b').textContent = t.brand;
+  document.querySelector('#mission-sub').textContent = t.sub;
+}
 
 const soundButton = document.querySelector('#btn-sound');
 function setSound(on) {

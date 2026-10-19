@@ -17,6 +17,7 @@ import {
   stationAt, orderedAt, DEBRIEF, STATION_FLASH,
 } from './maneuvers.js';
 import { stripShareParams } from './share.js';
+import { menuText } from './menu.js';
 
 // Entry point of the second mission, "Naval maneuvers" (see maneuvers.js). Two frigates, ALG and
 // RUS, fly through the signalled maneuvers of the briefing deck. Like the intercept scene, every
@@ -600,8 +601,11 @@ if (typeof ResizeObserver === 'function') {
     document.documentElement.style.setProperty('--bar-w', `${topbar.offsetWidth}px`);
   }).observe(topbar);
 }
-document.querySelector('.brand b').textContent = 'Maneuvers';
-document.querySelector('#mission-sub').textContent = 'ALG & RUS · signalled drill';
+{
+  const t = menuText('maneuvers'); // the same words as the start screen (menu.js)
+  document.querySelector('.brand b').textContent = t.brand;
+  document.querySelector('#mission-sub').textContent = t.sub;
+}
 
 // --- Orders: the briefing's contents column, now a dropdown from the top bar ---------------------------------
 // A tick on each finished order, the current one highlighted, click one to jump to it; the standby time is set at the foot.

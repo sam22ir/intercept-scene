@@ -12,6 +12,7 @@ import { pointScale } from './fx/particles.js';
 import { CameraRig } from './cameraRig.js';
 import { createFlyMap } from './flyMap.js';
 import { createFlyAudio } from './flyAudio.js';
+import { menuText } from './menu.js';
 import {
   FlySim, T_SPOOL, T_RELEASE, BOOST_TIME, DEFAULT_SPEED, MISSILE_RANGE,
 } from './fly.js';
@@ -397,8 +398,11 @@ document.querySelector('#btn-ship').addEventListener('click', () => {
   try { sessionStorage.setItem('intercept.chooser', '1'); location.reload(); } catch { location.search = ''; }
 });
 document.querySelector('#btn-ship').textContent = 'Change mission';
-document.querySelector('.brand b').textContent = 'Fly';
-document.querySelector('#mission-sub').textContent = 'manual flight';
+{
+  const t = menuText('fly'); // the same words as the start screen (menu.js)
+  document.querySelector('.brand b').textContent = t.brand;
+  document.querySelector('#mission-sub').textContent = t.sub;
+}
 
 // Sound (the Sound button and S): remembered like the other missions'. The context starts at the first key or click.
 const soundButton = document.querySelector('#btn-sound');

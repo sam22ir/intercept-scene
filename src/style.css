@@ -559,7 +559,9 @@ body.mission-maneuvers .shot-caption { top: calc(var(--gap) + var(--safe-t) + va
 .tag.ok { border-left-color: #3ddc84; }
 .tag.dead .tag-title { color: #ff8a8d; }
 
-/* Start screen: choose the warship before the scene loads. */
+/* Start screen: the main menu. A mission list on the left; on the right a briefing that follows the choice
+   (its title, what it is, its facts, the launcher where there is one to pick, the controls); the way in
+   (a one-line summary and Start) along the bottom. */
 body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels-layer { display: none; }
 .chooser {
   position: fixed; inset: 0; z-index: 2; display: grid; padding: calc(20px + var(--safe-t)) calc(20px + var(--safe-r)) calc(20px + var(--safe-b)) calc(20px + var(--safe-l));
@@ -570,35 +572,53 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 }
 .chooser[hidden] { display: none; }
 /* margin: auto centres when there is room and never clips the top when there is not. */
-.chooser-inner { width: min(900px, 100%); margin: auto; display: grid; gap: 14px; }
-.ch-head { text-align: center; }
-.chooser-title { font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); font-size: 11.5px; }
-.chooser-title .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 8px; box-shadow: 0 0 0 3px var(--accent-soft); }
-.chooser h1 { margin: 6px 0 4px; font-size: clamp(24px, 4vw, 32px); letter-spacing: -0.015em; }
-.ch-tag { margin: 0 auto; max-width: 560px; color: var(--muted); font-size: 13px; }
-.ch-step h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 7px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
-.ch-step .n { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: rgba(255, 255, 255, 0.08); color: var(--text); font-size: 10.5px; letter-spacing: 0; }
+.menu { width: min(1080px, 100%); margin: auto; display: grid; gap: 16px; }
+.menu-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.menu-brand { display: flex; align-items: baseline; gap: 10px; color: var(--muted); font-size: 12.5px; }
+.menu-brand b { font-size: 15px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text); }
+.menu-brand .dot { align-self: center; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.menu-hint { margin: 0; color: var(--dim); font-size: 11.5px; text-align: right; }
+.menu-body { display: grid; grid-template-columns: minmax(260px, 330px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.menu-list h2, .brief h2 { margin: 0 0 8px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
 
-.missions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-@media (min-width: 1000px) { .missions { grid-template-columns: repeat(3, 1fr); } }
+/* The mission list. */
+.missions { display: grid; gap: 6px; }
 .mission {
-  display: flex; align-items: center; gap: 10px; padding: 9px 12px; text-align: left; border-radius: 11px;
+  display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; text-align: left; border-radius: 12px;
   background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); transition: border-color 0.15s, background 0.15s;
 }
 .mission:hover { background: rgba(255, 255, 255, 0.08); }
-.mission svg { width: 36px; height: 36px; stroke-width: 2; }
-.mission b { display: block; font-size: 14px; }
-.mission small { display: block; color: var(--muted); font-size: 11.5px; }
+.mission svg { width: 38px; height: 38px; stroke-width: 2; }
+.m-txt b { display: block; font-size: 14.5px; }
+.m-txt small { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+.m-kind { font-style: normal; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; }
 .mission[aria-checked='true'] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
-.mission .i-arc { stroke: var(--missile); stroke-dasharray: 3 3; }
-.mission .i-drone { stroke: var(--accent); stroke-width: 2.6; }
-.mission .i-burst { stroke: var(--bad); fill: rgba(255, 93, 97, 0.25); }
-.mission .i-canopy { stroke: var(--accent); fill: rgba(255, 122, 26, 0.3); }
-.mission .i-line { stroke: var(--muted); stroke-width: 1.2; }
-.mission .i-sea { stroke: #3d7fa6; }
-.mission .i-ship { stroke: var(--ok); stroke-width: 2.2; fill: rgba(61, 220, 132, 0.18); }
-.mission[data-mode='chute'] .i-drone { stroke-width: 2.6; }
+.mission[aria-checked='true'] .m-kind { color: var(--accent); border-color: rgba(255, 122, 26, 0.5); }
+.mission .i-arc, .brief-art .i-arc { stroke: var(--missile); stroke-dasharray: 3 3; }
+.mission .i-drone, .brief-art .i-drone { stroke: var(--accent); stroke-width: 2.6; }
+.mission .i-burst, .brief-art .i-burst { stroke: var(--bad); fill: rgba(255, 93, 97, 0.25); }
+.mission .i-canopy, .brief-art .i-canopy { stroke: var(--accent); fill: rgba(255, 122, 26, 0.3); }
+.mission .i-line, .brief-art .i-line { stroke: var(--muted); stroke-width: 1.2; }
+.mission .i-sea, .brief-art .i-sea { stroke: #3d7fa6; }
+.mission .i-ship, .brief-art .i-ship { stroke: var(--ok); stroke-width: 2.2; fill: rgba(61, 220, 132, 0.18); }
 
+/* The briefing: it follows the selected mission (and launcher). */
+.brief { display: grid; gap: 14px; padding: 20px 22px 22px; border-radius: 18px; background: rgba(255, 255, 255, 0.045); border: 1px solid var(--border); }
+.brief-top { display: flex; align-items: center; gap: 18px; }
+.brief-art { flex: none; display: grid; place-items: center; width: 84px; height: 84px; border-radius: 22px; background: var(--accent-soft); border: 1px solid rgba(255, 122, 26, 0.45); }
+.brief-art svg { width: 58px; height: 58px; stroke-width: 2; }
+.brief-head { min-width: 0; }
+.brief-kind { margin: 0; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+.brief h1 { margin: 2px 0 0; font-size: clamp(26px, 3.4vw, 38px); line-height: 1.1; letter-spacing: -0.02em; }
+.brief-tag { margin: 0; max-width: 64ch; color: #c4ccd4; font-size: 14.5px; line-height: 1.55; }
+.brief-facts { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.brief-facts li { padding: 5px 11px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); border: 1px solid var(--border); font-size: 12px; }
+.brief-ship[hidden] { display: none; }
+.keys-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px 18px; color: var(--muted); font-size: 12.5px; }
+.keys-list li { display: flex; align-items: center; gap: 10px; }
+.keys-list kbd { flex: none; min-width: 48px; font-size: 10.5px; }
+
+/* The launcher cards (inside the briefing). */
 .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .card {
   display: grid; gap: 8px; padding: 12px 14px 14px; text-align: left; border-radius: 14px; color: var(--text);
@@ -623,60 +643,77 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 .card-txt { display: grid; gap: 2px; }
 .card-name { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
 .card-desc { color: var(--muted); font-size: 12.5px; }
+.card-name kbd { color: var(--muted); }
 
-.ch-go {
-  display: flex; align-items: center; gap: 16px; padding: 10px 10px 10px 16px; border-radius: 14px;
+/* The way in. */
+.menu-go {
+  display: flex; align-items: center; gap: 16px; padding: 10px 10px 10px 18px; border-radius: 14px;
   background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border);
 }
 .ch-sum { margin: 0; flex: 1; min-width: 0; display: grid; }
-#ch-summary { font-weight: 700; font-size: 14px; }
+#ch-summary { font-weight: 700; font-size: 14.5px; }
 .chooser-sub { color: var(--muted); font-size: 12px; }
 .ch-start {
-  flex: none; padding: 11px 22px; border-radius: 10px; font-weight: 700; font-size: 14px;
+  flex: none; padding: 12px 26px; border-radius: 10px; font-weight: 700; font-size: 14.5px;
   background: var(--accent); border-color: var(--accent); color: #1a0d02; box-shadow: 0 6px 20px rgba(255, 122, 26, 0.3);
 }
 .ch-start:hover { background: #ff8d3a; }
-.chooser-hint { margin: 0; text-align: center; color: var(--dim); font-size: 11.5px; }
 .chooser kbd { font-size: 10px; }
-.card-name kbd { color: var(--muted); }
-@media (pointer: coarse) { .chooser-hint, .card-name kbd { display: none; } }
+@media (pointer: coarse) { .menu-hint, .card-name kbd { display: none; } }
 @media (prefers-reduced-motion: reduce) { .card, .mission { transition: none; } .card:hover { transform: none; } }
 
-/* Phones, portrait: one column, mission rows, smaller drawings, Start pinned to the bottom. */
+/* Narrow windows: the briefing goes under the list. */
+@media (max-width: 860px) {
+  .menu-body { grid-template-columns: minmax(0, 1fr); }
+  .missions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Phones, portrait: one column, compact rows, Start pinned to the bottom. */
 @media (max-width: 640px) and (min-height: 501px) {
   .chooser { padding: calc(16px + var(--safe-t)) 12px 0; }
-  .chooser-inner { gap: 12px; margin-top: 0; }
-  .ch-tag { font-size: 12.5px; }
-  .missions { grid-template-columns: 1fr; gap: 6px; }
-  .mission { padding: 8px 10px; }
+  .menu { gap: 12px; margin-top: 0; }
+  .menu-hint { display: none; }
+  .missions { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .mission { padding: 8px 10px; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; }
   .mission svg { width: 30px; height: 30px; }
+  .brief { padding: 14px; gap: 12px; }
+  .brief-art { width: 58px; height: 58px; border-radius: 16px; }
+  .brief-art svg { width: 40px; height: 40px; }
+  .brief-top { gap: 12px; }
+  .brief-tag { font-size: 13px; }
   .cards { grid-template-columns: 1fr; gap: 8px; }
   .card { grid-template-columns: 42% 1fr; align-items: center; gap: 10px; padding: 8px 10px; }
   .card svg { height: 64px; }
   .card-name { font-size: 13.5px; }
   .card-desc { font-size: 11.5px; }
-  .ch-go {
+  .keys-list { grid-template-columns: minmax(0, 1fr); }
+  .menu-go {
     position: sticky; bottom: 0; margin: 0 -12px; padding: 10px 12px calc(10px + var(--safe-b)); border-radius: 0; border-width: 1px 0 0;
     background: rgba(11, 17, 25, 0.94); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   }
-  .ch-start { padding: 12px 16px; }
+  .ch-start { padding: 12px 18px; }
 }
-/* Phones, landscape: missions on the left, ships on the right, Start pinned to the bottom. */
+/* Phones, landscape: list on the left, briefing on the right, Start pinned to the bottom. */
 @media (max-height: 500px) {
   .chooser { padding: calc(10px + var(--safe-t)) calc(14px + var(--safe-r)) 0 calc(14px + var(--safe-l)); }
-  .chooser-inner { width: 100%; margin-top: 0; grid-template-columns: 0.8fr 1.2fr; gap: 10px 14px; align-items: start; }
-  .ch-head, .ch-go, .chooser-hint { grid-column: 1 / -1; }
-  .ch-head { display: flex; align-items: baseline; gap: 12px; text-align: left; }
-  .chooser h1 { margin: 0; font-size: 20px; }
-  .ch-tag, .chooser-hint, .chooser-sub { display: none; }
-  .missions { grid-template-columns: 1fr; gap: 6px; }
-  .mission { padding: 6px 10px; }
-  .mission svg { width: 28px; height: 28px; }
+  .menu { width: 100%; margin-top: 0; gap: 10px; }
+  .menu-head { gap: 12px; }
+  .menu-hint, .menu-brand span, .chooser-sub, .brief-keys, .brief-facts { display: none; }
+  .menu-body { grid-template-columns: 0.8fr 1.2fr; gap: 10px 14px; }
+  .missions { grid-template-columns: 1fr; gap: 5px; }
+  .mission { padding: 5px 10px; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; }
+  .mission svg { width: 26px; height: 26px; }
+  .m-txt small { display: none; }
+  .brief { padding: 10px 12px; gap: 8px; border-radius: 12px; }
+  .brief-art { width: 44px; height: 44px; border-radius: 12px; }
+  .brief-art svg { width: 30px; height: 30px; }
+  .brief h1 { font-size: 20px; }
+  .brief-tag { font-size: 12px; line-height: 1.4; }
   .cards { grid-template-columns: 1fr; gap: 6px; }
   .card { grid-template-columns: 44% 1fr; align-items: center; gap: 10px; padding: 6px 10px; }
   .card svg { height: 56px; }
   .card-desc { font-size: 11px; }
-  .ch-go { position: sticky; bottom: 0; margin: 0 -14px; padding: 8px 14px calc(8px + var(--safe-b)); border-radius: 0; border-width: 1px 0 0; background: rgba(11, 17, 25, 0.94); }
+  .menu-go { position: sticky; bottom: 0; margin: 0 -14px; padding: 8px 14px calc(8px + var(--safe-b)); border-radius: 0; border-width: 1px 0 0; background: rgba(11, 17, 25, 0.94); }
 }
 .link-btn { display: block; margin-top: 8px; padding: 0; border: 0; background: none; color: var(--accent); font-size: 12px; cursor: pointer; }
 .link-btn:hover { text-decoration: underline; background: none; }

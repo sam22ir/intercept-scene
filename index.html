@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Intercept — 3D Scene</title>
+    <title>Intercept scene</title>
   </head>
   <body>
     <canvas id="scene"></canvas>
@@ -11,42 +11,57 @@
     <div id="loading" class="loading" hidden><div class="spinner"></div><div>Building the scene…</div></div>
 
     <div id="chooser" class="chooser" hidden>
-      <div class="chooser-inner">
-        <header class="ch-head">
-          <div class="chooser-title"><span class="dot"></span>Intercept</div>
-          <h1>Plan the sortie</h1>
-          <p class="ch-tag">A target drone is catapulted off a stealth frigate. Pick what happens to it, and which ship launches it. Scrub time freely once it starts.</p>
+      <div class="menu">
+        <header class="menu-head">
+          <div class="menu-brand"><span class="dot" aria-hidden="true"></span><b>Intercept</b><span>drone · frigate · missile</span></div>
+          <p class="menu-hint"><kbd>M</kbd> next mission · <kbd>1</kbd> <kbd>2</kbd> launcher · <kbd>Enter</kbd> start</p>
         </header>
 
-        <section class="ch-step" aria-labelledby="ch-step1">
-          <h2 id="ch-step1"><span class="n">1</span>Mission</h2>
-          <div class="missions" role="radiogroup" aria-label="Mission">
-            <button class="mission" role="radio" aria-checked="true" data-mode="intercept">
-              <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-arc" d="M6 34 Q10 10 28 12"/><path class="i-drone" d="M24 10 h10 M29 6 v8"/><circle class="i-burst" cx="29" cy="11" r="6"/></svg>
-              <span><b>Intercept</b><small>A missile shoots the drone down</small></span>
-            </button>
-            <button class="mission" role="radio" aria-checked="false" data-mode="chute">
-              <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-canopy" d="M8 18 Q20 2 32 18 Z"/><path class="i-line" d="M8 18 L20 30 L32 18 M20 18 V30"/><path class="i-drone" d="M15 31 h10"/><path class="i-sea" d="M4 36 Q10 34 16 36 T28 36 T38 36"/></svg>
-              <span><b>Recovery</b><small>No missile · lands by parachute</small></span>
-            </button>
-            <button class="mission" role="radio" aria-checked="false" data-mode="pair">
-              <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-drone" d="M18 9 h10 M23 5 v8 M26 21 h10 M31 17 v8"/><path class="i-arc" d="M4 34 Q8 14 22 11 M10 36 Q16 24 29 22"/></svg>
-              <span><b>Two drones</b><small>A missile for each target</small></span>
-            </button>
-            <button class="mission" role="radio" aria-checked="false" data-mode="maneuvers">
-              <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M5 11 H22 L28 15 L22 19 H5Z"/><path class="i-ship" d="M5 25 H22 L28 29 L22 33 H5Z"/><path class="i-line" d="M12 19 V25 M33 8 Q37 22 31 34"/></svg>
-              <span><b>Naval maneuvers</b><small>Two frigates run a signalled drill</small></span>
-            </button>
-            <button class="mission" role="radio" aria-checked="false" data-mode="fly">
-              <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-drone" d="M14 22 h12 M20 17 v10 M15 19 l5-4 5 4"/><path class="i-arc" d="M5 33 Q8 28 14 28 M35 8 Q32 12 27 13"/><path class="i-line" d="M20 6 v5 M17 8.5 l3-3 3 3"/></svg>
-              <span><b>Fly the drone</b><small>Arrow keys · E engine · L catapult · F missile</small></span>
-            </button>
-          </div>
-        </section>
+        <div class="menu-body">
+          <section class="menu-list" aria-labelledby="ch-step1">
+            <h2 id="ch-step1">Mission</h2>
+            <div class="missions" role="radiogroup" aria-label="Mission">
+          <button class="mission" role="radio" aria-checked="true" data-mode="intercept">
+            <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-arc" d="M6 34 Q10 10 28 12"/><path class="i-drone" d="M24 10 h10 M29 6 v8"/><circle class="i-burst" cx="29" cy="11" r="6"/></svg>
+            <span class="m-txt"><b>Intercept</b><small>A missile shoots the drone down</small></span>
+            <em class="m-kind">Replay</em>
+          </button>
+          <button class="mission" role="radio" aria-checked="false" data-mode="chute">
+            <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-canopy" d="M8 18 Q20 2 32 18 Z"/><path class="i-line" d="M8 18 L20 30 L32 18 M20 18 V30"/><path class="i-drone" d="M15 31 h10"/><path class="i-sea" d="M4 36 Q10 34 16 36 T28 36 T38 36"/></svg>
+            <span class="m-txt"><b>Recovery</b><small>No missile · lands by parachute</small></span>
+            <em class="m-kind">Replay</em>
+          </button>
+          <button class="mission" role="radio" aria-checked="false" data-mode="pair">
+            <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-drone" d="M18 9 h10 M23 5 v8 M26 21 h10 M31 17 v8"/><path class="i-arc" d="M4 34 Q8 14 22 11 M10 36 Q16 24 29 22"/></svg>
+            <span class="m-txt"><b>Two drones</b><small>A missile for each target</small></span>
+            <em class="m-kind">Replay</em>
+          </button>
+          <button class="mission" role="radio" aria-checked="false" data-mode="maneuvers">
+            <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M5 11 H22 L28 15 L22 19 H5Z"/><path class="i-ship" d="M5 25 H22 L28 29 L22 33 H5Z"/><path class="i-line" d="M12 19 V25 M33 8 Q37 22 31 34"/></svg>
+            <span class="m-txt"><b>Naval maneuvers</b><small>Two frigates run a signalled drill</small></span>
+            <em class="m-kind">Drill</em>
+          </button>
+          <button class="mission" role="radio" aria-checked="false" data-mode="fly">
+            <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-drone" d="M14 22 h12 M20 17 v10 M15 19 l5-4 5 4"/><path class="i-arc" d="M5 33 Q8 28 14 28 M35 8 Q32 12 27 13"/><path class="i-line" d="M20 6 v5 M17 8.5 l3-3 3 3"/></svg>
+            <span class="m-txt"><b>Fly the drone</b><small>Arrow keys · E engine · L catapult · F missile</small></span>
+            <em class="m-kind">Manual</em>
+          </button>
+            </div>
+          </section>
 
-        <section class="ch-step" aria-labelledby="ch-step2">
-          <h2 id="ch-step2"><span class="n">2</span>Ship</h2>
-          <div class="cards" role="radiogroup" aria-label="Ship">
+          <section class="brief" aria-live="polite" aria-labelledby="ch-title">
+            <div class="brief-top">
+              <div class="brief-art" id="ch-art" aria-hidden="true"></div>
+              <div class="brief-head">
+                <p class="brief-kind" id="ch-kind"></p>
+                <h1 id="ch-title"></h1>
+              </div>
+            </div>
+            <p class="brief-tag" id="ch-tag"></p>
+            <ul class="brief-facts" id="ch-facts"></ul>
+            <div class="brief-ship" aria-labelledby="ch-step2">
+              <h2 id="ch-step2">Launcher</h2>
+              <div class="cards" role="radiogroup" aria-label="Ship">
             <button class="card" role="radio" aria-checked="false" data-ship="fwd">
               <svg viewBox="0 0 320 110" aria-hidden="true">
               <path class="sea" d="M0 92 Q20 88 40 92 T80 92 T120 92 T160 92 T200 92 T240 92 T280 92 T320 92 V110 H0Z"/>
@@ -84,13 +99,18 @@
               <span class="card-txt"><span class="card-name"><kbd>2</kbd>Aft launcher</span><span class="card-desc">Box on the hangar roof. Fires astern at a drone coming in from behind.</span></span>
             </button>
           </div>
-        </section>
+            </div>
+            <div class="brief-keys">
+              <h2>Controls</h2>
+              <ul class="keys-list" id="ch-keys"></ul>
+            </div>
+          </section>
+        </div>
 
-        <div class="ch-go">
+        <footer class="menu-go">
           <p class="ch-sum"><span id="ch-summary"></span><small id="chooser-sub" class="chooser-sub"></small></p>
           <button id="ch-start" class="ch-start" type="button">Start simulation <span aria-hidden="true">→</span></button>
-        </div>
-        <p class="chooser-hint"><kbd>M</kbd> mission · <kbd>1</kbd> <kbd>2</kbd> ship · <kbd>Enter</kbd> start · you can change both any time</p>
+        </footer>
       </div>
     </div>
 
