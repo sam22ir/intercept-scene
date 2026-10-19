@@ -1008,3 +1008,12 @@ body.mission-maneuvers .marker { font-size: 11px; font-weight: 500; }
   body.mission-maneuvers .topbar button.icon { min-width: 38px; padding: 8px 6px; }
   body.mission-maneuvers .topbar button.icon svg { width: 20px; height: 20px; }
 }
+
+/* Drill, desktop: the map sits at the bottom right and the playback panel fills the bottom left. */
+@media (min-width: 641px) and (min-height: 501px) {
+  body.mission-maneuvers .minimap { left: auto; right: calc(var(--gap) + var(--safe-r)); }
+  body.mission-maneuvers.has-map .timeline {
+    left: calc(var(--gap) + var(--safe-l)); right: auto; transform: none;
+    width: min(1000px, calc(100vw - var(--gap) * 3 - var(--safe-l) - var(--safe-r) - var(--map-d)));
+  }
+}
