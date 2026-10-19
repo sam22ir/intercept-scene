@@ -218,6 +218,7 @@ const lamps = { alg: createLamp(ships.alg.ship), rus: createLamp(ships.rus.ship)
 const _from = new THREE.Vector3();
 const _to = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
+const _dir = new THREE.Vector3();
 const _flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI);
 function updateLamps(t) {
   for (const id of ['rus', 'alg']) {
