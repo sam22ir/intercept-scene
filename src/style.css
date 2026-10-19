@@ -1091,3 +1091,11 @@ body.mission-maneuvers .marker { font-size: 11px; font-weight: 500; }
 .mh-sub { flex-wrap: wrap; gap: 3px 8px; }
 .mh-sub .chip { white-space: nowrap; }
 .mh-btns { align-self: flex-start; }
+
+/* Drill, desktop: the call (STANDBY, EXECUTE, A STATION) sits just above the map, centred on it. */
+@media (min-width: 641px) and (min-height: 501px) {
+  body.mission-maneuvers .shot-caption {
+    top: auto; left: auto; transform: none; right: calc(var(--gap) + var(--safe-r)); bottom: calc(var(--gap) + var(--safe-b) + var(--map-d) + 8px);
+    width: var(--map-d); box-sizing: border-box; text-align: center; letter-spacing: 0.12em; padding: 5px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+}
