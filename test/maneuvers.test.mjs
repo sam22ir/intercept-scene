@@ -172,6 +172,13 @@ describe('naval maneuvers: orders, signals and timeline', () => {
     assert.ok(rus > 20 && alg > 20, 'both lamps flash');
   });
 
+  it('sounds both horns at the close pass: RUS as she comes up, ALG answering after', () => {
+    const rus = CUES.find((c) => c.kind === 'horn' && c.ship === 'rus');
+    const alg = CUES.find((c) => c.kind === 'horn' && c.ship === 'alg' && c.t > PASS.t);
+    assert.ok(rus && rus.t < PASS.t && rus.t > PASS.t - 5, 'RUS blasts just before the pass');
+    assert.ok(alg && alg.t > PASS.t && alg.t < PASS.t + 5, 'ALG answers just after');
+  });
+
   it('has sound cues in time order: a horn at each EXECUTE, and a click per flash', () => {
     for (let i = 1; i < CUES.length; i++) assert.ok(CUES[i].t >= CUES[i - 1].t);
     for (const p of PHASES) assert.ok(CUES.some((c) => c.kind === 'horn' && c.ship === 'alg' && Math.abs(c.t - p.tx) < 1e-9), `${p.id} horn at EXECUTE`);

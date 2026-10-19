@@ -302,11 +302,14 @@ export function lampOn(t, id) {
 }
 
 // Sound cues the scene plays, in time order: one long blast of ALG's horn at each EXECUTE (the ships start
-// the maneuver), and a click at the start of every flash of the lamp.
+// the maneuver), a blast from RUS and an answer from ALG at the close pass, and a click at the start of every flash of the lamp.
 // {t, kind: 'horn' | 'click', ship, len (s, horns)}
 export const CUES = (() => {
   const cues = [];
   for (const p of PHASES) cues.push({ t: p.tx, kind: 'horn', ship: 'alg', len: 2.2 });
+  // The close pass: RUS sounds her horn as she comes up to ALG and ALG answers just after the pass.
+  cues.push({ t: PASS.t - 2, kind: 'horn', ship: 'rus', len: 2.4 });
+  cues.push({ t: PASS.t + 1, kind: 'horn', ship: 'alg', len: 2.4 });
   for (const id of ['rus', 'alg']) {
     let on = false;
     for (let t = LAMP_WINDOW[id][0]; t < LAMP_WINDOW[id][1]; t += 0.05) {
