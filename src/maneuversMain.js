@@ -55,7 +55,7 @@ for (const type of ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown
 }
 canvas.addEventListener('webglcontextrestored', invalidate);
 
-const env = createEnvironment(renderer, scene);
+const env = createEnvironment(renderer, scene, { calm: true });
 env.setShadowSize(1024);
 
 // --- Ships -------------------------------------------------------------------------------------

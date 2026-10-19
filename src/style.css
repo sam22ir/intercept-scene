@@ -1106,3 +1106,10 @@ body.mission-maneuvers .tag:not(.tag-range) {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 body.mission-maneuvers .tag:not(.tag-range)::after { background: rgba(255, 255, 255, 0.35); }
+
+/* Drill: soft dark scrims at the top and left edges keep the white readouts and chapter names legible over the sky. */
+body.mission-maneuvers.playing::before {
+  content: ''; position: fixed; inset: 0; z-index: 2; pointer-events: none;
+  background: linear-gradient(180deg, rgba(5, 10, 18, 0.55), rgba(5, 10, 18, 0) 230px), linear-gradient(90deg, rgba(5, 10, 18, 0.4), rgba(5, 10, 18, 0) 300px);
+}
+body.mission-maneuvers.ui-hidden::before { display: none; }

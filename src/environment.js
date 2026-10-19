@@ -6,8 +6,12 @@ const SUN_ELEVATION = 24; // degrees
 const SUN_AZIMUTH = 215;
 const HORIZON = new THREE.Color(0.66, 0.74, 0.84);
 const ZENITH = new THREE.Color(0.2, 0.38, 0.66);
+const CALM_HORIZON = new THREE.Color(0.5, 0.65, 0.82);
 
-export function createEnvironment(renderer, scene) {
+// `calm` is the drill's look: a deeper, quieter sea and a bluer sky, so ships and readouts stand out (flatter
+// distant waves with no moire stripes, less sky reflection and glitter).
+export function createEnvironment(renderer, scene, { calm = false } = {}) {
+  const horizon = calm ? CALM_HORIZON : HORIZON;
   const sunDir = new THREE.Vector3().setFromSphericalCoords(
     1, THREE.MathUtils.degToRad(90 - SUN_ELEVATION), THREE.MathUtils.degToRad(SUN_AZIMUTH),
   );
@@ -15,8 +19,8 @@ export function createEnvironment(renderer, scene) {
   const sky = new Sky();
   sky.scale.setScalar(20000);
   const u = sky.material.uniforms;
-  u.turbidity.value = 5;
-  u.rayleigh.value = 1.4;
+  u.turbidity.value = calm ? 2.5 : 5;
+  u.rayleigh.value = calm ? 2.4 : 1.4;
   u.mieCoefficient.value = 0.004;
   u.mieDirectionalG.value = 0.82;
   u.sunPosition.value.copy(sunDir);
@@ -33,7 +37,7 @@ export function createEnvironment(renderer, scene) {
   scene.environmentIntensity = 0.7;
   pmrem.dispose();
 
-  scene.fog = new THREE.Fog(HORIZON, 3000, 16000);
+  scene.fog = new THREE.Fog(horizon, 3000, 16000);
 
   const sun = new THREE.DirectionalLight(0xfff1dc, 2.7);
   sun.castShadow = true;
@@ -43,7 +47,7 @@ export function createEnvironment(renderer, scene) {
   scene.add(sun, sun.target);
   scene.add(new THREE.HemisphereLight(0xcfe0ff, 0x203040, 0.6));
 
-  const ocean = createOcean(sunDir);
+  const ocean = createOcean(sunDir, calm, horizon);
   scene.add(ocean);
   const clouds = createClouds();
   scene.add(clouds);
@@ -113,16 +117,17 @@ function waveSet() {
   return { dirs, wl, amp, phase };
 }
 
-function createOcean(sunDir) {
+function createOcean(sunDir, calm, horizon) {
   const waves = waveSet();
   const material = new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
       uSunDir: { value: sunDir },
       uSunColor: { value: new THREE.Color(1.0, 0.93, 0.8) },
-      uDeep: { value: new THREE.Color(0.006, 0.045, 0.085) },
-      uScatter: { value: new THREE.Color(0.02, 0.13, 0.16) },
-      uHorizon: { value: HORIZON },
+      uCalm: { value: calm ? 1 : 0 },
+      uDeep: { value: calm ? new THREE.Color(0.012, 0.075, 0.13) : new THREE.Color(0.006, 0.045, 0.085) },
+      uScatter: { value: calm ? new THREE.Color(0.03, 0.18, 0.24) : new THREE.Color(0.02, 0.13, 0.16) },
+      uHorizon: { value: horizon },
       uZenith: { value: ZENITH },
       uFogNear: { value: 3000 },
       uFogFar: { value: 16000 },
@@ -144,7 +149,7 @@ function createOcean(sunDir) {
       #define NW ${WAVE_COUNT}
       uniform float uTime;
       uniform vec3 uSunDir, uSunColor, uDeep, uScatter, uHorizon, uZenith;
-      uniform float uFogNear, uFogFar, uShipX;
+      uniform float uFogNear, uFogFar, uShipX, uCalm;
       uniform vec2 uDirs[NW];
       uniform float uWl[NW], uAmp[NW], uPhase[NW];
       varying vec3 vWorld;
@@ -197,13 +202,13 @@ function createOcean(sunDir) {
           float k = 6.2831853 / uWl[i];
           float w = sqrt(9.81 * k);
           // Fade each wave before it aliases (shorter waves fade sooner).
-          float fade = 1.0 - smoothstep(uWl[i] * 12.0, uWl[i] * 60.0, dist);
+          float fade = 1.0 - smoothstep(uWl[i] * mix(12.0, 6.0, uCalm), uWl[i] * mix(60.0, 30.0, uCalm), dist);
           float ph = dot(uDirs[i], vWorld.xz) * k - w * uTime + uPhase[i];
-          grad += uDirs[i] * (uAmp[i] * k * cos(ph) * fade);
+          grad += uDirs[i] * (uAmp[i] * mix(1.0, 0.6, uCalm) * k * cos(ph) * fade);
         }
         vec3 n = normalize(vec3(-grad.x, 1.0, -grad.y));
         // Distant water flattens toward a smooth average normal.
-        n = normalize(mix(n, vec3(0.0, 1.0, 0.0), smoothstep(800.0, 6000.0, dist) * 0.6));
+        n = normalize(mix(n, vec3(0.0, 1.0, 0.0), smoothstep(mix(800.0, 250.0, uCalm), mix(6000.0, 2500.0, uCalm), dist) * mix(0.6, 0.85, uCalm)));
         vec3 v = toCam / dist;
         float ndv = max(dot(n, v), 0.0);
         float fresnel = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
@@ -214,8 +219,8 @@ function createOcean(sunDir) {
         float sss = pow(max(dot(normalize(vec3(grad.x, 0.2, grad.y)), -v), 0.0), 2.0);
         vec3 water = mix(uDeep, uScatter, 0.25 + 0.5 * ndv * ndv + 0.6 * sss);
         float sunDot = max(dot(r, uSunDir), 0.0);
-        vec3 spec = uSunColor * (pow(sunDot, 700.0) * 5.0 + pow(sunDot, 70.0) * 0.12);
-        vec3 col = mix(water, sky, fresnel * 0.9) + spec;
+        vec3 spec = uSunColor * (pow(sunDot, 700.0) * 5.0 + pow(sunDot, 70.0) * 0.12) * mix(1.0, 0.4, uCalm);
+        vec3 col = mix(water, sky, fresnel * mix(0.9, 0.55, uCalm)) + spec;
         float foam = wakeFoam(vWorld.xz, dist);
         vec3 foamCol = vec3(0.82, 0.87, 0.9) * (0.55 + 0.45 * max(uSunDir.y, 0.0));
         col = mix(col, foamCol, foam);
