@@ -378,6 +378,30 @@ function enterBridge(id) {
   rig.transition = null; // straight onto the bridge, no fly-in
   rig.getPos(rig.last);
 }
+// The Formation view keeps its angle to the ships' course: the camera turns about the formation as the ships
+// turn, following their mean heading (the mid point of the two when the courses differ).
+let formHeading = null;
+const meanHeading = () => {
+  const a = ships.alg.state.heading, b = ships.rus.state.heading;
+  return Math.atan2(Math.sin(a) + Math.sin(b), Math.cos(a) + Math.cos(b));
+};
+function applyFormationTurn() {
+  if (rig.id !== 'formation') { formHeading = null; return; }
+  const h = meanHeading();
+  if (formHeading === null) { formHeading = h; return; }
+  let d = h - formHeading;
+  while (d > Math.PI) d -= 2 * Math.PI;
+  while (d < -Math.PI) d += 2 * Math.PI;
+  formHeading = h;
+  if (d === 0) return;
+  const rot = -d; // a ship's group turns by -heading
+  const c = Math.cos(rot), n = Math.sin(rot);
+  const turn = (v) => { const x = v.x, z = v.z; v.x = x * c + z * n; v.z = -x * n + z * c; };
+  _off.subVectors(camera.position, controls.target);
+  turn(_off);
+  camera.position.copy(controls.target).add(_off);
+  if (rig.transition) turn(rig.transition.fromOffset);
+}
 function applyBridge() {
   if (!bridgeId || rig.id !== bridgeId) return;
   const g = ships[bridgeId].ship.group;
@@ -861,6 +885,7 @@ renderer.setAnimationLoop((now) => {
   ou.uShipX.value = 1e7; // no single-ship wake: each ship has its own ribbon
   rig.update();
   applyBridge();
+  applyFormationTurn();
   applyAutoZoom(dt);
   controls.update();
   if (camera.position.y < 1) camera.position.y = 1;
