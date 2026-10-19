@@ -39,6 +39,7 @@ const camera = {
 
 let F;
 let audio;
+let engineLevel;
 let sim;
 before(async () => {
   globalThis.__SHIP_VARIANT = 'fwd';
@@ -48,7 +49,8 @@ before(async () => {
   globalThis.addEventListener = (ev, fn) => { handlers[ev] = fn; };
   const url = (f) => `${pathToFileURL(new URL(f, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')).href}?flyaudio`;
   F = await import(url('../src/fly.js'));
-  const { createFlyAudio } = await import(url('../src/flyAudio.js'));
+  const { createFlyAudio, engineLevel: level } = await import(url('../src/flyAudio.js'));
+  engineLevel = level;
   audio = createFlyAudio();
   handlers.keydown(); // the first key press creates the context
   await tick();
@@ -64,6 +66,18 @@ describe('fly audio', () => {
     assert.equal(audio.state, 'running');
     assert.deepEqual([...audio.loaded].sort(), ['boom', 'booster', 'clunk', 'engine', 'hiss', 'hum', 'launch', 'motor', 'splash', 'surf', 'wind']);
     assert.equal(made.loops, 6, 'engine, booster, missile motor, ship hum, wind, surf');
+  });
+
+  it('the engine is silent while it is off, rises with the run-up and falls away after a cut', () => {
+    assert.equal(engineLevel(0), 0, 'stopped');
+    assert.equal(engineLevel(0.03), 0, 'barely turning');
+    assert.ok(engineLevel(0.3) > 0.1 && engineLevel(0.3) < engineLevel(1), 'run-up');
+    assert.ok(engineLevel(1) >= 0.55, 'full power');
+    assert.equal(engineLevel(1, true), 0, 'wrecked');
+    let prev = 0;
+    for (let s = 0; s <= 1.0001; s += 0.02) { const l = engineLevel(s); assert.ok(l >= prev - 1e-9, `rises smoothly at ${s}`); prev = l; }
+    // After a cut the prop winds down (e^(-t/1.4)): quiet within a few seconds.
+    assert.equal(engineLevel(Math.exp(-5 / 1.4)), 0);
   });
 
   it('updates through a whole flight without throwing: deck, catapult, flight, missile, explosion', () => {

@@ -27,6 +27,10 @@ const SHOTS = {
   splash: { level: 0.6, ref: 70 },
 };
 
+// How loud the engine is for a prop speed `spin` (0 stopped .. 1 full power): silent while it is off, fading
+// in with the run-up and out as the prop winds down after a cut, and silent once the drone is wrecked.
+export const engineLevel = (spin, wrecked = false) => (wrecked ? 0 : smoothstep(spin, 0.04, 0.12) * (0.1 + 0.5 * spin));
+
 export function createFlyAudio() {
   const AudioCtx = globalThis.AudioContext ?? globalThis.webkitAudioContext;
   let ctx = null;
@@ -219,7 +223,7 @@ export function createFlyAudio() {
     // The engine: pitch follows the prop (and a little the airspeed), Doppler-shifted; it dies with the drone.
     const fast = sim.phase === 'flight' ? 0.92 + 0.1 * (sim.speed / 75) : 1;
     loopRate(v.engine, (0.7 + 0.6 * sim.spin) * dop * fast);
-    place(v.engine, sim.pos, wrecked ? 0 : 0.1 + 0.5 * sim.spin, 45);
+    place(v.engine, sim.pos, engineLevel(sim.spin, wrecked), 45);
 
     // The booster canister under the tail, from the stroke to just past release.
     const burn = sim.tLaunch === null ? -1 : sim.cradleT - T_SPOOL;
