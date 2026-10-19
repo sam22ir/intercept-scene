@@ -566,7 +566,7 @@ function updateReadout(t) {
   const chip = t >= exercise.tEnd ? ['Complete', 'ok']
     : order.state === 'standby' ? [`Standby ${fmtCount(order.count)}`, 'warn']
       : order.state === 'execute' ? ['Execute', 'ok']
-        : order.state === 'underway' ? [`Under way · station in ${fmtCount(order.count)}`, 'live']
+        : order.state === 'underway' ? [`Under way · ${fmtCount(order.count)}`, 'live']
           : order.state === 'station' || order.state === 'onstation' ? ['A station', 'ok'] : ['Standing by', ''];
   setText(bar.title, phase.title);
   // The plain words under the signal's own shorthand (TURN STBD 9 is a turn of 90 degrees).
@@ -591,9 +591,14 @@ function updateReadout(t) {
     ? `<div class="mh-cell cpa" title="Closest point of approach of ${NAME.rus} to ${NAME.alg}"><span>CPA</span><b>${Math.round(pass.range / YD)}</b>`
       + `<em>yd · ${t < pass.t ? `in ${fmtClock(pass.t - t)}` : 'passed'}</em></div>`
     : '';
+  // During a station change, the ordered range and bearing after an arrow while the ship is not there yet.
+  const goal = STATIONS[phase.id];
+  const working = order.state === 'execute' || order.state === 'underway';
+  const goalRange = goal && working && Math.abs(rel.range / YD - goal[1]) > 5 ? `<i>→${goal[1]}</i>` : '';
+  const goalBrg = goal && working && angGap(rel.bearing, goal[0]) > 1.5 ? ` <i>→${pad3(goal[0])}°</i>` : '';
   const html = `<div class="mh-row">${mhCell('alg', ships.alg.state, t)}${mhCell('rus', ships.rus.state, t)}`
     + `<div class="mh-cell" title="Station: ${NAME[rel.other]}'s range and true bearing from the guide, ${NAME[rel.guide]}">`
-    + `<span>${NAME[rel.other]} from ${NAME[rel.guide]}</span><b>${Math.round(rel.range / YD)}</b><em>yd · ${pad3(rel.bearing)}°</em></div>${cpa}</div>`;
+    + `<span>${NAME[rel.other]} from ${NAME[rel.guide]}</span><b>${Math.round(rel.range / YD)}${goalRange}</b><em>yd · ${pad3(rel.bearing)}°${goalBrg}</em></div>${cpa}</div>`;
   if (html !== lastLive) { liveEl.innerHTML = html; lastLive = html; }
   if (phase !== lastPhase) {
     lastPhase = phase;

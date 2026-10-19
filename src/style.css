@@ -1085,3 +1085,9 @@ body.mission-maneuvers .marker { font-size: 11px; font-weight: 500; }
   body.mission-maneuvers .mh-ships .mh-cell b { font-size: 12.5px; }
   body.mission-maneuvers .mh-ships .mh-cell em { font-size: 10.5px; min-width: 46px; }
 }
+
+/* The order card: the title may shrink, and the state chip wraps under the line instead of running off the card. */
+.mh-title { min-width: 0; }
+.mh-sub { flex-wrap: wrap; gap: 3px 8px; }
+.mh-sub .chip { white-space: nowrap; }
+.mh-btns { align-self: flex-start; }
