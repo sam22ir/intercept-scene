@@ -1,10 +1,12 @@
 import './style.css';
 
 // Entry point. The ship fit and the mission are chosen on a start screen, and the page
-// always opens on it: a ?ship=/?mode= in the URL only preselects the choices. It goes
-// straight into the scene for a shared link that carries a moment (?t, ?focus, ?cam,
-// #path), for ?start=1, and for the app's own reloads (the path editor and the
-// engagement panel set sessionStorage 'intercept.skip' before reloading).
+// ALWAYS opens on it, whatever the address: a ?ship=/?mode= only preselects the choices, and
+// a shared link's moment (?t, ?focus, ?cam, #path) waits until Start is pressed. The only ways
+// past it are ?start=1 (scripted and headless runs; it removes itself from the address bar
+// once used) and the app's own reloads (the path editor, the engagement panel and the
+// maneuvers' standby stepper set sessionStorage 'intercept.skip' before reloading, which
+// is read once).
 // scenario.js reads `globalThis.__SHIP_VARIANT` / `__SCENARIO` (set here) or
 // ?ship=fwd|aft and ?mode=intercept|chute|pair at import time, so the scene is
 // imported only after a choice is made: no page reload needed.
@@ -50,7 +52,8 @@ async function launch(id) {
     const url = new URL(location.href);
     url.searchParams.set('ship', id);
     url.searchParams.set('mode', mode);
-    history.replaceState(null, '', url); // keeps a refresh on the same ship
+    url.searchParams.delete('start'); // a scripted start is used once: a refresh shows the menu again
+    history.replaceState(null, '', url); // keeps the ship and mission preselected on a refresh
   } catch { /* not allowed in some viewers: fine */ }
   $('#chooser').hidden = true;
   document.body.classList.add('playing');
@@ -146,15 +149,15 @@ const skipChooser = read('sessionStorage', 'intercept.skip') === '1';
 write('sessionStorage', 'intercept.skip', '0');
 let fromUrl = null;
 let modeFromUrl = null;
-let deepLink = false;
+let scripted = false;
 try {
   const params = new URLSearchParams(location.search);
   fromUrl = params.get('ship');
   modeFromUrl = params.get('mode');
-  deepLink = ['t', 'focus', 'cam', 'start'].some((k) => params.has(k)) || /(?:^#|&)path=/.test(location.hash);
+  scripted = params.has('start'); // ?start=1: for scripted and headless runs only
 } catch { /* ignore */ }
 const rememberedMode = read('localStorage', 'intercept.mode');
 mode = MODES.includes(modeFromUrl) ? modeFromUrl : (MODES.includes(rememberedMode) ? rememberedMode : 'intercept');
 const validShip = fromUrl === 'fwd' || fromUrl === 'aft';
-if ((validShip || mode === 'maneuvers' || mode === 'fly') && !forceChooser && (skipChooser || deepLink)) launch(validShip ? fromUrl : 'fwd');
+if ((validShip || mode === 'maneuvers' || mode === 'fly') && !forceChooser && (skipChooser || scripted)) launch(validShip ? fromUrl : 'fwd');
 else showChooser(validShip ? fromUrl : null);
