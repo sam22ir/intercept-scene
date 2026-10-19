@@ -1,3 +1,4 @@
+import { shipNames } from './shipNames.js';
 import { shipState, relation, headingDeg, orderStatus, EXECUTE_FLASH, STATION_FLASH, YD } from './maneuvers.js';
 
 // Exercise map for the naval maneuvers mission: the same round translucent disc as the intercept
@@ -131,9 +132,9 @@ export function createManeuverMap() {
     arrow(bx, by, b.heading, COLORS.rus);
     ctx.font = '600 9px system-ui, sans-serif';
     ctx.fillStyle = COLORS.alg;
-    ctx.fillText('ALG', ax, ay - 10);
+    ctx.fillText(shipNames.alg, ax, ay - 10);
     ctx.fillStyle = COLORS.rus;
-    ctx.fillText('RUS', bx, by - 10);
+    ctx.fillText(shipNames.rus, bx, by - 10);
 
     // EXECUTE (the ships start the maneuver): a green pulse; A STATION (they are in position): a white one.
     const order = orderStatus(t);

@@ -18,6 +18,7 @@ import {
 } from './maneuvers.js';
 import { stripShareParams } from './share.js';
 import { menuText } from './menu.js';
+import { shipNames, rn, saveNames, NAME_MAX } from './shipNames.js';
 
 // Entry point of the second mission, "Naval maneuvers" (see maneuvers.js). Two frigates, ALG and
 // RUS, fly through the signalled maneuvers of the briefing deck. Like the intercept scene, every
@@ -129,7 +130,7 @@ function trackLine(id) {
   const mk = (geo, color, width, opacity, dashed) => {
     const m = new LineMaterial({
       color, linewidth: width, transparent: true, opacity, depthWrite: false, resolution, worldUnits: false,
-      ...(dashed ? { dashed: true, dashSize: 30, gapSize: 30 } : {}),
+      ...(dashed ? { dashed: true, dashSize: 3, gapSize: 12 } : {}),
     });
     lineMats.push(m);
     const l = new Line2(geo, m);
@@ -138,13 +139,12 @@ function trackLine(id) {
     scene.add(l);
     return l;
   };
-  const plan = mk(new LineGeometry().setPositions(flat), COLORS[id], 1.1, 0.3, true);
-  plan.computeLineDistances();
+  // Only the part already steamed, as dots: there is no preview of the track ahead.
   const doneGeo = new LineGeometry().setPositions(flat);
-  const spent = new THREE.Color(COLORS[id]).lerp(new THREE.Color(0x7d8791), 0.6);
-  const done = mk(doneGeo, spent, 2, 0.9, false);
+  const done = mk(doneGeo, COLORS[id], 3, 0.9, true);
+  done.computeLineDistances();
   const segs = flat.length / 3 - 1;
-  return { plan, done, set(t) { doneGeo.instanceCount = Math.max(0, Math.min(segs, Math.ceil((t / exercise.tEnd) * segs))); } };
+  return { plan: done, done, set(t) { doneGeo.instanceCount = Math.max(0, Math.min(segs, Math.ceil((t / exercise.tEnd) * segs))); } };
 }
 const tracks = { alg: trackLine('alg'), rus: trackLine('rus') };
 const trackGroupVisible = (on) => { for (const k of Object.values(tracks)) k.plan.visible = k.done.visible = on; };
@@ -283,10 +283,10 @@ function tag(kind, title, color) {
   labelGroup.add(obj);
   return { obj, title: el.querySelector('.tag-title'), body: el.querySelector('.tag-body') };
 }
-const tags = { alg: tag('ship', 'ALG', '#3ddc84'), rus: tag('ship', 'RUS', '#ff7a1a') };
+const tags = { alg: tag('ship', shipNames.alg, '#3ddc84'), rus: tag('ship', shipNames.rus, '#ff7a1a') };
 const stationTag = tag('missile', 'STATION', '#ffffff');
 const pad3 = (n) => String(Math.round(n) % 360).padStart(3, '0');
-const NAME = { alg: 'ALG', rus: 'RUS' };
+const NAME = { alg: shipNames.alg, rus: shipNames.rus };
 const fmtTag = (s) => `${pad3(headingDeg(s.heading))}° · ${(s.speed / KT).toFixed(0)}<span> kn</span>`;
 const _mid = new THREE.Vector3();
 function updateTags(t) {
@@ -338,7 +338,7 @@ const targets = {
 // The camera buttons of the bottom bar: Free, ALG, RUS, Formation.
 const focusButtons = [...document.querySelectorAll('[data-focus]')];
 const FOCUS_ALIAS = { plane: 'alg', missile: 'rus', ship: 'formation' };
-const FOCUS_LABEL = { alg: 'ALG', rus: 'RUS', formation: 'Formation' };
+const FOCUS_LABEL = { alg: shipNames.alg, rus: shipNames.rus, formation: 'Formation' };
 for (const b of focusButtons) {
   const id = FOCUS_ALIAS[b.dataset.focus];
   if (id) { b.dataset.focus = id; b.textContent = FOCUS_LABEL[id]; b.disabled = false; b.title = `Look at ${FOCUS_LABEL[id]} (${{ alg: 1, rus: 2, formation: 3 }[id]})`; }
@@ -406,7 +406,7 @@ const hudLive = hudRoot.querySelector('.hud-live');
 const hudDebrief = hudRoot.querySelector('.hud-debrief');
 hudDebrief.hidden = true;
 const tile = (label, value, unit, cls = '') => `<div class="tile ${cls}"><span>${label}</span><b>${value}${unit ? `<small>${unit}</small>` : ''}</b></div>`;
-const redTokens = (s) => s.replace(/\b(AS|AB|AC|ALG|RUS)\b/g, '<span class="red">$1</span>');
+const redTokens = (s) => rn(s).replace(new RegExp(`\\b(AS|AB|AC|${shipNames.alg}|${shipNames.rus})\\b`, 'g'), '<span class="red">$1</span>');
 let lastPhase = null;
 let lastLive = '';
 // Two small cards attached under the top bar: the order's state and the ships' readouts. The signal text is
@@ -422,7 +422,7 @@ const bar = {
 const liveEl = hudLive.querySelector('[data-live]');
 let serialEl = null; // inside the Signal dropdown
 let signalTitle = null;
-const serialHtml = (phase) => (phase.note ? `<div class="serial-note">${phase.note}</div>` : '') + (phase.speeds ? `<div class="serial-speeds">${phase.speeds.map((s) => `<div>${s}</div>`).join('')}</div>` : '')
+const serialHtml = (phase) => (phase.note ? `<div class="serial-note">${rn(phase.note)}</div>` : '') + (phase.speeds ? `<div class="serial-speeds">${phase.speeds.map((s) => `<div>${s}</div>`).join('')}</div>` : '')
   + phase.serial.map((blk) => `<div class="serial-box">${blk.head ? `<div class="serial-head">${blk.head}</div>` : ''}${blk.lines.map((l) => `<div>${redTokens(l)}</div>`).join('')}</div>`).join('');
 // A countdown: seconds under a minute, m:ss above.
 const fmtCount = (sec) => (sec >= 60 ? `${Math.floor(sec / 60)}:${String(Math.ceil(sec % 60) % 60).padStart(2, '0')}` : `${Math.ceil(sec)}`);
@@ -437,7 +437,7 @@ function updateBanner(order) {
   if (text + cls === lastBanner) return;
   lastBanner = text + cls;
   banner.hidden = !text;
-  banner.textContent = text;
+  banner.textContent = rn(text);
   banner.classList.remove('standby', 'execute', 'station');
   if (cls) banner.classList.add(cls);
 }
@@ -453,7 +453,7 @@ function mhCell(id, s, t) {
     + `<b>${pad3(hdg)}°${toHdg}</b><em>${kn.toFixed(0)}${toKn} kn</em></div>`;
 }
 const fmtClock = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
-const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
+const setText = (el, raw) => { const text = rn(raw); if (el.textContent !== text) el.textContent = text; };
 function updateReadout(t) {
   const order = orderStatus(t);
   const phase = order.phase;
@@ -477,7 +477,7 @@ function updateReadout(t) {
   // Closest point of approach, through the skim: the range RUS will pass at and when.
   const pass = exercise.pass;
   const cpa = phase.id === 'skim' && t < pass.t + 60
-    ? `<div class="mh-cell cpa" title="Closest point of approach of RUS to ALG"><span>CPA</span><b>${Math.round(pass.range / YD)}</b>`
+    ? `<div class="mh-cell cpa" title="Closest point of approach of ${NAME.rus} to ${NAME.alg}"><span>CPA</span><b>${Math.round(pass.range / YD)}</b>`
       + `<em>yd · ${t < pass.t ? `in ${fmtClock(pass.t - t)}` : 'passed'}</em></div>`
     : '';
   const html = `<div class="mh-row">${mhCell('alg', ships.alg.state, t)}${mhCell('rus', ships.rus.state, t)}`
@@ -487,7 +487,7 @@ function updateReadout(t) {
   if (phase !== lastPhase) {
     lastPhase = phase;
     serialEl.innerHTML = serialHtml(phase);
-    signalTitle.textContent = phase.title;
+    signalTitle.textContent = rn(phase.title);
   }
   updateBanner(order);
   updateDebrief(t);
@@ -514,7 +514,7 @@ function updateDebrief(t) {
   if (on === debriefShown) return;
   debriefShown = on;
   hudDebrief.hidden = !on;
-  if (on && !hudDebrief.firstChild) hudDebrief.innerHTML = debriefHtml;
+  if (on && !hudDebrief.firstChild) hudDebrief.innerHTML = rn(debriefHtml);
 }
 
 let hudOn = true;
@@ -643,7 +643,7 @@ if (typeof ResizeObserver === 'function') {
 {
   const t = menuText('maneuvers'); // the same words as the start screen (menu.js)
   document.querySelector('.brand b').textContent = t.brand;
-  document.querySelector('#mission-sub').textContent = t.sub;
+  document.querySelector('#mission-sub').textContent = rn(t.sub);
 }
 
 // --- Orders: the briefing's contents column, now a dropdown from the top bar ---------------------------------
@@ -663,7 +663,7 @@ ordersEl.id = 'orders';
 ordersEl.className = 'orders-menu';
 ordersEl.hidden = true;
 ordersEl.innerHTML = '<div class="orders-head"><b>Orders</b><small>Click one to jump to it</small></div>'
-  + `<ol class="orders-list">${PHASES.map((p, i) => `<li><button type="button" class="order" data-i="${i}" title="Jump to just before this order is announced"><span class="chk"></span><span class="name">${p.label}</span><span class="when">${mmss(p.t)}</span></button></li>`).join('')}</ol>`
+  + `<ol class="orders-list">${PHASES.map((p, i) => `<li><button type="button" class="order" data-i="${i}" title="Jump to just before this order is announced"><span class="chk"></span><span class="name">${rn(p.label)}</span><span class="when">${mmss(p.t)}</span></button></li>`).join('')}</ol>`
   + '<div class="mh-standby" title="The time to get ready between the announcement of an order and EXECUTE, when the ships start to maneuver. Changing it reloads the scene at this moment."><span>Standby time</span>'
   + '<div class="mh-step"><button type="button" data-sb="-1" aria-label="Shorter standby">–</button><b data-sb-val></b><button type="button" data-sb="1" aria-label="Longer standby">+</button></div></div>';
 document.querySelector('#topbar').appendChild(ordersEl);
@@ -742,6 +742,33 @@ const clock = createTimeline(exercise, {
     if (key === 'c' || key === 'C') setPanelFolded(!document.body.classList.contains('ui-hidden'));
   },
 });
+// Ship names: two fields in the More menu. They replace ALG and RUS everywhere the scene shows them (shipNames.js);
+// applying reloads the scene at this moment, as the standby stepper does.
+{
+  const box = document.createElement('form');
+  box.className = 'names-form';
+  box.innerHTML = '<span>Ship names</span><div><label>1 <input name="alg" maxlength="' + NAME_MAX + '" autocomplete="off" spellcheck="false" aria-label="Name of the first ship"></label>'
+    + '<label>2 <input name="rus" maxlength="' + NAME_MAX + '" autocomplete="off" spellcheck="false" aria-label="Name of the second ship"></label>'
+    + '<button type="submit" title="Rename the ships (reloads the scene at this moment)">Set</button></div>';
+  box.alg = box.querySelector('[name=alg]');
+  box.rus = box.querySelector('[name=rus]');
+  box.alg.value = shipNames.alg;
+  box.rus.value = shipNames.rus;
+  box.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (box.alg.value.toUpperCase().trim() === shipNames.alg && box.rus.value.toUpperCase().trim() === shipNames.rus) return;
+    try {
+      if (!saveNames(box.alg.value, box.rus.value)) throw new Error('storage');
+      sessionStorage.setItem('intercept.skip', '1');
+      sessionStorage.setItem('intercept.seek', String(clock.t));
+    } catch { toast('Could not save the names (browser storage is blocked).'); return; }
+    stripShareParams();
+    location.reload();
+  });
+  box.addEventListener('keydown', (e) => e.stopPropagation()); // typing a name is never a shortcut
+  menuEl.insertBefore(box, menuEl.querySelector('hr'));
+}
+
 // Standby time: the stepper at the foot of the Orders dropdown. The ships' orders execute at fixed times, so this only moves
 // when each order is announced; it is applied by reloading the scene at this moment, a second after the last click.
 const sbVal = ordersEl.querySelector('[data-sb-val]');

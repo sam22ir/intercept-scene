@@ -929,3 +929,10 @@ body.mission-fly .shot-caption { top: calc(var(--gap) + var(--safe-t) + var(--ba
 .fly-keys .fk.on { color: var(--text); font-weight: 600; }
 .fly-keys .fk.on kbd { background: var(--accent); border-color: var(--accent); color: #1a0d02; }
 body:not(.mission-fly) .fly-keys, body.ui-hidden .fly-keys { display: none; }
+
+/* Ship names (drill): two small fields in the More menu. */
+.names-form { display: grid; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--hair); font-size: 12px; color: var(--muted); }
+.names-form div { display: flex; align-items: center; gap: 6px; }
+.names-form label { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; }
+.names-form input { width: 100%; min-width: 0; padding: 5px 6px; border-radius: 6px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.06); color: var(--text); font: inherit; text-transform: uppercase; }
+.names-form button { flex: none; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent); }
