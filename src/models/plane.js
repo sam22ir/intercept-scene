@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { Kit, mat, canvasTexture } from './kit.js';
+import { addEngine, addFlange } from './engine.js';
 
 // Orange target drone (H-10 style): boxy fuselage, high straight wing,
-// exposed two-cylinder engine with a two-blade pusher-free tractor prop, no
+// exposed two-cylinder boxer engine (models/engine.js) with a two-blade tractor prop, no
 // landing gear (catapult launch). ~4.4 m long, 5.4 m span.
 // Nose points along local +Z, left wing along +X, origin ~ centre of mass.
 // Direct children of `group` are the pieces it breaks into on impact.
@@ -297,7 +298,11 @@ export function createPlane() {
   const dark = mat(0x1d1f22, { metalness: 0.4, roughness: 0.6 });
   const black = mat(0x0f1012, { metalness: 0.2, roughness: 0.7 });
   const white = mat(0xf0f0ec, { metalness: 0.1, roughness: 0.5 });
-  const copper = mat(0x8a5a35, { metalness: 0.7, roughness: 0.4 });
+  const copper = mat(0xb8733a, { metalness: 0.7, roughness: 0.35, side: THREE.DoubleSide }); // exhaust headers and the open intake bell
+  const green = mat(0x6fb43a, { metalness: 0.35, roughness: 0.5 }); // the carburettor
+  const blue = mat(0x4f86b8, { metalness: 0.7, roughness: 0.4 }); // the flange bolts
+  const flangeOrange = mat(0xf08a1c, { metalness: 0.5, roughness: 0.35 }); // the anodised propeller flange
+  const engineMats = { alu, metal, dark, black, white, copper, green, blue, orange: flangeOrange };
 
   const shadowed = (obj) => {
     obj.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
@@ -315,24 +320,11 @@ export function createPlane() {
   for (const [x, y] of [[0.12, 0.18], [-0.12, 0.18], [0.12, -0.04], [-0.12, -0.04]]) {
     fk.rod([x, y, 1.88], [x * 0.5, 0.07 + (y - 0.07) * 0.5, 2.0], 0.012, metal, 5);
   }
-  // Crankcase.
-  fk.add(new THREE.CylinderGeometry(0.075, 0.085, 0.2, 18), alu, { pos: [0, 0.07, 2.06], rot: [Math.PI / 2, 0, 0] });
-  fk.add(new THREE.CylinderGeometry(0.05, 0.05, 0.06, 14), metal, { pos: [0, 0.07, 2.19], rot: [Math.PI / 2, 0, 0] });
-  // Two opposed finned cylinders.
-  for (const s of [-1, 1]) {
-    fk.add(new THREE.CylinderGeometry(0.045, 0.05, 0.2, 14), alu, { pos: [s * 0.15, 0.07, 2.06], rot: [0, 0, Math.PI / 2] });
-    for (let i = 0; i < 7; i++) {
-      fk.add(new THREE.CylinderGeometry(0.068, 0.068, 0.008, 18), alu, { pos: [s * (0.1 + i * 0.022), 0.07, 2.06], rot: [0, 0, Math.PI / 2] });
-    }
-    fk.add(new THREE.CylinderGeometry(0.03, 0.03, 0.03, 10), alu, { pos: [s * 0.265, 0.07, 2.06], rot: [0, 0, Math.PI / 2] });
-    fk.add(new THREE.CylinderGeometry(0.012, 0.012, 0.06, 8), white, { pos: [s * 0.24, 0.12, 2.06] }); // plug
-    fk.rod([s * 0.24, 0.15, 2.06], [s * 0.1, 0.2, 1.9], 0.006, black, 4); // HT lead
-    // Exhaust header down into the muffler.
-    fk.rod([s * 0.2, 0.03, 2.08], [s * 0.12, -0.12, 2.0], 0.016, copper, 6);
-  }
+  // The engine: crankcase, two finned cylinders, plugs and leads, carburettor and intake bell, exhaust headers.
+  addEngine(fk, engineMats);
+  // Muffler under the engine, and its tail pipe.
   fk.add(new THREE.CapsuleGeometry(0.045, 0.22, 4, 10), metal, { pos: [0, -0.16, 1.98], rot: [0, 0, Math.PI / 2] });
   fk.rod([0.12, -0.16, 1.98], [0.16, -0.2, 1.7], 0.014, metal, 6);
-  fk.add(new THREE.BoxGeometry(0.08, 0.07, 0.09), dark, { pos: [0, 0.17, 1.98] }); // carburettor
   // Top antenna, GPS puck, pitot.
   fk.add(new THREE.CylinderGeometry(0.004, 0.008, 0.32, 6), black, { pos: [0, TOP_Y + 0.16, -0.75] });
   fk.add(new THREE.CylinderGeometry(0.035, 0.035, 0.015, 16), white, { pos: [0, TOP_Y + 0.008, -0.45] });
@@ -452,8 +444,7 @@ export function createPlane() {
   prop.userData.drag = 0.3;
   const bladeMat = mat(0x2a1d14, { metalness: 0.05, roughness: 0.55, transparent: true });
   const pk = new Kit();
-  pk.add(new THREE.CylinderGeometry(0.045, 0.05, 0.07, 16), metal, { rot: [Math.PI / 2, 0, 0] });
-  pk.add(new THREE.CylinderGeometry(0.012, 0.012, 0.06, 8), metal, { pos: [0, 0, 0.05], rot: [Math.PI / 2, 0, 0] });
+  addFlange(pk, engineMats); // the orange flange, its steel boss and four blue bolts
   for (const s of [1, -1]) {
     // Twisted, tapered blade with a rounded tip.
     const blade = new THREE.BoxGeometry(0.075, 0.44, 0.016, 1, 14, 1);
