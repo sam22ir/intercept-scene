@@ -6,7 +6,7 @@ const SUN_ELEVATION = 24; // degrees
 const SUN_AZIMUTH = 215;
 const HORIZON = new THREE.Color(0.66, 0.74, 0.84);
 const ZENITH = new THREE.Color(0.2, 0.38, 0.66);
-const CALM_HORIZON = new THREE.Color(0.5, 0.65, 0.82);
+const CALM_HORIZON = new THREE.Color(0.42, 0.6, 0.86);
 
 // `calm` is the drill's look: a deeper, quieter sea and a bluer sky, so ships and readouts stand out (flatter
 // distant waves with no moire stripes, less sky reflection and glitter).
@@ -19,9 +19,9 @@ export function createEnvironment(renderer, scene, { calm = false } = {}) {
   const sky = new Sky();
   sky.scale.setScalar(20000);
   const u = sky.material.uniforms;
-  u.turbidity.value = calm ? 2.5 : 5;
-  u.rayleigh.value = calm ? 2.4 : 1.4;
-  u.mieCoefficient.value = 0.004;
+  u.turbidity.value = calm ? 1.2 : 5;
+  u.rayleigh.value = calm ? 3.2 : 1.4;
+  u.mieCoefficient.value = calm ? 0.0012 : 0.004;
   u.mieDirectionalG.value = 0.82;
   u.sunPosition.value.copy(sunDir);
   scene.add(sky);
@@ -254,9 +254,17 @@ function createClouds(calm = false) {
       const y = 150 - r() * 70 * Math.sin(((x - 80) / 352) * Math.PI);
       const rad = 25 + r() * 55;
       const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
-      const shade = 225 + r() * 30;
-      g.addColorStop(0, `rgba(${shade},${shade},${shade + 3},0.5)`);
-      g.addColorStop(1, 'rgba(255,255,255,0)');
+      let shade = 225 + r() * 30;
+      if (calm) {
+        // Crisper, whiter puffs with a soft blue-grey underside, so each cloud reads against the blue sky.
+        shade = 255 - Math.max(0, (y - 90) / 70) * 55;
+        g.addColorStop(0, `rgba(${shade},${shade},${Math.min(255, shade + 6)},0.95)`);
+        g.addColorStop(0.6, `rgba(${shade},${shade},${Math.min(255, shade + 6)},0.7)`);
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+      } else {
+        g.addColorStop(0, `rgba(${shade},${shade},${shade + 3},0.5)`);
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+      }
       ctx.fillStyle = g;
       ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2);
     }
@@ -270,7 +278,7 @@ function createClouds(calm = false) {
     const d = 2500 + rng() * (calm ? 11000 : 9000);
     const size = calm ? 900 + rng() * 1600 : 700 + rng() * 1300;
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: textures[i % 3], transparent: true, depthWrite: false, fog: false, opacity: 0.75 + rng() * 0.25,
+      map: textures[i % 3], transparent: true, depthWrite: false, fog: false, opacity: (calm ? 0.88 : 0.75) + rng() * (calm ? 0.12 : 0.25),
       color: new THREE.Color(2.3, 2.3, 2.4), // above 1 so tone mapping keeps them as bright as the sky
     }));
     sprite.position.set(Math.cos(a) * d, (calm ? 450 : 900) + rng() * (calm ? 1700 : 1400), Math.sin(a) * d);
