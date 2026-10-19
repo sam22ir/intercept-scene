@@ -1017,3 +1017,41 @@ body.mission-maneuvers .marker { font-size: 11px; font-weight: 500; }
     width: min(1000px, calc(100vw - var(--gap) * 3 - var(--safe-l) - var(--safe-r) - var(--map-d)));
   }
 }
+
+/* --- Drill: steps down the left, camera on top, compact playback along the bottom (wide windows) ------------- */
+.steps, .camstrip { display: none; }
+@media (min-width: 901px) {
+  /* The steps: transparent, no panel, on the left under the call banner. */
+  .steps {
+    display: block; position: fixed; z-index: 8; left: calc(var(--gap) + var(--safe-l));
+    top: calc(var(--gap) + var(--safe-t) + var(--bar-h, 40px) + 52px);
+    max-height: calc(100vh - var(--gap) * 4 - var(--bar-h, 40px) - 52px - 150px - var(--safe-t) - var(--safe-b)); overflow-y: auto; scrollbar-width: none;
+  }
+  .steps::-webkit-scrollbar { display: none; }
+  .steps .orders-list { display: grid; gap: 2px; }
+  .steps .order { background: none; border: 0; color: rgba(255, 255, 255, 0.72); text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9); padding: 5px 10px 5px 4px; min-width: 190px; }
+  .steps .order:hover { background: rgba(8, 12, 18, 0.35); color: #fff; }
+  .steps .order.done { color: rgba(255, 255, 255, 0.9); }
+  .steps .order.current { background: rgba(8, 12, 18, 0.4); color: #fff; box-shadow: inset 3px 0 0 var(--accent); }
+  .steps .order .when { margin-left: auto; }
+  body.ui-hidden .steps, body.ui-hidden .camstrip { display: none; }
+}
+@media (min-width: 1100px) {
+  /* The camera buttons, top centre. */
+  .camstrip { display: block; position: fixed; z-index: 11; top: calc(var(--gap) + var(--safe-t)); left: 50%; transform: translateX(-50%); }
+  .camstrip .seg { padding: 4px; gap: 6px; border-radius: 999px; background: rgba(9, 14, 21, 0.6); border: 1px solid var(--border); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  /* The playback panel in one compact row: transport, the bar with its chapters, the clock. */
+  body.mission-maneuvers .timeline {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: end; column-gap: 16px; padding: 8px 16px 8px;
+  }
+  body.mission-maneuvers .timeline .controls { display: contents; }
+  body.mission-maneuvers .timeline .transport { grid-column: 1; grid-row: 1; align-self: end; gap: 2px; }
+  body.mission-maneuvers .timeline .track { grid-column: 2; grid-row: 1; margin-top: 0; min-width: 0; }
+  body.mission-maneuvers .timeline .clock-box { grid-column: 3; grid-row: 1; align-self: end; padding-bottom: 2px; }
+  body.mission-maneuvers .timeline .now { display: none; }
+  body.mission-maneuvers .tbtn { width: 32px; height: 32px; }
+  body.mission-maneuvers .tbtn svg { width: 14px; height: 14px; }
+  body.mission-maneuvers .tbtn.play { width: 42px; height: 42px; margin: 0 4px; }
+  body.mission-maneuvers .tbtn.play svg { width: 18px; height: 18px; }
+  body.mission-maneuvers .time b { font-size: 17px; }
+}

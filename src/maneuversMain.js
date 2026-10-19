@@ -775,6 +775,31 @@ serialEl = signalEl.querySelector('[data-serial]');
 signalTitle = signalEl.querySelector('[data-signal-title]');
 signalButton.addEventListener('click', () => setSignal(signalEl.hidden));
 const orderButtons = [...ordersEl.querySelectorAll('.order')];
+
+// The steps of the exercise, always in view down the left side (desktop): transparent, a tick on each finished
+// order, the current one lit, a click jumps to just before it is announced.
+const stepsEl = document.createElement('nav');
+stepsEl.id = 'steps';
+stepsEl.className = 'steps';
+stepsEl.setAttribute('aria-label', 'Steps of the exercise');
+stepsEl.innerHTML = `<ol class="orders-list">${PHASES.map((p, i) => `<li><button type="button" class="order" data-i="${i}" title="Jump to just before this order is announced"><span class="chk"></span><span class="name">${rn(p.label)}</span><span class="when">${mmss(p.t)}</span></button></li>`).join('')}</ol>`;
+document.body.appendChild(stepsEl);
+const stepButtons = [...stepsEl.querySelectorAll('.order')];
+stepButtons.forEach((b, i) => b.addEventListener('click', () => { clock.seek(Math.max(PHASES[i].t - 1, 0)); invalidate(); }));
+
+// The camera buttons move to a strip at the top centre on wide windows (the playback panel keeps them otherwise).
+{
+  const camSeg = document.querySelector('.seg.cam');
+  const camHome = camSeg.parentElement;
+  const strip = document.createElement('div');
+  strip.id = 'camstrip';
+  strip.className = 'camstrip';
+  document.body.appendChild(strip);
+  const wide = window.matchMedia('(min-width: 1100px)');
+  const place = () => { if (wide.matches) strip.appendChild(camSeg); else camHome.prepend(camSeg); invalidate(); };
+  place();
+  wide.addEventListener?.('change', place);
+}
 function updateOrders(t) {
   const idx = t >= exercise.tEnd ? PHASES.length : PHASES.indexOf(phaseAt(t));
   if (idx === lastOrderIdx) return;
@@ -783,6 +808,10 @@ function updateOrders(t) {
     b.classList.toggle('done', i < idx);
     b.classList.toggle('current', i === idx);
     if (i === idx && !ordersEl.hidden) b.scrollIntoView({ block: 'nearest' });
+  });
+  stepButtons.forEach((b, i) => {
+    b.classList.toggle('done', i < idx);
+    b.classList.toggle('current', i === idx);
   });
 }
 
