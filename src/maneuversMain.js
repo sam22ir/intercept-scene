@@ -750,15 +750,15 @@ const clock = createTimeline(exercise, {
   box.innerHTML = '<span>Ship names</span><div><label>1 <input name="alg" maxlength="' + NAME_MAX + '" autocomplete="off" spellcheck="false" aria-label="Name of the first ship"></label>'
     + '<label>2 <input name="rus" maxlength="' + NAME_MAX + '" autocomplete="off" spellcheck="false" aria-label="Name of the second ship"></label>'
     + '<button type="submit" title="Rename the ships (reloads the scene at this moment)">Set</button></div>';
-  box.alg = box.querySelector('[name=alg]');
-  box.rus = box.querySelector('[name=rus]');
-  box.alg.value = shipNames.alg;
-  box.rus.value = shipNames.rus;
+  const inAlg = box.querySelector('[name=alg]');
+  const inRus = box.querySelector('[name=rus]');
+  inAlg.value = shipNames.alg;
+  inRus.value = shipNames.rus;
   box.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (box.alg.value.toUpperCase().trim() === shipNames.alg && box.rus.value.toUpperCase().trim() === shipNames.rus) return;
+    if (inAlg.value.toUpperCase().trim() === shipNames.alg && inRus.value.toUpperCase().trim() === shipNames.rus) return;
     try {
-      if (!saveNames(box.alg.value, box.rus.value)) throw new Error('storage');
+      if (!saveNames(inAlg.value, inRus.value)) throw new Error('storage');
       sessionStorage.setItem('intercept.skip', '1');
       sessionStorage.setItem('intercept.seek', String(clock.t));
     } catch { toast('Could not save the names (browser storage is blocked).'); return; }
