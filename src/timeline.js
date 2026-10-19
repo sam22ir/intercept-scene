@@ -102,7 +102,8 @@ export function createTimeline(scenario, { onKey } = {}) {
   // pointercancel too: the browser cancels the pointer when a touch turns into a gesture.
   window.addEventListener('pointerup', () => { scrubbing = false; });
   window.addEventListener('pointercancel', () => { scrubbing = false; });
-  scrub.addEventListener('input', () => {
+  scrub.addEventListener('input', (e) => {
+    if (!e.isTrusted) return; // only a person dragging the bar stops playback
     clock.playing = false;
     clock.seek(parseFloat(scrub.value));
   });
@@ -177,7 +178,11 @@ export function createTimeline(scenario, { onKey } = {}) {
   if (globalThis.ResizeObserver) new ResizeObserver(relayout).observe(markersEl.parentElement);
   window.addEventListener('resize', relayout);
 
-  playBtn.addEventListener('click', () => clock.play(1));
+  // The Start button of the main menu sits where the Play button appears, so the second click of a double
+  // click (or an impatient one) must not pause the scene that has only just opened.
+  const opened = performance.now();
+  const settled = () => performance.now() - opened > 900;
+  playBtn.addEventListener('click', () => { if (settled()) clock.play(1); });
   revBtn.addEventListener('click', () => clock.play(-1));
   $('#btn-step-back').addEventListener('click', () => clock.step(-0.1));
   $('#btn-step-fwd').addEventListener('click', () => clock.step(0.1));
@@ -198,7 +203,7 @@ export function createTimeline(scenario, { onKey } = {}) {
     if (e.ctrlKey || e.metaKey) { onKey?.(e.key, e); return; }
     const big = e.shiftKey ? 1 : 0.1;
     switch (e.key) {
-      case ' ': clock.play(1); break;
+      case ' ': if (settled()) clock.play(1); break;
       case 'r': case 'R': clock.play(-1); break;
       case 'ArrowLeft': clock.step(-big); break;
       case 'ArrowRight': clock.step(big); break;
