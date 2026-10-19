@@ -922,17 +922,33 @@ function applyNames(alg, rus) {
   stripShareParams();
   location.reload();
 }
-// A ship's name is also editable where it is shown: click it in the ships card, or double-click its camera button.
-function renameShip(id) {
-  const next = window.prompt(`Name of this ship (up to ${NAME_MAX} characters)`, NAME[id]);
-  if (next === null) return;
-  applyNames(id === 'alg' ? next : NAME.alg, id === 'rus' ? next : NAME.rus);
+// A ship's name is also editable where it is shown: click it in the ships card. A small box opens beside it
+// (never a browser dialog, which would freeze the scene): Enter applies, Escape cancels.
+let renameBox = null;
+function closeRename() { renameBox?.remove(); renameBox = null; }
+function renameShip(id, anchor) {
+  closeRename();
+  const box = document.createElement('form');
+  box.className = 'rename-box';
+  box.innerHTML = `<label>Name <input maxlength="${NAME_MAX}" autocomplete="off" spellcheck="false" aria-label="Name of this ship"></label><button type="submit">OK</button><button type="button" data-cancel aria-label="Cancel">×</button>`;
+  const input = box.querySelector('input');
+  input.value = NAME[id];
+  const r = anchor.getBoundingClientRect();
+  box.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 250))}px`;
+  box.style.top = `${r.bottom + 6}px`;
+  box.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') closeRename(); });
+  box.addEventListener('submit', (e) => { e.preventDefault(); const v = input.value; closeRename(); applyNames(id === 'alg' ? v : NAME.alg, id === 'rus' ? v : NAME.rus); });
+  box.querySelector('[data-cancel]').addEventListener('click', closeRename);
+  document.body.appendChild(box);
+  renameBox = box;
+  input.focus();
+  input.select();
 }
 liveEl.addEventListener('click', (e) => {
   const cell = e.target.closest('.mh-cell.alg, .mh-cell.rus');
-  if (cell && e.target.closest('span')) renameShip(cell.classList.contains('alg') ? 'alg' : 'rus');
+  const name = e.target.closest('.rename');
+  if (cell && name) renameShip(cell.classList.contains('alg') ? 'alg' : 'rus', name);
 });
-for (const b of focusButtons) if (b.dataset.focus === 'alg' || b.dataset.focus === 'rus') b.addEventListener('dblclick', () => renameShip(b.dataset.focus));
 // Ship names: two fields in the More menu. They replace ALG and RUS everywhere the scene shows them (shipNames.js);
 // applying reloads the scene at this moment, as the standby stepper does.
 {

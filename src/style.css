@@ -1059,3 +1059,10 @@ body.mission-maneuvers .marker { font-size: 11px; font-weight: 500; }
   body.mission-maneuvers .tbtn { width: 34px; height: 34px; }
   body.mission-maneuvers .tbtn.play { width: 44px; height: 44px; }
 }
+
+/* The rename box: a small floating form beside the name being edited. */
+.rename-box { position: fixed; z-index: 30; display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 10px; background: var(--panel-solid); border: 1px solid var(--border); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); font-size: 12px; color: var(--muted); }
+.rename-box label { display: flex; align-items: center; gap: 6px; }
+.rename-box input { width: 96px; padding: 5px 7px; border-radius: 6px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.07); color: var(--text); font: inherit; text-transform: uppercase; }
+.rename-box button { padding: 5px 10px; border-radius: 6px; }
+.rename-box button[type='submit'] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
