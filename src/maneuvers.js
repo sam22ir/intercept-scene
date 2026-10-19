@@ -72,13 +72,9 @@ export const PHASES = [
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 desig 12030–', 'G SPEED 6'] }, { head: 'END SERIAL :', lines: [GO, 'EX3 – 4 desig 12030'] }] },
   { id: 'corpen', t: 1620, label: 'Corpen stbd 045', title: 'CORPEN STBD 045', note: 'Both make 12 kn; RUS runs at sierra, 15 kn, to its new station.',
     serial: [{ lines: [GO, 'CORPEN STBD 045 – B SPEED 12–', 'G FORM ALG – TA 12-1- 10', START_STBY] }] },
-  { id: 'form045', t: 2000, label: 'Form 045', title: 'FORM 045', note: 'ALG holds 12 kn; RUS runs ahead at sierra, 15 kn, to bearing 045 from ALG.',
-    serial: [{ lines: [GO, 'FORM 045 – B SPEED 12 –', 'G FORM ALG – TA 12-1- 10', START_STBY] }] },
-  { id: 'form000', t: 2380, label: 'Form 000', title: 'FORM 000', note: 'ALG holds 12 kn; RUS drops back to abeam of ALG, bearing 000.',
-    serial: [{ lines: [GO, 'FORM 000 – B SPEED 12 –', 'G FORM ALG – TA 12-1- 10', START_STBY] }] },
-  { id: 'flags', t: 2760, label: 'Flag hoist', title: 'FLAG HOIST',
+  { id: 'flags', t: 2370, label: 'Flag hoist', title: 'FLAG HOIST',
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 desig 12040 –', 'G SPEED 6'] }, { head: 'END SERIAL :', lines: [GO, 'EX3 – 4 desig 12040'] }] },
-  { id: 'skim', t: 2880, label: 'Skimming past', title: 'SKIMMING PAST', note: 'RUS makes sierra, turns away to starboard and comes back past ALG.',
+  { id: 'skim', t: 2490, label: 'Skimming past', title: 'SKIMMING PAST', note: 'RUS makes sierra, turns away to starboard and comes back past ALG.',
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 desig 12050'] }, { head: 'END SERIAL :', lines: ['EX3 – 4 desig 12050'] }] },
 ];
 for (const p of PHASES) { p.tx = p.t + STANDBY_DEFAULT + LEAD; p.t = p.tx - STANDBY; }
@@ -97,11 +93,6 @@ const F_T = 222.6;
 // CORPEN STBD 045: RUS runs course 083.6 at sierra to catch up to ALG's new bearing-000 station.
 const C_C = 83.6;
 const C_T = 303.2;
-// FORM 045: from bearing 000 (abeam, to port) RUS runs ahead to bearing 045 from ALG, then FORM 000 brings her back.
-const A_C = 94.8;
-const A_T = 213.2;
-const B_C = 66.5;
-const B_T = 96.3;
 // SKIMMING PAST: RUS makes 15 kn east, then a wide right turn (a U-turn whose diameter takes it from
 // 500 yds north of ALG to 100 m south of it) and runs back west past ALG.
 const SKIM_SPEED = 15; // kn
@@ -135,10 +126,6 @@ const RUS_ORDERS = [
   { t: X.light, speed: 6 },
   { t: X.corpen, course: C_C, speed: 15 },
   { t: X.corpen + C_T, course: 90, speed: 12 },
-  { t: X.form045, course: A_C, speed: 15 },
-  { t: X.form045 + A_T, course: 90, speed: 12 },
-  { t: X.form000, course: B_C, speed: 6 },
-  { t: X.form000 + B_T, course: 90, speed: 12 },
   { t: X.flags, speed: 6 },
   { t: X.skim, course: 90, speed: SKIM_SPEED },
   { t: X.skim + SKIM_RUN, course: 270, dir: 'stbd', rate: deg((SKIM_SPEED * KT) / SKIM_RADIUS) },
@@ -291,8 +278,6 @@ const ARRIVAL = {
   form120: (p) => settledAfter(p.tx, (t) => both(t, 45, 1) && onStation(t, 120, STATION_YD, 5, 1.2)),
   light: () => LIGHT.t1,
   corpen: (p) => settledAfter(p.tx, (t) => both(t, 90, 1) && onStation(t, 180, STATION_YD, 8, 1.5)),
-  form045: (p) => settledAfter(p.tx, (t) => both(t, 90, 1) && onStation(t, 225, STATION_YD, 8, 1.5)),
-  form000: (p) => settledAfter(p.tx, (t) => both(t, 90, 1) && onStation(t, 180, STATION_YD, 8, 1.5)),
   flags: () => FLAGS.t1,
   skim: () => PASS.t,
 };
@@ -366,7 +351,7 @@ export function orderedAt(id, t) {
 // --- Debrief: how each order went, measured once at import ---------------------------------------
 // `settle` is the time from execution to arrival; for a station change, `error` is how far the other
 // ship was from the ordered station (yards, degrees) at arrival.
-export const STATIONS = { gform: [180, STATION_YD], form120: [120, STATION_YD], corpen: [0, STATION_YD], form045: [45, STATION_YD], form000: [0, STATION_YD] }; // other ship from the guide
+export const STATIONS = { gform: [180, STATION_YD], form120: [120, STATION_YD], corpen: [0, STATION_YD] }; // other ship from the guide
 export const DEBRIEF = PHASES.filter((p) => p.id !== 'form1' && p.id !== 'station').map((p) => {
   const row = { id: p.id, label: p.label, settle: p.ta - p.tx };
   if (STATIONS[p.id]) {

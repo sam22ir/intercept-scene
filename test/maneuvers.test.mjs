@@ -61,7 +61,7 @@ describe('naval maneuvers: formation geometry', () => {
   });
 
   it('CORPEN STBD 045 ends on course 090 with ALG on bearing 180; the serials run at 6 knots', () => {
-    const c = P.corpen.tx + 340;
+    const c = P.corpen.tx + 700;
     angleNear(headingDeg(shipState('alg', c).heading), 90, 1, 'course 090');
     angleNear(headingDeg(shipState('rus', c).heading), 90, 1, 'RUS course 090');
     const rel = relation(c);
@@ -69,16 +69,6 @@ describe('naval maneuvers: formation geometry', () => {
     near(rel.range / YD, 500, 5, 'range');
     near(speedKn('alg', P.light.tx + 60), 6, 0.3, 'flashing light at G SPEED 6');
     near(speedKn('rus', P.flags.tx + 60), 6, 0.3, 'flag hoist at G SPEED 6');
-  });
-
-  it('FORM 045 and FORM 000: RUS runs ahead to bearing 045 from ALG, then drops back to abeam', () => {
-    const f = relation(P.form045.tx + 300); // ALG from RUS
-    near(f.range / YD, 500, 4, 'FORM 045 range');
-    angleNear(f.bearing, 225, 1.5, 'RUS is on bearing 045 from ALG');
-    const b = relation(P.form000.tx + 300);
-    near(b.range / YD, 500, 4, 'FORM 000 range');
-    angleNear(b.bearing, 180, 1.5, 'RUS is abeam to port again');
-    assert.ok(P.form045.ta < P.form000.t && P.form000.ta < P.flags.t, 'each arrives before the next is announced');
   });
 
   it('SKIMMING PAST: RUS passes ALG on a reciprocal course about 100 m away', () => {
