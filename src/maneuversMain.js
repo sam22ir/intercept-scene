@@ -14,7 +14,7 @@ import { createManeuverAudio } from './maneuverAudio.js';
 import { toast } from './pathEditor.js';
 import {
   exercise, shipState, headingDeg, phaseAt, orderStatus, PHASES, STANDBY, STANDBY_LIMITS, KT, YD, LIGHT, FLAGS, lampOn,
-  stationAt, orderedAt, DEBRIEF, STATION_FLASH, STATIONS,
+  stationAt, orderedAt, STATION_FLASH, STATIONS,
 } from './maneuvers.js';
 import { stripShareParams, createShare, readShareParams } from './share.js';
 import { menuText } from './menu.js';
@@ -505,8 +505,6 @@ function applyAutoZoom(dt) {
 // --- Interface: readouts, serial box, toggles, menu --------------------------------------------------------
 const hudRoot = document.querySelector('#hud');
 const hudLive = hudRoot.querySelector('.hud-live');
-const hudDebrief = hudRoot.querySelector('.hud-debrief');
-hudDebrief.hidden = true;
 const tile = (label, value, unit, cls = '') => `<div class="tile ${cls}"><span>${label}</span><b>${value}${unit ? `<small>${unit}</small>` : ''}</b></div>`;
 const redTokens = (s) => rn(s).replace(new RegExp(`\\b(AS|AB|AC|${shipNames.alg}|${shipNames.rus})\\b`, 'g'), '<span class="red">$1</span>');
 let lastPhase = null;
@@ -602,31 +600,6 @@ function updateReadout(t) {
     signalTitle.textContent = rn(phase.title);
   }
   updateBanner(order);
-  updateDebrief(t);
-}
-
-// Debrief, once the last order is done: how long each order took to arrive and how close it ended.
-const debriefFrom = PHASES[PHASES.length - 1].ta + STATION_FLASH;
-function debriefResult(r) {
-  if (r.pass !== undefined) return `Passed at ${Math.round(r.pass / YD)} yd`;
-  if (r.error) {
-    const yd = Math.round(Math.abs(r.error.yd));
-    return yd < 1 && Math.abs(r.error.deg) < 0.5 ? 'On station'
-      : `${yd} yd ${r.error.yd < 0 ? 'inside' : 'outside'} · ${Math.abs(r.error.deg).toFixed(1)}°`;
-  }
-  return r.id === 'light' || r.id === 'flags' ? 'Serial done' : 'Steady';
-}
-const debriefHtml = '<div class="mcard mcard-deb"><div class="hud-head"><b>Debrief</b><span class="chip ok">Complete</span></div>'
-  + `<div class="deb-head ok">Exercise complete · ${fmtClock(exercise.tEnd)}</div>`
-  + '<div class="deb-rows" style="--cols:2"><em class="sub"></em><em class="sub">Arrived after</em><em class="sub">Result</em>'
-  + DEBRIEF.map((r) => `<span>${r.label}</span><b>${fmtClock(r.settle)}</b><b>${debriefResult(r)}</b>`).join('') + '</div></div>';
-let debriefShown = null;
-function updateDebrief(t) {
-  const on = t >= debriefFrom;
-  if (on === debriefShown) return;
-  debriefShown = on;
-  hudDebrief.hidden = !on;
-  if (on && !hudDebrief.firstChild) hudDebrief.innerHTML = rn(debriefHtml);
 }
 
 let hudOn = true;
