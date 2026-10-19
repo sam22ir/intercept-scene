@@ -663,6 +663,33 @@ try { mapPref = localStorage.getItem('intercept.map') !== '0'; } catch { /* stor
 setMap(mapPref);
 mapButton.addEventListener('click', () => setMap(!map.enabled));
 
+// The tactical grid: 500 yd squares on the sea (north up) and dashed range rings at 250, 500 and 1000 yd round the
+// guide ship, in a yellow-green that is not ALG's green. Drawn inside the sea shader, so it costs no geometry.
+const gridButton = document.querySelector('#btn-grid');
+const gridU = env.ocean.material.uniforms;
+const ringLabels = [250, 500, 1000].map((yd) => ({ yd, tag: tag('range', '', '#ffffff') }));
+for (const r of ringLabels) { r.tag.body.textContent = `${r.yd} yd`; r.tag.obj.center.set(0.5, 0.5); r.tag.obj.element.classList.add('tag-grid'); r.tag.obj.visible = false; }
+let gridOn = false;
+function setGrid(on) {
+  gridOn = on;
+  gridU.uGrid.value = on ? 1 : 0;
+  gridButton.classList.toggle('active', on);
+  gridButton.setAttribute('aria-pressed', String(on));
+  for (const r of ringLabels) r.tag.obj.visible = on;
+  try { localStorage.setItem('intercept.grid', on ? '1' : '0'); } catch { /* storage unavailable */ }
+  invalidate();
+}
+function updateGrid(t) {
+  if (!gridOn) return;
+  const g = ships[stationAt(t).guide].ship.group.position;
+  gridU.uRingC.value.set(g.x, g.z);
+  for (const r of ringLabels) r.tag.obj.position.set(g.x + r.yd * YD, 1, g.z);
+}
+let gridPref = false;
+try { gridPref = localStorage.getItem('intercept.grid') === '1'; } catch { /* storage unavailable */ }
+setGrid(gridPref);
+gridButton.addEventListener('click', () => setGrid(!gridOn));
+
 // Hide / show the whole interface.
 const FOLD_KEY = 'intercept.uiHidden';
 const foldButton = document.querySelector('#btn-fold');
@@ -912,6 +939,7 @@ const clock = createTimeline(exercise, {
     if (key === 'o' || key === 'O') setOrders(ordersEl.hidden);
     if (key === 'i' || key === 'I') setSignal(signalEl.hidden);
     if (key === 'f' || key === 'F') toggleFullscreen();
+    if (key === 'g' || key === 'G') setGrid(!gridOn);
     if (key === 'c' || key === 'C') setPanelFolded(!document.body.classList.contains('ui-hidden'));
   },
 });
@@ -934,7 +962,7 @@ keysEl.querySelector('dl').innerHTML = [
   ['<kbd>Home</kbd> <kbd>End</kbd>', 'Start / end'], ['<kbd>,</kbd> <kbd>.</kbd>', 'Previous / next event'], ['<kbd>[</kbd> <kbd>]</kbd>', 'Slower / faster'],
   ['<kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>', `View from above ${NAME.alg}, from above ${NAME.rus}, the formation`], ['<kbd>Esc</kbd>', 'Free camera'],
   ['<kbd>O</kbd> <kbd>I</kbd>', 'The orders, the signal text'], ['<kbd>L</kbd> <kbd>T</kbd> <kbd>M</kbd>', 'Tags, tracks, map'],
-  ['<kbd>H</kbd> <kbd>S</kbd>', 'Readouts, sound'], ['<kbd>F</kbd>', 'Fullscreen'], ['<kbd>C</kbd>', 'Hide / show the interface'],
+  ['<kbd>G</kbd>', 'Tactical grid and range rings'], ['<kbd>H</kbd> <kbd>S</kbd>', 'Readouts, sound'], ['<kbd>F</kbd>', 'Fullscreen'], ['<kbd>C</kbd>', 'Hide / show the interface'],
 ].map(([k, d]) => `<dt>${k}</dt><dd>${d}</dd>`).join('');
 keysEl.querySelector('.keys-note').textContent = 'Drag to swing the ship view round · wheel to zoom · double click resets it';
 // Rename the ships: store the names and reload the scene at this moment (names are read once at import).
@@ -1130,6 +1158,7 @@ renderer.setAnimationLoop((now) => {
   updateWake('alg', t);
   updateWake('rus', t);
   updateStationMarker(t);
+  updateGrid(t);
   for (const k of Object.values(tracks)) k.set(t);
   updateLamps(t);
   updateFlags(t);

@@ -126,6 +126,9 @@ function createOcean(sunDir, calm, horizon) {
       uSunDir: { value: sunDir },
       uSunColor: { value: new THREE.Color(1.0, 0.93, 0.8) },
       uCalm: { value: calm ? 1 : 0 },
+      uGrid: { value: 0 }, // the drill's tactical grid: on or off
+      uGridCell: { value: 457.2 }, // 500 yd squares, north up
+      uRingC: { value: new THREE.Vector2() }, // the range rings' centre (the guide ship), world x z
       uDeep: { value: calm ? new THREE.Color(0.012, 0.075, 0.13) : new THREE.Color(0.006, 0.045, 0.085) },
       uScatter: { value: calm ? new THREE.Color(0.03, 0.18, 0.24) : new THREE.Color(0.02, 0.13, 0.16) },
       uHorizon: { value: horizon },
@@ -150,7 +153,8 @@ function createOcean(sunDir, calm, horizon) {
       #define NW ${WAVE_COUNT}
       uniform float uTime;
       uniform vec3 uSunDir, uSunColor, uDeep, uScatter, uHorizon, uZenith;
-      uniform float uFogNear, uFogFar, uShipX, uCalm;
+      uniform float uFogNear, uFogFar, uShipX, uCalm, uGrid, uGridCell;
+      uniform vec2 uRingC;
       uniform vec2 uDirs[NW];
       uniform float uWl[NW], uAmp[NW], uPhase[NW];
       varying vec3 vWorld;
@@ -161,6 +165,8 @@ function createOcean(sunDir, calm, horizon) {
         f = f * f * (3.0 - 2.0 * f);
         return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
       }
+      // A thin line (about one pixel) where d, a distance in pixels, is small.
+      float ringAt(float rr, float R, float w) { return 1.0 - min(abs(rr - R) / w, 1.0); }
       // Waterline half-beam of the frigate (mirrors widthFactor() in ship.js).
       float hullHalf(float x) {
         float u = (x + 60.0) / 115.5;
@@ -225,6 +231,28 @@ function createOcean(sunDir, calm, horizon) {
         float foam = wakeFoam(vWorld.xz, dist);
         vec3 foamCol = vec3(0.82, 0.87, 0.9) * (0.55 + 0.45 * max(uSunDir.y, 0.0));
         col = mix(col, foamCol, foam);
+        if (uGrid > 0.5) {
+          // Tactical grid: 500 yd squares (every second line brighter) aligned to north, and dashed range rings
+          // at 250, 500 and 1000 yd round the guide ship. Antialiased by the pixel footprint, fading with distance.
+          vec2 g = vWorld.xz / uGridCell;
+          vec2 w = max(fwidth(g), vec2(1e-5));
+          vec2 dm = abs(fract(g - 0.5) - 0.5) / w;
+          float minor = 1.0 - min(min(dm.x, dm.y), 1.0);
+          vec2 g2 = g * 0.5;
+          vec2 w2 = max(fwidth(g2), vec2(1e-5));
+          vec2 dM = abs(fract(g2 - 0.5) - 0.5) / w2;
+          float major = 1.0 - min(min(dM.x, dM.y), 1.0);
+          float dense = 1.0 - smoothstep(0.15, 0.4, max(w.x, w.y));
+          float vis = (1.0 - smoothstep(1500.0, 6000.0, dist)) * dense;
+          vec2 rp = vWorld.xz - uRingC;
+          float rr = length(rp);
+          float wr = max(fwidth(rr), 1e-4);
+          float ring = max(max(ringAt(rr, 228.6, wr), ringAt(rr, 457.2, wr)), ringAt(rr, 914.4, wr));
+          ring *= step(0.5, fract(atan(rp.y, rp.x) * 11.459)); // 72 dashes
+          float rv = 1.0 - smoothstep(2500.0, 9000.0, dist);
+          float a = max((minor * 0.2 + major * 0.26) * vis, ring * 0.6 * rv);
+          col = mix(col, vec3(0.68, 0.94, 0.3), a);
+        }
         col = mix(col, uHorizon, smoothstep(uFogNear, uFogFar, dist));
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>
