@@ -988,3 +988,23 @@ body.mission-maneuvers .tick { width: 3px; height: 8px; margin-left: -1.5px; bot
 body.mission-maneuvers .tick.stem { height: calc(8px + var(--stem, 0px)); }
 body.mission-maneuvers .tick.passed { background: #ffd2a8; }
 body.mission-maneuvers .marker { font-size: 11px; font-weight: 500; }
+
+/* --- Drill: the whole screen laid out for the widest view (desktop) --------------------------------------------
+   The top bar shrinks to icons, the order and ships cards stack in a narrow column at the right, the call banner
+   hangs under the bar, and the map and the playback panel stay along the bottom: the middle is all sea. */
+@media (min-width: 901px) {
+  body.mission-maneuvers .hud { left: auto; right: calc(var(--gap) + var(--safe-r)); top: calc(var(--gap) + var(--safe-t)); width: 272px; }
+  body.mission-maneuvers .hud-live { flex-direction: column; flex-wrap: nowrap; gap: 8px; }
+  body.mission-maneuvers .mcard-order, body.mission-maneuvers .mh-ships { flex: none; width: 100%; min-width: 0; }
+  body.mission-maneuvers .mh-ships { padding: 6px; display: block; }
+  /* The ships step down the column: name, heading and speed on one line each. */
+  body.mission-maneuvers .mh-ships .mh-row { grid-auto-flow: row; grid-auto-columns: auto; gap: 4px; }
+  body.mission-maneuvers .mh-ships .mh-cell { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; column-gap: 10px; padding: 5px 9px; }
+  body.mission-maneuvers .mh-ships .mh-cell span { font-size: 10px; }
+  body.mission-maneuvers .mh-ships .mh-cell b { font-size: 14px; }
+  body.mission-maneuvers .mh-ships .mh-cell em { font-size: 11px; min-width: 52px; text-align: right; }
+  /* Icons only on the top bar (the names are in the tooltips). */
+  body.mission-maneuvers .bar-tools .cap, body.mission-maneuvers .topbar .cap { display: none; }
+  body.mission-maneuvers .topbar button.icon { min-width: 38px; padding: 8px 6px; }
+  body.mission-maneuvers .topbar button.icon svg { width: 20px; height: 20px; }
+}
