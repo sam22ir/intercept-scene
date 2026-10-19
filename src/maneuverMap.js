@@ -138,6 +138,12 @@ export function createManeuverMap() {
 
     // EXECUTE (the ships start the maneuver): a green pulse; A STATION (they are in position): a white one.
     const order = orderStatus(t);
+    // The map's rim shows the order's state, as the banner does: amber on standby, green from EXECUTE through
+    // the maneuver, white from A STATION, until the next standby.
+    const call = order.state === 'standby' ? 'standby'
+      : order.state === 'execute' || order.state === 'underway' || (order.state === 'onstation' && !order.phase.hasStation) ? 'execute'
+        : order.state === 'station' || order.state === 'onstation' ? 'station' : '';
+    if (root.dataset.call !== call) { if (call) root.dataset.call = call; else delete root.dataset.call; }
     ctx.textAlign = 'center';
     const flash = order.state === 'execute' ? ['EXECUTE', order.since / EXECUTE_FLASH, '110, 255, 160']
       : order.state === 'station' ? ['A STATION', order.since / STATION_FLASH, '225, 240, 255'] : null;

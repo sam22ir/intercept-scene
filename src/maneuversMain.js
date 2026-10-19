@@ -107,10 +107,8 @@ const wakes = { alg: createWake(), rus: createWake() };
 // at t plus the station's offset.
 const stationPhases = PHASES.filter((p) => STATIONS[p.id]).map((p) => {
   const g = stationAt(p.ta);
-  // The ship that maneuvers is RUS in all three station changes: its goal is a point off ALG. STATIONS gives the
-  // other ship's bearing from the guide, so with RUS as the guide the bearing of RUS from ALG is the reverse.
-  const b = STATIONS[p.id][0] * Math.PI / 180;
-  return { p, bearing: g.guide === 'alg' ? b : b + Math.PI, range: STATIONS[p.id][1] * YD };
+  // The ring marks where the other ship is to be, from the guide, at the ordered bearing and range.
+  return { p, guide: g.guide, other: g.other, bearing: STATIONS[p.id][0] * Math.PI / 180, range: STATIONS[p.id][1] * YD };
 });
 const stationRing = new THREE.Mesh(
   new THREE.RingGeometry(0.82, 1, 48).rotateX(-Math.PI / 2),
@@ -126,12 +124,12 @@ function updateStationMarker(t) {
   const live = sp && (order.state === 'standby' || order.state === 'execute' || order.state === 'underway' || (order.state === 'station' && order.since < STATION_FLASH));
   stationRing.visible = Boolean(live);
   if (!live) return;
-  const g = ships.alg.ship.group.position;
+  const g = ships[sp.guide].ship.group.position;
   const dist = camera.position.distanceTo(g);
   const r = Math.min(Math.max(dist / 22, 40), 160); // keeps its size on screen once you pull away
   stationRing.position.set(g.x + Math.cos(sp.bearing) * sp.range, 2.6, g.z + Math.sin(sp.bearing) * sp.range);
   stationRing.scale.setScalar(r * (1 + 0.06 * Math.sin(t * 2.4)));
-  if (order.state === 'station') _stCol.set(0x3ddc84); else _stCol.set(COLORS.rus);
+  if (order.state === 'station') _stCol.set(0x3ddc84); else _stCol.set(COLORS[sp.other]);
   stationRing.material.color.copy(_stCol);
   stationRing.material.opacity = order.state === 'standby' ? 0.45 : 0.85;
 }
