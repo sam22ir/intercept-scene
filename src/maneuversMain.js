@@ -553,7 +553,7 @@ function mhCell(id, s, t) {
   const kn = s.speed / KT;
   const toHdg = angGap(hdg, o.course) > 0.5 ? `<i>→${pad3(o.course)}°</i>` : '';
   const toKn = Math.abs(kn - o.speed) > 0.3 ? `<i>→${o.speed}</i>` : '';
-  return `<div class="mh-cell ${id}" title="${NAME[id]}: heading and speed${toHdg || toKn ? ', then the ordered ones' : ''}"><span>${NAME[id]}</span>`
+  return `<div class="mh-cell ${id}" title="${NAME[id]}: heading and speed${toHdg || toKn ? ', then the ordered ones' : ''}"><span class="rename" title="Click to rename">${NAME[id]}</span>`
     + `<b>${pad3(hdg)}°${toHdg}</b><em>${kn.toFixed(0)}${toKn} kn</em></div>`;
 }
 const fmtClock = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
@@ -828,6 +828,31 @@ const clock = createTimeline(exercise, {
     if (key === 'c' || key === 'C') setPanelFolded(!document.body.classList.contains('ui-hidden'));
   },
 });
+// Rename the ships: store the names and reload the scene at this moment (names are read once at import).
+function applyNames(alg, rus) {
+  const a = alg.toUpperCase().trim() || 'ALG';
+  const r = rus.toUpperCase().trim() || 'RUS';
+  if (a === shipNames.alg && r === shipNames.rus) return;
+  try {
+    if (!saveNames(a, r)) throw new Error('storage');
+    sessionStorage.setItem('intercept.skip', '1');
+    sessionStorage.setItem('intercept.seek', String(clock.t));
+    sessionStorage.setItem('intercept.renamed', `${a} and ${r}`);
+  } catch { toast('Could not save the names (browser storage is blocked).'); return; }
+  stripShareParams();
+  location.reload();
+}
+// A ship's name is also editable where it is shown: click it in the ships card, or double-click its camera button.
+function renameShip(id) {
+  const next = window.prompt(`Name of this ship (up to ${NAME_MAX} characters)`, NAME[id]);
+  if (next === null) return;
+  applyNames(id === 'alg' ? next : NAME.alg, id === 'rus' ? next : NAME.rus);
+}
+liveEl.addEventListener('click', (e) => {
+  const cell = e.target.closest('.mh-cell.alg, .mh-cell.rus');
+  if (cell && e.target.closest('span')) renameShip(cell.classList.contains('alg') ? 'alg' : 'rus');
+});
+for (const b of focusButtons) if (b.dataset.focus === 'alg' || b.dataset.focus === 'rus') b.addEventListener('dblclick', () => renameShip(b.dataset.focus));
 // Ship names: two fields in the More menu. They replace ALG and RUS everywhere the scene shows them (shipNames.js);
 // applying reloads the scene at this moment, as the standby stepper does.
 {
@@ -843,15 +868,7 @@ const clock = createTimeline(exercise, {
   inRus.value = shipNames.rus;
   box.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (inAlg.value.toUpperCase().trim() === shipNames.alg && inRus.value.toUpperCase().trim() === shipNames.rus) return;
-    try {
-      if (!saveNames(inAlg.value, inRus.value)) throw new Error('storage');
-      sessionStorage.setItem('intercept.skip', '1');
-      sessionStorage.setItem('intercept.seek', String(clock.t));
-      sessionStorage.setItem('intercept.renamed', `${inAlg.value.toUpperCase().trim() || 'ALG'} and ${inRus.value.toUpperCase().trim() || 'RUS'}`);
-    } catch { toast('Could not save the names (browser storage is blocked).'); return; }
-    stripShareParams();
-    location.reload();
+    applyNames(inAlg.value, inRus.value);
   });
   box.querySelector('[data-reset]').addEventListener('click', () => { inAlg.value = 'ALG'; inRus.value = 'RUS'; box.requestSubmit(); });
   box.addEventListener('keydown', (e) => e.stopPropagation()); // typing a name is never a shortcut
