@@ -317,12 +317,22 @@ function updateStationLine() {
 
 // --- Camera focus --------------------------------------------------------------------------------------
 const rig = new CameraRig(camera, controls);
+const BRIDGE_X = 15; // the bridge windows, in the ship's own frame (bow +X)
+const BRIDGE_Y = 11;
+const LOOK_X = 48;
+const LOOK_Y = 9;
+function shipPoint(sh, x, y, out) {
+  const g = sh.ship.group, th = g.rotation.y;
+  return out.set(g.position.x + x * Math.cos(th), g.position.y + y, g.position.z - x * Math.sin(th));
+}
 const targets = {
-  alg: { pos: (out) => out.copy(ships.alg.ship.group.position).setY(12), distance: 230, minDistance: 40 },
-  rus: { pos: (out) => out.copy(ships.rus.ship.group.position).setY(12), distance: 230, minDistance: 40 },
+  // A ship's view starts on its bridge, looking ahead over the foredeck: the target is a point ahead of the
+  // bridge, the camera sits at the bridge window (BRIDGE_X back from it).
+  alg: { pos: (out) => shipPoint(ships.alg, LOOK_X, LOOK_Y, out), distance: LOOK_X - BRIDGE_X, minDistance: 3 },
+  rus: { pos: (out) => shipPoint(ships.rus, LOOK_X, LOOK_Y, out), distance: LOOK_X - BRIDGE_X, minDistance: 3 },
   formation: {
     pos: (out) => out.addVectors(ships.alg.ship.group.position, ships.rus.ship.group.position).multiplyScalar(0.5).setY(0),
-    distance: 1500, minDistance: 150,
+    distance: 1000, minDistance: 120,
   },
 };
 // The camera buttons of the bottom bar: Free, ALG, RUS, Formation.
@@ -335,6 +345,7 @@ for (const b of focusButtons) {
 }
 // The Formation view keeps both ships in frame: it pulls back as they part and in as they close, until you
 // zoom yourself (the wheel) or pick Formation again.
+const _off = new THREE.Vector3();
 let autoZoom = true;
 function setFocus(id, distance) {
   invalidate();
@@ -344,16 +355,44 @@ function setFocus(id, distance) {
   } else {
     const t = targets[id];
     rig.focus(id, t.pos, distance ?? t.distance, t.minDistance);
+    if (id === 'alg' || id === 'rus') enterBridge(id);
+    else bridgeId = null;
   }
+  if (id === 'free' || !targets[id]) bridgeId = null;
   focusButtons.forEach((b) => b.classList.toggle('active', b.dataset.focus === rig.id));
 }
 for (const b of focusButtons) b.addEventListener('click', () => setFocus(b.dataset.focus));
-canvas.addEventListener('wheel', () => { autoZoom = false; }, { passive: true });
-const _off = new THREE.Vector3();
+canvas.addEventListener('wheel', () => { autoZoom = false; bridgeId = null; }, { passive: true });
+canvas.addEventListener('pointerdown', () => { bridgeId = null; }); // dragging the view leaves the bridge's fixed look
+// The bridge view: the camera sits at the bridge window and turns with the ship.
+let bridgeId = null;
+let bridgeRot = 0;
+function enterBridge(id) {
+  const sh = ships[id];
+  bridgeId = id;
+  bridgeRot = sh.ship.group.rotation.y;
+  const look = shipPoint(sh, LOOK_X, LOOK_Y, new THREE.Vector3());
+  const eye = shipPoint(sh, BRIDGE_X, BRIDGE_Y, new THREE.Vector3());
+  controls.target.copy(look);
+  camera.position.copy(eye);
+  rig.transition = null; // straight onto the bridge, no fly-in
+  rig.getPos(rig.last);
+}
+function applyBridge() {
+  if (!bridgeId || rig.id !== bridgeId) return;
+  const g = ships[bridgeId].ship.group;
+  const d = g.rotation.y - bridgeRot;
+  if (d === 0) return;
+  bridgeRot = g.rotation.y;
+  // Turn the camera about the look point with the ship (positive rotation.y turns about +Y).
+  _off.subVectors(camera.position, controls.target);
+  const c = Math.cos(d), n = Math.sin(d);
+  camera.position.set(controls.target.x + _off.x * c + _off.z * n, camera.position.y, controls.target.z - _off.x * n + _off.z * c);
+}
 function applyAutoZoom(dt) {
   if (!autoZoom || rig.id !== 'formation' || rig.transition) return;
   const range = ships.alg.ship.group.position.distanceTo(ships.rus.ship.group.position);
-  const want = Math.min(Math.max(range * 1.45 + 300, 650), 3200);
+  const want = Math.min(Math.max(range * 0.95 + 160, 420), 2600);
   _off.subVectors(camera.position, controls.target);
   const len = _off.length();
   if (len < 1) return;
@@ -747,7 +786,7 @@ placeShip(ships.rus, clock.t);
 {
   const mid = targets.formation.pos(new THREE.Vector3());
   controls.target.copy(mid);
-  camera.position.copy(mid).add(new THREE.Vector3(-450, 560, 980));
+  camera.position.copy(mid).add(new THREE.Vector3(-300, 380, 680));
 }
 setFocus('formation');
 
@@ -794,6 +833,7 @@ renderer.setAnimationLoop((now) => {
   ou.uTime.value = t;
   ou.uShipX.value = 1e7; // no single-ship wake: each ship has its own ribbon
   rig.update();
+  applyBridge();
   applyAutoZoom(dt);
   controls.update();
   if (camera.position.y < 1) camera.position.y = 1;
