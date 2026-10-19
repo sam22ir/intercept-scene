@@ -324,7 +324,10 @@ function tag(kind, title, color) {
   return { obj, title: el.querySelector('.tag-title'), body: el.querySelector('.tag-body') };
 }
 const tags = { alg: tag('ship', shipNames.alg, '#3ddc84'), rus: tag('ship', shipNames.rus, '#ff7a1a') };
-const stationTag = tag('missile', 'STATION', '#ffffff');
+const stationTag = tag('range', '', '#ffffff'); // the distance between the ships, on the line between them
+stationTag.obj.center.set(0.5, 0.5);
+let shownRange = null;
+let shownAt = performance.now();
 const pad3 = (n) => String(Math.round(n) % 360).padStart(3, '0');
 const NAME = { alg: shipNames.alg, rus: shipNames.rus };
 const fmtTag = (s) => `${pad3(headingDeg(s.heading))}° · ${(s.speed / KT).toFixed(0)}<span> kn</span>`;
@@ -339,11 +342,17 @@ function updateTags(t) {
     tags[id].body.innerHTML = fmtTag(s.state);
   }
   const rel = stationAt(t);
-  const stTitle = `${NAME[rel.other]} FROM ${NAME[rel.guide]}`;
-  if (stationTag.title.textContent !== stTitle) stationTag.title.textContent = stTitle;
-  stationTag.obj.position.addVectors(ships.alg.ship.group.position, ships.rus.ship.group.position).multiplyScalar(0.5).setY(20);
-  stationTag.body.innerHTML = `${Math.round(rel.range / YD)}<span> yd</span> · ${pad3(rel.bearing)}°`;
-  stationTag.obj.visible = rel.range > 450; // close together, the two ship tags say enough
+  // The distance rides on the middle of the line between the ships, small and see-through, and eases to each new
+  // value so the number never jitters.
+  const now = performance.now();
+  const target = rel.range / YD;
+  if (shownRange === null || Math.abs(target - shownRange) > 400) shownRange = target; // a jump in time: no easing
+  else shownRange += (target - shownRange) * (1 - Math.exp(-(now - shownAt) / 1000 * 8));
+  shownAt = now;
+  stationTag.obj.position.addVectors(ships.alg.ship.group.position, ships.rus.ship.group.position).multiplyScalar(0.5).setY(12);
+  const txt = `${Math.round(shownRange)} yd`;
+  if (stationTag.body.textContent !== txt) stationTag.body.textContent = txt;
+  stationTag.obj.visible = true;
 }
 // The station line itself.
 const stationGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
