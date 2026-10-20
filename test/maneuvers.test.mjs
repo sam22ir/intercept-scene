@@ -74,7 +74,7 @@ describe('naval maneuvers: formation geometry', () => {
   it('the third ship, the unit, keeps the course and speed, 1,000 yds ahead and 500 yds to starboard of ALG, and RUS never fouls it', () => {
     assert.deepEqual(SHIP_IDS, ['alg', 'rus', 'unit']);
     let minRus = Infinity;
-    for (let t = 0; t < P.screenk.tx; t += 1) { // until the screen, where ALG leaves her
+    for (let t = 0; t < P.fcol.tx; t += 1) { // until the formations on the unit, where ALG leaves her
       const a = shipState('alg', t);
       const u = shipState('unit', t);
       near(u.x - a.x, 2 * FORMATION_RANGE, 1e-6, 'two stations ahead in the world frame');
@@ -84,6 +84,43 @@ describe('naval maneuvers: formation geometry', () => {
       minRus = Math.min(minRus, Math.hypot(r.x - u.x, r.z - u.z));
     }
     assert.ok(minRus > 400, `RUS passes the unit at ${minRus.toFixed(0)} m`);
+  });
+
+  it('FORM 1, FORM D, FORM 3 and FORM 2 on the unit: each ship reaches her station, in the manual geometry', () => {
+    // Station offsets are ahead and to starboard of the unit, in 500 yd lengths, on her course (090: ahead is east, starboard south).
+    const rel = (id, t) => {
+      const a = shipState(id, t);
+      const u = shipState('unit', t);
+      const fwd = (a.z - u.z) / FORMATION_RANGE; // heading 090: ahead is +z
+      const stb = -(a.x - u.x) / FORMATION_RANGE; // starboard is -x
+      return { fwd, stb };
+    };
+    const expect = {
+      fcol: { alg: [-1, 0], rus: [-2, 0] }, // column in order: unit, ALG, RUS
+      fdia: { alg: [-Math.SQRT1_2, -Math.SQRT1_2], rus: [-Math.SQRT1_2, Math.SQRT1_2] }, // diamond: ALG port quarter, RUS starboard quarter
+      fline3: { alg: [0, 1], rus: [0, 2] }, // line abreast to starboard
+      fcol2: { alg: [1, 0], rus: [2, 0] }, // column in reverse order: RUS, ALG, unit
+    };
+    for (const key of Object.keys(expect)) {
+      const p = P[key];
+      assert.ok(p.ta - p.tx > 40, `${key} takes time to form`);
+      for (const id of ['alg', 'rus']) {
+        const r = rel(id, p.ta + 15);
+        near(r.fwd, expect[key][id][0], 0.2, `${key}: ${id} ahead`);
+        near(r.stb, expect[key][id][1], 0.2, `${key}: ${id} to starboard`);
+      }
+    }
+    // The formations are formed in this order: column, diamond (only from a column), line abreast, reversed column, then the screens.
+    assert.deepEqual(PHASES.slice(-6).map((p) => p.id), ['fcol', 'fdia', 'fline3', 'fcol2', 'screenk', 'screenm']);
+    // The ships keep clear of each other while changing formation.
+    let min = Infinity;
+    for (let t = P.fcol.tx; t < P.screenk.t; t += 1) {
+      const a = shipState('alg', t);
+      const r = shipState('rus', t);
+      const u = shipState('unit', t);
+      min = Math.min(min, Math.hypot(a.x - r.x, a.z - r.z), Math.hypot(a.x - u.x, a.z - u.z), Math.hypot(r.x - u.x, r.z - u.z));
+    }
+    assert.ok(min > 150, `the closest two ships get is ${min.toFixed(0)} m`);
   });
 
   it('SCREEN K and SCREEN M: ALG and RUS reach their sectors round the unit and patrol them, the unit sailing straight on', () => {
@@ -96,7 +133,7 @@ describe('naval maneuvers: formation geometry', () => {
       }
     }
     // The unit holds course 090 at 6 kn through the screens.
-    for (let t = P.screenk.tx; t < exercise.tEnd; t += 30) {
+    for (let t = P.fcol.tx; t < exercise.tEnd; t += 30) {
       const u = shipState('unit', t);
       near(headingDeg(u.heading), 90, 0.5, 'unit course');
       near(u.speed / KT, 6, 0.2, 'unit speed');

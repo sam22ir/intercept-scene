@@ -14,7 +14,7 @@ import { createManeuverAudio } from './maneuverAudio.js';
 import { toast } from './pathEditor.js';
 import {
   exercise, shipState, headingDeg, phaseAt, orderStatus, PHASES, STANDBY, STANDBY_LIMITS, KT, YD, LIGHT, FLAGS, lampOn,
-  stationAt, orderedAt, STATION_FLASH, STATIONS, SECTORS, screenRel, inSector,
+  stationAt, orderedAt, STATION_FLASH, STATIONS, SECTORS, screenRel, inSector, FORMS, stationPoint,
 } from './maneuvers.js';
 import { stripShareParams, createShare, readShareParams } from './share.js';
 import { menuText } from './menu.js';
@@ -167,6 +167,28 @@ function sectorMesh(sec, hex) {
   g.frustumCulled = false;
   scene.add(g);
   return g;
+}
+// Formation stations: a ring on the sea at each screen ship's station on the unit, in her colour, while the order runs.
+const formRings = {};
+for (const id of ['alg', 'rus']) {
+  const m = new THREE.Mesh(new THREE.RingGeometry(0.82, 1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: COLORS[id], transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+  m.renderOrder = 5;
+  m.visible = false;
+  scene.add(m);
+  formRings[id] = m;
+}
+function updateFormationMarkers(t) {
+  const order = orderStatus(t);
+  const key = FORMS[order.phase.id] ? order.phase.id : null;
+  const live = key && (order.state === 'standby' || order.state === 'execute' || order.state === 'underway' || (order.state === 'station' && order.since < STATION_FLASH));
+  for (const id of ['alg', 'rus']) {
+    const m = formRings[id];
+    m.visible = Boolean(live);
+    if (!live) continue;
+    const P = stationPoint(id, key, t);
+    m.position.set(P.x + SHIFT.x, 2.5, P.z + SHIFT.z);
+    m.scale.setScalar(Math.min(Math.max(camera.position.distanceTo(m.position) / 26, 38), 150) * (1 + 0.05 * Math.sin(t * 2.4)));
+  }
 }
 const sectorMeshes = { screenk: {}, screenm: {} };
 for (const key of ['screenk', 'screenm']) for (const id of ['alg', 'rus']) sectorMeshes[key][id] = sectorMesh(SECTORS[key][id], COLORS[id]);
@@ -648,8 +670,22 @@ function updateReadout(t) {
   const goalRange = goal && working && Math.abs(rel.range / YD - goal[1]) > 5 ? `<i>→${goal[1]}</i>` : '';
   const goalBrg = goal && working && angGap(rel.bearing, goal[0]) > 1.5 ? ` <i>→${pad3(goal[0])}°</i>` : '';
   // In a screen order the station cells are the screen ships' bearing and range from the unit (the screen centre), with a tick once inside the sector.
+  const inForm = Boolean(FORMS[phase.id]);
   const inScreen = phase.id === 'screenk' || phase.id === 'screenm';
-  const stationCells = inScreen
+  const stationCells = inForm
+    ? ['alg', 'rus'].map((id) => {
+      // In a formation order: each ship's bearing and range from the unit, the ordered range after an arrow while she is not on station.
+      const sr = screenRel(id, t);
+      const a = ships[id].state;
+      const P = stationPoint(id, phase.id, t);
+      const off = Math.hypot(a.x - P.x, a.z - P.z);
+      const [fwd, stb] = FORMS[phase.id][id];
+      const ordered = Math.round(Math.hypot(fwd, stb) * 500);
+      const here = Math.round(sr.range / YD);
+      return `<div class="mh-cell" title="${NAME[id]}: bearing and range from ${NAME.unit}; the station is ${ordered} yds from her">`
+        + `<span>${NAME[id]} from ${NAME.unit}</span><b>${pad3(sr.bearing)}°${off < 70 ? ' <i>✓</i>' : ''}</b><em>${here} yd${Math.abs(here - ordered) > 20 ? ` <i>→${ordered}</i>` : ''}</em></div>`;
+    }).join('')
+    : inScreen
     ? ['alg', 'rus'].map((id) => {
       const sr = screenRel(id, t);
       const sec = SECTORS[phase.id][id];
@@ -741,7 +777,7 @@ function setGrid(on) {
 }
 function updateGrid(t) {
   if (!gridOn) return;
-  const g = (['screenk', 'screenm'].includes(phaseAt(t).id) ? ships.unit : ships.alg).ship.group.position; // the rings stay on ALG, or on the unit (the screen centre) in a screen
+  const g = (['screenk', 'screenm', ...Object.keys(FORMS)].includes(phaseAt(t).id) ? ships.unit : ships.alg).ship.group.position; // the rings stay on ALG, or on the unit (the screen centre) in a screen
   gridU.uRingC.value.set(g.x, g.z);
   for (const r of ringLabels) r.tag.obj.position.set(g.x + r.yd * YD, 1, g.z);
 }
@@ -1227,6 +1263,7 @@ renderer.setAnimationLoop((now) => {
   updateWake('unit', t);
   updateStationMarker(t);
   updateSectorMarkers(t);
+  updateFormationMarkers(t);
   updateGrid(t);
   for (const k of Object.values(tracks)) k.set(t);
   updateLamps(t);

@@ -76,9 +76,17 @@ export const PHASES = [
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 desig 12040 –', 'G SPEED 6'] }, { head: 'END SERIAL :', lines: [GO, 'EX3 – 4 desig 12040'] }] },
   { id: 'skim', t: 2490, label: 'Skimming past', title: 'SKIMMING PAST', note: 'RUS makes sierra, turns away to starboard and comes back past ALG.',
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 desig 12050'] }, { head: 'END SERIAL :', lines: ['EX3 – 4 desig 12050'] }] },
-  { id: 'screenk', t: 3000, label: 'Screen K', title: 'SCREEN K', note: 'The unit holds course 090 at 6 kn as the screen centre. ALG takes the sector 330 to 030 and RUS the sector 150 to 210, each 1,500 to 3,500 yards out, and patrol them.',
+  { id: 'fcol', t: 3000, label: 'Form 1', title: 'FORM 1', note: 'Column in order of sequence numbers on the unit: the unit leads, ALG 500 yds astern of her and RUS 500 yds astern of ALG.',
+    serial: [{ lines: [GO, 'FORM 1 – STATION 1 DESIG UNIT –', 'STATION 2 DESIG ALG – STATION 3 DESIG RUS –', 'G FORM UNIT – TA 12-1- 10', START_STBY] }] },
+  { id: 'fdia', t: 3440, label: 'Form D', title: 'FORM D', note: 'Diamond, formed from the column: the unit leads and is the guide, ALG forms on her port quarter and RUS on her starboard quarter.',
+    serial: [{ lines: [GO, 'FORM D –', 'G FORM UNIT – TA 12-1- 10', START_STBY] }] },
+  { id: 'fline3', t: 3660, label: 'Form 3', title: 'FORM 3', note: 'Line abreast to starboard in order of sequence numbers: the unit on the left, ALG 500 yds to starboard of her and RUS 500 yds beyond.',
+    serial: [{ lines: [GO, 'FORM 3 – STATION 1 DESIG UNIT –', 'STATION 2 DESIG ALG – STATION 3 DESIG RUS –', 'G FORM UNIT – TA 12-1- 10', START_STBY] }] },
+  { id: 'fcol2', t: 3885, label: 'Form 2', title: 'FORM 2', note: 'Column in the reverse order of sequence numbers: RUS leads, ALG follows and the unit, the guide, is last.',
+    serial: [{ lines: [GO, 'FORM 2 –', 'G FORM UNIT – TA 12-1- 10', START_STBY] }] },
+  { id: 'screenk', t: 4220, label: 'Screen K', title: 'SCREEN K', note: 'The unit holds course 090 at 6 kn as the screen centre. ALG takes the sector 330 to 030 and RUS the sector 150 to 210, each 1,500 to 3,500 yards out, and patrol them.',
     serial: [{ lines: [GO, 'SCREEN K–ZZ–3303–01 ANS 03 ANS  ALG', 'SCREEN K–ZZ–1521–01 ANS 03 ANS  RUS', 'G CORPEN 090 – G SPEED 6 –', START_STBY] }] },
-  { id: 'screenm', t: 3500, label: 'Screen M', title: 'SCREEN M', note: 'Take station within your sector: ALG the clockwise half (000 to 030), RUS the counterclockwise half (150 to 180).',
+  { id: 'screenm', t: 4500, label: 'Screen M', title: 'SCREEN M', note: 'Take station within your sector: ALG the clockwise half (000 to 030), RUS the counterclockwise half (150 to 180).',
     serial: [{ lines: [GO, 'ALG  SCREEN M 3', 'RUS  SCREEN M 4', START_STBY] }] },
 ];
 for (const p of PHASES) { p.tx = p.t + STANDBY_DEFAULT + LEAD; p.t = p.tx - STANDBY; }
@@ -170,7 +178,7 @@ function integrate(orders, until, start) {
   return rows;
 }
 
-const FULL = 4400; // s baked; the exercise ends well before
+const FULL = 6400; // s baked; the exercise ends well before
 const ALG_FULL = integrate(ALG_ORDERS, FULL, { x: 0, z: 0, psi: 0, v: 12 * KT });
 const RUS_FULL = integrate(RUS_ORDERS, FULL, { x: -FORMATION_RANGE, z: 0, psi: 0, v: 12 * KT });
 // The third ship, the unit the others work around: it keeps ALG's course and speed, one station (500 yds) to
@@ -197,6 +205,29 @@ const sectorSpan = (sec) => (sec.b2 - sec.b1 + 360) % 360;
 function sectorAt(id, t) {
   return (t >= X.screenm ? SECTORS.screenm : SECTORS.screenk)[id];
 }
+// --- Formations on the unit (FORM 1, FORM D, FORM 3, FORM 2 after the screens): each ship steers for her station,
+// given in station lengths (500 yds) ahead and to starboard of the unit, on the unit's course. ---
+export const FORMS = {
+  fcol: { alg: [-1, 0], rus: [-2, 0] }, // column in order: unit, ALG, RUS
+  fdia: { alg: [-Math.SQRT1_2, -Math.SQRT1_2], rus: [-Math.SQRT1_2, Math.SQRT1_2] }, // diamond: port and starboard quarters
+  fline3: { alg: [0, 1], rus: [0, 2] }, // line abreast to starboard
+  fcol2: { alg: [1, 0], rus: [2, 0] }, // column in reverse order: RUS, ALG, unit
+};
+export function formationKey(t) {
+  if (t >= X.screenk) return null; // then the sector screen
+  return t >= X.fcol2 ? 'fcol2' : t >= X.fline3 ? 'fline3' : t >= X.fdia ? 'fdia' : t >= X.fcol ? 'fcol' : null;
+}
+export function stationPoint(id, key, t) {
+  const u = lookup(UNIT_FULL, t);
+  const [fwd, stb] = FORMS[key][id];
+  const fx = Math.cos(u.psi);
+  const fz = Math.sin(u.psi); // the unit's heading (x North, z East)
+  return { x: u.x + (fx * fwd - fz * stb) * FORMATION_RANGE, z: u.z + (fz * fwd + fx * stb) * FORMATION_RANGE };
+}
+function targetPoint(id, t) {
+  const key = formationKey(t);
+  return key ? stationPoint(id, key, t) : patrolPoint(id, t);
+}
 function patrolPoint(id, t) {
   const sec = sectorAt(id, t);
   const span = sectorSpan(sec);
@@ -213,11 +244,11 @@ function patrolPoint(id, t) {
 }
 // From the moment SCREEN K executes the ship steers for her patrol point instead of following orders.
 function steerToPatrol(rows, id) {
-  const k0 = Math.round(X.screenk / DT);
+  const k0 = Math.round(X.fcol / DT); // the first of the orders that steer the two screen ships
   let { x, z, psi, v } = rows[k0];
   for (let k = k0; k < rows.length - 1; k++) {
     const t = k * DT;
-    const P = patrolPoint(id, t);
+    const P = targetPoint(id, t);
     const dx = P.x - x;
     const dz = P.z - z;
     let diff = Math.atan2(dz, dx) - psi;
@@ -225,7 +256,9 @@ function steerToPatrol(rows, id) {
     const rate = rad(TURN_RATE) * DT;
     const dpsi = Math.abs(diff) <= rate ? diff : Math.sign(diff) * rate;
     const unitKn = lookup(UNIT_FULL, t).v / KT;
-    const vt = Math.min(15, Math.max(5, unitKn + Math.hypot(dx, dz) / 80)) * KT;
+    // Patrolling is leisurely; closing on a formation station is brisk, and a ship ahead of hers can slow right down.
+    const forming = formationKey(t) !== null;
+    const vt = Math.min(15, Math.max(forming ? 2 : 5, unitKn + Math.hypot(dx, dz) / (forming ? 22 : 80))) * KT;
     const dv = Math.abs(vt - v) <= ACCEL * DT ? vt - v : Math.sign(vt - v) * ACCEL * DT;
     const mid = psi + dpsi / 2;
     const vm = v + dv / 2;
@@ -352,6 +385,12 @@ const settledAfter = (t0, ok) => {
   }
   return t0;
 };
+// Both screen ships within 70 m of their stations on the unit.
+const atStation = (t, key) => ['alg', 'rus'].every((id) => {
+  const a = shipState(id, t);
+  const P = stationPoint(id, key, t);
+  return Math.hypot(a.x - P.x, a.z - P.z) < 70;
+});
 const ARRIVAL = {
   form1: (p) => p.tx,
   station: (p) => p.tx,
@@ -366,6 +405,10 @@ const ARRIVAL = {
   skim: () => PASS.t,
   screenk: (p) => settledAfter(p.tx, (t) => inSector('alg', t, 'screenk') && inSector('rus', t, 'screenk')),
   screenm: (p) => settledAfter(p.tx, (t) => inSector('alg', t, 'screenm') && inSector('rus', t, 'screenm')),
+  fcol: (p) => settledAfter(p.tx, (t) => atStation(t, 'fcol')),
+  fdia: (p) => settledAfter(p.tx, (t) => atStation(t, 'fdia')),
+  fline3: (p) => settledAfter(p.tx, (t) => atStation(t, 'fline3')),
+  fcol2: (p) => settledAfter(p.tx, (t) => atStation(t, 'fcol2')),
 };
 for (const p of PHASES) {
   p.ta = ARRIVAL[p.id](p);
