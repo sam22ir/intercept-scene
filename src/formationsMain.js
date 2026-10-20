@@ -235,9 +235,56 @@ const camButtons = [...document.querySelectorAll('[data-focus]')];
 function setFocus(id) {
   if (id === 'free' || !targets[id]) rig.free();
   else rig.focus(id, targets[id].pos, targets[id].dist, targets[id].min);
+  formView = rig.id === 'formation';
+  controls.enabled = !formView;
+  if (formView) { formYaw = 0; formPitch = FORM_PITCH; formZoom = 1; rig.transition = null; }
   for (const b of camButtons) b.classList.toggle('active', b.dataset.focus === (targets[id] ? id : 'free'));
   invalidate();
 }
+// The Formation view, as in the drill: the camera looks along the guide's course from behind and above the other
+// ships, at them; it turns as the guide turns and pulls back as the ships part, so all four stay in frame. Drag
+// swings round, the wheel scales the distance, double click resets.
+const FORM_PITCH = 0.42;
+let formView = false;
+let formYaw = 0;
+let formPitch = FORM_PITCH;
+let formZoom = 1;
+const _look = new THREE.Vector3();
+function applyFormationView() {
+  const others = SHIP_IDS.slice(1).map((id) => ships[id].ship.group.position);
+  _look.set(0, 0, 0);
+  for (const q of others) _look.add(q);
+  _look.multiplyScalar(1 / others.length);
+  let spread = 0;
+  for (const id of SHIP_IDS) spread = Math.max(spread, ships[id].ship.group.position.distanceTo(_look));
+  const dist = Math.min(Math.max(spread * 1.6 + 160, 320), 4000) * formZoom / Math.min(1, camera.aspect * 1.3); // farther back on a tall window
+  const h = ships.ship1.state.heading + formYaw; // x North, z East: the course points (cos h, sin h)
+  const cp = Math.cos(formPitch);
+  camera.position.set(_look.x - Math.cos(h) * dist * cp, Math.sin(formPitch) * dist, _look.z - Math.sin(h) * dist * cp);
+  controls.target.set(_look.x, 0, _look.z);
+  camera.lookAt(controls.target);
+}
+canvas.addEventListener('wheel', (e) => {
+  if (!formView) return;
+  formZoom = Math.min(Math.max(formZoom * Math.exp(e.deltaY * 0.001), 0.3), 4);
+  invalidate();
+}, { passive: true });
+canvas.addEventListener('dblclick', () => {
+  if (!formView) return;
+  formYaw = 0; formPitch = FORM_PITCH; formZoom = 1;
+  invalidate();
+});
+let formDrag = null;
+canvas.addEventListener('pointerdown', (e) => { if (formView && e.button === 0) formDrag = { x: e.clientX, y: e.clientY }; });
+window.addEventListener('pointerup', () => { formDrag = null; });
+window.addEventListener('pointermove', (e) => {
+  if (!formView || !formDrag) return;
+  formYaw -= (e.clientX - formDrag.x) * 0.005;
+  formPitch = Math.min(Math.max(formPitch + (e.clientY - formDrag.y) * 0.004, 0.05), 1.45);
+  formDrag.x = e.clientX;
+  formDrag.y = e.clientY;
+  invalidate();
+});
 // The camera picker: Free, SHIP1 to SHIP4, Formation.
 {
   const seg = $('.seg.cam');
@@ -380,7 +427,7 @@ const relayoutVTrack = () => { if (!vtPending) vtPending = requestAnimationFrame
 if (typeof ResizeObserver === 'function') new ResizeObserver(relayoutVTrack).observe(vtrack);
 window.addEventListener('resize', relayoutVTrack);
 
-// --- Map: north up, centred on the formation, with each ship and its station --------------------------------
+// --- Map: north up, centred on the guide (SHIP1), with each ship and its station --------------------------------
 const mapEl = $('#minimap');
 const mapCanvas = mapEl.querySelector('canvas');
 const mapScale = mapEl.querySelector('.mm-scale');
@@ -408,7 +455,9 @@ function updateMap(t) {
   const ctx = mapCtx;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, d, d);
-  centroid(t, _c);
+  // Centred on the guide, SHIP1, who stays fixed in the middle (as in the drill), north up.
+  shipState('ship1', t, _w);
+  _c.set(_w.x, 0, _w.z);
   const pts = SHIP_IDS.map((id) => ({ id, s: shipState(id, t), p: stationPoint(id, t) }));
   let span = 300;
   for (const q of pts) span = Math.max(span, Math.abs(q.s.x - _c.x), Math.abs(q.s.z - _c.z), Math.abs(q.p.x - _c.x), Math.abs(q.p.z - _c.z));
@@ -617,7 +666,8 @@ renderer.setAnimationLoop((now) => {
   ou.uTime.value = t;
   ou.uShipX.value = 1e7; // no single-ship wake: each ship has its own ribbon
   rig.update();
-  controls.update();
+  if (formView) applyFormationView();
+  else controls.update();
   if (camera.position.y < 1) camera.position.y = 1;
   env.follow(camera.position);
   camera.updateMatrixWorld();
