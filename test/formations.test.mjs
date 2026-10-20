@@ -127,6 +127,28 @@ describe('four-ship formations: the orders', () => {
     assert.ok(slowest < GUIDE_SPEED - 3, `SHIP3 slows down from box to column (to ${slowest.toFixed(1)} kn)`);
   });
 
+  it("a ship whose station is across a stand-on ship's track holds her course until that ship has passed, then turns in", () => {
+    assert.deepEqual(P.column.waits, [{ ship: 'ship4', for: 'ship3' }], 'box to column: SHIP4 waits for SHIP3');
+    assert.deepEqual(P.box.waits, [{ ship: 'ship3', for: 'ship2' }, { ship: 'ship4', for: 'ship2' }], 'into the box: SHIP3 and SHIP4 wait for SHIP2');
+    for (const p of PHASES) {
+      for (const w of p.waits) {
+        // Until she is 250 yds past the stand-on ship along the course, she keeps the course.
+        let t = p.tx;
+        for (; t <= p.ta; t += 1) {
+          const astern = orderedYd(shipState(w.for, t).x - shipState(w.ship, t).x) * Math.cos(p.course * Math.PI / 180)
+            + orderedYd(shipState(w.for, t).z - shipState(w.ship, t).z) * Math.sin(p.course * Math.PI / 180);
+          if (astern >= 249) break;
+          assert.ok(angGap(headingDeg(shipState(w.ship, t).heading), p.course) <= 2, `${p.id}: ${w.ship} holds ${p.course} at ${t}`);
+        }
+        assert.ok(t < p.ta, `${p.id}: ${w.ship} gets past ${w.for} before the formation arrives`);
+        // ...and then she turns in.
+        let turned = false;
+        for (; t <= p.ta; t += 1) if (angGap(headingDeg(shipState(w.ship, t).heading), p.course) > 10) turned = true;
+        assert.ok(turned, `${p.id}: ${w.ship} turns in once ${w.for} has passed`);
+      }
+    }
+  });
+
   it('TURN: all four turn at the same moment and the true bearings between them do not change', () => {
     for (const p of [P.turnport, P.turnstbd]) {
       for (const id of FOLLOWERS) {

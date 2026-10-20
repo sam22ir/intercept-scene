@@ -52,6 +52,8 @@ const MAX_OFFSET = 50 * Math.PI / 180; // largest angle off the station's own he
 const KEEP_CLEAR = 450 * SCALE; // m: inside this a ship steers away from any other ship (the guide never gives way)
 const CLEAR_SPEED = 6; // m/s of sideways push at contact, fading to 0 at KEEP_CLEAR
 const STAND_ON = 50 * SCALE; // m: a ship whose new station is this close to her own line only changes speed
+const PASS_CLEAR = 250; // ordered yd: a ship waiting for a stand-on ship turns in once she is this far past her
+const LANE = 150; // ordered yd either side of a stand-on ship's track that counts as her lane
 const STAND_ON_GIVE = 3; // the keep-clear push from a stand-on ship is this much stronger, since she does not move aside
 const WHEEL_MARGIN = 0.8; // a wheel uses at most this share of the speed range of its outer and inner ships
 
@@ -148,7 +150,10 @@ const tables = SHIP_IDS.map(() => []);
   let course = 0;
   let rate = rad(TURN_RATE);
   let standOn = [true, false, false, false];
-  Object.assign(PHASES[0], { tx: 0, ta: 0, S, standOn: [] });
+  // waitFor[i] = { j, side }: ship i must not cross stand-on ship j's lane until she is `side` (-1 astern, +1 ahead)
+  // of her by PASS_CLEAR; until then she holds her course and only changes speed.
+  let waitFor = [null, null, null, null];
+  Object.assign(PHASES[0], { tx: 0, ta: 0, S, standOn: [], waits: [] });
   let onSince = null;
   let nextAt = LEAD;
   let guideOnCourse = 0; // since when the guide has been on the ordered course
@@ -174,6 +179,7 @@ const tables = SHIP_IDS.map(() => []);
       onSince = null;
       rate = rad(TURN_RATE);
       standOn = [true, false, false, false];
+      waitFor = [null, null, null, null];
       if (nx.kind === 'form') {
         nx.course = course; // formed on the present course, which becomes the axis
         S = { form: nx.form, mode: 'track', axis: course };
@@ -187,6 +193,24 @@ const tables = SHIP_IDS.map(() => []);
           const stbdNow = -rx * sn + rz * c;
           return Math.abs(stbdNow - FORMS[nx.form][i][1]) * SYD <= STAND_ON;
         });
+        // A give-way ship whose new station is across a stand-on ship's lane (or in it, astern or ahead of her)
+        // waits until that ship has passed: she holds her course and changes speed only, then turns in.
+        const relOf = (k) => [((st[k].x - st[0].x) * c + (st[k].z - st[0].z) * sn) / SYD, (-(st[k].x - st[0].x) * sn + (st[k].z - st[0].z) * c) / SYD];
+        for (let i = 1; i < 4; i++) {
+          if (standOn[i]) continue;
+          const [ai, ci] = relOf(i);
+          for (let j = 1; j < 4; j++) {
+            if (!standOn[j] || j === i) continue;
+            const [aj, cj] = relOf(j);
+            const [as, cs] = FORMS[nx.form][i];
+            const nowSide = ci - cj; // her offset from j's lane now, and her station's
+            const stnSide = cs - FORMS[nx.form][j][1];
+            const crossing = Math.abs(nowSide) > LANE && (Math.abs(stnSide) <= LANE || Math.sign(nowSide) !== Math.sign(stnSide));
+            if (!crossing) continue;
+            const side = Math.sign(as - FORMS[nx.form][j][0]) || -1; // her station astern (-1) or ahead (+1) of j's
+            if ((ai - aj) * side < PASS_CLEAR) waitFor[i] = { j, side };
+          }
+        }
       } else if (nx.kind === 'corpen') {
         course = nx.course;
         S = { form: S.form, mode: 'track', axis: course };
@@ -205,6 +229,7 @@ const tables = SHIP_IDS.map(() => []);
       nx.S = S;
       nx.rate = rate * 180 / Math.PI;
       nx.standOn = SHIP_IDS.filter((_, i) => i > 0 && standOn[i]);
+      nx.waits = waitFor.map((w, i) => (w ? { ship: SHIP_IDS[i], for: SHIP_IDS[w.j] } : null)).filter(Boolean);
     }
     if (t > MAX_T) throw new Error(`formations: ${PHASES[phase].id} never arrives`);
     const turning = PHASES[phase].kind === 'turn';
@@ -248,7 +273,11 @@ const tables = SHIP_IDS.map(() => []);
           pc += (-dx * sn + dz * c) * w;
         }
         const va = Math.min(Math.max(Math.hypot(vx, vz) + along / T_CROSS + pa, MIN_SPEED * KT), MAX_SPEED * KT);
-        const vc = standOn[i] ? 0 : Math.min(Math.max(cross / T_CROSS + pc, -va * Math.tan(MAX_OFFSET)), va * Math.tan(MAX_OFFSET));
+        // Waiting for a stand-on ship to pass: released for good once far enough past her along the course.
+        const wf = waitFor[i];
+        if (wf && (((s.x - st[wf.j].x) * Math.cos(rad(course)) + (s.z - st[wf.j].z) * Math.sin(rad(course))) / SYD) * wf.side >= PASS_CLEAR) waitFor[i] = null;
+        const holding = standOn[i] || waitFor[i];
+        const vc = holding ? 0 : Math.min(Math.max(cross / T_CROSS + pc, -va * Math.tan(MAX_OFFSET)), va * Math.tan(MAX_OFFSET));
         psiD = ref + Math.atan2(vc, va);
         vD = Math.min(Math.hypot(va, vc), MAX_SPEED * KT);
       }
