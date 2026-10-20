@@ -70,7 +70,7 @@ export const PHASES = [
     serial: [{ lines: [GO, 'FORM 120 – B SPEED 10 –', 'TA 12-1- 10', START_STBY] }] },
   { id: 'light', t: 1500, label: 'Flashing light', title: 'FLASHING LIGHT',
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 desig 12030–', 'G SPEED 6'] }, { head: 'END SERIAL :', lines: [GO, 'EX3 – 4 desig 12030'] }] },
-  { id: 'corpen', t: 1620, label: 'Corpen stbd 45°', title: 'CORPEN STBD 4 ANS', note: 'Both end on course 090 at 12 kn; RUS runs at sierra, 15 kn, to its new station. (MTP 1(D) Vol. II 701 does not allow a wheel on a line of bearing, so the ships regain station independently.)',
+  { id: 'corpen', t: 1620, label: 'Corpen stbd 45°', title: 'CORPEN STBD 4 ANS', note: 'A wheel of 45 degrees to starboard: ALG pivots to course 090 and is the guide again; RUS runs at sierra, 15 kn, to regain her bearing and distance from ALG, turned with the formation: 345 from ALG. (MTP 1(D) Vol. II 701 does not allow a wheel on a line of bearing; the deck orders it here.)',
     serial: [{ lines: [GO, 'CORPEN STBD 4 ANS – B SPEED 12–', 'G FORM ALG – TA 12-1- 10', START_STBY] }] },
   { id: 'flags', t: 2370, label: 'Flag hoist', title: 'FLAG HOIST',
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 desig 12040 –', 'G SPEED 6'] }, { head: 'END SERIAL :', lines: [GO, 'EX3 – 4 desig 12040'] }] },
@@ -94,13 +94,14 @@ const G_RESUME = G1 + G2 + 30;
 // FORM 120: RUS drops back at 6 kn on course 035 while ALG makes 10 kn.
 const F_C = 35.8;
 const F_T = 222.6;
-// CORPEN STBD 045: RUS runs course 083.6 at sierra to catch up to ALG's new bearing-000 station.
-const C_C = 83.6;
-const C_T = 303.2;
+// CORPEN STBD 4 ANS (a wheel of 45 degrees): ALG pivots to 090; RUS keeps her relative bearing and distance, so she
+// ends at 345 from ALG (the 300 she had, turned by 45), found by solving this course and time.
+const C_C = 81.8;
+const C_T = 228;
 // SKIMMING PAST: RUS makes 15 kn east, then a wide right turn (a U-turn whose diameter takes it from
 // 500 yds north of ALG to 100 m south of it) and runs back west past ALG.
 const SKIM_SPEED = 15; // kn
-const SKIM_RADIUS = (FORMATION_RANGE + 100) / 2; // m: a U-turn from the station to 100 m past ALG
+const SKIM_RADIUS = (FORMATION_RANGE * Math.cos(rad(15)) + 100) / 2; // m: a U-turn from the station (RUS 15 degrees off ALG's beam) to 100 m past ALG
 const SKIM_RUN = 250; // s eastward before the U-turn, so the two meet on the way back
 
 const COMMON = [
@@ -358,7 +359,7 @@ const ARRIVAL = {
   turn045: (p) => settledAfter(p.tx, (t) => both(t, 45, 0.6)),
   form120: (p) => settledAfter(p.tx, (t) => both(t, 45, 1) && onStation(t, 120, STATION_YD, 5, 1.2)),
   light: () => LIGHT.t1,
-  corpen: (p) => settledAfter(p.tx, (t) => both(t, 90, 1) && onStation(t, 180, STATION_YD, 8, 1.5)),
+  corpen: (p) => settledAfter(p.tx, (t) => both(t, 90, 1) && onStation(t, 165, STATION_YD, 8, 1.5)),
   flags: () => FLAGS.t1,
   skim: () => PASS.t,
   screenk: (p) => settledAfter(p.tx, (t) => inSector('alg', t, 'screenk') && inSector('rus', t, 'screenk')),
@@ -434,7 +435,7 @@ export function orderedAt(id, t) {
 // --- Debrief: how each order went, measured once at import ---------------------------------------
 // `settle` is the time from execution to arrival; for a station change, `error` is how far the other
 // ship was from the ordered station (yards, degrees) at arrival.
-export const STATIONS = { gform: [180, STATION_YD], form120: [120, STATION_YD], corpen: [0, STATION_YD] }; // other ship from the guide
+export const STATIONS = { gform: [180, STATION_YD], form120: [120, STATION_YD], corpen: [345, STATION_YD] }; // other ship from the guide
 export const DEBRIEF = PHASES.filter((p) => p.id !== 'form1' && p.id !== 'station').map((p) => {
   const row = { id: p.id, label: p.label, settle: p.ta - p.tx };
   if (STATIONS[p.id]) {

@@ -60,12 +60,12 @@ describe('naval maneuvers: formation geometry', () => {
     near(speedKn('rus', P.form120.tx + 150), 6, 0.3, 'RUS drops back at 6 kn');
   });
 
-  it('CORPEN STBD 045 ends on course 090 with ALG on bearing 180; the serials run at 6 knots', () => {
+  it('CORPEN STBD 4 ANS is a wheel: both end on course 090 with ALG on bearing 165 from RUS (the 120 turned by 45); the serials run at 6 knots', () => {
     const c = P.corpen.tx + 700;
     angleNear(headingDeg(shipState('alg', c).heading), 90, 1, 'course 090');
     angleNear(headingDeg(shipState('rus', c).heading), 90, 1, 'RUS course 090');
     const rel = relation(c);
-    angleNear(rel.bearing, 180, 1, 'bearing 180');
+    angleNear(rel.bearing, 165, 1, 'bearing 165');
     near(rel.range / YD, 500, 5, 'range');
     near(speedKn('alg', P.light.tx + 60), 6, 0.3, 'flashing light at G SPEED 6');
     near(speedKn('rus', P.flags.tx + 60), 6, 0.3, 'flag hoist at G SPEED 6');
@@ -189,7 +189,7 @@ describe('naval maneuvers: orders, signals and timeline', () => {
     angleNear(f.bearing, 120, 1.5, 'FORM 120 bearing at TA');
     const c = relation(at('corpen'));
     near(c.range / YD, 500, 9, 'CORPEN range at TA');
-    angleNear(c.bearing, 180, 2, 'CORPEN bearing at TA');
+    angleNear(c.bearing, 165, 2, 'CORPEN bearing at TA');
     // The serials end at arrival and the skim arrives at the closest pass.
     near(P.light.ta, LIGHT.t1, 1e-9, 'light serial');
     near(P.skim.ta, PASS.t, 1e-9, 'skim at the pass');
