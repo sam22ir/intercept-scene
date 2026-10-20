@@ -1,8 +1,8 @@
 import { shipNames } from './shipNames.js';
-import { shipState, relation, headingDeg, orderStatus, phaseAt, SECTORS, EXECUTE_FLASH, STATION_FLASH, YD } from './maneuvers.js';
+import { shipState, relation, headingDeg, orderStatus, phaseAt, guideShipAt, SECTORS, EXECUTE_FLASH, STATION_FLASH, YD } from './maneuvers.js';
 
 // Exercise map for the naval maneuvers mission: the same round translucent disc as the intercept
-// minimap, but north up (like the briefing diagrams) and centred between the two ships, with
+// minimap, but north up (like the briefing diagrams) and centred on the guide, which stays fixed in the middle, with
 // both ships as arrows along their heading, their recent tracks, and the station line with its
 // range in yards. Everything is a pure function of t. Click it to change the zoom; M hides it.
 
@@ -45,12 +45,15 @@ export function createManeuverMap() {
     shipState('alg', t, a);
     shipState('rus', t, b);
     shipState('unit', t, u);
-    const cx = (a.x + b.x + u.x) / 3; // map centre (the middle of the three), metres North
-    const cz = (a.z + b.z + u.z) / 3; // metres East
+    // The map is centred on the guide: ALG, RUS after G FORM RUS, the unit through the formations on her and the
+    // screens (G FORM UNIT, the screen centre), ALG again in the final FORM 1.
+    const g = { alg: a, rus: b, unit: u }[guideShipAt(t)];
+    const cx = g.x; // map centre, metres North
+    const cz = g.z; // metres East
     const half = SIZE / 2;
     const rim = half - 7;
-    const span = Math.max(Math.hypot(a.x - b.x, a.z - b.z), Math.hypot(a.x - u.x, a.z - u.z), Math.hypot(b.x - u.x, b.z - u.z)) / 2;
-    const R = ZOOMS[zoom] === 'auto' ? (SCALES.find((s) => s >= span * 1.45) ?? SCALES[SCALES.length - 1]) : ZOOMS[zoom];
+    const span = Math.max(...[a, b, u].map((s) => Math.hypot(s.x - cx, s.z - cz))); // the farthest ship from the guide
+    const R = ZOOMS[zoom] === 'auto' ? (SCALES.find((s) => s >= span * 1.12) ?? SCALES[SCALES.length - 1]) : ZOOMS[zoom];
     const k = rim / R;
     const sx = (z) => half + (z - cz) * k;
     const sy = (x) => half - (x - cx) * k;

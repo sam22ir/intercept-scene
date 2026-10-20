@@ -564,6 +564,12 @@ export function guideAt(t) {
   for (const p of PHASES) if (GUIDES[p.id] && t >= p.tx) g = GUIDES[p.id];
   return g;
 }
+// The ship the formation is steered on, for the map and the Formation view: the guide of the signals, except that
+// through the formations on the unit and the screens it is the unit (G FORM UNIT, the screen centre).
+const GUIDE_ON_UNIT = new Set(['fcol', 'fdia', 'fline3', 'fcol2', 'screenk', 'screenm']);
+export function guideShipAt(t) {
+  return GUIDE_ON_UNIT.has(phaseAt(t)?.id) ? 'unit' : guideAt(t);
+}
 export function stationAt(t) {
   const guide = guideAt(t);
   const other = guide === 'alg' ? 'rus' : 'alg';
