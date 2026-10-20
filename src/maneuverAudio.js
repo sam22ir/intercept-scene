@@ -9,8 +9,8 @@ import { HORN_MP3, CLICK_MP3 } from './maneuverAssets.js';
 // backwards are silent, like the intercept mission's one-shots. Sounds are quieter with the camera's
 // distance from the ship that makes them.
 
-const HORN_PITCH = { alg: [98, 123], rus: [110, 139] }; // Hz, for the synthesised fallback
-const HORN_RATE = { alg: 1, rus: 1.14 }; // playback rate of the recorded horn
+const HORN_PITCH = { alg: [98, 123], rus: [110, 139], unit: [82, 104] }; // Hz, for the synthesised fallback
+const HORN_RATE = { alg: 1, rus: 1.14, unit: 0.86 }; // playback rate of the recorded horn
 const CLICK_OFFSET = 0.4; // s of lead-in silence before the click in its file
 const MAX_STEP = 3; // s of sim time per frame beyond which the clock jumped (a scrub), so nothing plays
 
@@ -145,7 +145,7 @@ export function createManeuverAudio() {
     get supported() { return !failed; },
     get recorded() { return !!samples; }, // for inspection: true once the ElevenLabs sounds have decoded
     setEnabled(on) { enabled = on; if (on) wake(false); },
-    // positions: {alg, rus} world positions of the ships; clock: {playing, direction}.
+    // positions: {alg, rus, unit} world positions of the ships; clock: {playing, direction}.
     update(t, camera, positions, clock) {
       const prev = lastT;
       lastT = t;

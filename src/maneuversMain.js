@@ -1287,7 +1287,7 @@ renderer.setAnimationLoop((now) => {
   updateOrders(t);
   updateVTrack(t);
   updateMarkers();
-  audio.update(t, camera, { alg: ships.alg.ship.group.position, rus: ships.rus.ship.group.position }, clock);
+  audio.update(t, camera, { alg: ships.alg.ship.group.position, rus: ships.rus.ship.group.position, unit: ships.unit.ship.group.position }, clock);
   map.update(t);
   if (needsRender()) {
     renderer.render(scene, camera);
