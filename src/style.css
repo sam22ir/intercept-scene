@@ -1128,3 +1128,11 @@ body.mission-maneuvers #btn-ship, body.mission-maneuvers #dl-offline, body.missi
 .mh-cell.ship2 span::before { background: #ff7a1a; }
 .mh-cell.ship3 span::before { background: #5ab4ff; }
 .mh-cell.ship4 span::before { background: #d27bff; }
+/* Tags pushed apart on screen (declutterTags): the stem stretches down to the ship. */
+body.mission-formations .tag::after { height: calc(13px + var(--lift, 0px)); bottom: calc(-14px - var(--lift, 0px)); }
+/* Between 901 and 1099 px the camera buttons stay in the playback panel: they take a row of their own there, so the
+   panel stays narrow and clear of the map at the bottom right. */
+@media (min-width: 901px) and (max-width: 1099px) {
+  body.mission-formations .timeline .controls { flex-wrap: wrap; row-gap: 8px; }
+  body.mission-formations .timeline .seg.cam { flex-basis: 100%; justify-content: center; }
+}

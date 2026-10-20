@@ -176,8 +176,10 @@ for (const id of SHIP_IDS) {
   const obj = new CSS2DObject(el);
   obj.center.set(0.5, 1);
   labelGroup.add(obj);
-  tags[id] = { obj, body: el.querySelector('.tag-body') };
+  tags[id] = { obj, el, lift: 0, body: el.querySelector('.tag-body') };
 }
+const _tp = new THREE.Vector3();
+const TAG_GAP = 4; // px kept between two tags on screen
 function updateTags() {
   for (const id of SHIP_IDS) {
     const s = ships[id];
@@ -185,6 +187,36 @@ function updateTags() {
     tags[id].obj.position.copy(s.ship.group.position).setY(Math.min(Math.max(dist * 0.05, 26), 60));
     const html = `${pad3(headingDeg(s.state.heading))}° · ${(s.state.speed / KT).toFixed(0)}<span> kn</span>`;
     if (tags[id].body.innerHTML !== html) tags[id].body.innerHTML = html;
+  }
+}
+// The ships sail close together, so their tags would cover each other: on screen, a tag that would overlap one
+// already placed is lifted above it, its stem stretched down to its ship. Nearest ships first (lowest on screen).
+function declutterTags() {
+  if (!labelsOn) return;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const items = SHIP_IDS.map((id) => {
+    const t = tags[id];
+    _tp.copy(t.obj.position).project(camera);
+    return { t, x: (_tp.x + 1) / 2 * w, y: (1 - _tp.y) / 2 * h, bw: t.el.offsetWidth, bh: t.el.offsetHeight, front: _tp.z < 1 };
+  }).sort((a, b) => b.y - a.y);
+  const placed = [];
+  for (const it of items) {
+    let bottom = it.y - 14; // the tag's bottom edge sits 14 px above its anchor (the stem)
+    if (it.front) {
+      for (let pass = 0; pass < 8; pass++) {
+        const hit = placed.find((p) => Math.abs(p.x - it.x) < (p.bw + it.bw) / 2 + TAG_GAP && bottom > p.top - TAG_GAP && bottom - it.bh < p.bottom + TAG_GAP);
+        if (!hit) break;
+        bottom = hit.top - TAG_GAP;
+      }
+      placed.push({ x: it.x, bw: it.bw, top: bottom - it.bh, bottom });
+    }
+    const lift = Math.max(0, Math.round(it.y - 14 - bottom));
+    if (it.t.lift !== lift) {
+      it.t.lift = lift;
+      it.t.obj.center.set(0.5, 1 + lift / Math.max(it.bh, 1));
+      it.t.el.style.setProperty('--lift', `${lift}px`);
+    }
   }
 }
 
@@ -277,7 +309,7 @@ function updateBanner(t) {
   const o = orderStatus(t);
   let text = '';
   let cls = '';
-  if (o.idx > 0 && o.state === 'underway') { text = `EXECUTE · ${o.phase.title}`; cls = 'execute'; }
+  if (o.idx > 0 && o.state === 'underway') { text = `EXECUTE · ${o.phase.label}`; cls = 'execute'; } // short: the banner is the map's width
   else if (o.idx > 0) { text = 'A STATION'; cls = 'station'; }
   if (text + cls === bannerKey) return;
   bannerKey = text + cls;
@@ -588,6 +620,8 @@ renderer.setAnimationLoop((now) => {
   controls.update();
   if (camera.position.y < 1) camera.position.y = 1;
   env.follow(camera.position);
+  camera.updateMatrixWorld();
+  declutterTags(); // after the camera has moved this frame, so the tags are pushed apart where they are drawn
   const close = SHIP_IDS.includes(rig.id);
   env.setShadowFocus(close ? targets[rig.id].pos(shadowCenter) : centroid(t, shadowCenter), close ? 150 : 1300);
   clock.renderUI();
