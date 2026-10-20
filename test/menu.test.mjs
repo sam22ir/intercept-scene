@@ -13,7 +13,7 @@ const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
 const html = read('../index.html');
 const src = {
   start: read('../src/start.js'), main: read('../src/main.js'), maneuvers: read('../src/maneuversMain.js'), fly: read('../src/flyMain.js'),
-  formations: read('../src/formationsMain.js'),
+  formations: read('../src/formationsMain.js'), helm: read('../src/helmMain.js'),
   timeline: read('../src/timeline.js'),
 };
 const urlOf = (f, q) => `${pathToFileURL(new URL(f, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')).href}?${q}`;
@@ -23,6 +23,7 @@ const scenarios = {};
 let M; // maneuvers.js (three ships)
 let M2; // maneuvers.js with two ships
 let F; // fly.js
+let H; // helm.js
 let FM; // formations.js
 before(async () => {
   for (const mode of ['intercept', 'chute']) {
@@ -36,6 +37,7 @@ before(async () => {
   M2 = await import(urlOf('../src/maneuvers.js', 'menu-two'));
   delete globalThis.__DRILL_SHIPS;
   F = await import(urlOf('../src/fly.js', 'menu'));
+  H = await import(urlOf('../src/helm.js', 'menu'));
   FM = await import(urlOf('../src/formations.js', 'menu'));
 });
 
@@ -46,8 +48,8 @@ const cardOf = (id) => chooser().match(new RegExp(`<button class="card"[^>]*data
 const text = (s) => s.replace(/<svg.*?<\/svg>/gs, '').replace(/<kbd>.*?<\/kbd>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
 describe('the menu data', () => {
-  it('lists the six missions once each, in a fixed order, with every field', () => {
-    assert.deepEqual(MISSION_IDS, ['intercept', 'chute', 'fly', 'maneuvers2', 'maneuvers', 'formations']);
+  it('lists the seven missions once each, in a fixed order, with every field', () => {
+    assert.deepEqual(MISSION_IDS, ['intercept', 'chute', 'fly', 'maneuvers2', 'maneuvers', 'formations', 'helm']);
     assert.equal(new Set(MISSIONS.map((m) => m.name)).size, MISSIONS.length, 'names are unique');
     for (const m of MISSIONS) {
       for (const f of ['name', 'kind', 'blurb', 'tagline', 'brand', 'button']) assert.ok(typeof m[f] === 'string' && m[f].length >= 3, `${m.id}.${f}`);
@@ -56,14 +58,15 @@ describe('the menu data', () => {
       assert.ok(m.brand.length <= 16, `${m.id}'s top-bar title fits`);
       if (!m.ship) assert.ok(m.fixed && m.fixedNote && m.sub, `${m.id} says what is fixed`);
     }
-    assert.deepEqual(MISSIONS.filter((m) => !m.ship).map((m) => m.id), ['fly', 'maneuvers2', 'maneuvers', 'formations']);
+    assert.deepEqual(MISSIONS.filter((m) => !m.ship).map((m) => m.id), ['fly', 'maneuvers2', 'maneuvers', 'formations', 'helm']);
   });
 
   it('groups the missions: the drone ones, then the tactical maneuvers by the number of ships', () => {
     assert.deepEqual(GROUPS.map((g) => g.id), ['drone', 'tactical']);
     assert.deepEqual(MISSIONS.filter((m) => m.group === 'drone').map((m) => m.id), ['intercept', 'chute', 'fly']);
-    const tac = MISSIONS.filter((m) => m.group === 'tactical');
+    const tac = MISSIONS.filter((m) => m.group === 'tactical' && m.tile);
     assert.deepEqual(tac.map((m) => m.ships), [2, 3, 4]);
+    assert.deepEqual(MISSIONS.filter((m) => m.group === 'tactical' && !m.tile).map((m) => m.id), ['helm'], 'Solo Air Defense is a row after the tiles');
     for (const m of tac) {
       assert.equal(m.tile, `${m.ships} ships`);
       assert.ok(m.tileSub && m.facts[0].startsWith(`${m.ships} ships`), `${m.id} says how many ships`);
@@ -181,6 +184,21 @@ describe('the words are true of the missions', () => {
     assert.match(src.start, /formationsMain\.js/);
   });
 
+  it('Solo Air Defense: the rounds, the views, and every key it lists is really bound', () => {
+    const m = missionById('helm');
+    assert.ok(m.facts.includes(`${H.CELLS} missiles`));
+    assert.match(src.helm, /const VIEWS = \['bridge', 'behind', 'above', 'missile', 'sight', 'orbit'\]/);
+    assert.ok(m.facts.includes('6 views'));
+    for (const letter of ['f', 'm', 'r', 'v', 'i']) assert.match(src.helm, new RegExp(`case '${letter}':`), `helmMain binds ${letter}`);
+    for (const k of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Tab']) assert.match(src.helm, new RegExp(k));
+    const label = Object.fromEntries(m.keys);
+    assert.match(label.F, /missile/);
+    assert.match(label['↑ ↓'], /telegraph/);
+    assert.match(m.tagline, /three hits/);
+    assert.equal(H.TELEGRAPH.length, 7);
+    assert.match(src.start, /helmMain\.js/);
+  });
+
   it('Fly the drone: the cruise speed, and every key it lists is really bound', () => {
     const m = missionById('fly');
     assert.ok(m.tagline.includes(`${F.DEFAULT_SPEED} m/s`), `${F.DEFAULT_SPEED} m/s`);
@@ -216,11 +234,11 @@ describe('the words are true of the missions', () => {
 
 describe('index.html shows what the data says', () => {
   for (const m of MISSIONS) {
-    it(`the ${m.id} ${m.group === 'tactical' ? 'tile' : 'row'}`, () => {
+    it(`the ${m.id} ${m.tile ? 'tile' : 'row'}`, () => {
       const row = rowOf(m.id);
       assert.ok(row, 'it exists');
-      assert.equal(isTile(m.id), m.group === 'tactical', 'the tactical maneuvers are tiles');
-      if (m.group === 'tactical') {
+      assert.equal(isTile(m.id), !!m.tile, 'the tactical maneuvers by number of ships are tiles');
+      if (m.tile) {
         assert.equal(text(row.match(/<b>(.*?)<\/b>/s)[1]), m.tile);
         assert.equal(text(row.match(/<small>(.*?)<\/small>/s)[1]), m.tileSub);
       } else {

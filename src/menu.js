@@ -5,7 +5,8 @@
 //
 // A mission with `ship: true` lets the player pick the launcher; the others fix it (`fixed` says what is
 // fixed, for the summary line). The list is in two groups (`GROUPS`): the drone missions as rows, and the
-// tactical maneuvers as a row of tiles by the number of ships (`ships`, `tile`, `tileSub`).
+// tactical maneuvers as a row of tiles by the number of ships (`ships`, `tile`, `tileSub`), then Solo Air Defense (id `helm`), a row of its own
+// (a mission with no `tile` is a row).
 
 export const GROUPS = [
   { id: 'drone', name: 'Drone & missile' },
@@ -111,6 +112,23 @@ export const MISSIONS = [
     brand: 'Formations',
     sub: 'SHIP1 to SHIP4 · tactical formations',
     button: 'Start exercise',
+  },
+  {
+    id: 'helm',
+    group: 'tactical',
+    ships: 1,
+    name: 'Solo Air Defense',
+    kind: 'Manual',
+    blurb: 'Sail the frigate · fight off drones',
+    tagline: 'You have the ship. The arrow keys work the rudder and the engine telegraph, the radar picks up drones coming in, and F fires the forward launcher\'s missiles at them. A drone you leave alone circles, makes low passes and dives into the ship: three hits and she is out of action.',
+    facts: ['1 ship: you steer', '8 missiles', '6 views'],
+    keys: [['← →', 'rudder'], ['↑ ↓', 'engine telegraph'], ['F', 'fire a missile'], ['Tab', 'next target'], ['1 – 6', 'bridge, behind, above, missile, sight, orbit'], ['M', 'radar'], ['I', 'intercept camera on / off']],
+    ship: false,
+    fixed: 'you steer',
+    fixedNote: 'One frigate with the forward launcher: you steer her.',
+    brand: 'Solo Air Defense',
+    sub: '1 ship · you steer',
+    button: 'Take command',
   },
 ];
 

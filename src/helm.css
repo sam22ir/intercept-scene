@@ -1,0 +1,61 @@
+/* "Helm": the interface pieces of its own (the rest is the manual flight's, body.mission-fly). */
+
+/* The drones' tags: the manual flight hides the tag layer, this mission has one. */
+body.mission-helm .labels-layer.helm-labels { display: block; }
+body.mission-helm.ui-hidden .labels-layer.helm-labels { display: none; }
+.tag.helm-target { border-left-color: #fff; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5); }
+
+/* The view buttons: a strip at the top centre. */
+.helm-views {
+  position: fixed; z-index: 11; top: calc(var(--gap) + var(--safe-t)); left: 50%; transform: translateX(-50%);
+  display: flex; gap: 4px; padding: 4px; border-radius: 999px;
+  background: rgba(11, 17, 25, 0.62); border: 1px solid var(--border); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.helm-views button { padding: 5px 12px; border-radius: 999px; font-size: 12px; border-color: transparent; background: transparent; }
+.helm-views button.active { background: var(--accent); border-color: var(--accent); color: #1a0d02; font-weight: 700; }
+body:not(.mission-helm) .helm-views, body.ui-hidden .helm-views { display: none; }
+@media (max-width: 900px) { .helm-views { top: auto; bottom: calc(var(--gap) + var(--safe-b) + 44px); } .helm-views button { padding: 5px 9px; } }
+
+/* The fire-control sight: a reticle over the long lens. */
+.helm-sight { position: fixed; inset: 0; z-index: 4; pointer-events: none; }
+.helm-sight[hidden] { display: none; }
+.helm-sight i { position: absolute; left: 50%; top: 50%; background: rgba(120, 255, 170, 0.75); }
+.helm-sight .hs-h { width: 34vmin; height: 1px; transform: translate(-50%, -50%); background: linear-gradient(90deg, rgba(120, 255, 170, 0.75) 40%, transparent 40% 60%, rgba(120, 255, 170, 0.75) 60%); }
+.helm-sight .hs-v { width: 1px; height: 34vmin; transform: translate(-50%, -50%); background: linear-gradient(180deg, rgba(120, 255, 170, 0.75) 40%, transparent 40% 60%, rgba(120, 255, 170, 0.75) 60%); }
+.helm-sight .hs-box { width: 9vmin; height: 9vmin; transform: translate(-50%, -50%); background: transparent; border: 1px solid rgba(120, 255, 170, 0.5); }
+.helm-sight.lock .hs-box { border: 2px solid #3ddc84; box-shadow: 0 0 12px rgba(61, 220, 132, 0.6); }
+.helm-sight .hs-txt {
+  position: absolute; left: 50%; top: calc(50% + 21vmin); transform: translateX(-50%);
+  font: 700 12px/1.3 ui-monospace, Consolas, monospace; letter-spacing: 0.08em; color: #9dffc0; text-shadow: 0 1px 2px #000; white-space: nowrap;
+}
+body.helm-sighting canvas#scene { filter: saturate(0.55) contrast(1.15); }
+
+/* The alarm: red edges that pulse while a drone is close, faster on its attack run, and a flash when she is hit. */
+.helm-alarm { position: fixed; inset: 0; z-index: 3; pointer-events: none; opacity: 0; box-shadow: inset 0 0 90px 10px rgba(255, 50, 50, 0.85); }
+body.helm-threat-2 .helm-alarm { animation: helm-pulse 1.6s ease-in-out infinite; }
+body.helm-threat-3 .helm-alarm { animation: helm-pulse 0.55s ease-in-out infinite; }
+.helm-alarm.hit { animation: helm-hit 1.2s ease-out 1; }
+@keyframes helm-pulse { 0%, 100% { opacity: 0.1; } 50% { opacity: 0.55; } }
+@keyframes helm-hit { 0% { opacity: 1; background: rgba(255, 140, 60, 0.35); } 100% { opacity: 0; background: transparent; } }
+@media (prefers-reduced-motion: reduce) {
+  body.helm-threat-2 .helm-alarm, body.helm-threat-3 .helm-alarm { animation: none; opacity: 0.35; }
+}
+
+/* Readouts: the rudder gauge, the contact list, the score. */
+.helm-rudder .hr-bar { position: relative; height: 8px; margin-top: 6px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); }
+.helm-rudder .hr-bar::before { content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: rgba(255, 255, 255, 0.5); }
+.helm-rudder .hr-bar i {
+  position: absolute; top: 0; bottom: 0; border-radius: 4px;
+  left: calc(50% + min(0, var(--r)) * 50%); width: calc(max(var(--r), -1 * var(--r)) * 50%);
+  background: var(--accent);
+}
+.tile.helm-ok b { color: #3ddc84; }
+.helm-contact { display: grid; grid-template-columns: 34px 1fr 64px 84px; gap: 6px; align-items: baseline; padding: 3px 0; font-size: 12px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+.helm-contact b { color: #ffb340; }
+.helm-contact em { font-style: normal; color: var(--muted); text-align: right; }
+.helm-contact.pass em, .helm-contact.attack em { color: #ff5d61; font-weight: 700; }
+.helm-contact.attack b, .helm-contact.pass b { color: #ff5d61; }
+.helm-contact.sel b::before { content: '▸ '; color: #fff; }
+.helm-contact.none { display: block; color: var(--muted); }
+.helm-score { margin-top: 6px; font-size: 11.5px; color: var(--muted); }
+.helm-score b { color: var(--text); }
