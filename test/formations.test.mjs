@@ -87,6 +87,23 @@ describe('four-ship formations: the orders', () => {
     });
   }
 
+  it('a ship whose new station is on her own line holds course and only changes speed (the others give way)', () => {
+    const want = { box: ['ship2'], column: ['ship3'], diamond: ['ship4'] };
+    for (const p of PHASES.slice(1)) {
+      assert.deepEqual(p.standOn, want[p.id] ?? [], `${p.id}: stand-on ships`);
+      for (const id of p.standOn) {
+        for (let t = p.tx; t <= p.ta; t += 1) {
+          const h = headingDeg(shipState(id, t).heading);
+          assert.ok(Math.min(h, 360 - h) <= 2, `${id} holds 000 in ${p.id} at ${t}: ${h}`);
+        }
+      }
+    }
+    // Box to line ahead: SHIP3 drops straight back, slower than the guide, on her own line.
+    const col = PHASES.find((p) => p.id === 'column');
+    assert.ok(shipState('ship3', col.tx + 120).speed / KT < GUIDE_SPEED - 3, 'SHIP3 slows down');
+    near(rel('ship3', col.tx + 120)[1], 0, 15, 'SHIP3 stays on the line');
+  });
+
   it('the diamond has 500 yd sides and the line of bearing lies on 135 from the guide', () => {
     const d = PHASES.find((p) => p.form === 'diamond');
     const t = d.ta + 40;

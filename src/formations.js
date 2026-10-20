@@ -35,6 +35,8 @@ const T_CROSS = 45; // s: the steering closes a station error at about this time
 const MAX_OFFSET = 50 * Math.PI / 180; // largest angle off the guide's course while closing a station
 const KEEP_CLEAR = 450; // m: inside this a ship steers away from any other ship (the guide never gives way)
 const CLEAR_SPEED = 6; // m/s of sideways push at contact, fading to 0 at KEEP_CLEAR
+const STAND_ON = 50; // m: a ship whose new station is this close to her own line only changes speed
+const STAND_ON_GIVE = 3; // the keep-clear push from a stand-on ship is this much stronger, since she does not move aside
 
 const s45 = SPACING * Math.SQRT1_2;
 // Stations in yards: [ahead, starboard] of the guide, for SHIP1..SHIP4.
@@ -98,8 +100,12 @@ const tables = SHIP_IDS.map(() => []);
   let phase = 0;
   PHASES[0].tx = 0;
   PHASES[0].ta = 0;
+  PHASES[0].standOn = [];
   let onSince = null;
   let nextAt = LEAD;
+  // Stand-on ships for the order in force: those whose new station lies on their own line (ahead or astern on the
+  // guide's course). They keep the guide's course and only change speed; the others give way to them.
+  let standOn = [true, false, false, false];
   const maxRate = rad(TURN_RATE) * DT;
   const p = {};
   for (;;) {
@@ -117,6 +123,12 @@ const tables = SHIP_IDS.map(() => []);
       phase++;
       PHASES[phase].tx = t;
       onSince = null;
+      const g = guideAt(t);
+      standOn = st.map((s, i) => {
+        stationXZ(PHASES[phase].form, i, t, p);
+        return i === 0 || Math.abs(-(p.x - s.x) * Math.sin(g.psi) + (p.z - s.z) * Math.cos(g.psi)) <= STAND_ON;
+      });
+      PHASES[phase].standOn = SHIP_IDS.filter((_, i) => i > 0 && standOn[i]);
     }
     if (t > MAX_T) throw new Error(`formations: ${PHASES[phase].id} never arrives`);
     // Steering: the guide holds course and speed; the others close their station error.
@@ -134,21 +146,22 @@ const tables = SHIP_IDS.map(() => []);
         const sn = Math.sin(g.psi);
         const along = ex * c + ez * sn; // error ahead of the ship, along the guide's course
         const cross = -ex * sn + ez * c; // error to starboard
-        // Keep clear: a push away from every ship closer than KEEP_CLEAR, in the guide's frame.
+        // Keep clear: a push away from every ship closer than KEEP_CLEAR, in the guide's frame. A stand-on ship
+        // is never pushed.
         let pa = 0;
         let pc = 0;
         for (let j = 0; j < 4; j++) {
-          if (j === i) continue;
+          if (j === i || standOn[i]) continue;
           const dx = s.x - st[j].x;
           const dz = s.z - st[j].z;
           const d = Math.hypot(dx, dz);
           if (d >= KEEP_CLEAR || d < 1e-6) continue;
-          const w = CLEAR_SPEED * (1 - d / KEEP_CLEAR) / d;
+          const w = CLEAR_SPEED * (standOn[j] && j > 0 ? STAND_ON_GIVE : 1) * (1 - d / KEEP_CLEAR) / d; // keep further clear of a stand-on ship
           pa += (dx * c + dz * sn) * w;
           pc += (-dx * sn + dz * c) * w;
         }
         const va = Math.min(Math.max(g.v + along / T_CROSS + pa, MIN_SPEED * KT), MAX_SPEED * KT);
-        const vc = Math.min(Math.max(cross / T_CROSS + pc, -va * Math.tan(MAX_OFFSET)), va * Math.tan(MAX_OFFSET));
+        const vc = standOn[i] ? 0 : Math.min(Math.max(cross / T_CROSS + pc, -va * Math.tan(MAX_OFFSET)), va * Math.tan(MAX_OFFSET));
         psiD = g.psi + Math.atan2(vc, va);
         vD = Math.min(Math.hypot(va, vc), MAX_SPEED * KT);
       }
