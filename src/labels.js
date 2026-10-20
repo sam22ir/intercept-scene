@@ -25,18 +25,11 @@ export function createLabels(scene) {
   group.name = 'labels';
   scene.add(group);
 
-  const pair = scenario.engagements.length > 1; // pair mode: a second drone and missile
-  const drone = tag('drone', pair ? 'DRONE 1' : 'TARGET DRONE');
+  const drone = tag('drone', 'TARGET DRONE');
   const missile = tag('missile', 'MISSILE');
   const ship = tag('ship', 'FRIGATE');
   group.add(drone.obj, missile.obj, ship.obj);
 
-  // Second engagement (pair mode only).
-  const second = pair ? {
-    drone: tag('drone', 'DRONE 2'),
-    missile: tag('missile', 'MISSILE 2'),
-  } : null;
-  if (second) group.add(second.drone.obj, second.missile.obj);
 
   let enabled = true;
   const fmt = (v, unit, digits = 0) => `${v.toFixed(digits)}<span>${unit}</span>`;
@@ -70,9 +63,9 @@ export function createLabels(scene) {
       const underChute = recovery && t >= scenario.tChute;
       const afloat = recovery && t >= scenario.tSplash;
       drone.el.classList.toggle('ok', afloat);
-      drone.title.textContent = destroyed ? (pair ? 'DRONE 1 · DESTROYED' : 'DRONE · DESTROYED')
+      drone.title.textContent = destroyed ? 'DRONE · DESTROYED'
         : afloat ? 'DRONE · RECOVERED'
-          : underChute ? 'DRONE · UNDER PARACHUTE' : (pair ? 'DRONE 1' : 'TARGET DRONE');
+          : underChute ? 'DRONE · UNDER PARACHUTE' : 'TARGET DRONE';
       drone.body.innerHTML = destroyed
         ? `ALT ${fmt(Math.max(0, d.droneAlt), ' m')}`
         : afloat
@@ -85,26 +78,6 @@ export function createLabels(scene) {
       if (flying) {
         missile.obj.position.copy(d.missilePos).y += 1.2;
         missile.body.innerHTML = `${spd(d.missileSpeed)} · ${fmt(d.missileRange, ' m')} <em>to target</em>`;
-      }
-
-      // Drone 2 and missile 2 (pair mode): same tags, driven by d.second.
-      if (second && d.second) {
-        const e = scenario.engagements[1];
-        const d2 = d.second;
-        const dead = t >= e.tHit;
-        second.drone.obj.visible = t >= scenario.drones[1].tLoad && (!dead || d2.droneAlt > -2);
-        second.drone.obj.position.copy(d2.dronePos).y += dead ? 3 : 1.6;
-        second.drone.el.classList.toggle('dead', dead);
-        second.drone.title.textContent = dead ? 'DRONE 2 · DESTROYED' : 'DRONE 2';
-        second.drone.body.innerHTML = dead
-          ? `ALT ${fmt(Math.max(0, d2.droneAlt), ' m')}`
-          : `${spd(d2.droneSpeed)} · ALT ${fmt(d2.droneAlt, ' m')} · ${fmt(d2.droneRange, ' m')} <em>to ship</em>`;
-        const fly2 = t > e.tLaunch && t < e.tHit;
-        second.missile.obj.visible = fly2;
-        if (fly2) {
-          second.missile.obj.position.copy(d2.missilePos).y += 1.2;
-          second.missile.body.innerHTML = `${spd(d2.missileSpeed)} · ${fmt(d2.missileRange, ' m')} <em>to target</em>`;
-        }
       }
 
       ship.obj.position.copy(d.shipPos).y += 37;

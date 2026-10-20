@@ -20,7 +20,7 @@ export function createDebris(plane, k = 0, hit = null) {
   const rng = mulberry32(1337 + k);
   const { tHit, hitPos: burstPos, burstDist } = hit
     ? { tHit: 0, hitPos: hit.burstPos, burstDist: hit.burstDist }
-    : scenario.engagements[k]; // k > 0 is the second drone (pair mode)
+    : scenario.engagements[k];
   const hitPos = new THREE.Vector3();
   const hitQuat = new THREE.Quaternion();
   let vPlane;
@@ -120,7 +120,7 @@ export function createEffects(scene, debris, k = 0) {
   const rng = mulberry32(42 + k * 1000);
   const { hasMissile } = scenario;
   // The engagement (missile + hit) and the drone this field of effects belongs to.
-  // k = 1 is the second drone in pair mode; k = 0 reads the scenario's own first-engagement fields.
+  // k = 0 reads the scenario's own engagement fields.
   const eng = k ? scenario.engagements[k] : scenario;
   const { tLaunch, tHit, hitPos, missileStart, launchDir } = eng;
   const drone = scenario.drones[k];

@@ -27,7 +27,7 @@ export function createMinimap({ dronePosAt }) {
   const _b = new THREE.Vector3();
   const _v = new THREE.Vector3();
 
-  // Per drone / missile pair: paths in the ship frame (x ahead, z starboard), sampled once.
+  // Per drone and missile: paths in the ship frame (x ahead, z starboard), sampled once.
   const engagements = scenario.hasMissile ? scenario.engagements : [null];
   const sets = engagements.map((e, k) => {
     const dr = scenario.drones[k];

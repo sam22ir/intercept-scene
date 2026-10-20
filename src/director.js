@@ -10,15 +10,14 @@ import {
 //
 // `dronePos(t, out)` must resolve to a world position at any t: the drone in
 // flight, then its falling wreck (supplied by main.js). `tWater` is when the
-// wreck reaches the sea. In the pair mission `second` gives the same for drone 2
-// ({ dronePos, tWater }), and the shot list adds its launch and engagement.
+// wreck reaches the sea.
 
 const UP = new THREE.Vector3(0, 1, 0);
 const MIN_SHOT = 0.6; // a shot shorter than this gives way to the next one
 const { smoothstep, lerp, clamp } = THREE.MathUtils;
 
-export function createDirector({ dronePos, tWater, second = null }) {
-  const dronePosOf = [dronePos, second?.dronePos];
+export function createDirector({ dronePos, tWater }) {
+  const dronePosOf = [dronePos];
   const A = new THREE.Vector3();
   const B = new THREE.Vector3();
   const H = new THREE.Vector3();
@@ -165,32 +164,12 @@ export function createDirector({ dronePos, tWater, second = null }) {
     cuts.push({ t: pass.t - 2.5, shot: lowPass(pass.t) });
     cuts.push({ t: pass.t + 3.5, shot: chase('chase2', 'Chase cam', { lag: 0.4, height: 3.5, side: -6 }) });
   }
-  if (second) {
-    // Drone 2 off the rail, a short chase, then back to drone 1's story.
-    const d2 = scenario.drones[1];
-    cuts.push({ t: d2.tSpool - 1, shot: catapult(1) });
-    cuts.push({ t: d2.tRelease + 0.7, shot: chase('chase-d2', 'Chase cam · drone 2', { lag: 0.3, height: 2.2, side: -4.5 }, 1) });
-    if (!pass || pass.t - 2.5 > d2.tRelease + 6) {
-      cuts.push({ t: d2.tRelease + 6, shot: chase('chase-back', 'Chase cam', { lag: 0.4, height: 3.5, side: -6 }) });
-    }
-  }
   if (scenario.hasMissile) {
-    const engs = second ? scenario.engagements : [scenario];
-    const waters = [tWater, second?.tWater];
-    engs.forEach((e, k) => {
-      cuts.push({ t: e.tLaunch - 3, shot: launcher(k) });
-      cuts.push({ t: e.tLaunch + 0.4, shot: missileRide(k) });
-      cuts.push({ t: e.tHit - 0.3, shot: wide(k) });
-      const tw = waters[k];
-      if (tw > e.tHit + 4) cuts.push({ t: tw - 2.5, shot: splash(tw, k) });
-      // Between the first splash and the second launch, ride along with drone 2.
-      if (k === 0 && engs[1]) {
-        const tFree = Math.max(e.tHit + 6, tw > e.tHit + 4 ? tw + 2 : 0);
-        if (tFree < engs[1].tLaunch - 3 - 2) {
-          cuts.push({ t: tFree, shot: chase('chase-d2b', 'Chase cam · drone 2', { lag: 0.4, height: 3.5, side: 6 }, 1) });
-        }
-      }
-    });
+    const e = scenario;
+    cuts.push({ t: e.tLaunch - 3, shot: launcher(0) });
+    cuts.push({ t: e.tLaunch + 0.4, shot: missileRide(0) });
+    cuts.push({ t: e.tHit - 0.3, shot: wide(0) });
+    if (tWater > e.tHit + 4) cuts.push({ t: tWater - 2.5, shot: splash(tWater, 0) });
   } else {
     cuts.push({ t: scenario.tChute - 0.3, shot: canopy });
     cuts.push({ t: scenario.tSplash - 3, shot: splash(scenario.tSplash) });

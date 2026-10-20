@@ -118,12 +118,4 @@ describe('engagement settings in the other missions', () => {
     assert.equal(S.scenario.tLaunch, Infinity);
     assert.equal(S.previewEngagement({ timing: 'auto', time: 0, dist: 0, side: 'auto' }), null);
   });
-
-  it('pair: the setting moves the first shot and keeps the launch gap', async () => {
-    const probe = await load('fwd', null, 'pair');
-    const S = await load('fwd', { timing: 'launch', time: probe.scenario.autoLaunch + 25, dist: 12, side: 'auto' }, 'pair');
-    const [a, b] = S.scenario.engagements;
-    assert.ok(b.tLaunch - a.tLaunch >= 2.5 - 1e-9, 'launcher needs time to slew and reload');
-    assert.equal(S.scenario.engagements.length, 2);
-  });
 });

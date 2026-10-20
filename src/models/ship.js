@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  deckHeight, RAIL, LAUNCHER_PIVOT, TUBE_MOUTH, TUBE_MOUTHS, PAIR_MODE, launcherAim, launcherQuat, shuttleStroke,
+  deckHeight, RAIL, LAUNCHER_PIVOT, TUBE_MOUTH, launcherAim, launcherQuat, shuttleStroke,
   SHIP_VARIANT, PENNANT, FWD_ROOF_Y, HANGAR_ROOF_Y,
 } from '../scenario.js';
 import { Kit, hexa, slab, facePanel, mat, canvasTexture, toMatrix } from './kit.js';
@@ -667,12 +667,10 @@ export function createShip({ ensign = 'alg' } = {}) {
       const y = r === 0 ? 0.3 : -0.3;
       const z = -0.93 + c * 0.62;
       const isFiring = Math.abs(y - TUBE_MOUTH.y) < 0.01 && Math.abs(z - TUBE_MOUTH.z) < 0.01;
-      // Pair mode fires a second round from the next cell: its cap blows off too.
-      const isFiring2 = PAIR_MODE && Math.abs(y - TUBE_MOUTHS[1].y) < 0.01 && Math.abs(z - TUBE_MOUTHS[1].z) < 0.01;
       pk.rod([0.55, y, z], [1.72, y, z], 0.275, tubeMat, 18, 0.25);
       for (const x of [0.85, 1.3]) pk.add(new THREE.CylinderGeometry(0.29, 0.29, 0.07, 18), M.greyLight, { pos: [x, y, z], rot: [0, 0, Math.PI / 2] });
       pk.add(new THREE.CylinderGeometry(0.27, 0.27, 0.05, 18), M.greyDark, { pos: [1.72, y, z], rot: [0, 0, Math.PI / 2] });
-      if (isFiring || isFiring2) caps.push([1.74, y, z]);
+      if (isFiring) caps.push([1.74, y, z]);
       else pk.add(capGeo, tubeMat, { pos: [1.74, y, z] });
     }
   }
@@ -681,11 +679,6 @@ export function createShip({ ensign = 'alg' } = {}) {
   fireCap.castShadow = true;
   fireCap.position.set(...caps[0]);
   pitchGroup.add(fireCap);
-  const fireCap2 = PAIR_MODE ? fireCap.clone() : null;
-  if (fireCap2) {
-    fireCap2.position.set(...caps[1]);
-    pitchGroup.add(fireCap2);
-  }
   yawGroup.add(pitchGroup);
   launcher.add(base.build(), yawGroup);
   group.add(launcher);
@@ -977,7 +970,8 @@ export function createShip({ ensign = 'alg' } = {}) {
     launcher,
     // `opts` (the manual-flight mission): { aim: {yaw, pitch} } overrides the scripted launcher aim and
     // { cradleT } the catapult clock, so the cradle can fire when the pilot says.
-    update(t, tLaunch, tLaunch2 = Infinity, opts = null) {
+    // (The third argument, a second round's launch time, is accepted and unused: only one cell has a cap that blows off.)
+    update(t, tLaunch, _tLaunch2 = Infinity, opts = null) {
       radar.rotation.y = t * 2.1;
       const { yaw, pitch } = opts?.aim ?? launcherAim(t);
       yawGroup.rotation.y = yaw;
@@ -991,17 +985,6 @@ export function createShip({ ensign = 'alg' } = {}) {
       } else {
         fireCap.position.set(...caps[0]);
         fireCap.rotation.set(0, 0, 0);
-      }
-      if (fireCap2) {
-        const tau2 = t - tLaunch2;
-        fireCap2.visible = tau2 < 1.2;
-        if (tau2 > 0) {
-          fireCap2.position.set(caps[1][0] + 6 * tau2, caps[1][1] + 5 * tau2 - 4.9 * tau2 * tau2, caps[1][2] - 1.5 * tau2);
-          fireCap2.rotation.set(tau2 * 9, 0, tau2 * 7);
-        } else {
-          fireCap2.position.set(...caps[1]);
-          fireCap2.rotation.set(0, 0, 0);
-        }
       }
       const s = shuttleStroke(opts?.cradleT ?? t);
       cradle.position.set(s * Math.cos(RAIL.pitch), s * Math.sin(RAIL.pitch), 0);

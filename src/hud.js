@@ -58,7 +58,7 @@ function peakG(fn, t0, t1, h, step) {
 // Computed once: the story is fixed after import.
 function computeDebrief(k = 0) {
   const chute = !scenario.hasMissile;
-  const e = scenario.engagements[k] ?? scenario; // k > 0 is the second drone (pair mode)
+  const e = scenario.engagements[k] ?? scenario;
   const dr = scenario.drones[k];
   const tEndRun = chute ? scenario.tSplash : e.tHit;
   // From just after the booster: the catapult stroke is not the airframe manoeuvring.
@@ -103,8 +103,6 @@ export function createHud({ onUnits } = {}) {
   const spark = root.querySelector('.hud-spark');
   const chute = !scenario.hasMissile;
   const engs = scenario.engagements;
-  const nDrones = scenario.drones.length;
-  const pair = nDrones > 1;
   const infos = scenario.drones.map((_, k) => computeDebrief(k));
   const info = infos[0];
   const tEndOf = (k) => (chute ? scenario.tSplash : engs[k].tHit);
@@ -163,7 +161,7 @@ export function createHud({ onUnits } = {}) {
   // Full readouts of drone k (the one the HUD follows).
   function droneHtml(t, k) {
     const [state, tone] = droneState(t, k);
-    const title = pair ? `Drone ${k + 1}` : 'Drone';
+    const title = 'Drone';
     let tiles;
     if (t < tEndOf(k)) {
       const r = rangeAt(t, k);
@@ -185,7 +183,7 @@ export function createHud({ onUnits } = {}) {
   function missileHtml(t, k) {
     const e = engs[k];
     const inf = infos[k];
-    const mTitle = pair ? `Missile ${k + 1}` : 'Missile';
+    const mTitle = 'Missile';
     if (t > e.tLaunch && t < e.tHit) {
       const a = Math.max(t - 0.02, e.tLaunch);
       const b = Math.min(t + 0.02, e.tHit);
@@ -223,41 +221,17 @@ export function createHud({ onUnits } = {}) {
     return head('Recovery', 'Done', 'ok') + `<div class="tiles">${tile('Splashdown', f(info.splashRange), 'm', 'wide')}</div>`;
   }
 
-  // Pair mission: the drone the HUD is not following, on one line.
-  function otherHtml(t, k) {
-    const [state, tone] = droneState(t, k);
-    const e = engs[k];
-    let txt;
-    if (t < scenario.drones[k].tRelease) txt = `Launch in ${secs(scenario.drones[k].tRelease - t)}${secsUnit(scenario.drones[k].tRelease - t) && ' s'}`;
-    else if (t < e.tHit) {
-      txt = `${f(rangeAt(t, k))} m · ${fmtBearing(droneBearing(t, k))} · ${f(Math.max(0, planePos(t, _p, k).y))} m up`;
-      if (t > e.tLaunch) txt += ` · impact ${f(e.tHit - t, 1)} s`;
-    } else txt = `Hit ${f(infos[k].interceptRange)} m out`;
-    return `<div class="hud-other"><b>Drone ${k + 1}</b><span class="chip ${tone}">${state}</span><em>${txt}</em></div>`;
-  }
-
-  // Pair mission: follow the drone (or missile) the camera is on, else the one still flying.
-  function followed(t, focus) {
-    if (!pair) return 0;
-    if (focus === 'plane2' || focus === 'missile2') return 1;
-    if (focus === 'plane' || focus === 'missile') return 0;
-    return t >= engs[0].tHit ? 1 : 0;
-  }
-
-  function liveHtml(t, focus) {
-    const k = followed(t, focus);
-    const second = chute ? recoveryHtml(t) : missileHtml(t, k);
-    const other = pair ? otherHtml(t, 1 - k) : '';
-    return `${phaseHtml(t)}${droneHtml(t, k)}<div class="hud-sec">${second}</div>${other}`;
+  function liveHtml(t) {
+    const second = chute ? recoveryHtml(t) : missileHtml(t, 0);
+    return `${phaseHtml(t)}${droneHtml(t, 0)}<div class="hud-sec">${second}</div>`;
   }
 
   function debriefHtml() {
     const cols = infos.length;
     const row = (label, fn) => `<span>${label}</span>${infos.map((inf, k) => `<b>${fn(inf, k)}</b>`).join('')}`;
     const headline = chute ? '<div class="deb-head ok">Drone recovered</div>'
-      : `<div class="deb-head bad">${pair ? 'Both targets destroyed' : 'Target destroyed'}</div>`;
+      : `<div class="deb-head bad">Target destroyed</div>`;
     const rows = [];
-    if (pair) rows.push(`<span></span>${infos.map((_, k) => `<em class="sub">Drone ${k + 1}</em>`).join('')}`);
     rows.push(row('Drone flight', (i) => `${f(i.droneFlight, 1)} s`), row('Max drone G', (i) => f(i.droneG, 1)),
       row('Closest to ship', (i) => `${f(i.closest)} m`));
     if (chute) {
@@ -332,7 +306,7 @@ export function createHud({ onUnits } = {}) {
   function update(t, focus) {
     if (!enabled) return;
     const done = t >= tAllDone;
-    const html = done ? '' : liveHtml(t, focus);
+    const html = done ? '' : liveHtml(t);
     if (html !== lastHtml) { live.innerHTML = html; lastHtml = html; }
     if (done !== lastDeb) {
       lastDeb = done;
