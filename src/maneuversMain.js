@@ -956,7 +956,8 @@ function updateVTrack(t) {
 if (typeof ResizeObserver === 'function') new ResizeObserver(layoutVTrack).observe(vtrack);
 window.addEventListener('resize', layoutVTrack);
 
-// The camera buttons move to a strip at the top centre on wide windows (the playback panel keeps them otherwise).
+// The camera buttons move to a strip at the top on desktop windows (at the top centre from 1100 px, just left of the
+// readout card below that); the playback panel keeps them on phones.
 {
   const camSeg = document.querySelector('.seg.cam');
   const camHome = camSeg.parentElement;
@@ -964,7 +965,7 @@ window.addEventListener('resize', layoutVTrack);
   strip.id = 'camstrip';
   strip.className = 'camstrip';
   document.body.appendChild(strip);
-  const wide = window.matchMedia('(min-width: 1100px)');
+  const wide = window.matchMedia('(min-width: 901px)');
   const place = () => { if (wide.matches) strip.appendChild(camSeg); else camHome.prepend(camSeg); invalidate(); };
   place();
   wide.addEventListener?.('change', place);

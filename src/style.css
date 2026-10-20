@@ -1052,6 +1052,23 @@ body.mission-maneuvers .marker { font-size: 11px; font-weight: 500; }
   .camstrip { display: block; position: fixed; z-index: 11; top: calc(var(--gap) + var(--safe-t)); left: 50%; transform: translateX(-50%); }
   .camstrip .seg { padding: 4px; gap: 6px; border-radius: 999px; background: rgba(9, 14, 21, 0.6); border: 1px solid var(--border); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
 }
+/* Drill: the camera strip stays on top on every desktop window (a 1920 px screen at 175% scaling is about 1,100 px
+   wide). Below 1100 px it sits just left of the readout card, clear of the top bar, and the playback panel stays
+   narrow and clear of the map. */
+@media (min-width: 901px) and (max-width: 1099px) {
+  body.mission-maneuvers .camstrip { display: block; position: fixed; z-index: 11; top: calc(var(--gap) + var(--safe-t)); left: auto; right: calc(var(--gap) * 2 + var(--safe-r) + 236px); transform: none; }
+  body.mission-maneuvers .camstrip .seg { padding: 4px; gap: 4px; border-radius: 999px; background: rgba(9, 14, 21, 0.6); border: 1px solid var(--border); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+}
+@media (min-width: 901px) and (max-width: 1099px) {
+  /* The playback panel is centred in the room left of the map, so the two never meet. */
+  html body.mission-maneuvers .timeline, html body.mission-maneuvers.has-map .timeline { left: calc((100vw - var(--map-d) - var(--gap) * 2 - var(--safe-r)) / 2); }
+}
+@media (min-width: 901px) and (max-width: 1019px) {
+  /* Too narrow for the strip beside the top bar: it takes a row of its own just under it, and the timeline starts lower. */
+  body.mission-maneuvers .camstrip { top: calc(var(--gap) * 2 + var(--safe-t) + var(--bar-h, 40px)); right: auto; left: calc(var(--gap) + var(--safe-l)); }
+  body.mission-maneuvers .camstrip .seg button { padding: 4px 8px; font-size: 12px; }
+  body.mission-maneuvers .vtrack { top: calc(var(--gap) * 3 + var(--safe-t) + var(--bar-h, 40px) + 36px); }
+}
 @media (min-width: 901px) {
   /* The playback panel, compact: just the transport and the clock, in the middle of the bottom edge. */
   body.mission-maneuvers .timeline, body.mission-maneuvers.has-map .timeline {
