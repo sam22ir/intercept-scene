@@ -112,10 +112,7 @@ const wakes = { alg: createWake(), rus: createWake(), unit: createWake() };
 const stationPhases = PHASES.filter((p) => STATIONS[p.id]).map((p) => {
   const g = stationAt(p.ta);
   // The ring marks where the other ship is to be, from the guide, at the ordered bearing and range.
-  // CORPEN is a wheel: the station turns with the guide (the same gisement all the way round), so its ring is held at
-  // the final station's bearing relative to the final course, 090.
-  const rel = p.id === 'corpen' ? (STATIONS[p.id][0] - 90) * Math.PI / 180 : null;
-  return { p, guide: g.guide, other: g.other, bearing: STATIONS[p.id][0] * Math.PI / 180, rel, range: STATIONS[p.id][1] * YD };
+  return { p, guide: g.guide, other: g.other, bearing: STATIONS[p.id][0] * Math.PI / 180, range: STATIONS[p.id][1] * YD };
 });
 const stationRing = new THREE.Mesh(
   new THREE.RingGeometry(0.82, 1, 48).rotateX(-Math.PI / 2),
@@ -134,8 +131,7 @@ function updateStationMarker(t) {
   const g = ships[sp.guide].ship.group.position;
   const dist = camera.position.distanceTo(g);
   const r = Math.min(Math.max(dist / 22, 40), 160); // keeps its size on screen once you pull away
-  const brg = sp.rel === null ? sp.bearing : shipState(sp.guide, t).heading + sp.rel;
-  stationRing.position.set(g.x + Math.cos(brg) * sp.range, 2.6, g.z + Math.sin(brg) * sp.range);
+  stationRing.position.set(g.x + Math.cos(sp.bearing) * sp.range, 2.6, g.z + Math.sin(sp.bearing) * sp.range);
   stationRing.scale.setScalar(r * (1 + 0.06 * Math.sin(t * 2.4)));
   if (order.state === 'station') _stCol.set(0x3ddc84); else _stCol.set(COLORS[sp.other]);
   stationRing.material.color.copy(_stCol);
