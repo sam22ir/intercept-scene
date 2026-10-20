@@ -133,34 +133,13 @@ export function createEnvironment(renderer, scene, { calm = false } = {}) {
   };
 }
 
-// Analytic ocean, kept deliberately simple so the frame rate stays high: a handful of deep-water waves
-// evaluated per fragment for the normal only (the surface itself stays flat), a sky gradient reflected by
-// Fresnel, the sun's glitter, and a cheap wake. No noise textures, no environment lookups. The waves stand
-// still (only the wake foam drifts with scene time, so it rewinds with the timeline).
-const WAVE_COUNT = 6;
-
-function waveSet() {
-  const rng = mulberry32(4242);
-  const wind = Math.atan2(0.6, 0.8);
-  const dirs = [];
-  const wl = [];
-  const amp = [];
-  const phase = [];
-  for (let i = 0; i < WAVE_COUNT; i++) {
-    // Long swells stay close to the wind; short chop spreads wider.
-    const spread = 0.35 + 0.9 * (i / WAVE_COUNT);
-    const a = wind + (rng() * 2 - 1) * spread;
-    dirs.push(new THREE.Vector2(Math.cos(a), Math.sin(a)));
-    const L = 95 * 0.55 ** i * (0.85 + 0.3 * rng()); // about 95, 52, 29, 16, 9 and 5 m
-    wl.push(L);
-    amp.push(((0.07 + 0.03 * rng()) * L) / (2 * Math.PI)); // steepness a·k ≈ 0.07–0.10
-    phase.push(rng() * Math.PI * 2);
-  }
-  return { dirs, wl, amp, phase };
-}
-
+// Analytic ocean, kept deliberately simple so the frame rate stays high: a slightly choppy sea from five
+// octaves of value noise (features of about 48, 24, 12, 6 and 3 m), evaluated per fragment for the normal
+// only (the surface itself stays flat), a sky gradient reflected by Fresnel, the sun's glitter, and a cheap
+// wake. No noise textures, no environment lookups. Noise, not sine waves: long swells rolled under the moving
+// ships and looked dizzying, and a few crossed sines read as parallel bands or a crosshatch. Each octave is
+// rotated and drifts slowly its own way, as a function of scene time, so it rewinds with the timeline.
 function createOcean(sunDir, calm, horizon) {
-  const waves = waveSet();
   const material = new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
@@ -177,10 +156,6 @@ function createOcean(sunDir, calm, horizon) {
       uFogNear: { value: 3000 },
       uFogFar: { value: 16000 },
       uShipX: { value: 0 }, // ship position along +X, drives the wake
-      uDirs: { value: waves.dirs },
-      uWl: { value: waves.wl },
-      uAmp: { value: waves.amp },
-      uPhase: { value: waves.phase },
     },
     vertexShader: /* glsl */ `
       varying vec3 vWorld;
@@ -191,14 +166,13 @@ function createOcean(sunDir, calm, horizon) {
       }
     `,
     fragmentShader: /* glsl */ `
-      #define NW ${WAVE_COUNT}
-      #define SEA_CALM 0.3
+      #define CHOP_OCTAVES 5
+      #define CHOP_SLOPE 0.085 // slope per octave, about equal at every scale (calm: 60 %)
+      #define CHOP_DRIFT 0.7 // m/s each octave drifts
       uniform float uTime;
       uniform vec3 uSunDir, uSunColor, uDeep, uScatter, uHorizon, uZenith;
       uniform float uFogNear, uFogFar, uShipX, uCalm, uGrid, uGridCell;
       uniform vec2 uRingC;
-      uniform vec2 uDirs[NW];
-      uniform float uWl[NW], uAmp[NW], uPhase[NW];
       varying vec3 vWorld;
 
       float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -206,6 +180,38 @@ function createOcean(sunDir, calm, horizon) {
         vec2 i = floor(p), f = fract(p);
         f = f * f * (3.0 - 2.0 * f);
         return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+      }
+      // Value noise with its analytic gradient (xy = d/dp, z = value), on a sin-free hash that keeps its
+      // precision far from the origin.
+      float hash2(vec2 p) {
+        p = 50.0 * fract(p * 0.3183099 + vec2(0.71, 0.113));
+        return fract(p.x * p.y * (p.x + p.y));
+      }
+      vec3 noised(vec2 x) {
+        vec2 i = floor(x), f = fract(x);
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        vec2 du = 6.0 * f * (1.0 - f);
+        float a = hash2(i), b = hash2(i + vec2(1, 0)), c = hash2(i + vec2(0, 1)), d = hash2(i + vec2(1, 1));
+        float k = a - b - c + d;
+        return vec3(du * (vec2(b - a, c - a) + k * u.yx), a + (b - a) * u.x + (c - a) * u.y + k * u.x * u.y);
+      }
+      // Slope of the chop: each octave rotated (so no direction lines up across scales), drifting its own way,
+      // and faded out once its features shrink toward a pixel (fp: metres per pixel), before it shimmers.
+      vec2 chopGrad(vec2 p, float fp, float slope) {
+        vec2 g = vec2(0.0);
+        float F = 48.0;
+        float ang = 0.4;
+        for (int o = 0; o < CHOP_OCTAVES; o++) {
+          float c = cos(ang), s = sin(ang);
+          mat2 R = mat2(c, s, -s, c);
+          vec2 drift = vec2(cos(ang * 2.3 + 1.0), sin(ang * 2.3 + 1.0)) * (CHOP_DRIFT * uTime);
+          vec3 n = noised(R * (p + drift) / F + float(o) * 17.3);
+          float fade = 1.0 - smoothstep(0.12 * F, 0.4 * F, fp);
+          g += (n.xy * R) * (slope * fade); // d/dp of n(R p / F) * F * slope / F
+          F *= 0.5;
+          ang += 1.37;
+        }
+        return g;
       }
       // A thin line (about one pixel) where d, a distance in pixels, is small.
       float ringAt(float rr, float R, float w) { return 1.0 - min(abs(rr - R) / w, 1.0); }
@@ -246,16 +252,8 @@ function createOcean(sunDir, calm, horizon) {
       void main() {
         vec3 toCam = cameraPosition - vWorld;
         float dist = length(toCam);
-        vec2 grad = vec2(0.0);
-        for (int i = 0; i < NW; i++) {
-          float k = 6.2831853 / uWl[i];
-          // Fade each wave before it aliases (shorter waves fade sooner).
-          float fade = 1.0 - smoothstep(uWl[i] * mix(12.0, 6.0, uCalm), uWl[i] * mix(60.0, 30.0, uCalm), dist);
-          // A still, glassy sea: the ripples do not travel (moving waves under moving ships were dizzying)
-          // and are kept faint, just enough texture to show the ships' motion over the water.
-          float ph = dot(uDirs[i], vWorld.xz) * k + uPhase[i];
-          grad += uDirs[i] * (uAmp[i] * SEA_CALM * mix(1.0, 0.6, uCalm) * k * cos(ph) * fade);
-        }
+        float fp = length(fwidth(vWorld.xz));
+        vec2 grad = chopGrad(vWorld.xz, fp, CHOP_SLOPE * mix(1.0, 0.6, uCalm));
         vec3 n = normalize(vec3(-grad.x, 1.0, -grad.y));
         // Distant water flattens toward a smooth average normal.
         n = normalize(mix(n, vec3(0.0, 1.0, 0.0), smoothstep(mix(800.0, 250.0, uCalm), mix(6000.0, 2500.0, uCalm), dist) * mix(0.6, 0.85, uCalm)));
