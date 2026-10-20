@@ -834,13 +834,14 @@ setPanelFolded(panelFolded, false);
 document.querySelector('#btn-ship').addEventListener('click', () => {
   try { sessionStorage.setItem('intercept.chooser', '1'); location.reload(); } catch { location.search = ''; }
 });
-// The cards hang just under the top bar, whatever its height is at this window width.
+// The cards hang just under the top bar, whatever its height is at this window width. (Set on the next frame, never
+// inside the callback: changing layout there is a "ResizeObserver loop", which start.js shows as a fatal error.)
 if (typeof ResizeObserver === 'function') {
   const topbar = document.querySelector('#topbar');
-  new ResizeObserver(() => {
+  new ResizeObserver(() => requestAnimationFrame(() => {
     document.documentElement.style.setProperty('--bar-h', `${topbar.offsetHeight}px`);
     document.documentElement.style.setProperty('--bar-w', `${topbar.offsetWidth}px`);
-  }).observe(topbar);
+  })).observe(topbar);
 }
 {
   const t = menuText(DRILL_SHIPS === 2 ? 'maneuvers2' : 'maneuvers'); // the same words as the start screen (menu.js)
@@ -955,7 +956,7 @@ function updateVTrack(t) {
     vtEvents.forEach((e, i) => { e.el.classList.toggle('passed', i <= cur); e.el.classList.toggle('current', i === cur); });
   }
 }
-if (typeof ResizeObserver === 'function') new ResizeObserver(layoutVTrack).observe(vtrack);
+if (typeof ResizeObserver === 'function') new ResizeObserver(() => requestAnimationFrame(layoutVTrack)).observe(vtrack); // a frame later, as above
 window.addEventListener('resize', layoutVTrack);
 
 // The camera buttons move to a strip at the top on desktop windows (at the top centre from 1100 px, just left of the
