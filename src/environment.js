@@ -102,6 +102,12 @@ export function createEnvironment(renderer, scene, { calm = false } = {}) {
         const b = c.userData.base;
         c.position.x = b.x + Math.round((camPos.x - b.x) / CLOUD_PERIOD) * CLOUD_PERIOD;
         c.position.z = b.z + Math.round((camPos.z - b.z) / CLOUD_PERIOD) * CLOUD_PERIOD;
+        if (calm) { // a cloud the camera comes close to (a far zoom-out) fades away instead of filling the view
+          const near = c.scale.x * 0.7;
+          const k = Math.min(Math.max((c.position.distanceTo(camPos) - near) / near, 0), 1);
+          c.material.opacity = c.userData.opacity * k;
+          c.visible = k > 0;
+        }
       }
     },
     // Smaller shadow map for the lower quality tiers (the old map is freed and rebuilt on the next frame).
@@ -343,8 +349,10 @@ function createClouds(calm = false) {
       map: textures[i % 3], transparent: true, depthWrite: false, fog: false, opacity: (calm ? 0.88 : 0.75) + rng() * (calm ? 0.12 : 0.25),
       color: new THREE.Color(2.3, 2.3, 2.4), // above 1 so tone mapping keeps them as bright as the sky
     }));
-    sprite.position.set(Math.cos(a) * d, (calm ? 450 : 900) + rng() * (calm ? 1700 : 1400), Math.sin(a) * d);
+    // The calm (drill) clouds ride high, 3,000 to 4,800 m, above where the camera works, so they never cross the view.
+    sprite.position.set(Math.cos(a) * d, (calm ? 3000 : 900) + rng() * (calm ? 1800 : 1400), Math.sin(a) * d);
     sprite.userData.base = sprite.position.clone();
+    sprite.userData.opacity = sprite.material.opacity;
     sprite.scale.set(size, size * 0.5, 1);
     group.add(sprite);
   }
