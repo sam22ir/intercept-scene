@@ -5,7 +5,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  exercise, shipState, SHIP_IDS, relation, headingDeg, PASS, PHASES, YD, KT, FORMATION_RANGE, EXECUTE_FLASH, STATION_FLASH,
+  exercise, shipState, SHIP_IDS, SECTORS, inSector, relation, headingDeg, PASS, PHASES, YD, KT, FORMATION_RANGE, EXECUTE_FLASH, STATION_FLASH,
   orderStatus, lampOn, CUES, LIGHT, guideAt, stationAt, orderedAt, DEBRIEF,
 } from '../src/maneuvers.js';
 
@@ -74,7 +74,7 @@ describe('naval maneuvers: formation geometry', () => {
   it('the third ship, the unit, keeps the course and speed one station (500 yds) to her east, and RUS never fouls it', () => {
     assert.deepEqual(SHIP_IDS, ['alg', 'rus', 'unit']);
     let minRus = Infinity;
-    for (let t = 0; t < exercise.tEnd; t += 1) {
+    for (let t = 0; t < P.screenk.tx; t += 1) { // until the screen, where ALG leaves her
       const a = shipState('alg', t);
       const u = shipState('unit', t);
       near(u.x - a.x, 0, 1e-6, 'abeam in the world frame');
@@ -84,6 +84,38 @@ describe('naval maneuvers: formation geometry', () => {
       minRus = Math.min(minRus, Math.hypot(r.x - u.x, r.z - u.z));
     }
     assert.ok(minRus > 80, `RUS passes the unit at ${minRus.toFixed(0)} m`);
+  });
+
+  it('SCREEN K and SCREEN M: ALG and RUS reach their sectors round the unit and patrol them, the unit sailing straight on', () => {
+    for (const key of ['screenk', 'screenm']) {
+      const p = P[key];
+      assert.ok(p.ta - p.tx > 60, `${key} takes time to reach the sectors`);
+      const end = key === 'screenk' ? P.screenm.t : exercise.tEnd;
+      for (let t = p.ta; t < end; t += 2) {
+        for (const id of ['alg', 'rus']) assert.ok(inSector(id, t, key), `${id} inside her ${key} sector at ${t}`);
+      }
+    }
+    // The unit holds course 090 at 6 kn through the screens.
+    for (let t = P.screenk.tx; t < exercise.tEnd; t += 30) {
+      const u = shipState('unit', t);
+      near(headingDeg(u.heading), 90, 0.5, 'unit course');
+      near(u.speed / KT, 6, 0.2, 'unit speed');
+    }
+    // Sectors: the manual's four-numeral groups, in tens of degrees (left, right) and thousands of yards (inner, outer).
+    near(SECTORS.screenk.alg.d1 / YD, 1500, 1e-6, 'inner depth');
+    near(SECTORS.screenk.rus.d2 / YD, 3500, 1e-6, 'outer depth');
+    assert.deepEqual([SECTORS.screenk.alg.b1, SECTORS.screenk.alg.b2, SECTORS.screenk.rus.b1, SECTORS.screenk.rus.b2], [330, 30, 150, 210]);
+    assert.deepEqual([SECTORS.screenm.alg.b1, SECTORS.screenm.alg.b2, SECTORS.screenm.rus.b1, SECTORS.screenm.rus.b2], [0, 30, 150, 180]);
+    // The screen ships keep apart from each other and from the unit.
+    let min = Infinity;
+    for (let t = P.screenk.ta; t < exercise.tEnd; t += 2) {
+      const a = shipState('alg', t);
+      const r = shipState('rus', t);
+      const u = shipState('unit', t);
+      min = Math.min(min, Math.hypot(a.x - r.x, a.z - r.z), Math.hypot(a.x - u.x, a.z - u.z), Math.hypot(r.x - u.x, r.z - u.z));
+    }
+    assert.ok(min > 1000, `the closest two ships get is ${min.toFixed(0)} m`);
+    assert.ok(exercise.tEnd > P.screenm.ta + 60, 'the exercise runs on after the last arrival');
   });
 
   it('SKIMMING PAST: RUS passes ALG on a reciprocal course about 100 m away', () => {

@@ -76,6 +76,10 @@ export const PHASES = [
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 desig 12040 –', 'G SPEED 6'] }, { head: 'END SERIAL :', lines: [GO, 'EX3 – 4 desig 12040'] }] },
   { id: 'skim', t: 2490, label: 'Skimming past', title: 'SKIMMING PAST', note: 'RUS makes sierra, turns away to starboard and comes back past ALG.',
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 desig 12050'] }, { head: 'END SERIAL :', lines: ['EX3 – 4 desig 12050'] }] },
+  { id: 'screenk', t: 3000, label: 'Screen K', title: 'SCREEN K', note: 'The unit holds course 090 at 6 kn as the screen centre. ALG takes the sector 330 to 030 and RUS the sector 150 to 210, each 1,500 to 3,500 yards out, and patrol them.',
+    serial: [{ lines: [GO, 'SCREEN K–ZZ–3303–01 ANS 03 ANS  ALG', 'SCREEN K–ZZ–1521–01 ANS 03 ANS  RUS', 'G CORPEN 090 – G SPEED 6 –', START_STBY] }] },
+  { id: 'screenm', t: 3500, label: 'Screen M', title: 'SCREEN M', note: 'Take station within your sector: ALG the clockwise half (000 to 030), RUS the counterclockwise half (150 to 180).',
+    serial: [{ lines: [GO, 'ALG  SCREEN M 3', 'RUS  SCREEN M 4', START_STBY] }] },
 ];
 for (const p of PHASES) { p.tx = p.t + STANDBY_DEFAULT + LEAD; p.t = p.tx - STANDBY; }
 const X = Object.fromEntries(PHASES.map((p) => [p.id, p.tx]));
@@ -165,13 +169,86 @@ function integrate(orders, until, start) {
   return rows;
 }
 
-const FULL = 3800; // s baked; the exercise ends well before
+const FULL = 4400; // s baked; the exercise ends well before
 const ALG_FULL = integrate(ALG_ORDERS, FULL, { x: 0, z: 0, psi: 0, v: 12 * KT });
 const RUS_FULL = integrate(RUS_ORDERS, FULL, { x: -FORMATION_RANGE, z: 0, psi: 0, v: 12 * KT });
 // The third ship, the unit the others work around: it keeps ALG's course and speed, one station (500 yds) to
 // starboard of her, so it sails straight alongside whatever ALG does. (Its own orders come with the screens.)
 const UNIT_FULL = integrate(ALG_ORDERS, FULL, { x: 0, z: FORMATION_RANGE, psi: 0, v: 12 * KT });
 export const SHIP_IDS = ['alg', 'rus', 'unit'];
+
+// --- Sector screens (MTP 1(D) Vol. II: SCREEN K forms a sector screen, SCREEN M takes a station within the sector) --
+// Each screen ship is given a sector round the screen centre (here the unit, which sails straight on at 6 kn): two
+// true bearings (left, then right, clockwise) and an inner and an outer depth. It patrols widely inside it, and
+// never closer than 500 yards to a boundary. SCREEN M then narrows the sector to its clockwise or counterclockwise
+// half. The patrol is a slow smooth sweep, a pure function of t, and the ship steers for it (turn rate, speed and
+// acceleration as for the other orders); everything is baked once with the rest.
+export const SECTOR_MARGIN = 500 * YD;
+const D1 = 1500 * YD;
+const D2 = 3500 * YD;
+export const SECTORS = {
+  screenk: { alg: { b1: 330, b2: 30, d1: D1, d2: D2 }, rus: { b1: 150, b2: 210, d1: D1, d2: D2 } },
+  screenm: { alg: { b1: 0, b2: 30, d1: D1, d2: D2 }, rus: { b1: 150, b2: 180, d1: D1, d2: D2 } },
+};
+const sectorSpan = (sec) => (sec.b2 - sec.b1 + 360) % 360;
+function sectorAt(id, t) {
+  return (t >= X.screenm ? SECTORS.screenm : SECTORS.screenk)[id];
+}
+function patrolPoint(id, t) {
+  const sec = sectorAt(id, t);
+  const span = sectorSpan(sec);
+  const centre = sec.b1 + span / 2;
+  const dm = (sec.d1 + sec.d2) / 2;
+  const margin = deg(SECTOR_MARGIN / dm); // 500 yards, in degrees at the middle depth
+  const ampB = Math.max(0, Math.min(span / 2 - margin, 12));
+  const ampD = Math.min((sec.d2 - sec.d1) / 2 - SECTOR_MARGIN * 0.5, 350);
+  const ph = id === 'alg' ? 0.7 : 2.4;
+  const bearing = centre + ampB * Math.sin((2 * Math.PI * t) / 900 + ph);
+  const depth = dm + ampD * Math.sin((2 * Math.PI * t) / 620 + ph * 1.7);
+  const u = lookup(UNIT_FULL, t);
+  return { x: u.x + depth * Math.cos(rad(bearing)), z: u.z + depth * Math.sin(rad(bearing)) };
+}
+// From the moment SCREEN K executes the ship steers for her patrol point instead of following orders.
+function steerToPatrol(rows, id) {
+  const k0 = Math.round(X.screenk / DT);
+  let { x, z, psi, v } = rows[k0];
+  for (let k = k0; k < rows.length - 1; k++) {
+    const t = k * DT;
+    const P = patrolPoint(id, t);
+    const dx = P.x - x;
+    const dz = P.z - z;
+    let diff = Math.atan2(dz, dx) - psi;
+    diff = ((((diff + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) - Math.PI;
+    const rate = rad(TURN_RATE) * DT;
+    const dpsi = Math.abs(diff) <= rate ? diff : Math.sign(diff) * rate;
+    const unitKn = lookup(UNIT_FULL, t).v / KT;
+    const vt = Math.min(15, Math.max(5, unitKn + Math.hypot(dx, dz) / 80)) * KT;
+    const dv = Math.abs(vt - v) <= ACCEL * DT ? vt - v : Math.sign(vt - v) * ACCEL * DT;
+    const mid = psi + dpsi / 2;
+    const vm = v + dv / 2;
+    x += Math.cos(mid) * vm * DT;
+    z += Math.sin(mid) * vm * DT;
+    psi += dpsi;
+    v += dv;
+    rows[k + 1] = { t: (k + 1) * DT, x, z, psi, v };
+  }
+}
+steerToPatrol(ALG_FULL, 'alg');
+steerToPatrol(RUS_FULL, 'rus');
+// The bearing (deg) and range (m) of a ship from the screen centre (the unit), and whether she is inside her sector.
+export function screenRel(id, t) {
+  const a = shipState(id, t);
+  const u = shipState('unit', t);
+  const dx = a.x - u.x;
+  const dz = a.z - u.z;
+  return { range: Math.hypot(dx, dz), bearing: ((deg(Math.atan2(dz, dx)) % 360) + 360) % 360 };
+}
+export function inSector(id, t, key) {
+  const sec = SECTORS[key][id];
+  const r = screenRel(id, t);
+  const off = (r.bearing - sec.b1 + 360) % 360;
+  return off <= sectorSpan(sec) && r.range >= sec.d1 && r.range <= sec.d2;
+}
 
 function lookup(rows, t) {
   const f = Math.min(Math.max(t / DT, 0), rows.length - 1);
@@ -194,7 +271,7 @@ for (let t = X.skim + SKIM_RUN; t < X.skim + 1100; t += DT) {
   if (d < dMin) { dMin = d; tPass = t; }
 }
 export const PASS = { t: tPass, range: dMin };
-export const tEnd = Math.ceil((tPass + 100) / 5) * 5;
+export const tEnd = Math.ceil(Math.max(tPass + 100, X.screenm + 420) / 5) * 5;
 
 // Unwrap each heading so interpolation never spins the long way round.
 for (const rows of [ALG_FULL, RUS_FULL, UNIT_FULL]) {
@@ -284,6 +361,8 @@ const ARRIVAL = {
   corpen: (p) => settledAfter(p.tx, (t) => both(t, 90, 1) && onStation(t, 180, STATION_YD, 8, 1.5)),
   flags: () => FLAGS.t1,
   skim: () => PASS.t,
+  screenk: (p) => settledAfter(p.tx, (t) => inSector('alg', t, 'screenk') && inSector('rus', t, 'screenk')),
+  screenm: (p) => settledAfter(p.tx, (t) => inSector('alg', t, 'screenm') && inSector('rus', t, 'screenm')),
 };
 for (const p of PHASES) {
   p.ta = ARRIVAL[p.id](p);

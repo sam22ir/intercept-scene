@@ -1,5 +1,5 @@
 import { shipNames } from './shipNames.js';
-import { shipState, relation, headingDeg, orderStatus, EXECUTE_FLASH, STATION_FLASH, YD } from './maneuvers.js';
+import { shipState, relation, headingDeg, orderStatus, phaseAt, SECTORS, EXECUTE_FLASH, STATION_FLASH, YD } from './maneuvers.js';
 
 // Exercise map for the naval maneuvers mission: the same round translucent disc as the intercept
 // minimap, but north up (like the briefing diagrams) and centred between the two ships, with
@@ -98,6 +98,29 @@ export function createManeuverMap() {
       ctx.lineTo(sx(p.z), sy(p.x));
       ctx.stroke();
       ctx.globalAlpha = 1;
+    }
+
+    // In a screen order, each screen ship's sector round the unit (the screen centre).
+    const scr = phaseAt(t).id;
+    if (scr === 'screenk' || scr === 'screenm') {
+      for (const id of ['alg', 'rus']) {
+        const sec = SECTORS[scr][id];
+        const span = (sec.b2 - sec.b1 + 360) % 360;
+        const pt = (bd, d) => { const r = (bd * Math.PI) / 180; return [sx(u.z + Math.sin(r) * d), sy(u.x + Math.cos(r) * d)]; };
+        ctx.strokeStyle = COLORS[id];
+        ctx.fillStyle = COLORS[id];
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        const N = Math.max(6, Math.ceil(span / 5));
+        for (let i = 0; i <= N; i++) { const [x, y] = pt(sec.b1 + (span * i) / N, sec.d2); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+        for (let i = N; i >= 0; i--) { const [x, y] = pt(sec.b1 + (span * i) / N, sec.d1); ctx.lineTo(x, y); }
+        ctx.closePath();
+        ctx.globalAlpha = 0.14;
+        ctx.fill();
+        ctx.globalAlpha = 0.7;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
     }
 
     // The station line with its range, between the two ships.

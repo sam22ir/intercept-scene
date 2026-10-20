@@ -14,7 +14,7 @@ import { createManeuverAudio } from './maneuverAudio.js';
 import { toast } from './pathEditor.js';
 import {
   exercise, shipState, headingDeg, phaseAt, orderStatus, PHASES, STANDBY, STANDBY_LIMITS, KT, YD, LIGHT, FLAGS, lampOn,
-  stationAt, orderedAt, STATION_FLASH, STATIONS,
+  stationAt, orderedAt, STATION_FLASH, STATIONS, SECTORS, screenRel, inSector,
 } from './maneuvers.js';
 import { stripShareParams, createShare, readShareParams } from './share.js';
 import { menuText } from './menu.js';
@@ -136,6 +136,51 @@ function updateStationMarker(t) {
   if (order.state === 'station') _stCol.set(0x3ddc84); else _stCol.set(COLORS[sp.other]);
   stationRing.material.color.copy(_stCol);
   stationRing.material.opacity = order.state === 'standby' ? 0.45 : 0.85;
+}
+
+// --- Sector markers: the screen sectors drawn on the sea round the unit (the screen centre), in each screen ship's colour ---
+// A ring-sector (between the two bearings, from the inner to the outer depth) with its outline, shown from the order's
+// announcement until the next sector order. Pure functions of t: they sit on the unit.
+function sectorMesh(sec, hex) {
+  const span = (sec.b2 - sec.b1 + 360) % 360;
+  const N = Math.max(8, Math.ceil(span / 3));
+  const pos = [];
+  const idx = [];
+  const loop = [];
+  for (let i = 0; i <= N; i++) {
+    const b = ((sec.b1 + (span * i) / N) * Math.PI) / 180;
+    pos.push(Math.cos(b) * sec.d1, 0, Math.sin(b) * sec.d1, Math.cos(b) * sec.d2, 0, Math.sin(b) * sec.d2);
+    if (i < N) { const k = i * 2; idx.push(k, k + 1, k + 3, k, k + 3, k + 2); }
+  }
+  for (let i = 0; i <= N; i++) loop.push(pos[i * 6 + 3], 0, pos[i * 6 + 5]); // outer arc, left to right
+  for (let i = N; i >= 0; i--) loop.push(pos[i * 6], 0, pos[i * 6 + 2]); // inner arc back
+  loop.push(loop[0], 0, loop[2]);
+  const fill = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+  fill.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  fill.geometry.setIndex(idx);
+  const edge = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: hex, transparent: true, opacity: 0.7, depthWrite: false, fog: false }));
+  edge.geometry.setAttribute('position', new THREE.Float32BufferAttribute(loop, 3));
+  const g = new THREE.Group();
+  g.add(fill, edge);
+  g.renderOrder = 4;
+  g.visible = false;
+  g.frustumCulled = false;
+  scene.add(g);
+  return g;
+}
+const sectorMeshes = { screenk: {}, screenm: {} };
+for (const key of ['screenk', 'screenm']) for (const id of ['alg', 'rus']) sectorMeshes[key][id] = sectorMesh(SECTORS[key][id], COLORS[id]);
+function updateSectorMarkers(t) {
+  const phase = phaseAt(t);
+  const key = phase.id === 'screenk' || phase.id === 'screenm' ? phase.id : null;
+  const u = ships.unit.ship.group.position;
+  for (const k of ['screenk', 'screenm']) {
+    for (const id of ['alg', 'rus']) {
+      const g = sectorMeshes[k][id];
+      g.visible = k === key;
+      if (g.visible) g.position.set(u.x, 2.3, u.z);
+    }
+  }
 }
 const _w = {};
 const _w2 = {};
@@ -602,9 +647,18 @@ function updateReadout(t) {
   const working = order.state === 'execute' || order.state === 'underway';
   const goalRange = goal && working && Math.abs(rel.range / YD - goal[1]) > 5 ? `<i>→${goal[1]}</i>` : '';
   const goalBrg = goal && working && angGap(rel.bearing, goal[0]) > 1.5 ? ` <i>→${pad3(goal[0])}°</i>` : '';
-  const html = `<div class="mh-row">${mhCell('alg', ships.alg.state, t)}${mhCell('rus', ships.rus.state, t)}${mhCell('unit', ships.unit.state, t)}`
-    + `<div class="mh-cell" title="Station: ${NAME[rel.other]}'s range and true bearing from the guide, ${NAME[rel.guide]}">`
-    + `<span>${NAME[rel.other]} from ${NAME[rel.guide]}</span><b>${Math.round(rel.range / YD)}${goalRange}</b><em>yd · ${pad3(rel.bearing)}°${goalBrg}</em></div>${cpa}</div>`;
+  // In a screen order the station cells are the screen ships' bearing and range from the unit (the screen centre), with a tick once inside the sector.
+  const inScreen = phase.id === 'screenk' || phase.id === 'screenm';
+  const stationCells = inScreen
+    ? ['alg', 'rus'].map((id) => {
+      const sr = screenRel(id, t);
+      const sec = SECTORS[phase.id][id];
+      return `<div class="mh-cell" title="${NAME[id]}'s sector: ${pad3(sec.b1)}° to ${pad3(sec.b2)}°, ${Math.round(sec.d1 / YD)} to ${Math.round(sec.d2 / YD)} yards from ${NAME.unit}">`
+        + `<span>${NAME[id]} from ${NAME.unit}</span><b>${pad3(sr.bearing)}°${inSector(id, t, phase.id) ? ' <i>✓</i>' : ''}</b><em>${(sr.range / YD / 1000).toFixed(1)} kyd</em></div>`;
+    }).join('')
+    : `<div class="mh-cell" title="Station: ${NAME[rel.other]}'s range and true bearing from the guide, ${NAME[rel.guide]}">`
+      + `<span>${NAME[rel.other]} from ${NAME[rel.guide]}</span><b>${Math.round(rel.range / YD)}${goalRange}</b><em>yd · ${pad3(rel.bearing)}°${goalBrg}</em></div>${cpa}`;
+  const html = `<div class="mh-row">${mhCell('alg', ships.alg.state, t)}${mhCell('rus', ships.rus.state, t)}${mhCell('unit', ships.unit.state, t)}${stationCells}</div>`;
   if (html !== lastLive) { liveEl.innerHTML = html; lastLive = html; }
   if (phase !== lastPhase) {
     lastPhase = phase;
@@ -687,7 +741,7 @@ function setGrid(on) {
 }
 function updateGrid(t) {
   if (!gridOn) return;
-  const g = ships.alg.ship.group.position; // the rings stay on ALG, whoever is the guide
+  const g = (['screenk', 'screenm'].includes(phaseAt(t).id) ? ships.unit : ships.alg).ship.group.position; // the rings stay on ALG, or on the unit (the screen centre) in a screen
   gridU.uRingC.value.set(g.x, g.z);
   for (const r of ringLabels) r.tag.obj.position.set(g.x + r.yd * YD, 1, g.z);
 }
@@ -1172,6 +1226,7 @@ renderer.setAnimationLoop((now) => {
   updateWake('rus', t);
   updateWake('unit', t);
   updateStationMarker(t);
+  updateSectorMarkers(t);
   updateGrid(t);
   for (const k of Object.values(tracks)) k.set(t);
   updateLamps(t);
