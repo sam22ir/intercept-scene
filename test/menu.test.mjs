@@ -154,8 +154,9 @@ describe('the words are true of the missions', () => {
     assert.match(m.tagline, /8×/);
     assert.deepEqual(Object.values(FM.SHIP_NAMES), ['SHIP1', 'SHIP2', 'SHIP3', 'SHIP4']);
     assert.ok(m.tagline.includes('SHIP1 to SHIP4') && m.facts[0].includes('SHIP1 to SHIP4'));
-    for (const f of ['line ahead', 'line of bearing', 'line abreast', 'box', 'diamond']) assert.ok(m.tagline.includes(f), f);
-    assert.deepEqual([...new Set(FM.PHASES.map((p) => p.form))].sort(), ['abreast', 'bearing', 'box', 'column', 'diamond']);
+    for (const f of ['line ahead', 'line of bearing', 'line abreast', 'box', 'diamond', 'CORPEN', 'TURN']) assert.ok(m.tagline.includes(f), f);
+    assert.ok(FM.PHASES.some((p) => p.kind === 'corpen') && FM.PHASES.some((p) => p.kind === 'turn'));
+    assert.deepEqual([...new Set(FM.PHASES.filter((p) => p.kind === 'form').map((p) => p.form))].sort(), ['abreast', 'bearing', 'box', 'column', 'diamond']);
     for (const [k] of m.keys.filter(([x]) => /^[A-Z5]$/.test(x))) assert.match(src.formations, new RegExp(`key === '${k.toLowerCase()}'`), `formations: ${k}`);
     assert.match(src.start, /formationsMain\.js/);
   });

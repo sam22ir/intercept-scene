@@ -603,7 +603,7 @@ renderer.setAnimationLoop((now) => {
   }
 });
 
-toast('SHIP1 to SHIP4 run five formations at 8×. Rings mark the new stations. Speed: the button or [ ].', 4500);
+toast('SHIP1 to SHIP4 run five formations, with CORPEN wheels and TURNs together between them, at 8×. Rings mark the stations. Speed: the button or [ ].', 5000);
 
 // Debug / inspection handle (mirrors the other scenes').
 window.__scene = { exercise, clock, rig, camera, controls, setFocus, ships, scene, renderer };
