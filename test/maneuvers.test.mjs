@@ -44,24 +44,24 @@ describe('naval maneuvers: formation geometry', () => {
     near(abeam.dz, -212, 40, 'RUS passes about 210 m to port');
     near(speedKn('alg', P.gform.tx + 150), 6, 0.3, 'ALG at G speed 6');
     near(speedKn('rus', P.gform.tx + 150), 15, 0.3, 'RUS at sierra');
-    const end = relation(P.gform.tx + 520);
+    const end = relation(P.gform.ta + 5);
     near(end.range / YD, 500, 2, 'range');
     angleNear(end.bearing, 180, 0.5, 'ALG is astern of RUS');
-    near(speedKn('alg', P.gform.tx + 520), 12, 0.2, 'B speed 12 again');
+    near(speedKn('alg', P.gform.tx + 380), 12, 0.2, 'B speed 12 again');
   });
 
   it('TURN 045 keeps the station; FORM 120 puts ALG on bearing 120 from RUS at 10 knots', () => {
     angleNear(headingDeg(shipState('alg', P.form120.tx - 5).heading), 45, 1, 'course 045');
     near(relation(P.form120.tx - 5).range / YD, 500, 2, 'range kept through the turn');
-    const f = relation(P.form120.tx + 620);
+    const f = relation(P.form120.ta + 5);
     near(f.range / YD, 500, 4, 'range');
     angleNear(f.bearing, 120, 0.7, 'bearing 120');
-    near(speedKn('alg', P.form120.tx + 300), 10, 0.2, 'B speed 10');
+    near(speedKn('alg', P.form120.tx + 150), 10, 0.2, 'B speed 10');
     near(speedKn('rus', P.form120.tx + 150), 6, 0.3, 'RUS drops back at 6 kn');
   });
 
   it('CORPEN STBD 4 ANS is a wheel: both end on course 090 with ALG on bearing 165 from RUS (the 120 turned by 45); the serials run at 6 knots', () => {
-    const c = P.corpen.tx + 700;
+    const c = P.corpen.ta + 5;
     angleNear(headingDeg(shipState('alg', c).heading), 90, 1, 'course 090');
     angleNear(headingDeg(shipState('rus', c).heading), 90, 1, 'RUS course 090');
     const rel = relation(c);
@@ -111,7 +111,7 @@ describe('naval maneuvers: formation geometry', () => {
       }
     }
     // The formations are formed in this order: column, diamond (only from a column), line abreast, reversed column, then the screens.
-    assert.deepEqual(PHASES.slice(-6).map((p) => p.id), ['fcol', 'fdia', 'fline3', 'fcol2', 'screenk', 'screenm']);
+    assert.deepEqual(PHASES.slice(8, 15).map((p) => p.id), ['fcol', 'fdia', 'fline3', 'fcol2', 'screenk', 'screenm', 'form345']); // after CORPEN: the formations, the screens, the regroup
     // The ships keep clear of each other while changing formation.
     let min = Infinity;
     for (let t = P.fcol.tx; t < P.screenk.t; t += 1) {
@@ -127,13 +127,13 @@ describe('naval maneuvers: formation geometry', () => {
     for (const key of ['screenk', 'screenm']) {
       const p = P[key];
       assert.ok(p.ta - p.tx > 60, `${key} takes time to reach the sectors`);
-      const end = key === 'screenk' ? P.screenm.t : exercise.tEnd;
+      const end = key === 'screenk' ? P.screenm.t : P.form345.tx;
       for (let t = p.ta; t < end; t += 2) {
         for (const id of ['alg', 'rus']) assert.ok(inSector(id, t, key), `${id} inside her ${key} sector at ${t}`);
       }
     }
     // The unit holds course 090 at 6 kn through the screens.
-    for (let t = P.fcol.tx; t < exercise.tEnd; t += 30) {
+    for (let t = P.fcol.tx + 100; t < exercise.tEnd; t += 30) { // it slows from 12 to 6 kn as the formations begin
       const u = shipState('unit', t);
       near(headingDeg(u.heading), 90, 0.5, 'unit course');
       near(u.speed / KT, 6, 0.2, 'unit speed');
@@ -145,7 +145,7 @@ describe('naval maneuvers: formation geometry', () => {
     assert.deepEqual([SECTORS.screenm.alg.b1, SECTORS.screenm.alg.b2, SECTORS.screenm.rus.b1, SECTORS.screenm.rus.b2], [0, 30, 150, 180]);
     // The screen ships keep apart from each other and from the unit.
     let min = Infinity;
-    for (let t = P.screenk.ta; t < exercise.tEnd; t += 2) {
+    for (let t = P.screenk.ta; t < P.form345.tx; t += 2) {
       const a = shipState('alg', t);
       const r = shipState('rus', t);
       const u = shipState('unit', t);
@@ -153,6 +153,17 @@ describe('naval maneuvers: formation geometry', () => {
     }
     assert.ok(min > 1000, `the closest two ships get is ${min.toFixed(0)} m`);
     assert.ok(exercise.tEnd > P.screenm.ta + 60, 'the exercise runs on after the last arrival');
+  });
+
+  it('the flashing light, the flag hoist, the skim and the close pass come last, after the regroup on bearing 345', () => {
+    assert.deepEqual(PHASES.slice(-4).map((p) => p.id), ['form345', 'light', 'flags', 'skim']);
+    const f = relation(P.form345.ta + 10); // ALG from RUS: RUS is 500 yds on bearing 345 from ALG
+    near(f.range / YD, 500, 25, 'range');
+    angleNear(f.bearing, 165, 10, 'bearing');
+    assert.ok(Math.abs(headingDeg(shipState('alg', P.skim.tx).heading) - 90) < 1, 'ALG on 090 as the skim begins');
+    const last = exercise.events.at(-1);
+    assert.equal(last.label, 'Closest pass');
+    assert.ok(exercise.events.at(-2).label === 'Skimming past', 'the skim, then the close pass');
   });
 
   it('SKIMMING PAST: RUS passes ALG on a reciprocal course about 100 m away', () => {
