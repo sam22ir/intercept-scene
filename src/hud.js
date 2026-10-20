@@ -94,7 +94,7 @@ function computeDebrief(k = 0) {
   return d;
 }
 
-export function createHud({ onUnits } = {}) {
+export function createHud({ onUnits, missionSub = '' } = {}) {
   const root = document.querySelector('#hud');
   const button = document.querySelector('#btn-hud');
   const unitsButton = document.querySelector('#btn-units');
@@ -107,6 +107,7 @@ export function createHud({ onUnits } = {}) {
   const info = infos[0];
   const tEndOf = (k) => (chute ? scenario.tSplash : engs[k].tHit);
   const tAllDone = chute ? scenario.tSplash : engs[engs.length - 1].tHit;
+  const missionLine = missionSub;
 
   let enabled = true;
   let units = 'kmh';
@@ -120,8 +121,9 @@ export function createHud({ onUnits } = {}) {
   const spdUnit = () => (units === 'kn' ? 'kn' : 'km/h');
   const secs = (s) => (s >= 60 ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : f(s, 1));
   const secsUnit = (s) => (s >= 60 ? '' : 's'); // m:ss carries no unit
-  const tile = (label, value, unit, cls = '') => `<div class="tile ${cls}"><span>${label}</span><b>${value}${unit ? `<small>${unit}</small>` : ''}</b></div>`;
-  const head = (title, chip, tone) => `<div class="hud-head"><b>${title}</b><span class="chip ${tone}">${chip}</span></div>`;
+  // A row of the readout card: label, value, and a small note (the drill's `.mh-cell`, `cls` colours its dot).
+  const cell = (cls, label, value, note = '', title = '') => `<div class="mh-cell ${cls}"${title ? ` title="${title}"` : ''}><span>${label}</span><b>${value}</b><em>${note}</em></div>`;
+  const u = (v, unit) => `${v}<i>${unit}</i>`;
   let lastHtml = '';
   let lastDeb = null;
   let lastCursor = '';
@@ -148,82 +150,64 @@ export function createHud({ onUnits } = {}) {
     return t < engs[k].tHit ? ['Airborne', 'live'] : ['Destroyed', 'bad'];
   }
 
-  // The story so far and what comes next, from the timeline's own events.
-  function phaseHtml(t) {
+  // The chapter card: the story so far (the timeline's own events), the drone's state, how far through this
+  // chapter, and what comes next.
+  function chapterHtml(t) {
     const ev = scenario.events;
     let cur = ev[0];
     let next = null;
     for (const e of ev) { if (e.t <= t) cur = e; else { next = e; break; } }
-    const nextTxt = next ? `<em>${next.label} in ${secs(next.t - t)}<small>${secsUnit(next.t - t)}</small></em>` : '';
-    return `<div class="hud-phase"><b>${cur.label}</b>${nextTxt}</div>`;
+    const [state, tone] = droneState(t, 0);
+    const p = next ? Math.min(Math.max((t - cur.t) / (next.t - cur.t), 0), 1) : 1;
+    const nextTxt = next ? `Next: ${next.label} in ${secs(next.t - t)}${secsUnit(next.t - t) && ' s'}` : '';
+    return '<div class="mcard mcard-order"><div class="mh-bar"><div class="mh-title">'
+      + `<b>${cur.label}</b><div class="mh-sub"><small>${missionLine}</small><span class="chip shown ${tone}">${state}</span></div></div>`
+      + '<div class="mh-btns"><button type="button" data-hide title="Hide these cards (H, or the Readouts button)" aria-label="Hide">×</button></div></div>'
+      + `<div class="mh-progress" title="How far through this chapter"><i style="width:${(p * 100).toFixed(1)}%"></i></div>`
+      + `<div class="mh-next"${nextTxt ? '' : ' hidden'}>${nextTxt}</div></div>`;
   }
 
-  // Full readouts of drone k (the one the HUD follows).
-  function droneHtml(t, k) {
-    const [state, tone] = droneState(t, k);
-    const title = 'Drone';
-    let tiles;
-    if (t < tEndOf(k)) {
-      const r = rangeAt(t, k);
-      const closing = closingAt(t, k);
-      const onRail = t < scenario.drones[k].tRelease;
-      // An inbound drone inside the launch range is the threat: amber, red inside half of it.
-      const threat = !chute && closing > 0 && !onRail && r < scenario.launchRange
-        ? (r < scenario.launchRange / 2 ? 'threat-high' : 'threat') : '';
-      tiles = tile('Range to ship', f(r), 'm', threat) + tile('Bearing', fmtBearing(droneBearing(t, k)), '', 'brg')
-        + tile('Altitude', f(Math.max(0, planePos(t, _p, k).y)), 'm')
-        + tile('Speed', onRail ? '—' : spd(droneSpeed(t, k)), onRail ? '' : spdUnit())
-        + (onRail ? '' : tile(closing >= 0 ? 'Closing' : 'Opening', spd(closing), spdUnit(), 'opt'));
-    } else {
-      tiles = tile('Status', chute ? 'Afloat' : 'Down', '', 'wide');
-    }
-    return `<div class="hud-sec">${head(title, state, tone)}<div class="tiles">${tiles}</div></div>`;
+  // The drone's rows: range (amber, then red, while an inbound drone is inside the launch range), bearing and height, speed.
+  function droneRows(t) {
+    if (t >= tEndOf(0)) return cell('drone', 'Drone', chute ? 'Afloat' : 'Down', chute ? `${f(info.splashRange)} m out` : '');
+    const r = rangeAt(t, 0);
+    const closing = closingAt(t, 0);
+    const onRail = t < scenario.drones[0].tRelease;
+    const threat = !chute && closing > 0 && !onRail && r < scenario.launchRange
+      ? (r < scenario.launchRange / 2 ? ' threat-high' : ' threat') : '';
+    return cell(`drone${threat}`, 'Range', u(f(r), 'm'), onRail ? 'on the rail' : `${closing >= 0 ? 'closing' : 'opening'} ${spd(closing)} ${spdUnit()}`, 'Range from the drone to the ship')
+      + cell('drone', 'Bearing', fmtBearing(droneBearing(t, 0)), `${f(Math.max(0, planePos(t, _p, 0).y))} m up`, 'Relative bearing from the bow, and the altitude of the drone')
+      + cell('drone', 'Speed', onRail ? '—' : u(spd(droneSpeed(t, 0)), spdUnit()), '');
   }
 
-  function missileHtml(t, k) {
-    const e = engs[k];
-    const inf = infos[k];
-    const mTitle = 'Missile';
+  function missileRows(t) {
+    const e = engs[0];
     if (t > e.tLaunch && t < e.tHit) {
       const a = Math.max(t - 0.02, e.tLaunch);
       const b = Math.min(t + 0.02, e.tHit);
-      const v = missilePos(b, _p, k).distanceTo(missilePos(a, _q, k)) / (b - a);
-      const rng = missilePos(t, _p, k).distanceTo(planePos(t, _q, k));
-      const p = (t - e.tLaunch) / (e.tHit - e.tLaunch);
-      return head(mTitle, 'In flight', 'warn')
-        + `<div class="tiles"><div class="tile"><span>Impact in</span><b class="big-count">${f(e.tHit - t, 1)}<small>s</small></b></div>`
-        + `${tile('Speed', spd(v), spdUnit())}${tile('To target', f(rng), 'm', 'opt')}</div>`
-        + `<div class="bar" style="--p:${p.toFixed(3)}"><i></i></div>`;
+      const v = missilePos(b, _p, 0).distanceTo(missilePos(a, _q, 0)) / (b - a);
+      const rng = missilePos(t, _p, 0).distanceTo(planePos(t, _q, 0));
+      return cell('missile live', 'Missile', u(f(e.tHit - t, 1), 's'), 'to impact')
+        + cell('missile', 'To target', u(f(rng), 'm'), `${spd(v)} ${spdUnit()}`);
     }
     if (t <= e.tLaunch) {
-      // Long before the shot there is nothing to watch but the countdown; close to it, the big count.
       const soon = e.tLaunch - t < 15;
-      return head(mTitle, soon ? 'Ready' : 'Standby', soon ? 'warn' : '')
-        + `<div class="tiles">${soon ? `<div class="tile"><span>Launch in</span><b class="big-count">${f(e.tLaunch - t, 1)}<small>s</small></b></div>`
-          : tile('Launch in', secs(e.tLaunch - t), secsUnit(e.tLaunch - t))}${tile('Fires at', f(inf.launchRange), 'm')}</div>`;
+      return cell(`missile${soon ? ' warn' : ''}`, soon ? 'Missile ready' : 'Missile', u(secs(e.tLaunch - t), secsUnit(e.tLaunch - t)), `fires at ${f(info.launchRange)} m`, 'Time to launch, and the range it fires at');
     }
-    // After the hit: what the shot did, until the debrief takes over.
-    return head(mTitle, 'Hit', 'bad')
-      + `<div class="tiles">${tile('Intercept at', f(inf.interceptRange), 'm')}${tile('Flight time', f(inf.missileFlight, 1), 's')}`
-      + `${tile('Peak speed', spd(inf.missileVmax), spdUnit(), 'opt')}</div>`;
+    return cell('missile hit', 'Missile', 'Hit', `${f(info.interceptRange)} m out`);
   }
 
-  function recoveryHtml(t) {
-    if (t < scenario.tChute) {
-      return head('Recovery', 'Standby', '')
-        + `<div class="tiles">${tile('Chute in', secs(scenario.tChute - t), secsUnit(scenario.tChute - t))}${tile('Opens at', f(info.chuteAlt), 'm')}</div>`;
-    }
+  function recoveryRows(t) {
+    if (t < scenario.tChute) return cell('missile', 'Parachute', u(secs(scenario.tChute - t), secsUnit(scenario.tChute - t)), `opens at ${f(info.chuteAlt)} m`);
     if (t < scenario.tSplash) {
       const rate = f((planePos(t - H, _p).y - planePos(t + H, _q).y) / (2 * H), 1);
-      return head('Recovery', 'Descending', 'warn')
-        + `<div class="tiles">${tile('Descent', rate, 'm/s')}${tile('Splashdown in', f(scenario.tSplash - t, 1), 's')}</div>`;
+      return cell('missile warn', 'Descent', u(rate, 'm/s'), `splash in ${f(scenario.tSplash - t, 1)} s`);
     }
-    return head('Recovery', 'Done', 'ok') + `<div class="tiles">${tile('Splashdown', f(info.splashRange), 'm', 'wide')}</div>`;
+    return cell('missile ok', 'Recovery', 'Done', `${f(info.splashRange)} m out`);
   }
 
   function liveHtml(t) {
-    const second = chute ? recoveryHtml(t) : missileHtml(t, 0);
-    return `${phaseHtml(t)}${droneHtml(t, 0)}<div class="hud-sec">${second}</div>`;
+    return `${chapterHtml(t)}<div class="mcard mcard-ships mh-ships"><div class="mh-row">${droneRows(t)}${chute ? recoveryRows(t) : missileRows(t)}</div></div>`;
   }
 
   function debriefHtml() {
@@ -244,8 +228,8 @@ export function createHud({ onUnits } = {}) {
         row('Warhead', (i) => (i.burst < 2.6 ? 'Direct hit' : `Burst ${f(i.burst)} m`)));
       if (infos.some((i) => i.miss > 0)) rows.push(row('Fell short', (i) => (i.miss > 0 ? `${f(i.miss, 1)} m` : '—')));
     }
-    return `<div class="hud-head"><b>Debrief</b><span class="chip ${chute ? 'ok' : 'bad'}">Complete</span></div>${headline}`
-      + `<div class="deb-rows" style="--cols:${cols}">${rows.join('')}</div>`;
+    return `<div class="mcard mcard-deb"><div class="hud-head"><b>Debrief</b><span class="chip ${chute ? 'ok' : 'bad'}">Complete</span></div>${headline}`
+      + `<div class="deb-rows" style="--cols:${cols}">${rows.join('')}</div></div>`;
   }
 
   // Range to the ship over the whole run, one line per drone, with a cursor at t. Baked once.
@@ -269,6 +253,7 @@ export function createHud({ onUnits } = {}) {
     const lr = chute ? '' : `<line class="lr" x1="0" x2="${SPARK_W}" y1="${yOf(scenario.launchRange)}" y2="${yOf(scenario.launchRange)}"/>`;
     const hits = chute ? '' : engs.map((e) => `<line class="hit" x1="${xOf(e.tHit)}" x2="${xOf(e.tHit)}" y1="0" y2="${SPARK_H}"/>`).join('');
     const maxTxt = rMax >= 1000 ? `${f(rMax / 1000, 1)} km` : `${f(rMax)} m`;
+    spark.classList.add('mcard');
     spark.innerHTML = `<div class="spark-cap"><span>Range to ship</span><small>${maxTxt}</small></div>`
       + `<svg viewBox="0 0 ${SPARK_W} ${SPARK_H}" preserveAspectRatio="none" aria-hidden="true">${lr}${hits}${lines}`
       + '<line class="cur" x1="0" x2="0" y1="0" y2="36"/></svg>'
@@ -322,6 +307,7 @@ export function createHud({ onUnits } = {}) {
   paint();
   onUnits?.(units);
   button.addEventListener('click', () => setEnabled(!enabled));
+  root.addEventListener('click', (e) => { if (e.target.closest('[data-hide]')) setEnabled(false); });
   unitsButton?.addEventListener('click', () => setUnits(units === 'kn' ? 'kmh' : 'kn'));
 
   return {

@@ -1,0 +1,65 @@
+/* The drone missions (Intercept, Recovery: main.js) wear the drill's look and layout: body.mission-maneuvers in
+   style.css gives them the vertical timeline (#vtrack, src/vtrack.js), the camera strip at the top, the compact
+   playback panel, the slim see-through readout cards at the top right and the map at the bottom right, as it does
+   for the formations mission. This file adds `mission-drone`'s own part: the controls the drill hides on purpose
+   come back, and the drone's cards get their colours. Imported by main.js only. */
+
+/* The intercept controls the drill steps aside from: Cinematic in the top bar, and the path editor, missile
+   engagement, units and recorder in the More menu. The drill's own extras (grid, fullscreen) stay hidden. */
+body.mission-drone #btn-director { display: grid; }
+body.mission-drone #btn-edit, body.mission-drone #btn-engage, body.mission-drone #btn-units,
+body.mission-drone #btn-record, body.mission-drone #dl-offline { display: flex; }
+body.mission-drone #btn-engage[hidden] { display: none; }
+body.mission-drone #btn-grid, body.mission-drone #btn-fullscreen:not([hidden]) { display: none; }
+body.mission-drone #menu hr { display: block; }
+
+/* The path editor has the screen to itself: no timeline (either way up), camera strip or cards (the drill's
+   layout rules outrank the plain body.editing ones in style.css). */
+body.mission-drone.editing .timeline, body.mission-drone.editing .vtrack,
+body.mission-drone.editing .camstrip, body.mission-drone.editing .hud { display: none; }
+/* The missile engagement panel opens where the vertical timeline stands. */
+body.mission-drone.engaging .vtrack { display: none; }
+
+/* Readout cards: a dot per row, orange for the drone and cyan for the missile (or the recovery); the units are
+   muted (the drill colours its <i> as the ordered value). */
+.mh-cell.drone span::before, .mh-cell.missile span::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.mh-cell.missile span::before { background: var(--missile); }
+body.mission-drone .mh-cell b i { color: var(--muted); font-size: 0.72em; margin-left: 3px; }
+/* An inbound drone inside the launch range is the threat: its range turns amber, then red inside half of it. */
+body.mission-drone .mh-cell.threat b { color: var(--warn, #ffb547); }
+body.mission-drone .mh-cell.threat-high b { color: var(--bad); }
+body.mission-drone .mh-cell.missile.live b, body.mission-drone .mh-cell.missile.warn b { color: var(--warn, #ffb547); }
+body.mission-drone .mh-cell.missile.hit b { color: var(--bad); }
+body.mission-drone .mh-cell.missile.ok b { color: var(--ok); }
+/* The chip on the chapter card names the drone's state (the drill hides its chip while its banner speaks). */
+body.mission-drone .mh-sub small { overflow: hidden; text-overflow: ellipsis; }
+
+/* The range-to-ship sparkline closes the card column; the debrief replaces the live cards at the end. */
+body.mission-drone .hud-spark.mcard { margin-top: 0; padding: 6px 11px 7px; border-top: 1px solid var(--hair); pointer-events: none; }
+body.mission-drone .hud-spark .spark-cap { font-size: 9.5px; letter-spacing: 0.06em; }
+body.mission-drone .hud-debrief { margin-top: 0; }
+body.mission-drone .hud-debrief .mcard-deb { width: auto; }
+body.mission-drone .hud-live:empty + .hud-debrief:not([hidden]) + .hud-spark { display: none; }
+
+@media (min-width: 901px) {
+  /* One column of cards: chapter, readouts, sparkline. The drill rounds only the first and last corners. */
+  body.mission-drone .mh-ships { border-radius: 0; }
+  body.mission-drone .hud-spark.mcard { border-radius: 0 0 12px 12px; border-top: 1px solid rgba(255, 255, 255, 0.06); background: rgba(9, 14, 21, 0.55); border-color: rgba(255, 255, 255, 0.08); box-shadow: none; }
+  body.mission-drone .hud-debrief .mcard-deb { border-radius: 12px; padding: 9px 12px; }
+  body.mission-drone .hud { width: 250px; }
+  body.mission-drone .mh-ships .mh-cell em { min-width: 0; }
+}
+
+/* Phones (portrait and landscape): the readouts stay as the drill's compact strip; the sparkline is hidden there. */
+@media (max-width: 640px) and (min-height: 501px) {
+  body.mission-drone .hud-spark { display: none; }
+  /* Portrait: the top bar spans the screen, so the cards hang full width just under it (the drill's place, right
+     of the bar, is off screen here); the chapter card on its own line, the four readouts in a row under it. */
+  body.mission-drone .hud { left: calc(var(--gap) + var(--safe-l)); right: calc(var(--gap) + var(--safe-r)); top: calc(var(--gap) + var(--safe-t) + var(--bar-h, 44px) + 6px); }
+  body.mission-drone .hud-live { gap: 6px; }
+  body.mission-drone .mcard-order, body.mission-drone .mh-ships { flex: 1 1 100%; min-width: 0; }
+  body.mission-drone .mcard-order { padding: 6px 10px; }
+  body.mission-drone .mh-ships .mh-cell em { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  body.mission-drone .hud-debrief .mcard-deb { width: auto; }
+}
+@media (max-height: 500px) { body.mission-drone .hud-spark { display: none; } }

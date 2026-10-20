@@ -23,6 +23,13 @@ import { menuText } from './menu.js';
 import { createRecorder } from './recorder.js';
 import { createShare, readShareParams, stripShareParams } from './share.js';
 import { createEngagePanel, SEEK_KEY } from './engagePanel.js';
+import { createVTrack, createCamStrip } from './vtrack.js';
+import './layout-v.css';
+
+// The drill's look and layout (body.mission-maneuvers in style.css: the vertical timeline, the camera strip, the
+// compact playback panel, the slim readout cards and the map at the bottom right), as the formations mission
+// wears it too; layout-v.css puts back what the drill hides and styles the drone's own cards.
+document.body.classList.add('mission-maneuvers', 'mission-drone');
 
 const canvas = document.querySelector('#scene');
 const loadingEl = document.querySelector('#loading');
@@ -394,7 +401,7 @@ canvas.addEventListener('pointermove', (e) => {
   });
 });
 
-const hud = createHud({ onUnits: (u) => { labels.setUnits(u); invalidate(); } });
+const hud = createHud({ onUnits: (u) => { labels.setUnits(u); invalidate(); }, missionSub: menuText(scenario.mode, SHIP_VARIANT).sub });
 
 // --- Clock + timeline UI ------------------------------------------------------
 
@@ -425,6 +432,19 @@ const clock = createTimeline(scenario, {
     if (key === 'c' || key === 'C') setPanelFolded(!panelFolded);
   },
 });
+
+// The timeline stands on end down the left on wide windows, and the camera buttons move to the top strip.
+const vtrack = createVTrack({ events: scenario.events, tEnd: scenario.tEnd, clock, invalidate, fmt: (t) => `${t.toFixed(1)} s` });
+createCamStrip({ invalidate });
+// The cards hang just under the top bar, whatever its height is at this window width (as in the drill).
+if (typeof ResizeObserver === 'function') {
+  const topbar = document.querySelector('#topbar');
+  // Set on the next frame, never inside the callback (that would be a "ResizeObserver loop", shown as fatal).
+  new ResizeObserver(() => requestAnimationFrame(() => {
+    document.documentElement.style.setProperty('--bar-h', `${topbar.offsetHeight}px`);
+    document.documentElement.style.setProperty('--bar-w', `${topbar.offsetWidth}px`);
+  })).observe(topbar);
+}
 
 // Deep link (?t=, ?focus=): open paused at that moment, on that target.
 const shared = readShareParams();
@@ -466,7 +486,11 @@ const editor = createPathEditor({
   onEnter() { engagePanel.close(); invalidate(); labelsBeforeEdit = labels.enabled; labels.setEnabled(false); trailsBeforeEdit = trails.enabled; trails.setEnabled(false); setFocus('free'); },
   onExit() { invalidate(); labels.setEnabled(labelsBeforeEdit); trails.setEnabled(trailsBeforeEdit); },
 });
-const engagePanel = createEngagePanel({ onOpen: invalidate, onClose: invalidate });
+// While the engagement panel is open it takes the vertical timeline's place on the left (body.engaging hides that).
+const engagePanel = createEngagePanel({
+  onOpen() { document.body.classList.add('engaging'); invalidate(); },
+  onClose() { document.body.classList.remove('engaging'); invalidate(); },
+});
 document.querySelector('#btn-engage').addEventListener('click', () => { if (editor.active) editor.exit(); });
 if (scenario.sharedPath) {
   toast('Viewing shared path — your own saved path is untouched. Edit path to make it yours.');
@@ -607,6 +631,7 @@ renderer.setAnimationLoop((now) => {
   audio.update(clock.t, camera, clock);
 
   clock.renderUI();
+  vtrack.update(clock.t);
   hud.update(clock.t, rig.id);
   minimap.update(clock.t);
   const draw = needsRender();
