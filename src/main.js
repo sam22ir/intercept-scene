@@ -271,6 +271,7 @@ const shotCaption = document.querySelector('#shot-caption');
 let directing = false;
 let currentShot = null;
 const dirLook = new THREE.Vector3();
+const _dirTmp = new THREE.Vector3();
 let dirShadowR = 75;
 
 function setDirector(on) {
@@ -286,11 +287,14 @@ function setDirector(on) {
   } else {
     shotCaption.hidden = true;
     currentShot = null;
-    // Hand the view to OrbitControls without a jump: keep the camera where it is and
-    // aim the orbit target level with it (a low shot looks up, which the polar limit forbids).
-    const dist = Math.max(camera.position.distanceTo(dirLook), 5);
-    camera.getWorldDirection(controls.target).setY(0).normalize()
-      .multiplyScalar(dist).add(camera.position);
+    // Hand the view to OrbitControls without a jump: keep the camera where it is and put the orbit target
+    // along the line it looks down, so the first drag turns the view from exactly where the shot left it. Only
+    // a shot that looks up (which the polar limit forbids) is levelled; the target never goes under the sea.
+    let dist = Math.max(camera.position.distanceTo(dirLook), 5);
+    const dir = camera.getWorldDirection(_dirTmp);
+    if (dir.y > 0) dir.setY(0).normalize();
+    else if (dir.y < -1e-3) dist = Math.max(Math.min(dist, camera.position.y / -dir.y), 2);
+    controls.target.copy(camera.position).addScaledVector(dir, dist);
     controls.update();
     focusButtons.forEach((b) => b.classList.toggle('active', b.dataset.focus === 'free'));
   }
