@@ -8,7 +8,7 @@ import './style.css';
 // maneuvers' standby stepper set sessionStorage 'intercept.skip' before reloading, which
 // is read once).
 // scenario.js reads `globalThis.__SHIP_VARIANT` / `__SCENARIO` (set here) or
-// ?ship=fwd|aft and ?mode=intercept|chute|pair at import time, so the scene is
+// ?ship=fwd|aft and ?mode=intercept|chute at import time, so the scene is
 // imported only after a choice is made: no page reload needed.
 
 const $ = (s) => document.querySelector(s);
@@ -39,6 +39,8 @@ import { MISSION_IDS, FIXED_SHIP, menuText } from './menu.js';
 
 const MODES = MISSION_IDS;
 let mode = 'intercept';
+// The two- and three-ship drills are one scene (maneuversMain.js); the model reads the number of ships once at import.
+const isDrill = (m) => m === 'maneuvers' || m === 'maneuvers2';
 
 let launched = false;
 async function launch(id) {
@@ -47,7 +49,8 @@ async function launch(id) {
   globalThis.__SHIP_VARIANT = id;
   // The maneuvers and fly missions have their own scenes; scenario.js (which the ship model imports) just sees
   // an intercept for the first and a recovery (no scripted missile to simulate) for the second.
-  globalThis.__SCENARIO = mode === 'maneuvers' || mode === 'formations' ? 'intercept' : mode === 'fly' ? 'chute' : mode;
+  globalThis.__SCENARIO = isDrill(mode) || mode === 'formations' ? 'intercept' : mode === 'fly' ? 'chute' : mode;
+  if (isDrill(mode)) globalThis.__DRILL_SHIPS = mode === 'maneuvers2' ? 2 : 3;
   if (menuText(mode, id).hasShip) write('localStorage', 'intercept.ship', id); // the missions without a choice leave it alone
   write('localStorage', 'intercept.mode', mode);
   try {
@@ -66,7 +69,7 @@ async function launch(id) {
   // Let the loading screen paint before the scene's heavy synchronous setup.
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
   try {
-    await (mode === 'maneuvers' ? import('./maneuversMain.js') : mode === 'formations' ? import('./formationsMain.js')
+    await (isDrill(mode) ? import('./maneuversMain.js') : mode === 'formations' ? import('./formationsMain.js')
       : mode === 'fly' ? import('./flyMain.js') : import('./main.js'));
   } catch (err) {
     showFatal(err);
@@ -175,7 +178,7 @@ try {
 const rememberedMode = read('localStorage', 'intercept.mode');
 mode = MODES.includes(modeFromUrl) ? modeFromUrl : (MODES.includes(rememberedMode) ? rememberedMode : 'intercept');
 const validShip = fromUrl === 'fwd' || fromUrl === 'aft';
-if ((validShip || mode === 'maneuvers' || mode === 'formations' || mode === 'fly') && !forceChooser && (skipChooser || scripted)) launch(validShip ? fromUrl : 'fwd');
+if ((validShip || isDrill(mode) || mode === 'formations' || mode === 'fly') && !forceChooser && (skipChooser || scripted)) launch(validShip ? fromUrl : 'fwd');
 else showChooser(validShip ? fromUrl : null);
 
 // The top bar's Menu button goes back to the main menu through each scene's own handler on #btn-ship.

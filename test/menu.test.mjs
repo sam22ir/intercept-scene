@@ -7,7 +7,7 @@ import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { MISSIONS, SHIPS, MISSION_IDS, FIXED_SHIP, menuText, missionById } from '../src/menu.js';
+import { MISSIONS, SHIPS, GROUPS, MISSION_IDS, FIXED_SHIP, menuText, missionById } from '../src/menu.js';
 
 const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
 const html = read('../index.html');
@@ -18,31 +18,36 @@ const src = {
 };
 const urlOf = (f, q) => `${pathToFileURL(new URL(f, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')).href}?${q}`;
 
-// The scenario in each of its three drone modes, each under its own module instance (it reads its mission at import).
+// The scenario in each of its two drone modes, each under its own module instance (it reads its mission at import).
 const scenarios = {};
-let M; // maneuvers.js
+let M; // maneuvers.js (three ships)
+let M2; // maneuvers.js with two ships
 let F; // fly.js
 let FM; // formations.js
 before(async () => {
-  for (const mode of ['intercept', 'chute', 'pair']) {
+  for (const mode of ['intercept', 'chute']) {
     globalThis.__SHIP_VARIANT = 'fwd';
     globalThis.__SCENARIO = mode;
     scenarios[mode] = (await import(urlOf('../src/scenario.js', `menu-${mode}`))).scenario;
   }
   globalThis.__SCENARIO = 'chute'; // fly.js loads the base scenario module under the recovery mission
   M = await import(urlOf('../src/maneuvers.js', 'menu'));
+  globalThis.__DRILL_SHIPS = 2;
+  M2 = await import(urlOf('../src/maneuvers.js', 'menu-two'));
+  delete globalThis.__DRILL_SHIPS;
   F = await import(urlOf('../src/fly.js', 'menu'));
   FM = await import(urlOf('../src/formations.js', 'menu'));
 });
 
 const chooser = () => html.slice(html.indexOf('<div id="chooser"'), html.indexOf('<svg width="0"'));
-const rowOf = (id) => chooser().match(new RegExp(`<button class="mission"[^>]*data-mode="${id}">(.*?)</button>`, 's'))?.[1] ?? '';
+const rowOf = (id) => chooser().match(new RegExp(`<button class="mission( tile)?"[^>]*data-mode="${id}">(.*?)</button>`, 's'))?.[2] ?? '';
+const isTile = (id) => new RegExp(`<button class="mission tile"[^>]*data-mode="${id}"`).test(chooser());
 const cardOf = (id) => chooser().match(new RegExp(`<button class="card"[^>]*data-ship="${id}">(.*?)</button>`, 's'))?.[1] ?? '';
 const text = (s) => s.replace(/<svg.*?<\/svg>/gs, '').replace(/<kbd>.*?<\/kbd>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
 describe('the menu data', () => {
   it('lists the six missions once each, in a fixed order, with every field', () => {
-    assert.deepEqual(MISSION_IDS, ['intercept', 'chute', 'pair', 'maneuvers', 'formations', 'fly']);
+    assert.deepEqual(MISSION_IDS, ['intercept', 'chute', 'fly', 'maneuvers2', 'maneuvers', 'formations']);
     assert.equal(new Set(MISSIONS.map((m) => m.name)).size, MISSIONS.length, 'names are unique');
     for (const m of MISSIONS) {
       for (const f of ['name', 'kind', 'blurb', 'tagline', 'brand', 'button']) assert.ok(typeof m[f] === 'string' && m[f].length >= 3, `${m.id}.${f}`);
@@ -51,7 +56,21 @@ describe('the menu data', () => {
       assert.ok(m.brand.length <= 16, `${m.id}'s top-bar title fits`);
       if (!m.ship) assert.ok(m.fixed && m.fixedNote && m.sub, `${m.id} says what is fixed`);
     }
-    assert.deepEqual(MISSIONS.filter((m) => !m.ship).map((m) => m.id), ['maneuvers', 'formations', 'fly']);
+    assert.deepEqual(MISSIONS.filter((m) => !m.ship).map((m) => m.id), ['fly', 'maneuvers2', 'maneuvers', 'formations']);
+  });
+
+  it('groups the missions: the drone ones, then the tactical maneuvers by the number of ships', () => {
+    assert.deepEqual(GROUPS.map((g) => g.id), ['drone', 'tactical']);
+    assert.deepEqual(MISSIONS.filter((m) => m.group === 'drone').map((m) => m.id), ['intercept', 'chute', 'fly']);
+    const tac = MISSIONS.filter((m) => m.group === 'tactical');
+    assert.deepEqual(tac.map((m) => m.ships), [2, 3, 4]);
+    for (const m of tac) {
+      assert.equal(m.tile, `${m.ships} ships`);
+      assert.ok(m.tileSub && m.facts[0].startsWith(`${m.ships} ships`), `${m.id} says how many ships`);
+    }
+    assert.ok(MISSIONS.every((m) => GROUPS.some((g) => g.id === m.group)));
+    assert.equal(M.SHIP_IDS.length, 3);
+    assert.equal(M2.SHIP_IDS.length, 2);
   });
 
   it('start.js builds its mission list from the data, not from a list of its own', () => {
@@ -121,19 +140,20 @@ describe('the words are true of the missions', () => {
     assert.ok(m.facts.includes('No missile'));
   });
 
-  it('Two drones: the second leaves 14 s after the first and has its own missile', () => {
-    const sc = scenarios.pair;
-    assert.equal(sc.drones.length, 2);
-    assert.equal(sc.engagements.length, 2);
-    const gap = sc.drones[1].tRelease - sc.drones[0].tRelease;
-    assert.ok(Math.abs(gap - 14) < 1e-9, `the gap is ${gap}`);
-    const m = missionById('pair');
-    assert.match(m.tagline, new RegExp(`${Math.round(gap)} s after the first`));
-    assert.ok(m.facts.includes(`${Math.round(gap)} s apart`));
-    assert.ok(m.facts[0].startsWith('2 drones') && m.facts[0].includes('2 missiles'));
+  it('Two-ship drill: ALG and RUS alone, the number of orders, the length and the play speed', () => {
+    const m = missionById('maneuvers2');
+    const minutes = Math.round(M2.exercise.tEnd / 60);
+    assert.ok(m.tagline.includes(`${M2.PHASES.length} orders, about ${minutes} minutes`), `${M2.PHASES.length} orders, ${minutes} min`);
+    assert.ok(m.facts.includes(`${M2.PHASES.length} orders`));
+    assert.ok(m.facts.includes(`About ${minutes} minutes`));
+    assert.match(m.tagline, /4×/);
+    assert.deepEqual(M2.SHIP_IDS, ['alg', 'rus']);
+    assert.ok(!/unit/i.test(m.tagline + m.facts.join()), 'no unit in the two-ship drill');
+    for (const f of ['FORM 120', 'FORM 345']) assert.ok(m.tagline.includes(f) && M2.PHASES.some((p) => p.title === f), f);
+    assert.match(src.start, /__DRILL_SHIPS = mode === 'maneuvers2' \? 2 : 3/);
   });
 
-  it('Naval maneuvers: the number of orders, the length of the exercise and the play speed', () => {
+  it('Three-ship drill: the number of orders, the length of the exercise and the play speed', () => {
     const m = missionById('maneuvers');
     const minutes = Math.round(M.exercise.tEnd / 60);
     assert.ok(m.tagline.includes(`${M.PHASES.length} orders, about ${minutes} minutes`), `${M.PHASES.length} orders, ${minutes} min`);
@@ -183,7 +203,7 @@ describe('the words are true of the missions', () => {
   });
 
   it('the keys listed for the other missions are bound in their scenes', () => {
-    for (const id of ['intercept', 'chute', 'pair']) {
+    for (const id of ['intercept', 'chute']) {
       const keys = missionById(id).keys.map(([k]) => k);
       for (const k of keys.filter((x) => /^[A-Z]$/.test(x))) assert.match(src.main, new RegExp(`key === '${k.toLowerCase()}'`), `${id}: ${k}`);
     }
@@ -196,15 +216,26 @@ describe('the words are true of the missions', () => {
 
 describe('index.html shows what the data says', () => {
   for (const m of MISSIONS) {
-    it(`the ${m.id} row`, () => {
+    it(`the ${m.id} ${m.group === 'tactical' ? 'tile' : 'row'}`, () => {
       const row = rowOf(m.id);
-      assert.ok(row, 'the row exists');
-      assert.equal(text(row.match(/<b>(.*?)<\/b>/s)[1]), m.name);
-      assert.equal(text(row.match(/<small>(.*?)<\/small>/s)[1]), m.blurb);
-      assert.equal(text(row.match(/<em class="m-kind">(.*?)<\/em>/s)[1]), m.kind);
+      assert.ok(row, 'it exists');
+      assert.equal(isTile(m.id), m.group === 'tactical', 'the tactical maneuvers are tiles');
+      if (m.group === 'tactical') {
+        assert.equal(text(row.match(/<b>(.*?)<\/b>/s)[1]), m.tile);
+        assert.equal(text(row.match(/<small>(.*?)<\/small>/s)[1]), m.tileSub);
+      } else {
+        assert.equal(text(row.match(/<b>(.*?)<\/b>/s)[1]), m.name);
+        assert.equal(text(row.match(/<small>(.*?)<\/small>/s)[1]), m.blurb);
+        assert.equal(text(row.match(/<em class="m-kind">(.*?)<\/em>/s)[1]), m.kind);
+      }
       assert.match(row, /<svg/);
     });
   }
+
+  it('heads each group with its name, in order', () => {
+    const heads = [...chooser().matchAll(/<h2 class="m-group"[^>]*>(.*?)<\/h2>/gs)].map((x) => text(x[1].replace(/<em.*?<\/em>/s, '')).replace(/&amp;/g, '&'));
+    assert.deepEqual(heads, GROUPS.map((g) => g.name));
+  });
 
   for (const s of SHIPS) {
     it(`the ${s.id} launcher card`, () => {

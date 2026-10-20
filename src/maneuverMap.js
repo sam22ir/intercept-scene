@@ -1,5 +1,7 @@
 import { shipNames } from './shipNames.js';
-import { shipState, relation, headingDeg, orderStatus, phaseAt, guideShipAt, SECTORS, EXECUTE_FLASH, STATION_FLASH, YD } from './maneuvers.js';
+import { shipState, relation, headingDeg, orderStatus, phaseAt, guideShipAt, SECTORS, EXECUTE_FLASH, STATION_FLASH, YD, SHIP_IDS } from './maneuvers.js';
+
+const HAS_UNIT = SHIP_IDS.includes('unit'); // the three-ship drill
 
 // Exercise map for the naval maneuvers mission: the same round translucent disc as the intercept
 // minimap, but north up (like the briefing diagrams) and centred on the guide, which stays fixed in the middle, with
@@ -44,7 +46,7 @@ export function createManeuverMap() {
   function draw(t) {
     shipState('alg', t, a);
     shipState('rus', t, b);
-    shipState('unit', t, u);
+    if (HAS_UNIT) shipState('unit', t, u);
     // The map is centred on the guide: ALG, RUS after G FORM RUS, the unit through the formations on her and the
     // screens (G FORM UNIT, the screen centre), ALG again in the final FORM 1.
     const g = { alg: a, rus: b, unit: u }[guideShipAt(t)];
@@ -52,7 +54,7 @@ export function createManeuverMap() {
     const cz = g.z; // metres East
     const half = SIZE / 2;
     const rim = half - 7;
-    const span = Math.max(...[a, b, u].map((s) => Math.hypot(s.x - cx, s.z - cz))); // the farthest ship from the guide
+    const span = Math.max(...(HAS_UNIT ? [a, b, u] : [a, b]).map((s) => Math.hypot(s.x - cx, s.z - cz))); // the farthest ship from the guide
     const R = ZOOMS[zoom] === 'auto' ? (SCALES.find((s) => s >= span * 1.12) ?? SCALES[SCALES.length - 1]) : ZOOMS[zoom];
     const k = rim / R;
     const sx = (z) => half + (z - cz) * k;
@@ -85,7 +87,7 @@ export function createManeuverMap() {
     ctx.fillText('W', 8, half + 3);
 
     // Recent tracks (the part already steamed).
-    for (const id of ['alg', 'rus', 'unit']) {
+    for (const id of SHIP_IDS) {
       ctx.strokeStyle = COLORS[id];
       ctx.lineWidth = 1.4;
       ctx.globalAlpha = 0.5;
@@ -159,14 +161,16 @@ export function createManeuverMap() {
     arrow(ax, ay, a.heading, COLORS.alg);
     arrow(bx, by, b.heading, COLORS.rus);
     const ux2 = sx(u.z); const uy2 = sy(u.x);
-    arrow(ux2, uy2, u.heading, COLORS.unit);
+    if (HAS_UNIT) arrow(ux2, uy2, u.heading, COLORS.unit);
     ctx.font = '600 9px system-ui, sans-serif';
     ctx.fillStyle = COLORS.alg;
     ctx.fillText(shipNames.alg, ax, ay - 10);
     ctx.fillStyle = COLORS.rus;
     ctx.fillText(shipNames.rus, bx, by - 10);
-    ctx.fillStyle = COLORS.unit;
-    ctx.fillText(shipNames.unit, ux2, uy2 - 10);
+    if (HAS_UNIT) {
+      ctx.fillStyle = COLORS.unit;
+      ctx.fillText(shipNames.unit, ux2, uy2 - 10);
+    }
 
     // EXECUTE (the ships start the maneuver): a green pulse; A STATION (they are in position): a white one.
     const order = orderStatus(t);

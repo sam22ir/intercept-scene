@@ -603,6 +603,16 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 .mission .i-line, .brief-art .i-line { stroke: var(--muted); stroke-width: 1.2; }
 .mission .i-sea, .brief-art .i-sea { stroke: #3d7fa6; }
 .mission .i-ship, .brief-art .i-ship { stroke: var(--ok); stroke-width: 2.2; fill: rgba(61, 220, 132, 0.18); }
+.missions .m-group { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; margin: 6px 0 2px; }
+.missions .m-group:first-child { margin-top: 0; }
+.missions .m-group::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.m-group .m-kind { letter-spacing: 0.12em; }
+/* Tactical maneuvers: one tile per number of ships. */
+.tac { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.mission.tile { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; gap: 6px; padding: 12px 6px 10px; }
+.mission.tile svg { width: 42px; height: 42px; }
+.mission.tile .m-txt b { font-size: 15px; }
+.mission.tile .m-txt small { font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* The briefing: it follows the selected mission (and launcher). */
 .brief { display: grid; gap: 14px; padding: 20px 22px 22px; border-radius: 18px; background: rgba(255, 255, 255, 0.045); border: 1px solid var(--border); }
@@ -678,6 +688,7 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
   .missions { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .mission { padding: 8px 10px; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; }
   .mission svg { width: 30px; height: 30px; }
+  .mission.tile { padding: 8px 4px; grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .brief { padding: 14px; gap: 12px; }
   .brief-art { width: 58px; height: 58px; border-radius: 16px; }
   .brief-art svg { width: 40px; height: 40px; }
@@ -705,6 +716,10 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
   .mission { padding: 6px 10px; gap: 10px; grid-template-columns: 32px minmax(0, 1fr) auto; }
   .mission svg { width: 30px; height: 30px; }
   .m-txt small { display: none; }
+  .mission.tile { padding: 8px 4px 6px; gap: 3px; grid-template-columns: minmax(0, 1fr); }
+  .mission.tile svg { width: 30px; height: 30px; }
+  .mission.tile .m-txt small { display: block; }
+  .missions .m-group { margin-top: 3px; }
   .brief { padding: 12px 16px 14px; gap: 9px; }
   .brief-top { gap: 12px; }
   .brief-art { width: 54px; height: 54px; border-radius: 14px; }
@@ -733,6 +748,8 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
   .mission { padding: 5px 10px; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; }
   .mission svg { width: 26px; height: 26px; }
   .m-txt small { display: none; }
+  .mission.tile { padding: 5px 4px; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .missions .m-group { margin-top: 2px; }
   .brief { padding: 10px 12px; gap: 8px; border-radius: 12px; }
   .brief-art { width: 44px; height: 44px; border-radius: 12px; }
   .brief-art svg { width: 30px; height: 30px; }

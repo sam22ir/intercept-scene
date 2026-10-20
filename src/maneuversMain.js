@@ -14,7 +14,7 @@ import { createManeuverAudio } from './maneuverAudio.js';
 import { toast } from './pathEditor.js';
 import {
   exercise, guideShipAt, shipState, headingDeg, phaseAt, orderStatus, PHASES, STANDBY, STANDBY_LIMITS, KT, YD, LIGHT, FLAGS, lampOn,
-  stationAt, orderedAt, STATION_FLASH, STATIONS, SECTORS, screenRel, inSector, FORMS, stationPoint,
+  stationAt, orderedAt, STATION_FLASH, STATIONS, SECTORS, screenRel, inSector, FORMS, stationPoint, SHIP_IDS, DRILL_SHIPS,
 } from './maneuvers.js';
 import { stripShareParams, createShare, readShareParams } from './share.js';
 import { menuText } from './menu.js';
@@ -26,7 +26,8 @@ import { shipNames, rn, saveNames, NAME_MAX } from './shipNames.js';
 // instead of main.js when that mission is picked.
 
 const COLORS = { alg: 0x3ddc84, rus: 0xff7a1a, unit: 0x5ab4ff };
-const SHIP_IDS = ['alg', 'rus', 'unit'];
+// The ships come from the model: ALG and RUS, and the unit in the three-ship drill (DRILL_SHIPS, the start screen's tile).
+const HAS_UNIT = SHIP_IDS.includes('unit');
 // The exercise starts near (-3200, -3400) so that the roughly 6 km it covers is centred on the origin.
 const SHIFT = new THREE.Vector3(-3200, 0, -3400);
 
@@ -63,10 +64,10 @@ env.setShadowSize(1024);
 const ships = {
   alg: { id: 'alg', ship: createShip({ ensign: 'alg' }), state: {} },
   rus: { id: 'rus', ship: createShip({ ensign: 'rus' }), state: {} },
-  // The unit the others work around: a larger ship (the frigate model scaled up).
-  unit: { id: 'unit', ship: createShip({ ensign: 'alg' }), state: {} },
+  // The unit the others work around: a larger ship (the frigate model scaled up). Three-ship drill only.
+  ...(HAS_UNIT ? { unit: { id: 'unit', ship: createShip({ ensign: 'alg' }), state: {} } } : {}),
 };
-ships.unit.ship.group.scale.setScalar(1.4);
+ships.unit?.ship.group.scale.setScalar(1.4);
 for (const s of Object.values(ships)) scene.add(s.ship.group);
 
 function placeShip(s, t) {
@@ -103,7 +104,7 @@ function createWake() {
   scene.add(mesh);
   return { pos, col, geo };
 }
-const wakes = { alg: createWake(), rus: createWake(), unit: createWake() };
+const wakes = Object.fromEntries(SHIP_IDS.map((id) => [id, createWake()]));
 
 // --- Station markers: where the ordered station is, drawn on the sea for the order in progress ------------------
 // A ring at the spot the other ship is to take up (the ordered range and bearing from the guide), in that
@@ -195,7 +196,7 @@ for (const key of ['screenk', 'screenm']) for (const id of ['alg', 'rus']) secto
 function updateSectorMarkers(t) {
   const phase = phaseAt(t);
   const key = phase.id === 'screenk' || phase.id === 'screenm' ? phase.id : null;
-  const u = ships.unit.ship.group.position;
+  const u = (ships.unit ?? ships.alg).ship.group.position;
   for (const k of ['screenk', 'screenm']) {
     for (const id of ['alg', 'rus']) {
       const g = sectorMeshes[k][id];
@@ -258,7 +259,7 @@ function trackLine(id) {
   const segs = flat.length / 3 - 1;
   return { plan: done, done, set(t) { doneGeo.instanceCount = Math.max(0, Math.min(segs, Math.ceil((t / exercise.tEnd) * segs))); } };
 }
-const tracks = { alg: trackLine('alg'), rus: trackLine('rus'), unit: trackLine('unit') };
+const tracks = Object.fromEntries(SHIP_IDS.map((id) => [id, trackLine(id)]));
 const trackGroupVisible = (on) => { for (const k of Object.values(tracks)) k.plan.visible = k.done.visible = on; };
 
 // --- Signals: the lamp's flashes and the flag hoist -----------------------------------------------------
@@ -361,7 +362,7 @@ const ringTexture = (hex) => canvasTexture(64, 64, (c) => {
   c.fillStyle = hex; c.beginPath(); c.arc(32, 32, 5, 0, Math.PI * 2); c.fill();
 });
 const markers = {};
-for (const [id, hex] of [['alg', '#3ddc84'], ['rus', '#ff7a1a'], ['unit', '#5ab4ff']]) {
+for (const [id, hex] of [['alg', '#3ddc84'], ['rus', '#ff7a1a'], ['unit', '#5ab4ff']].filter(([id]) => SHIP_IDS.includes(id))) {
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTexture(hex), depthTest: false, transparent: true, sizeAttenuation: false, fog: false }));
   sprite.scale.setScalar(0.05);
   sprite.renderOrder = 20;
@@ -395,7 +396,7 @@ function tag(kind, title, color) {
   labelGroup.add(obj);
   return { obj, title: el.querySelector('.tag-title'), body: el.querySelector('.tag-body') };
 }
-const tags = { alg: tag('ship', shipNames.alg, '#3ddc84'), rus: tag('ship', shipNames.rus, '#ff7a1a'), unit: tag('ship', shipNames.unit, '#5ab4ff') };
+const tags = { alg: tag('ship', shipNames.alg, '#3ddc84'), rus: tag('ship', shipNames.rus, '#ff7a1a'), ...(HAS_UNIT ? { unit: tag('ship', shipNames.unit, '#5ab4ff') } : {}) };
 const stationTag = tag('range', '', '#ffffff'); // the distance between the ships, on the line between them
 stationTag.obj.center.set(0.5, 0.5);
 let shownRange = null;
@@ -450,9 +451,9 @@ const targets = {
   // carries the ship's position for the shadow and the focus buttons.
   alg: { pos: (out) => out.copy(ships.alg.ship.group.position).setY(12), distance: 150, minDistance: 40 },
   rus: { pos: (out) => out.copy(ships.rus.ship.group.position).setY(12), distance: 150, minDistance: 40 },
-  unit: { pos: (out) => out.copy(ships.unit.ship.group.position).setY(14), distance: 190, minDistance: 40 },
+  ...(HAS_UNIT ? { unit: { pos: (out) => out.copy(ships.unit.ship.group.position).setY(14), distance: 190, minDistance: 40 } } : {}),
   formation: {
-    pos: (out) => out.addVectors(ships.alg.ship.group.position, ships.rus.ship.group.position).add(ships.unit.ship.group.position).multiplyScalar(1 / 3).setY(0),
+    pos: (out) => { out.set(0, 0, 0); for (const id of SHIP_IDS) out.add(ships[id].ship.group.position); return out.multiplyScalar(1 / SHIP_IDS.length).setY(0); },
     distance: 1000, minDistance: 120,
   },
 };
@@ -462,6 +463,7 @@ const FOCUS_ALIAS = { plane: 'alg', missile: 'rus', plane2: 'unit', ship: 'forma
 const FOCUS_LABEL = { alg: shipNames.alg, rus: shipNames.rus, unit: shipNames.unit, formation: 'Formation' };
 for (const b of focusButtons) {
   const id = FOCUS_ALIAS[b.dataset.focus];
+  if (id === 'unit' && !HAS_UNIT) { b.hidden = true; b.disabled = true; b.removeAttribute('data-focus'); continue; } // the two-ship drill has no unit
   if (id) { b.dataset.focus = id; b.textContent = FOCUS_LABEL[id]; b.disabled = false; b.hidden = false; b.removeAttribute('data-pair-only'); b.title = `Look at ${FOCUS_LABEL[id]} (${{ alg: 1, rus: 2, formation: 3, unit: 4 }[id]})`; }
 }
 function setFocus(id, distance) {
@@ -680,7 +682,7 @@ function updateReadout(t) {
     }).join('')
     : `<div class="mh-cell" title="Station: ${NAME[rel.other]}'s range and true bearing from the guide, ${NAME[rel.guide]}">`
       + `<span>${NAME[rel.other]} from ${NAME[rel.guide]}</span><b>${Math.round(rel.range / YD)}${goalRange}</b><em>yd · ${pad3(rel.bearing)}°${goalBrg}</em></div>${cpa}`;
-  const html = `<div class="mh-row">${mhCell('alg', ships.alg.state, t)}${mhCell('rus', ships.rus.state, t)}${mhCell('unit', ships.unit.state, t)}${stationCells}</div>`;
+  const html = `<div class="mh-row">${mhCell('alg', ships.alg.state, t)}${mhCell('rus', ships.rus.state, t)}${HAS_UNIT ? mhCell('unit', ships.unit.state, t) : ''}${stationCells}</div>`;
   if (html !== lastLive) { liveEl.innerHTML = html; lastLive = html; }
   if (phase !== lastPhase) {
     lastPhase = phase;
@@ -763,7 +765,7 @@ function setGrid(on) {
 }
 function updateGrid(t) {
   if (!gridOn) return;
-  const g = (['screenk', 'screenm', ...Object.keys(FORMS)].includes(phaseAt(t).id) ? ships.unit : ships.alg).ship.group.position; // the rings stay on ALG, or on the unit (the screen centre) in a screen
+  const g = (HAS_UNIT && ['screenk', 'screenm', ...Object.keys(FORMS)].includes(phaseAt(t).id) ? ships.unit : ships.alg).ship.group.position; // the rings stay on ALG, or on the unit (the screen centre) in a screen
   gridU.uRingC.value.set(g.x, g.z);
   for (const r of ringLabels) r.tag.obj.position.set(g.x + r.yd * YD, 1, g.z);
 }
@@ -841,7 +843,7 @@ if (typeof ResizeObserver === 'function') {
   }).observe(topbar);
 }
 {
-  const t = menuText('maneuvers'); // the same words as the start screen (menu.js)
+  const t = menuText(DRILL_SHIPS === 2 ? 'maneuvers2' : 'maneuvers'); // the same words as the start screen (menu.js)
   document.querySelector('.brand b').textContent = t.brand;
   document.querySelector('#mission-sub').textContent = rn(t.sub);
 }
@@ -1014,7 +1016,7 @@ const clock = createTimeline(exercise, {
     if (key === '1') setFocus('alg');
     if (key === '2') setFocus('rus');
     if (key === '3') setFocus('formation');
-    if (key === '4') setFocus('unit');
+    if (key === '4' && HAS_UNIT) setFocus('unit');
     if (key === 'l' || key === 'L') setLabels(!labelGroup.visible);
     if (key === 't' || key === 'T') setTrails(!tracks.alg.plan.visible);
     if (key === 'm' || key === 'M') setMap(!map.enabled);
@@ -1044,7 +1046,7 @@ function toggleFullscreen() {
 keysEl.querySelector('dl').innerHTML = [
   ['<kbd>Space</kbd>', 'Play / pause'], ['<kbd>R</kbd>', 'Play backwards'], ['<kbd>←</kbd> <kbd>→</kbd>', 'Step 0.1 s (Shift: 1 s)'],
   ['<kbd>Home</kbd> <kbd>End</kbd>', 'Start / end'], ['<kbd>,</kbd> <kbd>.</kbd>', 'Previous / next event'], ['<kbd>[</kbd> <kbd>]</kbd>', 'Slower / faster'],
-  ['<kbd>1</kbd> <kbd>2</kbd> <kbd>4</kbd> <kbd>3</kbd>', `View from above ${NAME.alg}, ${NAME.rus}, ${NAME.unit}, the formation`], ['<kbd>Esc</kbd>', 'Free camera'],
+  HAS_UNIT ? ['<kbd>1</kbd> <kbd>2</kbd> <kbd>4</kbd> <kbd>3</kbd>', `View from above ${NAME.alg}, ${NAME.rus}, ${NAME.unit}, the formation`] : ['<kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>', `View from above ${NAME.alg}, ${NAME.rus}, the formation`], ['<kbd>Esc</kbd>', 'Free camera'],
   ['<kbd>O</kbd> <kbd>I</kbd>', 'The orders, the signal text'], ['<kbd>L</kbd> <kbd>T</kbd> <kbd>M</kbd>', 'Tags, tracks, map'],
   ['<kbd>G</kbd>', 'Tactical grid and range rings'], ['<kbd>H</kbd> <kbd>S</kbd>', 'Readouts, sound'], ['<kbd>F</kbd>', 'Fullscreen'], ['<kbd>C</kbd>', 'Hide / show the interface'],
 ].map(([k, d]) => `<dt>${k}</dt><dd>${d}</dd>`).join('');
@@ -1059,7 +1061,7 @@ function applyNames(alg, rus, unit) {
     if (!saveNames(a, r, u)) throw new Error('storage');
     sessionStorage.setItem('intercept.skip', '1');
     sessionStorage.setItem('intercept.seek', String(clock.t));
-    sessionStorage.setItem('intercept.renamed', `${a}, ${r} and ${u}`);
+    sessionStorage.setItem('intercept.renamed', HAS_UNIT ? `${a}, ${r} and ${u}` : `${a} and ${r}`);
   } catch { toast('Could not save the names (browser storage is blocked).'); return; }
   stripShareParams();
   location.reload();
@@ -1098,20 +1100,20 @@ liveEl.addEventListener('click', (e) => {
   box.className = 'names-form';
   box.innerHTML = '<span>Ship names</span><div><label>1 <input name="alg" maxlength="' + NAME_MAX + '" autocomplete="off" spellcheck="false" aria-label="Name of the first ship"></label>'
     + '<label>2 <input name="rus" maxlength="' + NAME_MAX + '" autocomplete="off" spellcheck="false" aria-label="Name of the second ship"></label>'
-    + '<label>3 <input name="unit" maxlength="' + NAME_MAX + '" autocomplete="off" spellcheck="false" aria-label="Name of the third ship"></label>'
+    + (HAS_UNIT ? '<label>3 <input name="unit" maxlength="' + NAME_MAX + '" autocomplete="off" spellcheck="false" aria-label="Name of the third ship"></label>' : '')
     + '<button type="submit" title="Rename the ships (reloads the scene at this moment)">Set</button>'
-    + '<button type="button" data-reset title="Back to ALG, RUS and UNIT">Reset</button></div>';
+    + `<button type="button" data-reset title="Back to ${HAS_UNIT ? 'ALG, RUS and UNIT' : 'ALG and RUS'}">Reset</button></div>`;
   const inAlg = box.querySelector('[name=alg]');
   const inRus = box.querySelector('[name=rus]');
-  const inUnit = box.querySelector('[name=unit]');
+  const inUnit = box.querySelector('[name=unit]'); // null in the two-ship drill: the unit keeps her name
   inAlg.value = shipNames.alg;
   inRus.value = shipNames.rus;
-  inUnit.value = shipNames.unit;
+  if (inUnit) inUnit.value = shipNames.unit;
   box.addEventListener('submit', (e) => {
     e.preventDefault();
-    applyNames(inAlg.value, inRus.value, inUnit.value);
+    applyNames(inAlg.value, inRus.value, inUnit ? inUnit.value : shipNames.unit);
   });
-  box.querySelector('[data-reset]').addEventListener('click', () => { inAlg.value = 'ALG'; inRus.value = 'RUS'; inUnit.value = 'UNIT'; box.requestSubmit(); });
+  box.querySelector('[data-reset]').addEventListener('click', () => { inAlg.value = 'ALG'; inRus.value = 'RUS'; if (inUnit) inUnit.value = 'UNIT'; box.requestSubmit(); });
   box.addEventListener('keydown', (e) => e.stopPropagation()); // typing a name is never a shortcut
   menuEl.insertBefore(box, menuEl.querySelector('hr'));
 }
@@ -1185,7 +1187,7 @@ clock.setSpeed(4);
     toast,
     onChange: invalidate,
     getState: () => ({
-      ship: 'fwd', mode: 'maneuvers', t: clock.t, focus: rig.id, director: false,
+      ship: 'fwd', mode: DRILL_SHIPS === 2 ? 'maneuvers2' : 'maneuvers', t: clock.t, focus: rig.id, director: false,
       extra: shipNames.alg !== 'ALG' || shipNames.rus !== 'RUS' || shipNames.unit !== 'UNIT' ? { names: `${shipNames.alg},${shipNames.rus},${shipNames.unit}` } : {},
     }),
   });
@@ -1199,9 +1201,7 @@ try {
 } catch { /* no query string */ }
 
 // Opening view: the whole formation from the east, slightly above.
-placeShip(ships.alg, clock.t);
-placeShip(ships.rus, clock.t);
-placeShip(ships.unit, clock.t);
+for (const id of SHIP_IDS) placeShip(ships[id], clock.t);
 {
   const mid = targets.formation.pos(new THREE.Vector3());
   controls.target.copy(mid);
@@ -1209,7 +1209,7 @@ placeShip(ships.unit, clock.t);
 }
 {
   const f = readShareParams().focus; // a shared link may open on a ship's bridge
-  setFocus(f === 'alg' || f === 'rus' || f === 'unit' ? f : 'formation');
+  setFocus(f === 'alg' || f === 'rus' || (f === 'unit' && HAS_UNIT) ? f : 'formation');
 }
 
 // --- Loop -------------------------------------------------------------------------------------------------
@@ -1242,12 +1242,7 @@ renderer.setAnimationLoop((now) => {
   last = now;
   clock.tick(dt);
   const t = clock.t;
-  placeShip(ships.alg, t);
-  placeShip(ships.rus, t);
-  placeShip(ships.unit, t);
-  updateWake('alg', t);
-  updateWake('rus', t);
-  updateWake('unit', t);
+  for (const id of SHIP_IDS) { placeShip(ships[id], t); updateWake(id, t); }
   updateStationMarker(t);
   updateSectorMarkers(t);
   updateFormationMarkers(t);
@@ -1272,7 +1267,7 @@ renderer.setAnimationLoop((now) => {
   updateOrders(t);
   updateVTrack(t);
   updateMarkers();
-  audio.update(t, camera, { alg: ships.alg.ship.group.position, rus: ships.rus.ship.group.position, unit: ships.unit.ship.group.position }, clock);
+  audio.update(t, camera, Object.fromEntries(SHIP_IDS.map((id) => [id, ships[id].ship.group.position])), clock);
   map.update(t);
   if (needsRender()) {
     renderer.render(scene, camera);

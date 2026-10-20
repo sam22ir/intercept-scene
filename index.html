@@ -18,39 +18,39 @@
         </header>
 
         <div class="menu-body">
-          <section class="menu-list" aria-labelledby="ch-step1">
-            <h2 id="ch-step1">Mission</h2>
+          <section class="menu-list" aria-label="Missions">
             <div class="missions" role="radiogroup" aria-label="Mission">
-          <button class="mission" role="radio" aria-checked="true" data-mode="intercept">
-            <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-arc" d="M6 34 Q10 10 28 12"/><path class="i-drone" d="M24 10 h10 M29 6 v8"/><circle class="i-burst" cx="29" cy="11" r="6"/></svg>
-            <span class="m-txt"><b>Intercept</b><small>A missile shoots the drone down</small></span>
-            <em class="m-kind">Replay</em>
-          </button>
-          <button class="mission" role="radio" aria-checked="false" data-mode="chute">
-            <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-canopy" d="M8 18 Q20 2 32 18 Z"/><path class="i-line" d="M8 18 L20 30 L32 18 M20 18 V30"/><path class="i-drone" d="M15 31 h10"/><path class="i-sea" d="M4 36 Q10 34 16 36 T28 36 T38 36"/></svg>
-            <span class="m-txt"><b>Recovery</b><small>No missile · lands by parachute</small></span>
-            <em class="m-kind">Replay</em>
-          </button>
-          <button class="mission" role="radio" aria-checked="false" data-mode="pair">
-            <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-drone" d="M18 9 h10 M23 5 v8 M26 21 h10 M31 17 v8"/><path class="i-arc" d="M4 34 Q8 14 22 11 M10 36 Q16 24 29 22"/></svg>
-            <span class="m-txt"><b>Two drones</b><small>A missile for each target</small></span>
-            <em class="m-kind">Replay</em>
-          </button>
-          <button class="mission" role="radio" aria-checked="false" data-mode="maneuvers">
-            <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M5 11 H22 L28 15 L22 19 H5Z"/><path class="i-ship" d="M5 25 H22 L28 29 L22 33 H5Z"/><path class="i-line" d="M12 19 V25 M33 8 Q37 22 31 34"/></svg>
-            <span class="m-txt"><b>Naval maneuvers</b><small>Two frigates run a signalled drill</small></span>
-            <em class="m-kind">Drill</em>
-          </button>
-          <button class="mission" role="radio" aria-checked="false" data-mode="formations">
-            <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M17 4 L20 10 L23 4Z M8 15 L11 21 L14 15Z M26 15 L29 21 L32 15Z M17 26 L20 32 L23 26Z"/><path class="i-line" d="M20 12 L11 15 M20 12 L29 15 M11 23 L20 26 M29 23 L20 26"/></svg>
-            <span class="m-txt"><b>Four-ship formations</b><small>SHIP1 to SHIP4 change formation</small></span>
-            <em class="m-kind">Drill</em>
-          </button>
-          <button class="mission" role="radio" aria-checked="false" data-mode="fly">
-            <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-drone" d="M14 22 h12 M20 17 v10 M15 19 l5-4 5 4"/><path class="i-arc" d="M5 33 Q8 28 14 28 M35 8 Q32 12 27 13"/><path class="i-line" d="M20 6 v5 M17 8.5 l3-3 3 3"/></svg>
-            <span class="m-txt"><b>Fly the drone</b><small>Arrow keys · E engine · L catapult · F missile</small></span>
-            <em class="m-kind">Manual</em>
-          </button>
+              <h2 class="m-group" id="ch-step1">Drone &amp; missile</h2>
+              <button class="mission" role="radio" aria-checked="true" data-mode="intercept">
+                <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-arc" d="M6 34 Q10 10 28 12"/><path class="i-drone" d="M24 10 h10 M29 6 v8"/><circle class="i-burst" cx="29" cy="11" r="6"/></svg>
+                <span class="m-txt"><b>Intercept</b><small>A missile shoots the drone down</small></span>
+                <em class="m-kind">Replay</em>
+              </button>
+              <button class="mission" role="radio" aria-checked="false" data-mode="chute">
+                <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-canopy" d="M8 18 Q20 2 32 18 Z"/><path class="i-line" d="M8 18 L20 30 L32 18 M20 18 V30"/><path class="i-drone" d="M15 31 h10"/><path class="i-sea" d="M4 36 Q10 34 16 36 T28 36 T38 36"/></svg>
+                <span class="m-txt"><b>Recovery</b><small>No missile · lands by parachute</small></span>
+                <em class="m-kind">Replay</em>
+              </button>
+              <button class="mission" role="radio" aria-checked="false" data-mode="fly">
+                <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-drone" d="M14 22 h12 M20 17 v10 M15 19 l5-4 5 4"/><path class="i-arc" d="M5 33 Q8 28 14 28 M35 8 Q32 12 27 13"/><path class="i-line" d="M20 6 v5 M17 8.5 l3-3 3 3"/></svg>
+                <span class="m-txt"><b>Fly the drone</b><small>Arrow keys · E engine · L catapult · F missile</small></span>
+                <em class="m-kind">Manual</em>
+              </button>
+              <h2 class="m-group">Tactical maneuvers <em class="m-kind">Drill</em></h2>
+              <div class="tac">
+                <button class="mission tile" role="radio" aria-checked="false" data-mode="maneuvers2">
+                  <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M6 9 H23 L29 13 L23 17 H6Z"/><path class="i-ship" d="M6 23 H23 L29 27 L23 31 H6Z"/><path class="i-line" d="M15 17 V23"/></svg>
+                  <span class="m-txt"><b>2 ships</b><small>ALG · RUS</small></span>
+                </button>
+                <button class="mission tile" role="radio" aria-checked="false" data-mode="maneuvers">
+                  <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M8 4 H22 L27 7.5 L22 11 H8Z"/><path class="i-ship" d="M8 16 H22 L27 19.5 L22 23 H8Z"/><path class="i-ship" d="M5 28 H24 L31 32 L24 36 H5Z"/><path class="i-line" d="M15 11 V16 M15 23 V28"/></svg>
+                  <span class="m-txt"><b>3 ships</b><small>ALG · RUS · unit</small></span>
+                </button>
+                <button class="mission tile" role="radio" aria-checked="false" data-mode="formations">
+                  <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M17 4 L20 10 L23 4Z M8 15 L11 21 L14 15Z M26 15 L29 21 L32 15Z M17 26 L20 32 L23 26Z"/><path class="i-line" d="M20 12 L11 15 M20 12 L29 15 M11 23 L20 26 M29 23 L20 26"/></svg>
+                  <span class="m-txt"><b>4 ships</b><small>SHIP1 – SHIP4</small></span>
+                </button>
+              </div>
             </div>
           </section>
 
