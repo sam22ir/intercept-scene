@@ -13,7 +13,7 @@ import { createManeuverMap } from './maneuverMap.js';
 import { createManeuverAudio } from './maneuverAudio.js';
 import { toast } from './pathEditor.js';
 import {
-  exercise, shipState, headingDeg, phaseAt, orderStatus, PHASES, STANDBY, STANDBY_LIMITS, KT, YD, LIGHT, FLAGS, lampOn,
+  exercise, guideShipAt, shipState, headingDeg, phaseAt, orderStatus, PHASES, STANDBY, STANDBY_LIMITS, KT, YD, LIGHT, FLAGS, lampOn,
   stationAt, orderedAt, STATION_FLASH, STATIONS, SECTORS, screenRel, inSector, FORMS, stationPoint,
 } from './maneuvers.js';
 import { stripShareParams, createShare, readShareParams } from './share.js';
@@ -464,31 +464,30 @@ for (const b of focusButtons) {
   const id = FOCUS_ALIAS[b.dataset.focus];
   if (id) { b.dataset.focus = id; b.textContent = FOCUS_LABEL[id]; b.disabled = false; b.hidden = false; b.removeAttribute('data-pair-only'); b.title = `Look at ${FOCUS_LABEL[id]} (${{ alg: 1, rus: 2, formation: 3, unit: 4 }[id]})`; }
 }
-// The Formation view keeps both ships in frame: it pulls back as they part and in as they close, until you
-// zoom yourself (the wheel) or pick Formation again.
-const _off = new THREE.Vector3();
-let autoZoom = true;
 function setFocus(id, distance) {
   invalidate();
-  autoZoom = id === 'formation';
   if (id === 'free' || !targets[id]) {
     rig.free();
   } else {
     const t = targets[id];
     rig.focus(id, t.pos, distance ?? t.distance, t.minDistance);
-    if (id === 'alg' || id === 'rus' || id === 'unit') enterBridge(id);
+    if (id === 'alg' || id === 'rus' || id === 'unit' || id === 'formation') enterBridge(id);
     else leaveBridge();
   }
   if (id === 'free' || !targets[id]) leaveBridge();
   focusButtons.forEach((b) => b.classList.toggle('active', b.dataset.focus === rig.id));
 }
 for (const b of focusButtons) b.addEventListener('click', () => setFocus(b.dataset.focus));
-canvas.addEventListener('wheel', () => { autoZoom = false; }, { passive: true });
 // A ship's view: the camera hangs above and behind that ship and looks at the other one, so the other ship stays
 // in the middle of the picture however they move. Drag to swing round, wheel to move in and out, double click
 // to go back to the default view.
 let bridgeId = null; // the ship whose view this is
 const CHASE = { yaw: 0, pitch: 0.5, dist: 150 };
+// The Formation view: the camera looks along the guide's course, from behind and above the other ships, at them;
+// it turns as the guide turns, and pulls back as the ships part so that all of them, the guide too, stay in frame.
+// The wheel scales that distance (formZoom), drag swings round, double click resets.
+const FORM = { pitch: 0.42 };
+let formZoom = 1;
 let chaseYaw = CHASE.yaw;
 let chasePitch = CHASE.pitch;
 let chaseDist = CHASE.dist;
@@ -498,6 +497,7 @@ function enterBridge(id) {
   chaseYaw = CHASE.yaw;
   chasePitch = CHASE.pitch;
   chaseDist = CHASE.dist;
+  if (id === 'formation') { chasePitch = FORM.pitch; formZoom = 1; }
   controls.enabled = false;
   rig.transition = null; // straight into the view, no fly-in
   rig.getPos(rig.last);
@@ -510,10 +510,15 @@ function leaveBridge() {
 }
 canvas.addEventListener('wheel', (e) => {
   if (!bridgeId) return;
-  chaseDist = Math.min(Math.max(chaseDist * Math.exp(e.deltaY * 0.001), 40), 1500);
+  if (bridgeId === 'formation') formZoom = Math.min(Math.max(formZoom * Math.exp(e.deltaY * 0.001), 0.3), 4);
+  else chaseDist = Math.min(Math.max(chaseDist * Math.exp(e.deltaY * 0.001), 40), 1500);
   invalidate();
 }, { passive: true });
-canvas.addEventListener('dblclick', () => { if (bridgeId) { chaseYaw = CHASE.yaw; chasePitch = CHASE.pitch; chaseDist = CHASE.dist; invalidate(); } });
+canvas.addEventListener('dblclick', () => {
+  if (!bridgeId) return;
+  chaseYaw = CHASE.yaw; chasePitch = bridgeId === 'formation' ? FORM.pitch : CHASE.pitch; chaseDist = CHASE.dist; formZoom = 1;
+  invalidate();
+});
 let lookDrag = null;
 canvas.addEventListener('pointerdown', (e) => { if (bridgeId && e.button === 0) lookDrag = { x: e.clientX, y: e.clientY }; });
 window.addEventListener('pointerup', () => { lookDrag = null; });
@@ -525,8 +530,25 @@ window.addEventListener('pointermove', (e) => {
   lookDrag.y = e.clientY;
   invalidate();
 });
+const _look = new THREE.Vector3();
+function applyFormationView() {
+  const gid = guideShipAt(clock.t);
+  const g = ships[gid];
+  const others = SHIP_IDS.filter((id) => id !== gid).map((id) => ships[id].ship.group.position);
+  _look.set(0, 0, 0);
+  for (const p of others) _look.add(p);
+  _look.multiplyScalar(1 / others.length);
+  let spread = 0;
+  for (const id of SHIP_IDS) spread = Math.max(spread, ships[id].ship.group.position.distanceTo(_look));
+  const dist = Math.min(Math.max(spread * 1.6 + 220, 450), 4000) * formZoom;
+  const h = g.state.heading + chaseYaw; // x North, z East: the course points (cos h, sin h)
+  const cp = Math.cos(chasePitch);
+  camera.position.set(_look.x - Math.cos(h) * dist * cp, Math.sin(chasePitch) * dist, _look.z - Math.sin(h) * dist * cp);
+  controls.target.set(_look.x, 0, _look.z);
+}
 function applyBridge() {
   if (!bridgeId || rig.id !== bridgeId) return;
+  if (bridgeId === 'formation') { applyFormationView(); return; }
   const own = ships[bridgeId].ship.group.position;
   const other = ships[bridgeId === 'alg' ? 'rus' : 'alg'].ship.group.position;
   // From the other ship back toward this one, level: the camera sits behind this ship on that line.
@@ -540,42 +562,6 @@ function applyBridge() {
   camera.position.copy(_eye);
   controls.target.set(other.x, 10, other.z); // the other ship in the middle of the view
 }
-// The Formation view keeps its angle to the ships' course: the camera turns about the formation as the ships
-// turn, following their mean heading (the mid point of the two when the courses differ).
-let formHeading = null;
-const meanHeading = () => {
-  const a = ships.alg.state.heading, b = ships.rus.state.heading;
-  return Math.atan2(Math.sin(a) + Math.sin(b), Math.cos(a) + Math.cos(b));
-};
-function applyFormationTurn() {
-  if (rig.id !== 'formation') { formHeading = null; return; }
-  const h = meanHeading();
-  if (formHeading === null) { formHeading = h; return; }
-  let d = h - formHeading;
-  while (d > Math.PI) d -= 2 * Math.PI;
-  while (d < -Math.PI) d += 2 * Math.PI;
-  formHeading = h;
-  if (d === 0) return;
-  const rot = -d; // a ship's group turns by -heading
-  const c = Math.cos(rot), n = Math.sin(rot);
-  const turn = (v) => { const x = v.x, z = v.z; v.x = x * c + z * n; v.z = -x * n + z * c; };
-  _off.subVectors(camera.position, controls.target);
-  turn(_off);
-  camera.position.copy(controls.target).add(_off);
-  if (rig.transition) turn(rig.transition.fromOffset);
-}
-function applyAutoZoom(dt) {
-  if (!autoZoom || rig.id !== 'formation' || rig.transition) return;
-  const pa = ships.alg.ship.group.position, pr = ships.rus.ship.group.position, pu = ships.unit.ship.group.position;
-  const range = Math.max(pa.distanceTo(pr), pa.distanceTo(pu), pr.distanceTo(pu));
-  const want = Math.min(Math.max(range * 0.95 + 160, 420), 2600);
-  _off.subVectors(camera.position, controls.target);
-  const len = _off.length();
-  if (len < 1) return;
-  const next = len + (want - len) * (1 - Math.exp(-dt * 1.2));
-  camera.position.copy(controls.target).addScaledVector(_off, next / len);
-}
-
 // --- Interface: readouts, serial box, toggles, menu --------------------------------------------------------
 const hudRoot = document.querySelector('#hud');
 const hudLive = hudRoot.querySelector('.hud-live');
@@ -1275,8 +1261,6 @@ renderer.setAnimationLoop((now) => {
   ou.uShipX.value = 1e7; // no single-ship wake: each ship has its own ribbon
   rig.update();
   applyBridge();
-  applyFormationTurn();
-  applyAutoZoom(dt);
   controls.update();
   if (camera.position.y < 1) camera.position.y = 1;
   env.follow(camera.position); // sky, mountains and the far sea ride with the camera, so the ships can never reach them
