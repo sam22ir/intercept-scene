@@ -47,7 +47,7 @@ async function launch(id) {
   globalThis.__SHIP_VARIANT = id;
   // The maneuvers and fly missions have their own scenes; scenario.js (which the ship model imports) just sees
   // an intercept for the first and a recovery (no scripted missile to simulate) for the second.
-  globalThis.__SCENARIO = mode === 'maneuvers' ? 'intercept' : mode === 'fly' ? 'chute' : mode;
+  globalThis.__SCENARIO = mode === 'maneuvers' || mode === 'formations' ? 'intercept' : mode === 'fly' ? 'chute' : mode;
   if (menuText(mode, id).hasShip) write('localStorage', 'intercept.ship', id); // the missions without a choice leave it alone
   write('localStorage', 'intercept.mode', mode);
   try {
@@ -66,7 +66,8 @@ async function launch(id) {
   // Let the loading screen paint before the scene's heavy synchronous setup.
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
   try {
-    await (mode === 'maneuvers' ? import('./maneuversMain.js') : mode === 'fly' ? import('./flyMain.js') : import('./main.js'));
+    await (mode === 'maneuvers' ? import('./maneuversMain.js') : mode === 'formations' ? import('./formationsMain.js')
+      : mode === 'fly' ? import('./flyMain.js') : import('./main.js'));
   } catch (err) {
     showFatal(err);
   }
@@ -174,7 +175,7 @@ try {
 const rememberedMode = read('localStorage', 'intercept.mode');
 mode = MODES.includes(modeFromUrl) ? modeFromUrl : (MODES.includes(rememberedMode) ? rememberedMode : 'intercept');
 const validShip = fromUrl === 'fwd' || fromUrl === 'aft';
-if ((validShip || mode === 'maneuvers' || mode === 'fly') && !forceChooser && (skipChooser || scripted)) launch(validShip ? fromUrl : 'fwd');
+if ((validShip || mode === 'maneuvers' || mode === 'formations' || mode === 'fly') && !forceChooser && (skipChooser || scripted)) launch(validShip ? fromUrl : 'fwd');
 else showChooser(validShip ? fromUrl : null);
 
 // The top bar's Menu button goes back to the main menu through each scene's own handler on #btn-ship.

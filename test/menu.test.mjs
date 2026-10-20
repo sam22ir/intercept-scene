@@ -13,6 +13,7 @@ const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
 const html = read('../index.html');
 const src = {
   start: read('../src/start.js'), main: read('../src/main.js'), maneuvers: read('../src/maneuversMain.js'), fly: read('../src/flyMain.js'),
+  formations: read('../src/formationsMain.js'),
   timeline: read('../src/timeline.js'),
 };
 const urlOf = (f, q) => `${pathToFileURL(new URL(f, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')).href}?${q}`;
@@ -21,6 +22,7 @@ const urlOf = (f, q) => `${pathToFileURL(new URL(f, import.meta.url).pathname.re
 const scenarios = {};
 let M; // maneuvers.js
 let F; // fly.js
+let FM; // formations.js
 before(async () => {
   for (const mode of ['intercept', 'chute', 'pair']) {
     globalThis.__SHIP_VARIANT = 'fwd';
@@ -30,6 +32,7 @@ before(async () => {
   globalThis.__SCENARIO = 'chute'; // fly.js loads the base scenario module under the recovery mission
   M = await import(urlOf('../src/maneuvers.js', 'menu'));
   F = await import(urlOf('../src/fly.js', 'menu'));
+  FM = await import(urlOf('../src/formations.js', 'menu'));
 });
 
 const chooser = () => html.slice(html.indexOf('<div id="chooser"'), html.indexOf('<svg width="0"'));
@@ -38,8 +41,8 @@ const cardOf = (id) => chooser().match(new RegExp(`<button class="card"[^>]*data
 const text = (s) => s.replace(/<svg.*?<\/svg>/gs, '').replace(/<kbd>.*?<\/kbd>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
 describe('the menu data', () => {
-  it('lists the five missions once each, in a fixed order, with every field', () => {
-    assert.deepEqual(MISSION_IDS, ['intercept', 'chute', 'pair', 'maneuvers', 'fly']);
+  it('lists the six missions once each, in a fixed order, with every field', () => {
+    assert.deepEqual(MISSION_IDS, ['intercept', 'chute', 'pair', 'maneuvers', 'formations', 'fly']);
     assert.equal(new Set(MISSIONS.map((m) => m.name)).size, MISSIONS.length, 'names are unique');
     for (const m of MISSIONS) {
       for (const f of ['name', 'kind', 'blurb', 'tagline', 'brand', 'button']) assert.ok(typeof m[f] === 'string' && m[f].length >= 3, `${m.id}.${f}`);
@@ -48,7 +51,7 @@ describe('the menu data', () => {
       assert.ok(m.brand.length <= 16, `${m.id}'s top-bar title fits`);
       if (!m.ship) assert.ok(m.fixed && m.fixedNote && m.sub, `${m.id} says what is fixed`);
     }
-    assert.deepEqual(MISSIONS.filter((m) => !m.ship).map((m) => m.id), ['maneuvers', 'fly']);
+    assert.deepEqual(MISSIONS.filter((m) => !m.ship).map((m) => m.id), ['maneuvers', 'formations', 'fly']);
   });
 
   it('start.js builds its mission list from the data, not from a list of its own', () => {
@@ -139,6 +142,23 @@ describe('the words are true of the missions', () => {
     assert.match(src.maneuvers, /clock\.setSpeed\(4\)/);
     assert.match(m.tagline, /4×/);
     for (const id of ['ALG', 'RUS']) assert.ok(m.facts[0].includes(id) && m.tagline.includes(id));
+  });
+
+  it('Four-ship formations: SHIP1 to SHIP4, the number of orders, the length and the play speed', () => {
+    const m = missionById('formations');
+    const minutes = Math.round(FM.exercise.tEnd / 60);
+    assert.ok(m.tagline.includes(`${FM.PHASES.length} orders, about ${minutes} minutes`), `${FM.PHASES.length} orders, ${minutes} min`);
+    assert.ok(m.facts.includes(`${FM.PHASES.length} orders`));
+    assert.ok(m.facts.includes(`About ${minutes} minutes`));
+    assert.match(src.formations, /clock\.setSpeed\(8\)/);
+    assert.match(m.tagline, /8×/);
+    assert.deepEqual(Object.values(FM.SHIP_NAMES), ['SHIP1', 'SHIP2', 'SHIP3', 'SHIP4']);
+    assert.ok(m.tagline.includes('SHIP1 to SHIP4') && m.facts[0].includes('SHIP1 to SHIP4'));
+    for (const f of ['line ahead', 'line of bearing', 'line abreast', 'box', 'diamond', 'CORPEN', 'TURN']) assert.ok(m.tagline.includes(f), f);
+    assert.ok(FM.PHASES.some((p) => p.kind === 'corpen') && FM.PHASES.some((p) => p.kind === 'turn'));
+    assert.deepEqual([...new Set(FM.PHASES.filter((p) => p.kind === 'form').map((p) => p.form))].sort(), ['abreast', 'bearing', 'box', 'column', 'diamond']);
+    for (const [k] of m.keys.filter(([x]) => /^[A-Z5]$/.test(x))) assert.match(src.formations, new RegExp(`key === '${k.toLowerCase()}'`), `formations: ${k}`);
+    assert.match(src.start, /formationsMain\.js/);
   });
 
   it('Fly the drone: the cruise speed, and every key it lists is really bound', () => {

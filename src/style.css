@@ -1122,3 +1122,9 @@ body.mission-maneuvers.ui-hidden::before { display: none; }
 body.mission-maneuvers #btn-fullscreen:not([hidden]), body.mission-maneuvers #btn-grid { display: flex; }
 body.mission-maneuvers #btn-ship, body.mission-maneuvers #dl-offline, body.mission-maneuvers #menu hr { display: none; }
 .tag.tag-grid { background: none; color: rgba(190, 240, 100, 0.95); font-size: 10px; padding: 0 4px; }
+
+/* --- Four-ship formations (formationsMain.js): the drill's look (body.mission-maneuvers), with a dot per ship. --- */
+.mh-cell.ship1 span::before, .mh-cell.ship2 span::before, .mh-cell.ship3 span::before, .mh-cell.ship4 span::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #3ddc84; }
+.mh-cell.ship2 span::before { background: #ff7a1a; }
+.mh-cell.ship3 span::before { background: #5ab4ff; }
+.mh-cell.ship4 span::before { background: #d27bff; }
