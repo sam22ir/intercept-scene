@@ -56,7 +56,7 @@ export const PHASES = [
   { id: 'form1', t: 0, label: 'Initial formation', title: 'INITIAL FORMATION : FORM 1',
     speeds: ['NORMAL: 12 KNOTS', 'SIERRA: 15 KNOTS'],
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 DESIG 12010 –', 'G SPEED 12'] }] },
-  { id: 'station', t: 30, label: 'Form 1', title: 'INITIAL FORMATION : FORM 1',
+  { id: 'station', t: 30, label: 'Form 1', title: 'INITIAL FORMATION : FORM 1', note: 'The unit sails alongside ALG: 1,000 yds ahead and 500 yds to starboard, on her course and speed.',
     serial: [{ lines: [GO, 'FORM 1- STATION 1 DESIG ALG –', 'STATION 2 DESIG RUS – S SPEED 16', 'B CORPEN 360 – B SPEED 12 –', 'G FORM ALG -TA12-1-10', START_STBY] }] },
   { id: 'stbd', t: 60, label: 'Turn stbd 90°', title: 'TURN STBD 9',
     serial: [{ lines: [GO, 'TURN STBD 9 .', START_STBY] }] },
@@ -174,8 +174,10 @@ const FULL = 4400; // s baked; the exercise ends well before
 const ALG_FULL = integrate(ALG_ORDERS, FULL, { x: 0, z: 0, psi: 0, v: 12 * KT });
 const RUS_FULL = integrate(RUS_ORDERS, FULL, { x: -FORMATION_RANGE, z: 0, psi: 0, v: 12 * KT });
 // The third ship, the unit the others work around: it keeps ALG's course and speed, one station (500 yds) to
-// starboard of her, so it sails straight alongside whatever ALG does. (Its own orders come with the screens.)
-const UNIT_FULL = integrate(ALG_ORDERS, FULL, { x: 0, z: FORMATION_RANGE, psi: 0, v: 12 * KT });
+// starboard of her and two stations (1,000 yds) ahead, so it sails straight alongside whatever ALG does and is
+// clear of every lane the other two use (RUS passes it no closer than about 470 m). From the screens on it holds
+// course 090 at 6 kn as the screen centre.
+const UNIT_FULL = integrate(ALG_ORDERS, FULL, { x: 2 * FORMATION_RANGE, z: FORMATION_RANGE, psi: 0, v: 12 * KT });
 export const SHIP_IDS = ['alg', 'rus', 'unit'];
 
 // --- Sector screens (MTP 1(D) Vol. II: SCREEN K forms a sector screen, SCREEN M takes a station within the sector) --

@@ -30,4 +30,4 @@ export function saveNames(alg, rus, unit) {
   try { localStorage.setItem(KEY, JSON.stringify(next)); return true; } catch { return false; }
 }
 // The exercise's words with the ships' names swapped in (both at once, so ALG -> RUS and RUS -> ALG is safe).
-export const rn = (s) => String(s).replace(/\b(ALG|RUS)\b/g, (m) => (m === 'ALG' ? shipNames.alg : shipNames.rus));
+export const rn = (s) => String(s).replace(/\b(ALG|RUS|UNIT)\b/g, (m) => (m === 'ALG' ? shipNames.alg : m === 'RUS' ? shipNames.rus : shipNames.unit));

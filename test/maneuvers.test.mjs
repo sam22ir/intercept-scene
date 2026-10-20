@@ -71,19 +71,19 @@ describe('naval maneuvers: formation geometry', () => {
     near(speedKn('rus', P.flags.tx + 60), 6, 0.3, 'flag hoist at G SPEED 6');
   });
 
-  it('the third ship, the unit, keeps the course and speed one station (500 yds) to her east, and RUS never fouls it', () => {
+  it('the third ship, the unit, keeps the course and speed, 1,000 yds ahead and 500 yds to starboard of ALG, and RUS never fouls it', () => {
     assert.deepEqual(SHIP_IDS, ['alg', 'rus', 'unit']);
     let minRus = Infinity;
     for (let t = 0; t < P.screenk.tx; t += 1) { // until the screen, where ALG leaves her
       const a = shipState('alg', t);
       const u = shipState('unit', t);
-      near(u.x - a.x, 0, 1e-6, 'abeam in the world frame');
+      near(u.x - a.x, 2 * FORMATION_RANGE, 1e-6, 'two stations ahead in the world frame');
       near(u.z - a.z, FORMATION_RANGE, 1e-6, 'one station east of ALG');
       near(headingDeg(u.heading), headingDeg(a.heading), 1e-6, 'same heading');
       const r = shipState('rus', t);
       minRus = Math.min(minRus, Math.hypot(r.x - u.x, r.z - u.z));
     }
-    assert.ok(minRus > 80, `RUS passes the unit at ${minRus.toFixed(0)} m`);
+    assert.ok(minRus > 400, `RUS passes the unit at ${minRus.toFixed(0)} m`);
   });
 
   it('SCREEN K and SCREEN M: ALG and RUS reach their sectors round the unit and patrol them, the unit sailing straight on', () => {
