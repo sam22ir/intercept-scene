@@ -171,7 +171,7 @@ Holds the story, all timing and every ship mount point. Units are metres. The bo
   - `Sky`, also used as the PMREM environment.
   - Sun shadow frustum that follows the focus.
   - Sprite clouds.
-  - Analytic ocean shader, kept deliberately simple so the frame rate stays high: six deep-water waves whose normals are driven by `t` (the surface stays flat), a sky gradient reflected by Fresnel, the sun's glitter, a cheap two-sample-noise wake (`uShipX`), fog. No noise textures, no environment lookups. (A heavy WebGPU FFT ocean and a PBR-style shading were tried and removed: they cost 5 to 10 times the frame time on integrated graphics.) Its wake foam reads `uShipX`, and `hullHalf()` there mirrors `widthFactor()` in `ship.js`.
+  - Analytic ocean shader, kept deliberately simple so the frame rate stays high: six deep-water waves that stand still and are kept faint (`SEA_CALM`, 0.3; travelling waves under the moving ships looked dizzying; the surface stays flat, only the normals ripple), a sky gradient reflected by Fresnel, the sun's glitter, a cheap two-sample-noise wake (`uShipX`), fog. No noise textures, no environment lookups. (A heavy WebGPU FFT ocean and a PBR-style shading were tried and removed: they cost 5 to 10 times the frame time on integrated graphics.) Its wake foam reads `uShipX`, and `hullHalf()` there mirrors `widthFactor()` in `ship.js`.
 
 ### Effects, camera and picking
 

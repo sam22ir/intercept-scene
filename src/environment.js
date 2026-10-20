@@ -135,8 +135,8 @@ export function createEnvironment(renderer, scene, { calm = false } = {}) {
 
 // Analytic ocean, kept deliberately simple so the frame rate stays high: a handful of deep-water waves
 // evaluated per fragment for the normal only (the surface itself stays flat), a sky gradient reflected by
-// Fresnel, the sun's glitter, and a cheap wake. No noise textures, no environment lookups. Driven by scene
-// time, so it rewinds with the timeline.
+// Fresnel, the sun's glitter, and a cheap wake. No noise textures, no environment lookups. The waves stand
+// still (only the wake foam drifts with scene time, so it rewinds with the timeline).
 const WAVE_COUNT = 6;
 
 function waveSet() {
@@ -192,6 +192,7 @@ function createOcean(sunDir, calm, horizon) {
     `,
     fragmentShader: /* glsl */ `
       #define NW ${WAVE_COUNT}
+      #define SEA_CALM 0.3
       uniform float uTime;
       uniform vec3 uSunDir, uSunColor, uDeep, uScatter, uHorizon, uZenith;
       uniform float uFogNear, uFogFar, uShipX, uCalm, uGrid, uGridCell;
@@ -248,11 +249,12 @@ function createOcean(sunDir, calm, horizon) {
         vec2 grad = vec2(0.0);
         for (int i = 0; i < NW; i++) {
           float k = 6.2831853 / uWl[i];
-          float w = sqrt(9.81 * k);
           // Fade each wave before it aliases (shorter waves fade sooner).
           float fade = 1.0 - smoothstep(uWl[i] * mix(12.0, 6.0, uCalm), uWl[i] * mix(60.0, 30.0, uCalm), dist);
-          float ph = dot(uDirs[i], vWorld.xz) * k - w * uTime + uPhase[i];
-          grad += uDirs[i] * (uAmp[i] * mix(1.0, 0.6, uCalm) * k * cos(ph) * fade);
+          // A still, glassy sea: the ripples do not travel (moving waves under moving ships were dizzying)
+          // and are kept faint, just enough texture to show the ships' motion over the water.
+          float ph = dot(uDirs[i], vWorld.xz) * k + uPhase[i];
+          grad += uDirs[i] * (uAmp[i] * SEA_CALM * mix(1.0, 0.6, uCalm) * k * cos(ph) * fade);
         }
         vec3 n = normalize(vec3(-grad.x, 1.0, -grad.y));
         // Distant water flattens toward a smooth average normal.
