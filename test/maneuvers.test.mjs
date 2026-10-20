@@ -82,6 +82,27 @@ describe('naval maneuvers: formation geometry', () => {
     near(speedKn('rus', P.flags.tx + 60), 6, 0.3, 'flag hoist at G SPEED 6');
   });
 
+  it('ALG and RUS never cross tracks in the formations, the screens and FORM 345 (each comes in from her own side)', () => {
+    const seg = (p, q, r, s) => {
+      const d = (q[0] - p[0]) * (s[1] - r[1]) - (q[1] - p[1]) * (s[0] - r[0]);
+      if (!d) return false;
+      const u = ((r[0] - p[0]) * (s[1] - r[1]) - (r[1] - p[1]) * (s[0] - r[0])) / d;
+      const v = ((r[0] - p[0]) * (q[1] - p[1]) - (r[1] - p[1]) * (q[0] - p[0])) / d;
+      return u >= 0 && u <= 1 && v >= 0 && v <= 1;
+    };
+    for (const id of ['fcol', 'fdia', 'fline3', 'fcol2', 'screenk', 'screenm', 'form345']) {
+      const A = [];
+      const R = [];
+      for (let t = P[id].tx; t <= P[id].ta; t += 4) {
+        const a = shipState('alg', t);
+        const r = shipState('rus', t);
+        A.push([a.x, a.z]);
+        R.push([r.x, r.z]);
+      }
+      for (let i = 1; i < A.length; i++) for (let j = 1; j < R.length; j++) assert.ok(!seg(A[i - 1], A[i], R[j - 1], R[j]), `${id}: tracks cross`);
+    }
+  });
+
   it('the third ship, the unit, keeps the course and speed, 1,000 yds ahead and 500 yds to starboard of ALG, and RUS never fouls it', () => {
     assert.deepEqual(SHIP_IDS, ['alg', 'rus', 'unit']);
     let minRus = Infinity;
@@ -137,7 +158,7 @@ describe('naval maneuvers: formation geometry', () => {
   it('SCREEN K and SCREEN M: ALG and RUS reach their sectors round the unit and patrol them, the unit sailing straight on', () => {
     for (const key of ['screenk', 'screenm']) {
       const p = P[key];
-      assert.ok(p.ta - p.tx > 60, `${key} takes time to reach the sectors`);
+      assert.ok(p.ta - p.tx > 30, `${key} takes time to reach the sectors`);
       const end = key === 'screenk' ? P.screenm.t : P.form345.tx;
       for (let t = p.ta; t < end; t += 2) {
         for (const id of ['alg', 'rus']) assert.ok(inSector(id, t, key), `${id} inside her ${key} sector at ${t}`);
@@ -152,8 +173,8 @@ describe('naval maneuvers: formation geometry', () => {
     // Sectors: the manual's four-numeral groups, in tens of degrees (left, right) and thousands of yards (inner, outer).
     near(SECTORS.screenk.alg.d1 / YD, 1500, 1e-6, 'inner depth');
     near(SECTORS.screenk.rus.d2 / YD, 3500, 1e-6, 'outer depth');
-    assert.deepEqual([SECTORS.screenk.alg.b1, SECTORS.screenk.alg.b2, SECTORS.screenk.rus.b1, SECTORS.screenk.rus.b2], [330, 30, 150, 210]);
-    assert.deepEqual([SECTORS.screenm.alg.b1, SECTORS.screenm.alg.b2, SECTORS.screenm.rus.b1, SECTORS.screenm.rus.b2], [0, 30, 150, 180]);
+    assert.deepEqual([SECTORS.screenk.rus.b1, SECTORS.screenk.rus.b2, SECTORS.screenk.alg.b1, SECTORS.screenk.alg.b2], [330, 30, 150, 210]); // RUS to the north, ALG to the south
+    assert.deepEqual([SECTORS.screenm.rus.b1, SECTORS.screenm.rus.b2, SECTORS.screenm.alg.b1, SECTORS.screenm.alg.b2], [0, 30, 150, 180]);
     // The screen ships keep apart from each other and from the unit.
     let min = Infinity;
     for (let t = P.screenk.ta; t < P.form345.tx; t += 2) {

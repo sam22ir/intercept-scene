@@ -78,17 +78,17 @@ export const PHASES = [
     serial: [{ lines: [GO, 'FORM 3 – STATION 1 DESIG UNIT –', 'STATION 2 DESIG ALG – STATION 3 DESIG RUS –', 'G FORM UNIT – TA 12-1- 10', START_STBY] }] },
   { id: 'fcol2', t: 1751, label: 'Form 2', title: 'FORM 2', note: 'Column in the reverse order of sequence numbers: RUS leads, ALG follows and the unit, the guide, is last.',
     serial: [{ lines: [GO, 'FORM 2 –', 'G FORM UNIT – TA 12-1- 10', START_STBY] }] },
-  { id: 'screenk', t: 2078, label: 'Screen K', title: 'SCREEN K', note: 'The unit holds course 090 at 6 kn as the screen centre. ALG takes the sector 330 to 030 and RUS the sector 150 to 210, each 1,500 to 3,500 yards out, and patrol them.',
-    serial: [{ lines: [GO, 'SCREEN K–ZZ–3303–01 ANS 03 ANS  ALG', 'SCREEN K–ZZ–1521–01 ANS 03 ANS  RUS', 'G CORPEN 090 – G SPEED 6 –', START_STBY] }] },
-  { id: 'screenm', t: 2350, label: 'Screen M', title: 'SCREEN M', note: 'Take station within your sector: ALG the clockwise half (000 to 030), RUS the counterclockwise half (150 to 180).',
-    serial: [{ lines: [GO, 'ALG  SCREEN M 3', 'RUS  SCREEN M 4', START_STBY] }] },
-  { id: 'form345', t: 2570, label: 'Form 345', title: 'FORM 345', note: 'Form on true bearing 345 from the guide ALG: ALG holds 500 yds ahead of the unit and RUS comes to 500 yds north-northwest of her, ready for the serials and the skim.',
+  { id: 'screenk', t: 2078, label: 'Screen K', title: 'SCREEN K', note: 'The unit holds course 090 at 6 kn as the screen centre. RUS takes the sector 330 to 030 (to the north, on the side she will need for the skim) and ALG the sector 150 to 210, each 1,500 to 3,500 yards out, and patrol them.',
+    serial: [{ lines: [GO, 'SCREEN K–ZZ–3303–01 ANS 03 ANS  RUS', 'SCREEN K–ZZ–1521–01 ANS 03 ANS  ALG', 'G CORPEN 090 – G SPEED 6 –', START_STBY] }] },
+  { id: 'screenm', t: 2364, label: 'Screen M', title: 'SCREEN M', note: 'Take station within your sector: RUS the clockwise half (000 to 030), ALG the counterclockwise half (150 to 180).',
+    serial: [{ lines: [GO, 'RUS  SCREEN M 3', 'ALG  SCREEN M 4', START_STBY] }] },
+  { id: 'form345', t: 2463, label: 'Form 345', title: 'FORM 345', note: 'Form on true bearing 345 from the guide ALG: ALG holds 500 yds ahead of the unit and RUS comes to 500 yds north-northwest of her, ready for the serials and the skim.',
     serial: [{ lines: [GO, 'FORM 345 – B SPEED 6 –', 'G FORM ALG – TA 12-1- 10', START_STBY] }] },
-  { id: 'light', t: 3300, label: 'Flashing light', title: 'FLASHING LIGHT',
+  { id: 'light', t: 3064, label: 'Flashing light', title: 'FLASHING LIGHT',
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 desig 12030–', 'G SPEED 6'] }, { head: 'END SERIAL :', lines: [GO, 'EX3 – 4 desig 12030'] }] },
-  { id: 'flags', t: 3430, label: 'Flag hoist', title: 'FLAG HOIST',
+  { id: 'flags', t: 3194, label: 'Flag hoist', title: 'FLAG HOIST',
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 desig 12040 –', 'G SPEED 6'] }, { head: 'END SERIAL :', lines: [GO, 'EX3 – 4 desig 12040'] }] },
-  { id: 'skim', t: 3560, label: 'Skimming past', title: 'SKIMMING PAST', note: 'RUS makes sierra, turns away to starboard and comes back past ALG.',
+  { id: 'skim', t: 3324, label: 'Skimming past', title: 'SKIMMING PAST', note: 'RUS makes sierra, turns away to starboard and comes back past ALG.',
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 desig 12050'] }, { head: 'END SERIAL :', lines: ['EX3 – 4 desig 12050'] }] },
 ];
 for (const p of PHASES) { p.tx = p.t + STANDBY_DEFAULT + LEAD; p.t = p.tx - STANDBY; }
@@ -203,8 +203,9 @@ export const SECTOR_MARGIN = 500 * YD;
 const D1 = 1500 * YD;
 const D2 = 3500 * YD;
 export const SECTORS = {
-  screenk: { alg: { b1: 330, b2: 30, d1: D1, d2: D2 }, rus: { b1: 150, b2: 210, d1: D1, d2: D2 } },
-  screenm: { alg: { b1: 0, b2: 30, d1: D1, d2: D2 }, rus: { b1: 150, b2: 180, d1: D1, d2: D2 } },
+  // RUS to the north and ALG to the south: FORM 345 then brings each in from her own side (RUS north of ALG for the skim) without crossing.
+  screenk: { rus: { b1: 330, b2: 30, d1: D1, d2: D2 }, alg: { b1: 150, b2: 210, d1: D1, d2: D2 } },
+  screenm: { rus: { b1: 0, b2: 30, d1: D1, d2: D2 }, alg: { b1: 150, b2: 180, d1: D1, d2: D2 } },
 };
 const sectorSpan = (sec) => (sec.b2 - sec.b1 + 360) % 360;
 function sectorAt(id, t) {
