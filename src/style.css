@@ -1025,8 +1025,10 @@ body.mission-maneuvers .marker { font-size: 11px; font-weight: 500; }
   /* The vertical timeline: the same line and chapters, time running downward. */
   .vtrack {
     display: block; position: fixed; z-index: 8; left: calc(var(--gap) + var(--safe-l));
-    top: calc(var(--gap) + var(--safe-t) + var(--bar-h, 40px) + 52px); bottom: calc(var(--gap) * 3 + var(--safe-b) + 84px); width: 230px; --p: 0;
+    top: calc(var(--gap) * 2 + var(--safe-t) + var(--bar-h, 40px)); bottom: calc(var(--gap) * 3 + var(--safe-b) + 84px); width: 230px; --p: 0;
   }
+  /* Tall enough to run the whole height of the screen once the centred playback panel is clear of its labels. */
+  @media (min-width: 1250px) { .vtrack { bottom: calc(var(--gap) * 2 + var(--safe-b)); } }
   .vt-rail { position: absolute; left: 10px; top: 0; bottom: 0; width: 7px; border-radius: 4px; background: rgba(255, 255, 255, 0.2); cursor: pointer; touch-action: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25); }
   .vt-rail::before { content: ''; position: absolute; left: -10px; right: -10px; top: 0; bottom: 0; } /* a wider target to grab */
   .vt-fill { position: absolute; left: 0; right: 0; top: 0; height: calc(var(--p) * 100%); border-radius: 4px; background: var(--accent); }
