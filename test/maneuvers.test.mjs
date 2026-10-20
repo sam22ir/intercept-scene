@@ -24,6 +24,20 @@ describe('naval maneuvers: formation geometry', () => {
     angleNear(rel.bearing, 0, 0.5, 'bearing RUS to ALG');
   });
 
+  it('wheels on CORPEN: both ships parallel the whole turn, RUS keeping her gisement and distance, at 15 kn at most', () => {
+    const g0 = relation(P.corpen.tx, 'alg', 'rus');
+    const gis0 = (g0.bearing - headingDeg(shipState('alg', P.corpen.tx).heading) + 360) % 360;
+    for (let t = P.corpen.tx; t <= P.corpen.ta + 10; t += 5) {
+      const ha = headingDeg(shipState('alg', t).heading);
+      angleNear(headingDeg(shipState('rus', t).heading), ha, 0.1, `parallel at +${t - P.corpen.tx} s`);
+      const r = relation(t, 'alg', 'rus');
+      angleNear((r.bearing - ha + 360) % 360, gis0, 0.2, `gisement at +${t - P.corpen.tx} s`);
+      near(r.range, g0.range, 1, `distance at +${t - P.corpen.tx} s`);
+      assert.ok(speedKn('rus', t) <= 15.05, `RUS within sierra at +${t - P.corpen.tx} s`);
+    }
+    angleNear(headingDeg(shipState('alg', P.corpen.ta + 10).heading), 90, 0.5, 'wheeled to 090');
+  });
+
   it('turns stbd 90 together (line abreast), back to port 90 (column)', () => {
     const abreast = P.stbd.tx + 120;
     angleNear(headingDeg(shipState('alg', abreast).heading), 90, 1, 'ALG heading after TURN STBD 9');

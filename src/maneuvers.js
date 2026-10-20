@@ -58,7 +58,7 @@ export const PHASES = [
     serial: [{ head: 'START SERIAL:', lines: [GO, 'EX3 – 9 DESIG 12010 –', 'G SPEED 12'] }] },
   { id: 'station', t: 30, label: 'Form 1', title: 'INITIAL FORMATION : FORM 1', note: 'The unit sails alongside ALG: 1,000 yds ahead and 500 yds to starboard, on her course and speed.',
     serial: [{ lines: [GO, 'FORM 1- STATION 1 DESIG ALG –', 'STATION 2 DESIG RUS – S SPEED 16', 'B CORPEN 360 – B SPEED 12 –', 'G FORM ALG -TA12-1-10', START_STBY] }] },
-  { id: 'stbd', t: 60, label: 'Turn stbd 90°', title: 'TURN STBD 9',
+  { id: 'stbd', t: 60, label: 'Turn stbd 90°', title: 'TURN STBD 9', note: 'A turn together: both ships put the rudder over at the same moment and come to 090; the true bearing between them stays the same.',
     serial: [{ lines: [GO, 'TURN STBD 9 .', START_STBY] }] },
   { id: 'port', t: 180, label: 'Turn port 90°', title: 'TURN PORT 9',
     serial: [{ lines: ['AS this is AC EXECUTE TO FOLLOW', 'TURN PORT 9 .', START_STBY] }] },
@@ -68,7 +68,7 @@ export const PHASES = [
     serial: [{ lines: [GO, 'TURN STBD 045 – B SPEED 12 –', 'TA 12-1- 10', START_STBY] }] },
   { id: 'form120', t: 683, label: 'Form 120', title: 'FORM 120', note: 'ALG makes 10 kn; RUS drops back at 6 kn.',
     serial: [{ lines: [GO, 'FORM 120 – B SPEED 10 –', 'TA 12-1- 10', START_STBY] }] },
-  { id: 'corpen', t: 966, label: 'Corpen stbd 45°', title: 'CORPEN STBD 4 ANS', note: 'A wheel of 45 degrees to starboard: ALG pivots to course 090 and is the guide again; RUS runs at sierra, 15 kn, to regain her bearing and distance from ALG, turned with the formation: 345 from ALG. (MTP 1(D) Vol. II 701 does not allow a wheel on a line of bearing; the deck orders it here.)',
+  { id: 'corpen', t: 966, label: 'Corpen stbd 45°', title: 'CORPEN STBD 4 ANS', note: 'A wheel of 45 degrees to starboard: the formation turns as one block. ALG, the guide again, wheels to course 090 at 12 kn; RUS, on the outside of the turn, makes 15 kn and keeps her gisement and distance the whole way, so the two stay parallel and end on 090, RUS 345 from ALG. (MTP 1(D) Vol. II 701 does not allow a wheel on a line of bearing; the deck orders it here.)',
     serial: [{ lines: [GO, 'CORPEN STBD 4 ANS – B SPEED 12–', 'G FORM ALG – TA 12-1- 10', START_STBY] }] },
   { id: 'fcol', t: 1227, label: 'Form 1', title: 'FORM 1', note: 'Column in order of sequence numbers on the unit: the unit leads, ALG 500 yds astern of her and RUS 500 yds astern of ALG.',
     serial: [{ lines: [GO, 'FORM 1 – STATION 1 DESIG UNIT –', 'STATION 2 DESIG ALG – STATION 3 DESIG RUS –', 'G FORM UNIT – TA 12-1- 10', START_STBY] }] },
@@ -104,10 +104,12 @@ const G_RESUME = G1 + G2 + 30;
 // FORM 120: RUS drops back at 6 kn on course 035 while ALG makes 10 kn.
 const F_C = 35.8;
 const F_T = 222.6;
-// CORPEN STBD 4 ANS (a wheel of 45 degrees): ALG pivots to 090; RUS keeps her relative bearing and distance, so she
-// ends at 345 from ALG (the 300 she had, turned by 45), found by solving this course and time.
-const C_C = 81;
-const C_T = 203.5;
+// CORPEN STBD 4 ANS (a wheel of 45 degrees): the formation turns as one rigid block. ALG, the guide, wheels to 090 at
+// 12 kn on a wide circle; RUS, on the outside of the turn, keeps her gisement (her bearing relative to the heading) and
+// her distance the whole way, so both ships are parallel at every moment and RUS ends 345 from ALG (the 300 she had,
+// turned by 45). The wheel rate is the one that puts RUS at sierra, 15 kn, on her larger circle.
+const WHEEL_KN = 12;
+const WHEEL_OUTER_KN = 15;
 // SKIMMING PAST: RUS makes 15 kn east, then a wide right turn (a U-turn whose diameter takes it from
 // 500 yds north of ALG to 100 m south of it) and runs back west past ALG.
 const SKIM_SPEED = 15; // kn
@@ -125,7 +127,6 @@ const ALG_ORDERS = [
   { t: X.gform + G_RESUME, speed: 12 },
   { t: X.turn045, course: 45, dir: 'stbd' }, // TURN 045
   { t: X.form120, speed: 10 }, // B SPEED 10
-  { t: X.corpen, course: 90, dir: 'stbd', speed: 12 }, // CORPEN STBD 4 ANS, B SPEED 12
 ];
 const RUS_ORDERS = [
   ...COMMON,
@@ -136,8 +137,6 @@ const RUS_ORDERS = [
   { t: X.turn045, course: 45, dir: 'stbd' },
   { t: X.form120, course: F_C, speed: 6 },
   { t: X.form120 + F_T, course: 45, speed: 10 },
-  { t: X.corpen, course: C_C, speed: 15 },
-  { t: X.corpen + C_T, course: 90, speed: 12 },
   { t: X.skim, course: 90, speed: SKIM_SPEED },
   { t: X.skim + SKIM_RUN, course: 270, dir: 'stbd', rate: deg((SKIM_SPEED * KT) / SKIM_RADIUS) },
 ];
@@ -177,14 +176,47 @@ function integrate(orders, until, start) {
 }
 
 const FULL = 6400; // s baked; the exercise ends well before
-const ALG_FULL = integrate(ALG_ORDERS, FULL, { x: 0, z: 0, psi: 0, v: 12 * KT });
-const RUS_FULL = integrate(RUS_ORDERS, FULL, { x: -FORMATION_RANGE, z: 0, psi: 0, v: 12 * KT });
+const ALG_START = { x: 0, z: 0, psi: 0, v: 12 * KT };
+const RUS_START = { x: -FORMATION_RANGE, z: 0, psi: 0, v: 12 * KT };
+// The wheel: RUS's place in ALG's frame (ahead, to starboard) when CORPEN executes, and the turn rate that makes the
+// circle through RUS (centred on ALG's starboard side) run at WHEEL_OUTER_KN while ALG runs at WHEEL_KN.
+const K_WHEEL = Math.round(X.corpen / DT);
+const WHEEL_REL = (() => {
+  const g = integrate(ALG_ORDERS, X.corpen, ALG_START)[K_WHEEL];
+  const r = integrate(RUS_ORDERS, X.corpen, RUS_START)[K_WHEEL];
+  const dx = r.x - g.x;
+  const dz = r.z - g.z;
+  return { fwd: dx * Math.cos(g.psi) + dz * Math.sin(g.psi), stb: -dx * Math.sin(g.psi) + dz * Math.cos(g.psi) };
+})();
+const WHEEL_R = (() => { // radius of ALG's circle: |RUS - centre| = (outer / guide) * R, the centre R to starboard of ALG
+  const q = (WHEEL_OUTER_KN / WHEEL_KN) ** 2 - 1;
+  const b = 2 * WHEEL_REL.stb;
+  const c = WHEEL_REL.fwd ** 2 + WHEEL_REL.stb ** 2;
+  return (-b + Math.sqrt(b * b + 4 * q * c)) / (2 * q);
+})();
+ALG_ORDERS.push({ t: X.corpen, course: 90, dir: 'stbd', speed: WHEEL_KN, rate: deg((WHEEL_KN * KT) / WHEEL_R) }); // CORPEN STBD 4 ANS, B SPEED 12
+RUS_ORDERS.splice(RUS_ORDERS.findIndex((o) => o.t >= X.corpen), 0, { t: X.corpen, course: 90, dir: 'stbd', speed: WHEEL_KN });
+const ALG_FULL = integrate(ALG_ORDERS, FULL, ALG_START);
+const RUS_FULL = integrate(RUS_ORDERS, FULL, RUS_START);
 // The third ship, the unit the others work around: it keeps ALG's course and speed, one station (500 yds) to
 // starboard of her and two stations (1,000 yds) ahead, so it sails straight alongside whatever ALG does and is
 // clear of every lane the other two use (RUS passes it no closer than about 470 m). From the screens on it holds
 // course 090 at 6 kn as the screen centre.
 // The first order that steers the screen ships (FORM 1, FORM 2, FORM 3, FORM D, SCREEN K, SCREEN M or FORM 345, whichever comes first).
 const X_STEER = Math.min(X.fcol, X.fdia, X.fline3, X.fcol2, X.screenk, X.screenm, X.form345);
+// From CORPEN to the formations on the unit RUS is held rigidly in ALG's frame: through the wheel and after it she keeps
+// the same place relative to ALG's heading, her speed being whatever that takes.
+for (let k = K_WHEEL, kEnd = Math.round(X_STEER / DT); k <= kEnd; k++) {
+  const g = ALG_FULL[k];
+  const c = Math.cos(g.psi);
+  const sn = Math.sin(g.psi);
+  RUS_FULL[k] = { t: k * DT, x: g.x + c * WHEEL_REL.fwd - sn * WHEEL_REL.stb, z: g.z + sn * WHEEL_REL.fwd + c * WHEEL_REL.stb, psi: g.psi, v: g.v };
+}
+for (let k = K_WHEEL + 1, kEnd = Math.round(X_STEER / DT); k <= kEnd; k++) {
+  const a = RUS_FULL[k - 1];
+  const b = RUS_FULL[k];
+  b.v = Math.hypot(b.x - a.x, b.z - a.z) / DT;
+}
 const UNIT_ORDERS = [...ALG_ORDERS, { t: X_STEER, speed: 6 }]; // it slows to 6 kn as the formations begin
 const UNIT_FULL = integrate(UNIT_ORDERS, FULL, { x: 2 * FORMATION_RANGE, z: FORMATION_RANGE, psi: 0, v: 12 * KT });
 export const SHIP_IDS = ['alg', 'rus', 'unit'];
