@@ -30,23 +30,28 @@ export const KT = 1852 / 3600;
 export const SHIP_IDS = ['ship1', 'ship2', 'ship3', 'ship4'];
 export const SHIP_NAMES = { ship1: 'SHIP1', ship2: 'SHIP2', ship3: 'SHIP3', ship4: 'SHIP4' };
 export const GUIDE = 'ship1';
-export const SPACING = 500; // yd between neighbouring ships
+export const SPACING = 500; // yd between neighbouring ships, as ordered and as every readout shows it
+// The scene sails the ships closer than the ordered distances so a whole formation reads on screen (as the drill
+// does): one ordered yard is SCALE yards on the sea. Every number shown is in ordered yards (`orderedYd`).
+export const SCALE = 0.5;
+const SYD = YD * SCALE; // metres on the sea per ordered yard
+export const orderedYd = (m) => m / SYD;
 export const GUIDE_SPEED = 12; // kn
 export const MAX_SPEED = 20; // kn, for a ship catching up
 export const MIN_SPEED = 5; // kn, for a ship dropping back
 export const TURN_RATE = 1.5; // deg/s, a ship's own rate of turn (and the rate of a turn together)
 export const ACCEL = 0.12; // m/s^2
-export const ON_STATION = 40; // m: counts as on station
+export const ON_STATION = 40 * SCALE; // m on the sea: counts as on station
 export const ON_COURSE = 2; // deg: counts as on the ordered course
 export const ARRIVAL = 10; // s every ship stays on station and course before the order counts as arrived
 export const HOLD = 60; // s the formation is held after arriving, before the next order
 const LEAD = 30; // s from the start to the first order
 const DT = 0.25;
-const T_CROSS = 45; // s: the steering closes a station error at about this time constant
+const T_CROSS = 45 * SCALE; // s: the steering closes a station error at about this time constant
 const MAX_OFFSET = 50 * Math.PI / 180; // largest angle off the station's own heading while closing it
-const KEEP_CLEAR = 450; // m: inside this a ship steers away from any other ship (the guide never gives way)
+const KEEP_CLEAR = 450 * SCALE; // m: inside this a ship steers away from any other ship (the guide never gives way)
 const CLEAR_SPEED = 6; // m/s of sideways push at contact, fading to 0 at KEEP_CLEAR
-const STAND_ON = 50; // m: a ship whose new station is this close to her own line only changes speed
+const STAND_ON = 50 * SCALE; // m: a ship whose new station is this close to her own line only changes speed
 const STAND_ON_GIVE = 3; // the keep-clear push from a stand-on ship is this much stronger, since she does not move aside
 const WHEEL_MARGIN = 0.8; // a wheel uses at most this share of the speed range of its outer and inner ships
 
@@ -121,12 +126,12 @@ function stationOf(S, i, t, out = {}) {
     guideAt(t, _g);
     const c = Math.cos(rad(S.axis));
     const sn = Math.sin(rad(S.axis));
-    out.x = _g.x + (a * c - s * sn) * YD;
-    out.z = _g.z + (a * sn + s * c) * YD;
+    out.x = _g.x + (a * c - s * sn) * SYD;
+    out.z = _g.z + (a * sn + s * c) * SYD;
   } else {
-    guideAt(t + (a * YD) / V, _g); // where the guide was `a` yards ago
-    out.x = _g.x - Math.sin(_g.psi) * s * YD;
-    out.z = _g.z + Math.cos(_g.psi) * s * YD;
+    guideAt(t + (a * SYD) / V, _g); // where the guide was `a` (ordered) yards ago
+    out.x = _g.x - Math.sin(_g.psi) * s * SYD;
+    out.z = _g.z + Math.cos(_g.psi) * s * SYD;
   }
   return out;
 }
@@ -135,7 +140,7 @@ function stationOf(S, i, t, out = {}) {
 const MAX_T = 4 * 3600;
 const tables = SHIP_IDS.map(() => []);
 {
-  const st = SHIP_IDS.map((_, i) => ({ x: FORMS.column[i][0] * YD, z: 0, psi: 0, v: V })); // the column, heading 000
+  const st = SHIP_IDS.map((_, i) => ({ x: FORMS.column[i][0] * SYD, z: 0, psi: 0, v: V })); // the column, heading 000
   guideTab.push({ x: 0, z: 0, psi: 0 });
   st.forEach((s, i) => tables[i].push({ ...s }));
   let phase = 0;
@@ -156,7 +161,7 @@ const tables = SHIP_IDS.map(() => []);
     if (ph.ta === undefined) {
       // In track mode the ships astern turn where the guide turned, so the order is done only once the rearmost
       // ship's point on the guide's track is past the turn too, and she has had ARRIVAL s to settle from it.
-      const lag = S.mode === 'track' ? Math.max(...FORMS[S.form].map(([a]) => -a * YD / V)) + ARRIVAL : 0;
+      const lag = S.mode === 'track' ? Math.max(...FORMS[S.form].map(([a]) => -a * SYD / V)) + ARRIVAL : 0;
       const ok = t - guideOnCourse >= lag && st.every((s, i) => Math.abs(wrapPi(s.psi - rad(course))) <= rad(ON_COURSE)
         && Math.hypot(s.x - stationOf(S, i, t, p).x, s.z - p.z) <= ON_STATION);
       if (!ok) onSince = null;
@@ -177,17 +182,17 @@ const tables = SHIP_IDS.map(() => []);
         const sn = Math.sin(rad(course));
         standOn = st.map((s, i) => {
           if (i === 0) return true;
-          const rx = (s.x - st[0].x) / YD;
-          const rz = (s.z - st[0].z) / YD;
+          const rx = (s.x - st[0].x) / SYD;
+          const rz = (s.z - st[0].z) / SYD;
           const stbdNow = -rx * sn + rz * c;
-          return Math.abs(stbdNow - FORMS[nx.form][i][1]) * YD <= STAND_ON;
+          return Math.abs(stbdNow - FORMS[nx.form][i][1]) * SYD <= STAND_ON;
         });
       } else if (nx.kind === 'corpen') {
         course = nx.course;
         S = { form: S.form, mode: 'track', axis: course };
         // The wheel rate: no ship laid off abeam may need more than MAX_SPEED outside or less than MIN_SPEED inside.
         for (let i = 1; i < 4; i++) {
-          const off = FORMS[S.form][i][1] * YD;
+          const off = FORMS[S.form][i][1] * SYD;
           if (!off) continue;
           const outside = nx.dir === 'stbd' ? off < 0 : off > 0;
           const lim = outside ? (MAX_SPEED * KT - V) / Math.abs(off) : (V - MIN_SPEED * KT) / Math.abs(off);

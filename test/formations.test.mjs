@@ -6,7 +6,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   exercise, shipState, stationPoint, phaseAt, orderStatus, relation, closestApproach, headingDeg,
-  PHASES, FORMS, SHIP_IDS, SHIP_NAMES, YD, KT, ON_STATION, ON_COURSE, ARRIVAL, HOLD, GUIDE_SPEED, MAX_SPEED, MIN_SPEED, SPACING,
+  PHASES, FORMS, SHIP_IDS, SHIP_NAMES, KT, ON_STATION, ON_COURSE, ARRIVAL, HOLD, GUIDE_SPEED, MAX_SPEED, MIN_SPEED, SPACING, SCALE, orderedYd,
 } from '../src/formations.js';
 
 const near = (a, b, tol, msg) => assert.ok(Math.abs(a - b) <= tol, `${msg}: ${a} vs ${b}`);
@@ -14,14 +14,14 @@ const angGap = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
 const P = Object.fromEntries(PHASES.map((p) => [p.id, p]));
 const FOLLOWERS = ['ship2', 'ship3', 'ship4'];
 
-// Where a ship is relative to SHIP1 in yards [ahead, starboard] on a given axis (deg).
+// Where a ship is relative to SHIP1 in ordered yards [ahead, starboard] on a given axis (deg).
 function rel(id, t, axis) {
   const g = shipState('ship1', t);
   const s = shipState(id, t);
   const c = Math.cos(axis * Math.PI / 180);
   const sn = Math.sin(axis * Math.PI / 180);
-  const dx = (s.x - g.x) / YD;
-  const dz = (s.z - g.z) / YD;
+  const dx = orderedYd(s.x - g.x);
+  const dz = orderedYd(s.z - g.z);
   return [dx * c + dz * sn, -dx * sn + dz * c];
 }
 
@@ -48,9 +48,15 @@ describe('four-ship formations: the ships', () => {
     }
   });
 
-  it('keep clear of each other: never closer than 250 m', () => {
+  it('keep clear of each other: never closer than 250 ordered yards (half the station spacing)', () => {
     const c = closestApproach();
-    assert.ok(c.range >= 250, `${c.a} and ${c.b} close to ${c.range.toFixed(0)} m at ${c.t} s`);
+    assert.ok(orderedYd(c.range) >= 250, `${c.a} and ${c.b} close to ${orderedYd(c.range).toFixed(0)} yd at ${c.t} s`);
+  });
+
+  it('sail closer on the sea than the ordered distances: one ordered yard is SCALE yards, and every readout is in ordered yards', () => {
+    assert.ok(SCALE > 0 && SCALE < 1);
+    near(relation(30, 'ship1', 'ship2').range, SPACING * 0.9144 * SCALE, 0.5, 'the column on the sea');
+    near(orderedYd(relation(30, 'ship1', 'ship2').range), SPACING, 0.5, 'and 500 yds as shown');
   });
 
   it('are a pure function of t', () => {
@@ -94,8 +100,8 @@ describe('four-ship formations: the orders', () => {
     it(`${p.title}: the shape is the ordered one on course ${String(p.course).padStart(3, '0')}`, () => {
       FORMS[p.form].forEach(([a, s], i) => {
         const [ra, rs] = rel(SHIP_IDS[i], p.ta + 30, p.course);
-        near(ra, a, ON_STATION / YD, `${SHIP_IDS[i]} ahead`);
-        near(rs, s, ON_STATION / YD, `${SHIP_IDS[i]} to starboard`);
+        near(ra, a, orderedYd(ON_STATION), `${SHIP_IDS[i]} ahead`);
+        near(rs, s, orderedYd(ON_STATION), `${SHIP_IDS[i]} to starboard`);
       });
     });
   }
@@ -104,7 +110,7 @@ describe('four-ship formations: the orders', () => {
     assert.equal(P.bearing.course, 90);
     for (const id of FOLLOWERS) near(relation(P.bearing.ta + 40, 'ship1', id).bearing, 225, 3, `${id} bearing`);
     for (const [a, b] of [['ship1', 'ship2'], ['ship1', 'ship3'], ['ship2', 'ship4'], ['ship3', 'ship4']]) {
-      near(relation(P.diamond.ta + 40, a, b).range / YD, 500, 50, `diamond ${a}-${b}`);
+      near(orderedYd(relation(P.diamond.ta + 40, a, b).range), 500, 50, `diamond ${a}-${b}`);
     }
   });
 
@@ -116,7 +122,9 @@ describe('four-ship formations: the orders', () => {
         for (let t = p.tx; t <= p.ta; t += 1) assert.ok(angGap(headingDeg(shipState(id, t).heading), p.course) <= 2, `${id} holds ${p.course} in ${p.id} at ${t}`);
       }
     }
-    assert.ok(shipState('ship3', P.column.tx + 120).speed / KT < GUIDE_SPEED - 3, 'SHIP3 slows down from box to column');
+    let slowest = Infinity;
+    for (let t = P.column.tx; t <= P.column.ta; t += 1) slowest = Math.min(slowest, shipState('ship3', t).speed / KT);
+    assert.ok(slowest < GUIDE_SPEED - 3, `SHIP3 slows down from box to column (to ${slowest.toFixed(1)} kn)`);
   });
 
   it('TURN: all four turn at the same moment and the true bearings between them do not change', () => {
@@ -133,14 +141,14 @@ describe('four-ship formations: the orders', () => {
     // The line abreast on 090 turned together to port 9 is a column on 000, SHIP1 leading.
     for (const [i, id] of FOLLOWERS.entries()) {
       const [a, s] = rel(id, P.turnport.ta, 0);
-      near(a, -(i + 1) * SPACING, ON_STATION / YD, `${id} astern after TURN PORT 9`);
-      near(s, 0, ON_STATION / YD, `${id} in the column`);
+      near(a, -(i + 1) * SPACING, orderedYd(ON_STATION), `${id} astern after TURN PORT 9`);
+      near(s, 0, orderedYd(ON_STATION), `${id} in the column`);
     }
   });
 
   it('CORPEN in column: each ship holds on and turns in the guide\'s wake, at the point where she turned', () => {
     const p = P.corpen1;
-    const lag = (k) => (k * SPACING * YD) / (GUIDE_SPEED * KT);
+    const lag = (k) => (k * SPACING * 0.9144 * SCALE) / (GUIDE_SPEED * KT);
     for (const [i, id] of FOLLOWERS.entries()) {
       for (let t = p.tx + lag(i + 1); t <= p.ta; t += 2) {
         const g = shipState('ship1', t - lag(i + 1));

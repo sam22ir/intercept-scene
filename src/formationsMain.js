@@ -11,7 +11,7 @@ import { createTimeline } from './timeline.js';
 import { toast } from './pathEditor.js';
 import { menuText } from './menu.js';
 import {
-  exercise, shipState, stationPoint, orderStatus, headingDeg, PHASES, SHIP_IDS, SHIP_NAMES, KT, YD, ON_STATION,
+  exercise, shipState, stationPoint, orderStatus, headingDeg, PHASES, SHIP_IDS, SHIP_NAMES, KT, ON_STATION, orderedYd,
 } from './formations.js';
 
 // Entry point of the "Four-ship formations" mission (see formations.js): SHIP1 to SHIP4 change formation and
@@ -154,7 +154,7 @@ function updateStationRings(t) {
     if (!m.visible) continue;
     stationPoint(id, t, _sp);
     m.position.set(_sp.x, 2.5, _sp.z);
-    m.scale.setScalar(Math.min(Math.max(camera.position.distanceTo(m.position) / 26, 38), 150) * (1 + 0.05 * Math.sin(t * 2.4)));
+    m.scale.setScalar(Math.min(Math.max(camera.position.distanceTo(m.position) / 30, 28), 90) * (1 + 0.05 * Math.sin(t * 2.4)));
     m.material.color.set(_sp.error <= ON_STATION ? 0x3ddc84 : COLORS[id]);
     m.material.opacity = fade;
   }
@@ -197,7 +197,7 @@ const centroid = (t, out) => {
 };
 const targets = {
   ...Object.fromEntries(SHIP_IDS.map((id) => [id, { pos: (out) => out.copy(ships[id].ship.group.position).setY(12), dist: 420, min: 60 }])),
-  formation: { pos: (out) => centroid(clock.t, out), dist: 2600, min: 300 },
+  formation: { pos: (out) => centroid(clock.t, out), dist: 1500, min: 200 },
 };
 const camButtons = [...document.querySelectorAll('[data-focus]')];
 function setFocus(id) {
@@ -263,7 +263,7 @@ function updateHud(t) {
   const html = SHIP_IDS.map((id) => {
     const s = ships[id].state;
     const err = stationPoint(id, t, _sp).error;
-    const st = id === 'ship1' ? 'guide' : err <= ON_STATION ? 'on stn' : `${Math.round(err / YD)} yd`;
+    const st = id === 'ship1' ? 'guide' : err <= ON_STATION ? 'on stn' : `${Math.round(orderedYd(err))} yd`;
     return `<div class="mh-cell ${id}" title="${SHIP_NAMES[id]}: heading, speed and distance from the ordered station"><span>${SHIP_NAMES[id]}</span>`
       + `<b>${pad3(headingDeg(s.heading))}°</b><em>${(s.speed / KT).toFixed(0)} kn · ${st}</em></div>`;
   }).join('');
@@ -378,7 +378,7 @@ function updateMap(t) {
   ctx.clearRect(0, 0, d, d);
   centroid(t, _c);
   const pts = SHIP_IDS.map((id) => ({ id, s: shipState(id, t), p: stationPoint(id, t) }));
-  let span = 600;
+  let span = 300;
   for (const q of pts) span = Math.max(span, Math.abs(q.s.x - _c.x), Math.abs(q.s.z - _c.z), Math.abs(q.p.x - _c.x), Math.abs(q.p.z - _c.z));
   const k = (d / 2 - 24) / (span * 1.1); // px per metre, clear of the rim and the scale line
   const X = (z) => d / 2 + (z - _c.z) * k; // east is right
@@ -411,7 +411,7 @@ function updateMap(t) {
     ctx.fillStyle = CSS[q.id];
     ctx.fillText(q.id.slice(-1), x + 9, y + 3);
   }
-  const yards = Math.round((span * 1.1) / YD / 100) * 100;
+  const yards = Math.round(orderedYd(span * 1.1) / 100) * 100; // in ordered yards, like every other number
   mapScale.textContent = `${yards} yd to the rim`;
 }
 
@@ -543,7 +543,7 @@ setMap(mapOn);
 // Open on the whole formation, from astern and above.
 for (const s of Object.values(ships)) placeShip(s, 0);
 centroid(0, _c);
-camera.position.set(_c.x - 1900, 1100, _c.z + 900);
+camera.position.set(_c.x - 1100, 650, _c.z + 520);
 controls.target.copy(_c);
 setFocus('formation');
 
