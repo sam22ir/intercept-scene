@@ -313,7 +313,7 @@ const VIEW_NAMES = {
 let view = 'behind';
 let lookYaw = 0; // bridge: degrees off the bow, + to starboard
 let lookPitch = -0.03;
-const BEHIND_DIST = 100; // m behind the ship, close
+const BEHIND_DIST = 165; // m behind the ship: far enough to see her whole length, not much more
 let behindDist = BEHIND_DIST;
 let aboveH = 520;
 let camYaw = 0; // the behind view's heading, smoothed
@@ -381,19 +381,22 @@ function setView(v, quiet = false) {
 //    through the director's sight, on the drone, where it finds the target and locks on (the brackets, the TARGET LOCKED sign
 //    and a tone) before the round leaves; and back to the launcher to see it fire;
 //    it then rides close behind the missile (its flame in the frame, the lens closing in on the drone), and for the last
-//    metres goes to the side of the two, in slow motion, until the hit (the only slow motion); it stays on the wreck until
-//    the last piece is in the sea, waits CINE_TAIL seconds more, and goes back;
+//    metres goes to the side of the two; time slows only at the moment of a hit (the missile on the drone, or the drone on
+//    the ship) and a second after it; it stays on the wreck until
+//    the last piece is in the sea (CINE_TAIL more seconds, now none) and goes back;
 //  - a drone starts an attack run (and no missile is on it): the same side view of the drone and the ship, closing in;
 //  - a drone hits the ship (whichever of the two shots was on): the camera comes in close, from outboard, on the place
 //    where it hit, and stays there IMPACT_HOLD seconds, the fire burning, then goes back.
 // A missile that is lost, or a drone that goes into the sea, ends the shot at once. Any view key, or I, ends it; it is
 // skipped in the free orbit (that view is the player's own, and its controls keep their own camera state).
-const CINE_TAIL = 2; // s kept on the scene after the drone is in the sea
+const CINE_TAIL = 0; // s kept on the scene after the drone is in the sea: none, the view changes back at the splash
 const CINE_MAX = 60; // s: a shot never holds the camera longer than this
 const IMPACT_HOLD = 5; // s on the place of a hit
 const LAUNCH_HOLD = 0.8; // s (of simulated time) the camera stays on the launcher after the round leaves
 // The speed of time (1 = real time) in each part of the shot; the loop eases toward it.
-const SLOW = { slew: 1, launch: 1, fly: 1, close: 0.35, wreck: 1 }; // real time all through, except the last metres before the hit
+const SLOW = { slew: 1, launch: 1, fly: 1, close: 0.3, wreck: 0.3 }; // real time all through, except at the moment of a hit
+const HIT_SLOW_SEP = 100; // m: the missile this close to the drone, or the drone this close to the ship: slow motion
+const HIT_SLOW_AFTER = 1.1; // s of simulated time the slow motion lasts after the hit
 const CLOSE_SEP = 380; // m between missile and drone: inside this the shot goes to the side, to see the hit
 let timeScale = 1;
 let timeTarget = 1;
@@ -536,7 +539,7 @@ function frameChase(c, m, d, dt) {
 // Frames the shot; returns the lens (degrees), or null once the shot is over.
 function updateCine(dt) {
   const c = cine;
-  if (c.phase === 'impact') { timeTarget = 1; return frameImpact(c, dt); }
+  if (c.phase === 'impact') { timeTarget = sim.t - c.tImpact < HIT_SLOW_AFTER ? SLOW.wreck : 1; return frameImpact(c, dt); } // the hit on the ship, in slow motion
   if (c.phase === 'slew') { // the launcher turns, fast: close on it
     if (!sim.shot) { endCine(); return null; } // cancelled
     timeTarget = SLOW.slew;
@@ -571,19 +574,19 @@ function updateCine(dt) {
     const sep = m.pos.distanceTo(d.pos);
     if (c.phase === 'approach' && sep < CLOSE_SEP) { c.phase = 'close'; c.side = 0; c.tBlend = sim.t; } // the last metres: to the side, slow
     if (c.phase === 'approach') { timeTarget = SLOW.fly; return frameChase(c, m, d, dt); }
-    timeTarget = SLOW.close;
+    timeTarget = sep < HIT_SLOW_SEP ? SLOW.close : 1; // slow only in the last instant before the hit
     return frameSide(c, m.pos, d.pos, dt, false, 0.12 + 0.45 * (1 - THREE.MathUtils.clamp((sim.t - c.tBlend) / 1.0, 0, 1)));
   }
   if (c.phase === 'dive') {
     if (!d.alive) { endCine(); return null; } // (a hit on the ship comes as its own event)
-    timeTarget = 1;
+    timeTarget = d.pos.distanceTo(_e.set(sim.x, 9, sim.z)) < HIT_SLOW_SEP * 0.7 ? SLOW.close : 1; // the last instant of the dive
     return frameSide(c, _e.set(sim.x, 9, sim.z), d.pos, dt, false);
   }
   // The missile's hit: the camera stays where it was and follows the falling pieces until the last one is in the sea.
   const v = vis.get(d.id);
   const tau = sim.t - d.wreck.t;
   if (c.tSplash === null && v?.debris) c.tSplash = d.wreck.t + Math.max(...v.debris.pieces.map((p) => p.tauWater));
-  timeTarget = sim.t < d.wreck.t + 2.2 ? SLOW.wreck : 1; // the burst in slow motion, then on to the splash
+  timeTarget = sim.t < d.wreck.t + HIT_SLOW_AFTER ? SLOW.wreck : 1; // the burst in slow motion, then on to the splash
   const tEnd = (c.tSplash ?? d.wreck.t + 8) + CINE_TAIL;
   if (sim.t >= tEnd) { endCine(); return null; }
   if (v?.debris) {
