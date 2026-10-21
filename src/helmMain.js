@@ -14,7 +14,7 @@ import { createHelmMap } from './helmMap.js';
 import { createHelmAudio } from './helmAudio.js';
 import { menuText } from './menu.js';
 import {
-  HelmSim, TELEGRAPH, RUDDER_MAX, CELLS, MISSILE_RANGE, BRIDGE_EYE, DIRECTOR_EYE, relName, kmText,
+  HelmSim, SLEW_TIME, TELEGRAPH, RUDDER_MAX, CELLS, MISSILE_RANGE, BRIDGE_EYE, DIRECTOR_EYE, relName, kmText,
 } from './helm.js';
 import './helm.css';
 
@@ -353,10 +353,10 @@ function setView(v, quiet = false) {
 
 // --- The intercept camera ------------------------------------------------------------------------------------------------
 // The shot is cut automatically and goes back to the view that was on when it is over:
-//  - F is pressed: the camera cuts close to the launcher, from the side, in slow motion with a slow zoom, to watch it turn
-//    onto the target and fire; then it goes to the side of the shot, keeps the missile and the drone in the frame and closes
-//    in as they close on each other (the time eases back to normal in flight and slows again for the last metres), until
-//    the hit; it stays on the wreck until the last piece is in the sea, waits CINE_TAIL seconds more, and goes back;
+//  - F is pressed: the camera cuts close to the launcher, from the side, to watch it turn (fast) onto the target and fire;
+//    it then rides close behind the missile (its flame in the frame, the lens closing in on the drone), and for the last
+//    metres goes to the side of the two, in slow motion, until the hit (the only slow motion); it stays on the wreck until
+//    the last piece is in the sea, waits CINE_TAIL seconds more, and goes back;
 //  - a drone starts an attack run (and no missile is on it): the same side view of the drone and the ship, closing in;
 //  - a drone hits the ship (whichever of the two shots was on): the camera comes in close, from outboard, on the place
 //    where it hit, and stays there IMPACT_HOLD seconds, the fire burning, then goes back.
@@ -367,7 +367,8 @@ const CINE_MAX = 60; // s: a shot never holds the camera longer than this
 const IMPACT_HOLD = 5; // s on the place of a hit
 const LAUNCH_HOLD = 0.8; // s (of simulated time) the camera stays on the launcher after the round leaves
 // The speed of time (1 = real time) in each part of the shot; the loop eases toward it.
-const SLOW = { slew: 0.4, launch: 0.3, fly: 0.9, close: 0.35, wreck: 0.45 };
+const SLOW = { slew: 1, launch: 1, fly: 1, close: 0.35, wreck: 1 }; // real time all through, except the last metres before the hit
+const CLOSE_SEP = 380; // m between missile and drone: inside this the shot goes to the side, to see the hit
 let timeScale = 1;
 let timeTarget = 1;
 let cineOn = true;
@@ -377,7 +378,7 @@ let pendingOrbit = false; // the ship is out of action: the orbit view comes onc
 function newCine(mid, did, phase) {
   sightEl.hidden = true;
   document.body.classList.remove('helm-sighting');
-  return { mid, did, phase, t0: sim.t, side: 0, pos: new THREE.Vector3(), look: new THREE.Vector3(), hold: new THREE.Vector3(), tSplash: null, fresh: true, local: new THREE.Vector3(), tImpact: 0, camLocal: new THREE.Vector3(), tLaunch: 0, tBlend: 0 };
+  return { mid, did, phase, t0: sim.t, side: 0, pos: new THREE.Vector3(), look: new THREE.Vector3(), hold: new THREE.Vector3(), tSplash: null, fresh: true, local: new THREE.Vector3(), tImpact: 0, camLocal: new THREE.Vector3(), tLaunch: 0, tBlend: 0, chaseT: 0 };
 }
 // F has been pressed and the launcher is turning: the camera goes close to it, from the side of the way it will fire.
 function startLauncherCine() {
@@ -392,7 +393,7 @@ function startLauncherCine() {
 function frameLauncher(c, progress) {
   ship.group.localToWorld(camera.position.copy(c.camLocal));
   camera.lookAt(ship.group.localToWorld(_c.copy(LAUNCHER_PIVOT).setY(LAUNCHER_PIVOT.y + 1.2)));
-  return THREE.MathUtils.lerp(46, 28, THREE.MathUtils.smoothstep(progress, 0, 1)); // the slow zoom
+  return THREE.MathUtils.lerp(42, 28, THREE.MathUtils.smoothstep(progress, 0, 1)); // the zoom in on it
 }
 function startCine(missileId, droneId = null) {
   if (!cineOn || cine || view === 'orbit' || sim.out) return;
@@ -466,19 +467,42 @@ function frameImpact(c, dt) {
   camera.lookAt(c.look);
   return 24;
 }
+// The missile in flight: the camera rides close behind and a little to the side of it, the exhaust trail and the round in
+// the frame, looking on along the line to the drone, and the lens closes in as the drone gets nearer. It starts from the
+// launcher and sweeps in over a second. (Far from a side view that has both in the frame, here the missile is big.)
+function frameChase(c, m, d, dt) {
+  const sep = m.pos.distanceTo(d.pos);
+  _a.copy(m.dir).normalize();
+  _b.crossVectors(_a, UP);
+  if (_b.lengthSq() < 1e-4) _b.set(0, 0, 1);
+  _b.normalize(); // to the right of the flight
+  if (!c.side) c.side = _b.dot(_c.set(m.pos.x - sim.x, 0, m.pos.z - sim.z)) >= 0 ? 1 : -1; // the outboard side
+  const want = _d.copy(m.pos).addScaledVector(_a, -24).addScaledVector(_b, c.side * 7);
+  want.y = m.pos.y + 4.5;
+  c.chaseT += dt;
+  c.pos.copy(c.hold).lerp(want, THREE.MathUtils.smoothstep(c.chaseT, 0, 1)); // the sweep from the launcher, then rigid on the round
+  _e.subVectors(d.pos, m.pos).normalize();
+  c.look.lerp(_c.copy(m.pos).addScaledVector(_e, Math.min(sep, 50)), 1 - Math.exp(-dt / 0.06));
+  camera.position.copy(c.pos);
+  if (camera.position.y < 3) camera.position.y = 3;
+  camera.lookAt(c.look);
+  return 52 - 22 * THREE.MathUtils.smoothstep(THREE.MathUtils.clamp((1500 - sep) / 1200, 0, 1), 0, 1);
+}
 // Frames the shot; returns the lens (degrees), or null once the shot is over.
 function updateCine(dt) {
   const c = cine;
   if (c.phase === 'impact') { timeTarget = 1; return frameImpact(c, dt); }
-  if (c.phase === 'slew') { // the launcher turns: close on it, in slow motion
+  if (c.phase === 'slew') { // the launcher turns, fast: close on it
     if (!sim.shot) { endCine(); return null; } // cancelled
     timeTarget = SLOW.slew;
-    return frameLauncher(c, (sim.t - c.t0) / 1.6);
+    return frameLauncher(c, (sim.t - c.t0) / SLEW_TIME);
   }
   if (c.phase === 'launch') { // the round leaves its cell: still on the launcher
     if (sim.t - c.tLaunch < LAUNCH_HOLD) { timeTarget = SLOW.launch; return frameLauncher(c, 1); }
     c.phase = 'approach'; // then the camera leaves the ship to follow it
     c.tBlend = sim.t;
+    c.chaseT = 0;
+    c.hold.copy(camera.position); // where the chase starts from
     c.pos.copy(camera.position);
     c.look.copy(ship.group.localToWorld(_c.copy(LAUNCHER_PIVOT)));
     c.fresh = false;
@@ -488,13 +512,16 @@ function updateCine(dt) {
   const d = sim.drones.find((x) => x.id === c.did);
   if (sim.out || !d || sim.t - c.t0 > CINE_MAX) { endCine(); return null; }
   const pull = 1 - Math.exp(-dt / 0.12);
-  if (c.phase === 'approach' && !d.alive && d.wreck && d.wreck.kind === 'missile') { c.phase = 'wreck'; c.hold.copy(c.pos); }
-  if (c.phase === 'approach' && !m && d.alive && d.phase === 'attack') c.phase = 'dive'; // the missile is gone, the drone is still coming
-  if (c.phase === 'approach') {
+  const flying = c.phase === 'approach' || c.phase === 'close';
+  if (flying && !d.alive && d.wreck && d.wreck.kind === 'missile') { c.phase = 'wreck'; c.hold.copy(c.pos); }
+  if (flying && !m && d.alive && d.phase === 'attack') c.phase = 'dive'; // the missile is gone, the drone is still coming
+  if (c.phase === 'approach' || c.phase === 'close') {
     if (!m || !d.alive) { endCine(); return null; } // the missile was lost, or the drone went into the sea: back to the view
     const sep = m.pos.distanceTo(d.pos);
-    timeTarget = sep < 350 ? SLOW.close : SLOW.fly; // brisk in flight, slow for the last metres
-    return frameSide(c, m.pos, d.pos, dt, true, 0.12 + 0.8 * (1 - THREE.MathUtils.clamp((sim.t - c.tBlend) / 1.6, 0, 1)));
+    if (c.phase === 'approach' && sep < CLOSE_SEP) { c.phase = 'close'; c.side = 0; c.tBlend = sim.t; } // the last metres: to the side, slow
+    if (c.phase === 'approach') { timeTarget = SLOW.fly; return frameChase(c, m, d, dt); }
+    timeTarget = SLOW.close;
+    return frameSide(c, m.pos, d.pos, dt, false, 0.12 + 0.45 * (1 - THREE.MathUtils.clamp((sim.t - c.tBlend) / 1.0, 0, 1)));
   }
   if (c.phase === 'dive') {
     if (!d.alive) { endCine(); return null; } // (a hit on the ship comes as its own event)
@@ -873,7 +900,7 @@ window.addEventListener('keydown', (e) => {
       cineOn = !cineOn;
       if (!cineOn) endCine();
       try { localStorage.setItem('intercept.helmcine', cineOn ? '1' : '0'); } catch { /* storage unavailable */ }
-      say(cineOn ? 'Intercept camera on: the launch in slow motion, then the shot followed to the splash' : 'Intercept camera off', '', 2400);
+      say(cineOn ? 'Intercept camera on: the launch, the flight and the hit, slow motion just before it' : 'Intercept camera off', '', 2400);
       break;
     case 'l': tagsOn = !tagsOn; say(tagsOn ? 'Tags on' : 'Tags off', '', 1200); break;
     case 's': setSound(!audio.enabled); break;

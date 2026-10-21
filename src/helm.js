@@ -79,7 +79,7 @@ const STRIKES_TO_LOSE = 3;
 
 // --- The missile ------------------------------------------------------------------------------------------
 export const CELLS = 8;
-export const SLEW_TIME = 1.6; // s for the launcher to turn onto the target
+export const SLEW_TIME = 0.7; // s for the launcher to turn onto the target (a quick traverse)
 export const MISSILE_RANGE = 4500; // m
 export const MIN_RANGE = 150; // m
 export const ARC = rad(120); // the box engages within this of the bow, either side

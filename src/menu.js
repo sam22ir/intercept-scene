@@ -122,7 +122,7 @@ export const MISSIONS = [
     blurb: 'Sail the frigate · fight off drones',
     tagline: 'You have the ship. The arrow keys work the rudder and the engine telegraph, the radar picks up drones coming in, and F fires the forward launcher\'s missiles at them. A drone you leave alone makes one low pass, comes round and dives into the ship on its second approach: three hits and she is out of action.',
     facts: ['1 ship: you steer', '8 missiles', '6 views'],
-    keys: [['← →', 'rudder'], ['↑ ↓', 'engine telegraph'], ['F', 'fire a missile'], ['Tab', 'next target'], ['1 – 6', 'bridge, behind, above, missile, sight, orbit'], ['M', 'radar'], ['I', 'slow-motion launch camera on / off']],
+    keys: [['← →', 'rudder'], ['↑ ↓', 'engine telegraph'], ['F', 'fire a missile'], ['Tab', 'next target'], ['1 – 6', 'bridge, behind, above, missile, sight, orbit'], ['M', 'radar'], ['I', 'intercept camera on / off']],
     ship: false,
     fixed: 'you steer',
     fixedNote: 'One frigate with the forward launcher: you steer her.',
