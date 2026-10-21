@@ -36,6 +36,7 @@ export function createDuelMap() {
   window.addEventListener('resize', measure);
 
   let enabled = true;
+  let sightView = null; // in the radar view: { yaw (world, radians from north), locked }
   let zoom = 0;
   const track = [];
   let lastTrack = -Infinity;
@@ -185,6 +186,36 @@ export function createDuelMap() {
       ctx.stroke();
     }
 
+    // Where the radar view is looking: a thin line out to the rim, a pointer on the rim and the true bearing (no sector).
+    if (sightView) {
+      const a0 = sightView.yaw - sim.player.psi - Math.PI / 2;
+      const col = sightView.locked ? '61, 220, 132' : '255, 196, 84';
+      const ux = Math.cos(a0);
+      const uy = Math.sin(a0);
+      ctx.strokeStyle = `rgba(${col}, 0.8)`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(R + ux * 8, R + uy * 8);
+      ctx.lineTo(R + ux * (R - 9), R + uy * (R - 9));
+      ctx.stroke();
+      ctx.fillStyle = `rgb(${col})`;
+      ctx.beginPath();
+      ctx.moveTo(R + ux * (R - 2), R + uy * (R - 2));
+      ctx.lineTo(R + ux * (R - 11) - uy * 4, R + uy * (R - 11) + ux * 4);
+      ctx.lineTo(R + ux * (R - 11) + uy * 4, R + uy * (R - 11) - ux * 4);
+      ctx.closePath();
+      ctx.fill();
+      const brg = ((Math.round((sightView.yaw * 180) / Math.PI) % 360) + 360) % 360;
+      const txt = `${String(brg).padStart(3, '0')}°`;
+      ctx.font = '700 9px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.lineWidth = 3;
+      ctx.strokeText(txt, R + ux * (R - 23), R + uy * (R - 23));
+      ctx.fillText(txt, R + ux * (R - 23), R + uy * (R - 23));
+      ctx.lineWidth = 1;
+    }
     // The ship at the centre, pointing up.
     ctx.fillStyle = GREEN;
     ctx.strokeStyle = 'rgba(8,12,18,0.85)';
@@ -213,6 +244,7 @@ export function createDuelMap() {
 
   return {
     get enabled() { return enabled; },
+    set sight(v) { sightView = v; lastKey = ''; },
     setEnabled(on) {
       enabled = on;
       root.hidden = !on;
