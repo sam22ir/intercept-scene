@@ -27,6 +27,30 @@ describe('the deck helicopter', () => {
     assert.ok(flights >= 4, 'it flies now and then');
     assert.ok(maxH > 20, 'it climbs well clear of the deck');
   });
+  it('leaves straight ahead, clear of the mast, and comes back in over the stern', () => {
+    const h = new HeliFlight(9);
+    for (let t = 0; t < 400 && h.phase !== 'circuit'; t += 0.05) h.step(0.05, true);
+    assert.equal(h.phase, 'circuit');
+    const lane = h.circuit.D;
+    let maxX = -Infinity;
+    let prevX = h.state.x;
+    let early = true;
+    let lateral = 0;
+    let comeIn = [];
+    while (h.phase === 'circuit') {
+      h.step(0.05, true);
+      const s = h.state;
+      if (early && h.u < 0.12) assert.ok(s.x >= prevX - 1e-9, 'the first part of the flight is forward, never sideways or back');
+      else early = false;
+      prevX = s.x;
+      maxX = Math.max(maxX, s.x - PAD.x);
+      if (s.x - PAD.x > -40 && s.x - PAD.x < 100) lateral = Math.max(lateral, Math.abs(s.z - PAD.z)); // abeam the superstructure
+      if (h.u > 0.93) comeIn.push(s.x - PAD.x);
+    }
+    assert.ok(maxX > 150, 'it turns well ahead of the bow');
+    assert.ok(lateral >= 14 && lateral <= lane + 0.5, 'abeam the ship it keeps to a lane, not over the mast');
+    assert.ok(comeIn.length > 1 && comeIn[comeIn.length - 1] > comeIn[0], 'it comes in over the stern, flying ahead');
+  });
   it('never takes off while the ship is turning, even with its rotor ready', () => {
     const h = new HeliFlight(3);
     run(h, 400, false);
