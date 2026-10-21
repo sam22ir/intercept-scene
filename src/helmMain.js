@@ -9,6 +9,7 @@ import { createDebris } from './fx/effects.js';
 import { createLiveFx } from './fx/liveFx.js';
 import { pointScale } from './fx/particles.js';
 import { CameraRig } from './cameraRig.js';
+import { LAUNCHER_PIVOT } from './scenario.js';
 import { createHelmMap } from './helmMap.js';
 import { createHelmAudio } from './helmAudio.js';
 import { menuText } from './menu.js';
@@ -159,7 +160,17 @@ function handleEvents() {
     audio.event(e);
     switch (e.type) {
       case 'say': say(e.text, e.tone); break;
-      case 'fire': fx.launchBillow(e.pos, e.dir, sim.t); startCine(e.id); break;
+      case 'slew': startLauncherCine(); break; // F pressed: the launcher is turning onto the target
+      case 'fire':
+        fx.launchBillow(e.pos, e.dir, sim.t);
+        if (cine && cine.phase === 'slew') {
+          const m = sim.missiles.find((x) => x.id === e.id);
+          cine.mid = e.id;
+          if (m) cine.did = m.targetId;
+          cine.phase = 'launch';
+          cine.tLaunch = sim.t;
+        } else startCine(e.id);
+        break;
       case 'explosion': {
         fx.explosion(e.pos, sim.t);
         const d = sim.drones.find((x) => x.id === e.id);
@@ -342,9 +353,10 @@ function setView(v, quiet = false) {
 
 // --- The intercept camera ------------------------------------------------------------------------------------------------
 // The shot is cut automatically and goes back to the view that was on when it is over:
-//  - a missile leaves: the camera goes to the side of the shot, keeps the missile and the drone in the frame and closes in
-//    as they close on each other, until the hit; it stays on the wreck until the last piece is in the sea, waits CINE_TAIL
-//    seconds more, and goes back;
+//  - F is pressed: the camera cuts close to the launcher, from the side, in slow motion with a slow zoom, to watch it turn
+//    onto the target and fire; then it goes to the side of the shot, keeps the missile and the drone in the frame and closes
+//    in as they close on each other (the time eases back to normal in flight and slows again for the last metres), until
+//    the hit; it stays on the wreck until the last piece is in the sea, waits CINE_TAIL seconds more, and goes back;
 //  - a drone starts an attack run (and no missile is on it): the same side view of the drone and the ship, closing in;
 //  - a drone hits the ship (whichever of the two shots was on): the camera comes in close, from outboard, on the place
 //    where it hit, and stays there IMPACT_HOLD seconds, the fire burning, then goes back.
@@ -353,6 +365,11 @@ function setView(v, quiet = false) {
 const CINE_TAIL = 2; // s kept on the scene after the drone is in the sea
 const CINE_MAX = 60; // s: a shot never holds the camera longer than this
 const IMPACT_HOLD = 5; // s on the place of a hit
+const LAUNCH_HOLD = 0.8; // s (of simulated time) the camera stays on the launcher after the round leaves
+// The speed of time (1 = real time) in each part of the shot; the loop eases toward it.
+const SLOW = { slew: 0.4, launch: 0.3, fly: 0.9, close: 0.35, wreck: 0.45 };
+let timeScale = 1;
+let timeTarget = 1;
 let cineOn = true;
 try { cineOn = localStorage.getItem('intercept.helmcine') !== '0'; } catch { /* storage unavailable */ }
 let cine = null;
@@ -360,7 +377,22 @@ let pendingOrbit = false; // the ship is out of action: the orbit view comes onc
 function newCine(mid, did, phase) {
   sightEl.hidden = true;
   document.body.classList.remove('helm-sighting');
-  return { mid, did, phase, t0: sim.t, side: 0, pos: new THREE.Vector3(), look: new THREE.Vector3(), hold: new THREE.Vector3(), tSplash: null, fresh: true, local: new THREE.Vector3(), tImpact: 0 };
+  return { mid, did, phase, t0: sim.t, side: 0, pos: new THREE.Vector3(), look: new THREE.Vector3(), hold: new THREE.Vector3(), tSplash: null, fresh: true, local: new THREE.Vector3(), tImpact: 0, camLocal: new THREE.Vector3(), tLaunch: 0, tBlend: 0 };
+}
+// F has been pressed and the launcher is turning: the camera goes close to it, from the side of the way it will fire.
+function startLauncherCine() {
+  if (!cineOn || cine || view === 'orbit' || sim.out || !sim.shot) return;
+  const aim = sim.shot.aim;
+  const px = Math.sin(aim.yaw); // across the line of fire, in the ship's frame (x ahead, z to starboard)
+  const pz = Math.cos(aim.yaw);
+  const sign = px >= 0 ? 1 : -1; // the camera ahead of the launcher (never inside the ship), on whichever side the shot goes
+  cine = newCine(null, sim.shot.droneId, 'slew');
+  cine.camLocal.set(LAUNCHER_PIVOT.x + sign * px * 22, LAUNCHER_PIVOT.y + 3.5, LAUNCHER_PIVOT.z + sign * pz * 22);
+}
+function frameLauncher(c, progress) {
+  ship.group.localToWorld(camera.position.copy(c.camLocal));
+  camera.lookAt(ship.group.localToWorld(_c.copy(LAUNCHER_PIVOT).setY(LAUNCHER_PIVOT.y + 1.2)));
+  return THREE.MathUtils.lerp(46, 28, THREE.MathUtils.smoothstep(progress, 0, 1)); // the slow zoom
 }
 function startCine(missileId, droneId = null) {
   if (!cineOn || cine || view === 'orbit' || sim.out) return;
@@ -388,6 +420,7 @@ function cineStruck(e) {
   cine.side = 0;
 }
 function endCine() {
+  timeTarget = 1;
   if (!cine) return;
   cine = null;
   snap = true; // the view that was on takes the camera back from where it is now
@@ -398,8 +431,8 @@ function endCine() {
 // The side view of two points: the camera on one side of the line between them, far enough to have both in the frame
 // and closer as they close; returns the lens (degrees), which closes in with them. `away`: put the camera on the far side
 // from the ship (the missile's shot), otherwise on the side the camera is already on.
-function frameSide(c, p, q, dt, away) {
-  const pull = 1 - Math.exp(-dt / 0.12);
+function frameSide(c, p, q, dt, away, tau = 0.12) {
+  const pull = 1 - Math.exp(-dt / tau);
   const sep = p.distanceTo(q);
   _a.subVectors(q, p).setY(0);
   if (_a.lengthSq() < 1) _a.set(1, 0, 0);
@@ -436,7 +469,20 @@ function frameImpact(c, dt) {
 // Frames the shot; returns the lens (degrees), or null once the shot is over.
 function updateCine(dt) {
   const c = cine;
-  if (c.phase === 'impact') return frameImpact(c, dt);
+  if (c.phase === 'impact') { timeTarget = 1; return frameImpact(c, dt); }
+  if (c.phase === 'slew') { // the launcher turns: close on it, in slow motion
+    if (!sim.shot) { endCine(); return null; } // cancelled
+    timeTarget = SLOW.slew;
+    return frameLauncher(c, (sim.t - c.t0) / 1.6);
+  }
+  if (c.phase === 'launch') { // the round leaves its cell: still on the launcher
+    if (sim.t - c.tLaunch < LAUNCH_HOLD) { timeTarget = SLOW.launch; return frameLauncher(c, 1); }
+    c.phase = 'approach'; // then the camera leaves the ship to follow it
+    c.tBlend = sim.t;
+    c.pos.copy(camera.position);
+    c.look.copy(ship.group.localToWorld(_c.copy(LAUNCHER_PIVOT)));
+    c.fresh = false;
+  }
   const m = sim.missiles.find((x) => x.id === c.mid);
   if (m) c.did = m.targetId; // it may have taken another drone
   const d = sim.drones.find((x) => x.id === c.did);
@@ -446,16 +492,20 @@ function updateCine(dt) {
   if (c.phase === 'approach' && !m && d.alive && d.phase === 'attack') c.phase = 'dive'; // the missile is gone, the drone is still coming
   if (c.phase === 'approach') {
     if (!m || !d.alive) { endCine(); return null; } // the missile was lost, or the drone went into the sea: back to the view
-    return frameSide(c, m.pos, d.pos, dt, true);
+    const sep = m.pos.distanceTo(d.pos);
+    timeTarget = sep < 350 ? SLOW.close : SLOW.fly; // brisk in flight, slow for the last metres
+    return frameSide(c, m.pos, d.pos, dt, true, 0.12 + 0.8 * (1 - THREE.MathUtils.clamp((sim.t - c.tBlend) / 1.6, 0, 1)));
   }
   if (c.phase === 'dive') {
     if (!d.alive) { endCine(); return null; } // (a hit on the ship comes as its own event)
+    timeTarget = 1;
     return frameSide(c, _e.set(sim.x, 9, sim.z), d.pos, dt, false);
   }
   // The missile's hit: the camera stays where it was and follows the falling pieces until the last one is in the sea.
   const v = vis.get(d.id);
   const tau = sim.t - d.wreck.t;
   if (c.tSplash === null && v?.debris) c.tSplash = d.wreck.t + Math.max(...v.debris.pieces.map((p) => p.tauWater));
+  timeTarget = sim.t < d.wreck.t + 2.2 ? SLOW.wreck : 1; // the burst in slow motion, then on to the splash
   const tEnd = (c.tSplash ?? d.wreck.t + 8) + CINE_TAIL;
   if (sim.t >= tEnd) { endCine(); return null; }
   if (v?.debris) {
@@ -794,6 +844,7 @@ function restart() {
   audio.reset();
   banner.hidden = true;
   wakeHist.length = 0;
+  timeScale = timeTarget = 1;
   setView('behind', true);
   say('Half ahead on 000: watch the radar', '', 3000);
 }
@@ -822,7 +873,7 @@ window.addEventListener('keydown', (e) => {
       cineOn = !cineOn;
       if (!cineOn) endCine();
       try { localStorage.setItem('intercept.helmcine', cineOn ? '1' : '0'); } catch { /* storage unavailable */ }
-      say(cineOn ? 'Intercept camera on: each shot is followed to the splash' : 'Intercept camera off', '', 2200);
+      say(cineOn ? 'Intercept camera on: the launch in slow motion, then the shot followed to the splash' : 'Intercept camera off', '', 2400);
       break;
     case 'l': tagsOn = !tagsOn; say(tagsOn ? 'Tags on' : 'Tags off', '', 1200); break;
     case 's': setSound(!audio.enabled); break;
@@ -859,7 +910,10 @@ let lastThreat = 0;
 renderer.setAnimationLoop((now) => {
   const dt = Math.max(0, Math.min((now - last) / 1000, 0.1));
   last = now;
-  sim.advance(dt, input);
+  timeScale += (timeTarget - timeScale) * (1 - Math.exp(-dt / 0.2));
+  if (Math.abs(timeTarget - timeScale) < 0.005) timeScale = timeTarget;
+  document.body.classList.toggle('helm-slowmo', timeScale < 0.85);
+  sim.advance(dt * timeScale, input);
   handleEvents();
   applyState(dt);
   updateCamera(dt);
