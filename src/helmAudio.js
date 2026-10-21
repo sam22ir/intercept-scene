@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { SOUNDS } from './audioAssets.js';
 import { HIT } from './helmHit.js';
+import { HELI_LOOP } from './helmHeli.js';
 import { GUN_MOUNTS, GUN_SPIN } from './helm.js';
 
 // Sound for the Solo Air Defense mission, driven live from the simulation (helm.js) like the manual flight's: the
@@ -8,8 +9,9 @@ import { GUN_MOUNTS, GUN_SPIN } from './helm.js';
 // distance, distant sounds darken, everything pans, and moving sources are Doppler-shifted.
 //  beds      the ship's hum and the surf along her side (both with her speed), the wind; the two nearest drones'
 //            engines; the motor of each missile in flight.
-//            the deck helicopter: the whop of its four-blade rotor (a loop of blade slaps played at the rotor's speed), the turbine's
-//            whine and rumble and the tail rotor's buzz, from where she is, Doppler-shifted, loud while the rotor turns.
+//            the deck helicopter: an ElevenLabs recording of a helicopter's rotor chop (helmHeli.js) played at the rotor's speed (until it
+//            has decoded, a synthesised blade-slap loop), with a little turbine whine and tail rotor under it, from where she is,
+//            Doppler-shifted, loud while the rotor turns.
 //  one-shots the missile leaving its cell, the warhead, splashes.
 //  synth     the ship's own signals: a two-tone chime for a new radar contact, a rapid alarm for a drone closing
 //            or passing, a klaxon while one is on its attack run, and the telegraph's bell.
@@ -255,6 +257,32 @@ export function createHelmAudio() {
     for (let i = 0; i < n; i++) d[i] = (d[i] / (peak || 1)) * 0.9;
     return buf;
   }
+  // The recording: both channels mixed, its end blended into its start so the loop has no seam, then swapped in for the synthesised
+  // loop (the other voices of the helicopter are turned down, as the recording has its own whine).
+  function useHeliSample(buf) {
+    const p = voices.heli.parts;
+    if (!p) return;
+    const sr = buf.sampleRate;
+    const n = buf.length;
+    const f = Math.floor(sr * 0.15);
+    const out = ctx.createBuffer(1, n - f, sr);
+    const o = out.getChannelData(0);
+    const chans = Array.from({ length: buf.numberOfChannels }, (_, c) => buf.getChannelData(c));
+    const at = (i) => chans.reduce((a, c) => a + c[i], 0) / chans.length;
+    for (let i = 0; i < n - f; i++) o[i] = i < f ? at(i) * (i / f) + at(n - f + i) * (1 - i / f) : at(i);
+    let peak = 0;
+    for (let i = 0; i < o.length; i++) peak = Math.max(peak, Math.abs(o[i]));
+    for (let i = 0; i < o.length; i++) o[i] = (o[i] / (peak || 1)) * 0.95;
+    const src = ctx.createBufferSource();
+    src.buffer = out;
+    src.loop = true;
+    src.playbackRate.value = p.rotor.playbackRate.value;
+    src.connect(p.rotorIn);
+    src.start();
+    try { p.rotor.stop(); } catch { /* already stopped */ }
+    p.rotor = src;
+    p.sample = true;
+  }
   function startHeli() {
     const sr = ctx.sampleRate;
     const out = voices.heli.in;
@@ -276,6 +304,7 @@ export function createHelmAudio() {
     const rotorG = ctx.createGain();
     rotorG.gain.value = 0;
     rotor.connect(hp);
+    voices.heli.rotorIn = hp;
     hp.connect(body);
     body.connect(soft);
     soft.connect(rotorG);
@@ -328,10 +357,11 @@ export function createHelmAudio() {
     tailLp.connect(tailG);
     tailG.connect(out);
     for (const n of [rotor, whine, whine2, rumble, tail]) n.start();
-    voices.heli.parts = { rotor, rotorG, whine, whine2, whineG, rumbleG, tail, tailG };
+    voices.heli.parts = { rotor, rotorIn: hp, rotorG, whine, whine2, whineG, rumbleG, tail, tailG, sample: false };
   }
   function loadBuffers() {
     try { ctx.decodeAudioData(bytes(HIT), (buf) => { buffers.hit = buf; }, () => {})?.catch?.(() => {}); } catch { /* the burst stays silent */ }
+    try { ctx.decodeAudioData(bytes(HELI_LOOP), (buf) => useHeliSample(buf), () => {})?.catch?.(() => {}); } catch { /* the synthesised loop stays */ }
     for (const name of Object.keys(SOUNDS)) {
       if (name === 'motor') continue; // the missile's motor is synthesised (startRocket), not this recording
       const done = (buf) => { buffers[name] = buf; startLoop(name); };
@@ -508,13 +538,13 @@ export function createHelmAudio() {
       const dop = doppler(radial(heliP, heliV));
       const p = v.heli.parts;
       set(p.rotor.playbackRate, Math.max(0.05, rpm) * dop);
-      set(p.rotorG.gain, 1.0 * rpm ** 1.1);
+      set(p.rotorG.gain, (p.sample ? 1.35 : 1.0) * rpm ** 1.1);
       set(p.whine.frequency, (420 + 700 * rpm) * dop);
       set(p.whine2.frequency, (840 + 1400 * rpm) * dop);
-      set(p.whineG.gain, 0.035 * rpm * rpm);
-      set(p.rumbleG.gain, 0.5 * (0.15 + 0.85 * rpm) * (rpm > 0.01 ? 1 : 0));
+      set(p.whineG.gain, (p.sample ? 0.008 : 0.035) * rpm * rpm);
+      set(p.rumbleG.gain, (p.sample ? 0.12 : 0.5) * (0.15 + 0.85 * rpm) * (rpm > 0.01 ? 1 : 0));
       set(p.tail.frequency, (30 + 75 * rpm) * dop);
-      set(p.tailG.gain, 0.05 * rpm * rpm);
+      set(p.tailG.gain, (p.sample ? 0.012 : 0.05) * rpm * rpm);
       place(v.heli, heliP, 1.5, 110);
     }
     // The klaxon while a drone is on its attack run.
@@ -532,5 +562,6 @@ export function createHelmAudio() {
     setEnabled(on) { enabled = on; if (on) wake(false); },
     get state() { return ctx?.state ?? (failed ? 'unavailable' : 'idle'); },
     get supported() { return !failed; },
+    get heliSample() { return !!voices?.heli?.parts?.sample; }, // the recorded rotor loop has decoded and replaced the synthesised one
   };
 }
