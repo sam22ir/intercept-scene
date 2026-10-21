@@ -110,12 +110,22 @@ body.mission-helm .topbar .brand, body.mission-helm .brand { display: none; }
 .helm-ship .hs-rect, .helm-ship .hs-dome { background: rgba(9, 14, 21, 0.5); border: 1px solid rgba(255, 255, 255, 0.1); border-bottom: 0; color: var(--text); font-variant-numeric: tabular-nums; backdrop-filter: blur(3px); }
 .helm-ship .hs-rect { display: flex; flex-direction: column; justify-content: center; gap: 5px; width: 210px; height: 44px; padding: 0 14px; border-radius: 12px 12px 0 0; }
 .helm-ship .hs-rect > span { color: var(--muted); font-size: 10.5px; white-space: nowrap; }
-.helm-ship .hs-dome { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; width: 124px; height: 72px; padding-bottom: 5px; border-radius: 62px 62px 0 0; line-height: 1.1; }
-.helm-ship .hs-dome.hurt { border-color: rgba(255, 196, 84, 0.7); }
-.helm-ship .hs-dome em { font-style: normal; font-size: 11px; color: var(--accent); }
-.helm-ship .hs-dome b { font-size: 22px; font-weight: 650; }
-.helm-ship .hs-dome small { font-size: 10.5px; color: var(--muted); font-weight: 500; }
-.helm-ship .hs-dome span { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.helm-ship .hs-dome { width: 200px; height: 104px; border-radius: 100px 100px 0 0; overflow: hidden; }
+.helm-ship .dome-svg { display: block; width: 200px; height: 104px; }
+.dome-svg .rim { fill: none; stroke: rgba(255, 255, 255, 0.25); stroke-width: 1; }
+.dome-svg line { stroke: rgba(255, 255, 255, 0.55); stroke-width: 1; }
+.dome-svg line.mj { stroke: rgba(255, 255, 255, 0.9); stroke-width: 1.6; }
+.dome-svg .dl { fill: rgba(255, 255, 255, 0.6); font: 600 9px ui-monospace, Consolas, monospace; text-anchor: middle; dominant-baseline: middle; }
+.dome-svg .hd { fill: #fff; font: 800 15px ui-monospace, Consolas, monospace; text-anchor: middle; }
+.dome-svg .lub { fill: var(--accent); }
+.dome-svg line.mid { stroke: rgba(255, 255, 255, 0.18); stroke-dasharray: 2 3; }
+.dome-svg line.ndl { stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
+.dome-svg .piv { fill: var(--accent); }
+.dome-svg .sp { fill: #fff; font: 700 13px system-ui, sans-serif; text-anchor: middle; }
+.dome-svg .sp tspan { fill: rgba(255, 255, 255, 0.6); font-size: 9.5px; font-weight: 500; }
+.helm-ship .hs-hits i { width: 16px; height: 12px; }
+.helm-ship .hs-hits i.hit { background: #ff5d61; border-color: #ff5d61; }
+.helm-ship .hs-dmg.hurt { border-color: rgba(255, 93, 97, 0.6); }
 .helm-ship .hr-bar { position: relative; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); }
 .helm-ship .hr-bar::before { content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: rgba(255, 255, 255, 0.5); }
 .helm-ship .hr-bar i { position: absolute; top: 0; bottom: 0; border-radius: 4px; left: calc(50% + min(0, var(--r)) * 50%); width: calc(max(var(--r), -1 * var(--r)) * 50%); background: var(--accent); }

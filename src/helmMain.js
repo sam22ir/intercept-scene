@@ -977,18 +977,48 @@ shipEl.id = 'helm-ship';
 shipEl.className = 'helm-ship';
 document.body.appendChild(shipEl);
 let lastShip = '';
+// The dome: its rim is a heading tape (the degrees slide round it, the heading itself fixed and bold at the top), inside it
+// a needle from the foot swings left and right with the rudder, and the speed is under the needle.
+const DOME_R = 94; // svg units, the rim
+const DOME_K = 1.5; // degrees of arc on the dome per degree of heading
+function domeSvg() {
+  const h = sim.headingDeg;
+  const cx = 100;
+  const cy = 100;
+  const pt = (r, a) => `${(cx + r * Math.cos(a)).toFixed(1)},${(cy - r * Math.sin(a)).toFixed(1)}`;
+  let ticks = '';
+  let labels = '';
+  for (let d = Math.ceil((h - 58) / 5) * 5; d <= h + 58; d += 5) {
+    const a = Math.PI / 2 - THREE.MathUtils.degToRad((d - h) * DOME_K);
+    if (a < 0.05 || a > Math.PI - 0.05) continue;
+    const major = d % 30 === 0;
+    ticks += `<line x1="${pt(DOME_R, a).split(',')[0]}" y1="${pt(DOME_R, a).split(',')[1]}" x2="${pt(DOME_R - (major ? 9 : d % 10 === 0 ? 6 : 3.5), a).split(',')[0]}" y2="${pt(DOME_R - (major ? 9 : d % 10 === 0 ? 6 : 3.5), a).split(',')[1]}" class="${major ? 'mj' : ''}"/>`;
+    if (d % 30 === 0 && Math.abs(d - h) > 9) {
+      const [x, y] = pt(DOME_R - 18, a).split(',');
+      labels += `<text x="${x}" y="${y}" class="dl">${String(((d % 360) + 360) % 360).padStart(3, '0')}</text>`;
+    }
+  }
+  const ra = (sim.rudder / RUDDER_MAX) * THREE.MathUtils.degToRad(62); // the needle: up is midships
+  const py = 78;
+  const nx = cx + 50 * Math.sin(ra);
+  const ny = py - 50 * Math.cos(ra);
+  return `<svg viewBox="0 0 200 104" class="dome-svg" aria-hidden="true">`
+    + `<path d="M6,100 A${DOME_R},${DOME_R} 0 0 1 194,100" class="rim"/>${ticks}${labels}`
+    + `<path d="M${cx - 4},${cy - DOME_R - 1} L${cx + 4},${cy - DOME_R - 1} L${cx},${cy - DOME_R + 6} Z" class="lub"/>`
+    + `<text x="${cx}" y="${cy - DOME_R + 21}" class="hd">${f(((h % 360) + 360) % 360).padStart(3, '0')}°</text>`
+    + `<line x1="${cx}" y1="${py}" x2="${cx}" y2="${py - 46}" class="mid"/>`
+    + `<line x1="${cx}" y1="${py}" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" class="ndl"/><circle cx="${cx}" cy="${py}" r="3.5" class="piv"/>`
+    + `<text x="${cx}" y="97" class="sp">${f(sim.knots, 1)}<tspan> kn</tspan></text></svg>`;
+}
 function shipHtml() {
-  const rud = THREE.MathUtils.radToDeg(sim.rudder);
-  const rudTxt = Math.abs(rud) < 0.5 ? 'midships' : `${f(Math.abs(rud))}° ${rud > 0 ? 'stbd' : 'port'}`;
-  const rot = sim.rateOfTurn;
-  let wTxt = `${sim.cellsLeft} of ${CELLS}`;
-  if (sim.shot) wTxt = sim.shot.locked ? 'locked' : sim.shot.acquiring ? 'acquiring' : 'turning';
+  let wTxt = `${sim.cellsLeft} of ${CELLS} ready`;
+  if (sim.shot) wTxt = sim.shot.locked ? 'target locked' : sim.shot.acquiring ? 'acquiring' : 'launcher turning';
   else if (sim.missiles.length) wTxt = `${sim.missiles.length} in flight`;
   const pips = Array.from({ length: CELLS }, (_, i) => `<i class="${i < sim.cellsLeft ? 'on' : ''}"></i>`).join('');
-  const state = sim.out ? 'out of action' : sim.strikes ? `damage ${sim.strikes}/3` : '';
-  return `<div class="hs-rect hs-rud"><span>Rudder · ${rudTxt}${Math.abs(rot) >= 1 ? ` · ${f(Math.abs(rot))}°/min` : ''}</span>`
-    + `<div class="hr-bar"><i style="--r:${(sim.rudder / RUDDER_MAX).toFixed(3)}"></i></div></div>`
-    + `<div class="hs-dome${sim.strikes ? ' hurt' : ''}"><em>▲</em><b>${f(sim.knots, 1)}<small> kn</small></b><span>${f(sim.headingDeg).padStart(3, '0')}°${state ? ` · ${state}` : ''}</span></div>`
+  const hits = Array.from({ length: 3 }, (_, i) => `<i class="${i < sim.strikes ? 'hit' : ''}"></i>`).join('');
+  const dmg = sim.out ? 'out of action' : sim.strikes ? `${sim.strikes} of 3 hits` : 'no damage';
+  return `<div class="hs-rect hs-dmg${sim.strikes ? ' hurt' : ''}"><span>Damage · ${dmg}</span><div class="hs-pips hs-hits">${hits}</div></div>`
+    + `<div class="hs-dome">${domeSvg()}</div>`
     + `<div class="hs-rect hs-ammo"><span>Missiles · ${wTxt}</span><div class="hs-pips">${pips}</div></div>`;
 }
 
