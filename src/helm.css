@@ -102,3 +102,4 @@ body.mission-helm .tag::after { height: 9px; bottom: -10px; background: rgba(255
 body.mission-helm .tag .tag-title { font-size: 9px; letter-spacing: 0.04em; }
 body.mission-helm .tag .tag-body span { font-size: 9px; }
 body.mission-helm .tag.helm-target { box-shadow: none; border-left-color: #fff; }
+body.mission-helm .topbar .brand, body.mission-helm .brand { display: none; }
