@@ -1,4 +1,4 @@
-import { landHeightAt, cityAt } from './environment.js';
+import { landHeightAt, townSpots } from './environment.js';
 import { RADAR_RANGE, ARC, MIN_RANGE, MISSILE_RANGE, GUN_RANGE, gunBlind, kmText } from './helm.js';
 
 // The Solo Air Defense mission's radar: the same round translucent disc as the other maps, but a ship's radar display:
@@ -8,7 +8,7 @@ import { RADAR_RANGE, ARC, MIN_RANGE, MISSILE_RANGE, GUN_RANGE, gunBlind, kmText
 // missiles in flight and the crosses where drones went down. Click it to change the range; M hides it.
 
 const SCALES = [1000, 2000, 3000, 6000]; // metres to the rim
-const ZOOMS = ['auto', 2000, 6000, 12000];
+const ZOOMS = ['auto', 2000, 6000, 12000, 20000]; // the last two show the land (a backdrop: it keeps its bearing and distance however far she sails)
 const SWEEP = 2.5; // s per turn of the aerial
 const TRACK_STEP = 1; // s between own-track samples
 const TRACK_MAX = 180;
@@ -45,15 +45,18 @@ function buildLand() {
       const hn = py > 0 ? H[(py - 1) * LAND_PX + px] : h;
       const shade = Math.min(1.45, Math.max(0.55, 1 + (hw - h) / 160 + (hn - h) / 220));
       const edge = h < 40 ? 1.25 : 1; // a lighter rim along the shore
-      const town = h > 4 ? cityAt(-(py - LAND_PX / 2 + 0.5) * LAND_M, (px - LAND_PX / 2 + 0.5) * LAND_M) : 0; // the town: pale ground with a grain of blocks
-      for (let ch = 0; ch < 3; ch++) {
-        const land = (stops[k][ch + 1] + (stops[k + 1][ch + 1] - stops[k][ch + 1]) * t) * shade * edge;
-        img.data[o + ch] = Math.min(255, land + ([228, 214, 186][ch] * (0.85 + 0.15 * ((px + py) % 2)) - land) * town * 0.85);
-      }
+      for (let ch = 0; ch < 3; ch++) img.data[o + ch] = Math.min(255, (stops[k][ch + 1] + (stops[k + 1][ch + 1] - stops[k][ch + 1]) * t) * shade * edge);
       img.data[o + 3] = 235;
     }
   }
   g.putImageData(img, 0, 0);
+  g.fillStyle = 'rgba(240, 230, 205, 0.95)'; // the towns, a pale mark for each building
+  for (const [x, z, size] of townSpots()) {
+    const px = LAND_PX / 2 + z / LAND_M;
+    const py = LAND_PX / 2 - x / LAND_M;
+    const w = Math.max(1, size / LAND_M);
+    g.fillRect(px - w / 2, py - w / 2, w, w);
+  }
   return c;
 }
 
@@ -174,6 +177,26 @@ export function createHelmMap() {
       ctx.stroke();
       ctx.setLineDash([]);
     }
+    // The scale: each ring is labelled with its range, and a bar of a round length stands low on the disc.
+    ctx.font = '600 7.5px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    for (let i = 1; i <= 4; i++) {
+      const rr = (R - 6) * (i / 4);
+      ctx.fillText(kmText((scale * i) / 4).replace(' km', 'km'), R + rr * 0.7071, R - rr * 0.7071 - 1);
+    }
+    const nice = [200, 500, 1000, 2000, 5000, 10000].reduce((best, m) => (Math.abs(m * k - R * 0.5) < Math.abs(best * k - R * 0.5) ? m : best), 1000);
+    const bw = nice * k;
+    const by = R + R * 0.56;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(R - bw / 2, by - 3); ctx.lineTo(R - bw / 2, by); ctx.lineTo(R + bw / 2, by); ctx.lineTo(R + bw / 2, by - 3);
+    ctx.stroke();
+    ctx.lineWidth = 1;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.fillText(kmText(nice), R, by - 8);
     // The heading line.
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.beginPath();

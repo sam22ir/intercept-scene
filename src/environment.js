@@ -477,10 +477,6 @@ export function landHeightAt(dx, dz) {
   if (a > MOUNT_ARC[1]) return -1;
   return terrainH(a, Math.hypot(dx, dz));
 }
-// How much town there is at (dx, dz) metres from the ship, 0 to 1, for the radar map.
-export function cityAt(dx, dz) {
-  return 1 - sstep(700, 1250, Math.hypot(dx - CITY.x, dz - CITY.z));
-}
 export function ridgeAngle(dx, dz) {
   let a = Math.atan2(dz, dx);
   if (a < MOUNT_ARC[0]) a += 2 * Math.PI;
@@ -495,11 +491,87 @@ export function ridgeAngle(dx, dz) {
 
 const SUN = [-0.5, 0.62, 0.55]; // toward the sun, in the scene's x (north), y (up), z (east)
 const HAZE = [0.6, 0.76, 0.93]; // the sky at the horizon, as it shows (sRGB)
-// The coastal town: a few hundred small buildings on a flattened plain beside the shore, in a grid of lots with streets between, taller
-// toward the middle (a few blocks of flats), white, cream and ochre walls, red-tile roofs on some of the houses, a long pier and a
-// lighthouse on the point. They are lit by the scene's sun like the ships (Lambert), their colours already veiled with the haze.
-function createCity() {
+// The towns: a coastal town on the flattened plain by the shore (a grid of lots with streets between, flats in the middle) that climbs the
+// slope behind it in terraces, narrower houses laid along the contours and thinning with height, and two villages high on the
+// mountainsides. White, cream and ochre walls, red-tile roofs; lit by the scene's sun like the ships (Lambert), their colours already
+// veiled with a little haze. The layout is computed once (townLayout): the town mesh and the radar map's marks both come from it.
+let townMemo = null;
+function townLayout() {
+  if (townMemo) return townMemo;
   const rng = mulberry32(77);
+  const out = [];
+  const ca = Math.cos(CITY.a);
+  const sa = Math.sin(CITY.a);
+  const at = (u, v) => [CITY.x + u * -sa + v * ca, CITY.z + u * ca + v * sa]; // u along the shore, v inland
+  const hXZ = (x, z) => terrainH(Math.atan2(z, x), Math.hypot(x, z));
+  const grad = (x, z) => [(hXZ(x + 30, z) - hXZ(x - 30, z)) / 60, (hXZ(x, z + 30) - hXZ(x, z - 30)) / 60];
+  const rotY = -(CITY.a + Math.PI / 2);
+  const place = (x, z, g, w, dp, hh, tall, roofed, slope, gx, gz) => {
+    let yaw = rotY;
+    if (slope > 0.12) yaw = Math.atan2(-gx, -gz); // laid along the contour: the box's long side across the fall line
+    out.push({ x, z, g, w, dp, hh, tall, roofed, yaw, slope });
+  };
+  const lot = 84;
+  // The town proper: the plain and the slope behind it.
+  for (let iu = -16; iu <= 16; iu++) {
+    for (let iv = -6; iv <= 40; iv++) {
+      if (iu % 4 === 0 || iv % 5 === 0) continue; // the streets
+      const u = iu * lot + (rng() - 0.5) * 12;
+      const v = iv * lot + (rng() - 0.5) * 12;
+      const [x, z] = at(u, v);
+      const g = hXZ(x, z);
+      if (g < 5) continue;
+      const [gx, gz] = grad(x, z);
+      const slope = Math.hypot(gx, gz);
+      if (slope > 0.5) continue; // too steep to build on
+      const dCore = Math.hypot(u, (v - 250) * 1.25) / 1250;
+      const dist = Math.hypot(u, v - 250);
+      const core = 0.92 * (1 - 0.85 * Math.min(1, dCore));
+      const hill = 0.6 * (1 - sstep(40, 650, g)) * (1 - sstep(1200, 3600, dist)) * (1 - 0.6 * sstep(0.2, 0.5, slope));
+      if (rng() > Math.max(dCore < 1 ? core : 0, hill)) continue;
+      const tall = dCore < 0.28 && slope < 0.1 && rng() < 0.3;
+      const onHill = slope > 0.1;
+      const w = (onHill ? 30 : 38) + rng() * (onHill ? 20 : 34);
+      const dp = (onHill ? 30 : 38) + rng() * (onHill ? 20 : 34);
+      const hh = tall ? 55 + rng() * 55 : 16 + rng() * 14 * (1.2 - Math.min(1, dCore));
+      place(x, z, g, w, dp, hh, tall, rng() < (onHill ? 0.75 : 0.5), slope, gx, gz);
+    }
+  }
+  // Two villages high on the slopes: the flattest ground between 150 and 450 m up, 1.5 to 6 km behind the shore.
+  for (const va of [1.55, 2.55]) {
+    let best = null;
+    for (let r = coastR(va) + 1500; r < coastR(va) + 6000; r += 120) {
+      for (let da = -0.05; da <= 0.05; da += 0.01) {
+        const x = Math.cos(va + da) * r;
+        const z = Math.sin(va + da) * r;
+        const g = hXZ(x, z);
+        if (g < 150 || g > 450) continue;
+        const [gx, gz] = grad(x, z);
+        const s = Math.hypot(gx, gz);
+        if (!best || s < best.s) best = { x, z, s };
+      }
+    }
+    if (!best) continue;
+    for (let i = 0; i < 90; i++) {
+      const ang = rng() * Math.PI * 2;
+      const rr = Math.sqrt(rng()) * 520;
+      const x = best.x + Math.cos(ang) * rr;
+      const z = best.z + Math.sin(ang) * rr;
+      const g = hXZ(x, z);
+      const [gx, gz] = grad(x, z);
+      const slope = Math.hypot(gx, gz);
+      if (g < 100 || slope > 0.45) continue;
+      place(x, z, g, 30 + rng() * 22, 30 + rng() * 22, 14 + rng() * 12, false, rng() < 0.8, slope, gx, gz);
+    }
+  }
+  townMemo = out;
+  return out;
+}
+// Where the buildings are, metres from the ship (x north, z east) with their size, for the radar map.
+export function townSpots() {
+  return townLayout().map((b) => [b.x, b.z, Math.max(b.w, b.dp)]);
+}
+function createCity() {
   const hz = 0.16;
   const veil = (hex) => new THREE.Color(hex).lerp(new THREE.Color(0xa0c4ee), hz);
   const walls = [0xe8e2d6, 0xdcc9a3, 0xc9a46a, 0xd9b5a0, 0xb9c9d6, 0xe3d9c4].map((c) => new THREE.MeshLambertMaterial({ color: veil(c) }));
@@ -507,34 +579,21 @@ function createCity() {
   const flatM = new THREE.MeshLambertMaterial({ color: veil(0x8d8f90) });
   const pierM = new THREE.MeshLambertMaterial({ color: veil(0x55575a) });
   const whiteM = new THREE.MeshLambertMaterial({ color: veil(0xf4f1ea) });
+  const rng = mulberry32(78);
   const k = new Kit();
-  const ca = Math.cos(CITY.a);
-  const sa = Math.sin(CITY.a);
-  const at = (u, v) => [CITY.x + u * -sa + v * ca, CITY.z + u * ca + v * sa]; // u along the shore, v inland
-  const rotY = -(CITY.a + Math.PI / 2);
-  const hAt = (u, v) => { const [x, z] = at(u, v); return terrainH(Math.atan2(z, x), Math.hypot(x, z)); };
-  const lot = 84; // the buildings are drawn larger than life: at 6 km a real one would be a speck
-  for (let iu = -15; iu <= 15; iu++) {
-    for (let iv = -6; iv <= 13; iv++) {
-      if (iu % 4 === 0 || iv % 5 === 0) continue; // the streets
-      const u = iu * lot + (rng() - 0.5) * 12;
-      const v = iv * lot + (rng() - 0.5) * 12;
-      const d = Math.hypot(u, (v - 250) * 1.25) / 1250;
-      if (rng() > 0.92 * (1 - 0.85 * Math.min(1, d))) continue;
-      const g = hAt(u, v);
-      if (g < 5 || Math.abs(hAt(u + 25, v) - hAt(u - 25, v)) > 7) continue; // on the land, not on the slope
-      const [x, z] = at(u, v);
-      const tall = d < 0.28 && rng() < 0.3;
-      const w = 38 + rng() * 34;
-      const dp = 38 + rng() * 34;
-      const hh = tall ? 55 + rng() * 55 : 20 + rng() * 18 * (1.2 - d);
-      const m = walls[Math.floor(rng() * walls.length)];
-      k.add(new THREE.BoxGeometry(w, hh, dp), m, { pos: [x, g - 1 + hh / 2, z], rot: [0, rotY, 0] });
-      if (!tall && rng() < 0.5) k.add(new THREE.BoxGeometry(w * 1.06, 5, dp * 1.06), roofM, { pos: [x, g - 1 + hh + 2, z], rot: [0, rotY, 0] });
-      else k.add(new THREE.BoxGeometry(w * 0.96, 1.4, dp * 0.96), flatM, { pos: [x, g - 1 + hh + 0.6, z], rot: [0, rotY, 0] });
-    }
+  for (const b of townLayout()) {
+    const sink = Math.min(1 + b.slope * Math.max(b.w, b.dp) * 0.5, b.hh * 0.4); // set into the slope: the uphill side buried
+    const y = b.g - sink + b.hh / 2;
+    k.add(new THREE.BoxGeometry(b.w, b.hh, b.dp), walls[Math.floor(rng() * walls.length)], { pos: [b.x, y, b.z], rot: [0, b.yaw, 0] });
+    if (b.roofed) k.add(new THREE.BoxGeometry(b.w * 1.06, 5, b.dp * 1.06), roofM, { pos: [b.x, y + b.hh / 2 + 2, b.z], rot: [0, b.yaw, 0] });
+    else k.add(new THREE.BoxGeometry(b.w * 0.96, 1.4, b.dp * 0.96), flatM, { pos: [b.x, y + b.hh / 2 + 0.6, b.z], rot: [0, b.yaw, 0] });
   }
   // The pier: out from the shore at u = 320, straight out to sea; and the lighthouse on the point at the town's end.
+  const ca = Math.cos(CITY.a);
+  const sa = Math.sin(CITY.a);
+  const at = (u, v) => [CITY.x + u * -sa + v * ca, CITY.z + u * ca + v * sa];
+  const hAt = (u, v) => { const [x, z] = at(u, v); return terrainH(Math.atan2(z, x), Math.hypot(x, z)); };
+  const rotY = -(CITY.a + Math.PI / 2);
   let vs = -900;
   while (vs < 0 && hAt(320, vs) < 3) vs += 10;
   const [px, pz] = at(320, vs - 150);
