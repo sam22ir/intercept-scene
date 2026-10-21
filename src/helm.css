@@ -94,7 +94,7 @@ body.helm-threat-3 .helm-alarm { animation: helm-pulse 0.55s ease-in-out infinit
 .helm-pip .hp-v { width: 1px; height: 100%; transform: translate(-50%, -50%); }
 .helm-pip .hp-box { width: 30%; height: 30%; transform: translate(-50%, -50%); background: transparent; border: 1px solid rgba(120, 255, 170, 0.5); }
 .helm-pip.lock .hp-box { border: 2px solid #3ddc84; box-shadow: 0 0 8px rgba(61, 220, 132, 0.6); }
-.helm-pip.searching .hp-box { border: 2px dashed rgba(255, 196, 84, 0.9); animation: hp-search 0.45s ease-in-out infinite alternate; }
+.helm-pip.searching .hp-box { display: none; } /* no blinking box while it searches */
 @keyframes hp-search { from { opacity: 0.45; transform: translate(-50%, -50%) scale(1.35); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
 .helm-pip .hp-txt { position: absolute; left: 6px; right: 6px; bottom: 4px; font: 700 10px/1.2 ui-monospace, Consolas, monospace; letter-spacing: 0.06em; color: #9dffc0; text-shadow: 0 1px 2px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .helm-pip em { position: absolute; left: 6px; top: 4px; font: 800 9px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.2em; font-style: normal; color: #9dffc0; text-shadow: 0 1px 2px #000; }
