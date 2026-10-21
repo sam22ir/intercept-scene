@@ -1248,7 +1248,6 @@ function domeSvg() {
     + `<line x1="${p0[0]}" y1="${(Number(p0[1]) - 5).toFixed(1)}" x2="${p0[0]}" y2="${(Number(p0[1]) + 5).toFixed(1)}" class="rm"/>`
     + `<text x="${cx}" y="94" class="sp">${f(sim.knots, 1)}<tspan> kn</tspan></text></svg>`;
 }
-const MSL_SVG = '<svg viewBox="0 0 10 24"><path d="M5 0C7 3 7.5 6 7.5 9V17L10 21V24H7L6.4 22H3.6L3 24H0V21L2.5 17V9C2.5 6 3 3 5 0Z"/></svg>';
 // The weapons card: one row per weapon (the missile cells as little missiles, the guns' ammunition as a bar), and empty slots
 // kept for the weapons still to come.
 function weaponsHtml() {
@@ -1256,21 +1255,22 @@ function weaponsHtml() {
   if (sim.shot) mState = sim.shot.locked ? 'LOCKED' : sim.shot.acquiring ? 'ACQUIRING' : 'TURNING';
   else if (sim.missiles.length) mState = `${sim.missiles.length} AWAY`;
   const cls = sim.shot ? (sim.shot.locked ? 'arm lock' : 'arm') : sim.cellsLeft > 0 ? 'on' : '';
-  const cells = `<i class="${cls}">${MSL_SVG}</i><span class="hw-n">×${sim.cellsLeft}</span>`;
+  const pips = Array.from({ length: CELLS }, (_, i) => `<i class="${i === sim.cellsLeft - 1 ? cls : i < sim.cellsLeft ? 'on' : ''}"></i>`).join('');
+  const cells = `<div class="hw-pips">${pips}</div><span class="hw-n">${sim.cellsLeft}</span>`;
   const firing = sim.guns.some((g) => g.firing);
   const gState = firing ? 'FIRING' : sim.gunRounds <= 0 ? 'EMPTY' : sim.gunsAuto ? 'AUTO' : 'HOLD G';
   const gMax = GUN_ROUNDS * sim.guns.length;
   const gPct = Math.max(0, Math.min(100, sim.gunRounds / gMax * 100)).toFixed(1);
   return `<div class="hs-wpn">`
     + `<div class="hw-row hw-msl${sim.shot?.locked ? ' lock' : ''}"><b>MISSILES</b><div class="hw-cells">${cells}</div><em>${mState}</em></div>`
-    + `<div class="hw-row hw-gun${firing ? ' fire' : sim.gunsAuto ? ' auto' : ''}"><b>GUNS</b><div class="hw-bar"><i style="width:${gPct}%"></i></div><em>${sim.gunRounds} · ${gState}</em></div>`
+    + `<div class="hw-row hw-gun${firing ? ' fire' : sim.gunsAuto ? ' auto' : ''}"><b>GUNS</b><div class="hw-bar"><i style="width:${gPct}%"></i><s>${sim.gunRounds}</s></div><em>${gState}</em></div>`
     + '</div>';
 }
 function shipHtml() {
   const hits = Array.from({ length: 3 }, (_, i) => `<i class="${i < sim.strikes ? 'hit' : ''}"></i>`).join('');
   const dmg = sim.out ? 'out of action' : sim.strikes ? `${sim.strikes} of 3 hits` : 'no damage';
   const hull = Array.from({ length: 3 }, (_, i) => `<i class="${i < sim.strikes ? 'hit' : ''}"></i>`).join('');
-  return `<div class="hs-stat${sim.strikes ? ' hurt' : ''}"><div class="st-hull"><span>HULL</span><div class="st-segs">${hull}</div><em>${sim.out ? 'OUT OF ACTION' : sim.strikes ? `${sim.strikes} OF 3 HITS` : 'INTACT'}</em></div>`
+  return `<div class="hs-stat${sim.strikes ? ' hurt' : ''}"><div class="st-hull"><div class="st-head"><span>HULL</span><em>${sim.out ? 'OUT OF ACTION' : sim.strikes ? `${sim.strikes} OF 3 HITS` : 'INTACT'}</em></div><div class="st-segs">${hull}</div></div>`
     + `<div class="st-kills"><span>KILLS</span><b>${sim.kills}</b></div></div>`
     + `<div class="hs-dome">${domeSvg()}</div>`
     + weaponsHtml();
