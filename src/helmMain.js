@@ -14,7 +14,7 @@ import { createHelmMap } from './helmMap.js';
 import { createHelmAudio } from './helmAudio.js';
 import { menuText } from './menu.js';
 import {
-  HelmSim, SLEW_TIME, TELEGRAPH, RUDDER_MAX, CELLS, MISSILE_RANGE, BRIDGE_EYE, DIRECTOR_EYE, relName, kmText,
+  HelmSim, SLEW_TIME, LOCK_TIME, TELEGRAPH, RUDDER_MAX, CELLS, MISSILE_RANGE, BRIDGE_EYE, DIRECTOR_EYE, relName, kmText,
 } from './helm.js';
 import './helm.css';
 
@@ -161,6 +161,10 @@ function handleEvents() {
     switch (e.type) {
       case 'say': say(e.text, e.tone); break;
       case 'slew': startLauncherCine(); break; // F pressed: the launcher is turning onto the target
+      case 'lock': // it has caught the target: the sign, and the camera's slight move in
+        showLock(e.id);
+        if (cine && cine.phase === 'slew') cine.tLock = sim.t;
+        break;
       case 'fire':
         fx.launchBillow(e.pos, e.dir, sim.t);
         if (cine && cine.phase === 'slew') {
@@ -322,6 +326,25 @@ sightEl.innerHTML = '<i class="hs-h"></i><i class="hs-v"></i><i class="hs-box"><
 document.body.appendChild(sightEl);
 const sightTxt = sightEl.querySelector('.hs-txt');
 
+// The sign that the launcher has caught the target: green corner brackets that close in on the screen centre, and the
+// words, for a moment.
+const lockEl = document.createElement('div');
+lockEl.className = 'helm-lock';
+lockEl.hidden = true;
+lockEl.innerHTML = '<i class="hl-tl"></i><i class="hl-tr"></i><i class="hl-bl"></i><i class="hl-br"></i><b>TARGET LOCKED</b><small></small>';
+document.body.appendChild(lockEl);
+let lockTimer = 0;
+function showLock(id) {
+  const d = sim.drones.find((x) => x.id === id);
+  lockEl.querySelector('small').textContent = d ? `${d.name} · ${relName(sim.relBearing(d.pos))} · ${kmText(sim.rangeTo(d.pos))}` : '';
+  lockEl.hidden = false;
+  lockEl.classList.remove('go');
+  void lockEl.offsetWidth; // restart the animation
+  lockEl.classList.add('go');
+  clearTimeout(lockTimer);
+  lockTimer = setTimeout(() => { lockEl.hidden = true; }, 1400);
+}
+
 function setFov(f) {
   if (Math.abs(f - camera.fov) < 1e-3) return;
   camera.fov = f;
@@ -353,7 +376,8 @@ function setView(v, quiet = false) {
 
 // --- The intercept camera ------------------------------------------------------------------------------------------------
 // The shot is cut automatically and goes back to the view that was on when it is over:
-//  - F is pressed: the camera cuts close to the launcher, from the side, to watch it turn (fast) onto the target and fire;
+//  - F is pressed: the camera cuts close to the launcher, from the side, to watch it turn (fast) onto the target, catch it
+//    (a tone, the TARGET LOCKED sign, the view easing slightly closer) and then fire;
 //    it then rides close behind the missile (its flame in the frame, the lens closing in on the drone), and for the last
 //    metres goes to the side of the two, in slow motion, until the hit (the only slow motion); it stays on the wreck until
 //    the last piece is in the sea, waits CINE_TAIL seconds more, and goes back;
@@ -378,7 +402,7 @@ let pendingOrbit = false; // the ship is out of action: the orbit view comes onc
 function newCine(mid, did, phase) {
   sightEl.hidden = true;
   document.body.classList.remove('helm-sighting');
-  return { mid, did, phase, t0: sim.t, side: 0, pos: new THREE.Vector3(), look: new THREE.Vector3(), hold: new THREE.Vector3(), tSplash: null, fresh: true, local: new THREE.Vector3(), tImpact: 0, camLocal: new THREE.Vector3(), tLaunch: 0, tBlend: 0, chaseT: 0 };
+  return { mid, did, phase, t0: sim.t, side: 0, pos: new THREE.Vector3(), look: new THREE.Vector3(), hold: new THREE.Vector3(), tSplash: null, fresh: true, local: new THREE.Vector3(), tImpact: 0, camLocal: new THREE.Vector3(), tLaunch: 0, tBlend: 0, chaseT: 0, tLock: 0 };
 }
 // F has been pressed and the launcher is turning: the camera goes close to it, from the side of the way it will fire.
 function startLauncherCine() {
@@ -390,10 +414,14 @@ function startLauncherCine() {
   cine = newCine(null, sim.shot.droneId, 'slew');
   cine.camLocal.set(LAUNCHER_PIVOT.x + sign * px * 22, LAUNCHER_PIVOT.y + 3.5, LAUNCHER_PIVOT.z + sign * pz * 22);
 }
-function frameLauncher(c, progress) {
-  ship.group.localToWorld(camera.position.copy(c.camLocal));
+function frameLauncher(c, progress, lock = 0) {
+  // On the target: the view eases slightly closer and the lens tightens a little, the camera's way of marking the catch.
+  const k = THREE.MathUtils.smoothstep(lock, 0, 1);
+  _d.copy(c.camLocal).lerp(_e.copy(LAUNCHER_PIVOT), 0.14 * k);
+  _d.y += 0.8 * k;
+  ship.group.localToWorld(camera.position.copy(_d));
   camera.lookAt(ship.group.localToWorld(_c.copy(LAUNCHER_PIVOT).setY(LAUNCHER_PIVOT.y + 1.2)));
-  return THREE.MathUtils.lerp(42, 28, THREE.MathUtils.smoothstep(progress, 0, 1)); // the zoom in on it
+  return THREE.MathUtils.lerp(42, 28, THREE.MathUtils.smoothstep(progress, 0, 1)) - 5 * k; // the zoom in on it
 }
 function startCine(missileId, droneId = null) {
   if (!cineOn || cine || view === 'orbit' || sim.out) return;
@@ -495,10 +523,10 @@ function updateCine(dt) {
   if (c.phase === 'slew') { // the launcher turns, fast: close on it
     if (!sim.shot) { endCine(); return null; } // cancelled
     timeTarget = SLOW.slew;
-    return frameLauncher(c, (sim.t - c.t0) / SLEW_TIME);
+    return frameLauncher(c, (sim.t - c.t0) / SLEW_TIME, c.tLock ? THREE.MathUtils.clamp((sim.t - c.tLock) / LOCK_TIME, 0, 1) : 0);
   }
   if (c.phase === 'launch') { // the round leaves its cell: still on the launcher
-    if (sim.t - c.tLaunch < LAUNCH_HOLD) { timeTarget = SLOW.launch; return frameLauncher(c, 1); }
+    if (sim.t - c.tLaunch < LAUNCH_HOLD) { timeTarget = SLOW.launch; return frameLauncher(c, 1, 1); }
     c.phase = 'approach'; // then the camera leaves the ship to follow it
     c.tBlend = sim.t;
     c.chaseT = 0;
@@ -708,7 +736,7 @@ function hudHtml() {
   // Weapons: rounds, the launcher, the target.
   const t = sim.target;
   let wChip = [`${sim.cellsLeft} of ${CELLS} ready`, sim.cellsLeft ? '' : 'bad'];
-  if (sim.shot) wChip = ['Launcher turning', 'warn'];
+  if (sim.shot) wChip = sim.shot.locked ? ['Target locked', 'live'] : ['Launcher turning', 'warn'];
   else if (sim.missiles.length) wChip = [`${sim.missiles.length} in flight`, 'warn'];
   let tTiles = tile('Target', 'none', '', 'wide');
   if (t) {

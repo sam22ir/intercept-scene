@@ -181,6 +181,7 @@ export function createHelmAudio() {
       case 'splash': shot('splash', e.pos); break;
       case 'missile-lost': if (e.pos.y < 8) shot('splash', e.pos); break;
       case 'telegraph': bell(); break;
+      case 'lock': tones([[1320, 0, 0.09], [1760, 0.12, 0.09], [2349, 0.24, 0.2]], 'sine', 0.16); break; // the launcher has caught the target
       case 'alarm':
         if (e.level === 1) tones([[880, 0, 0.18], [660, 0.22, 0.3]], 'sine', 0.18); // new contact
         else if (e.level === 2) tones([0, 1, 2, 3, 4, 5].map((i) => [i % 2 ? 740 : 990, i * 0.14, 0.12])); // closing
