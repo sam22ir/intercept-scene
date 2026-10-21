@@ -110,3 +110,49 @@ body.duel-radarview canvas#scene { filter: saturate(0.6) contrast(1.12); }
 .duel-radar .hr-pad { max-width: calc(100vw - 2 * var(--map-d, 150px) - 40px); }
 
 body.duel-radarview .duel-root { display: none; }
+
+/* The ship's instruments, as Solo Air Defense's strip: hull and compartments, the dome (heading tape, rudder, speed), the guns. */
+.duel-ship { position: fixed; z-index: 5; left: 50%; bottom: calc(var(--keys-h, 56px) + var(--gap, 14px) + var(--safe-b, 0px) - 1px); transform: translateX(-50%); display: flex; gap: 6px; align-items: flex-end; max-width: calc(100vw - 2 * var(--map-d, 150px) - 40px); pointer-events: none; }
+.duel-ship[hidden], body.ui-hidden .duel-ship, body.duel-radarview .duel-ship, body:not(.mission-duel) .duel-ship { display: none; }
+.duel-ship .hs-rect, .duel-ship .hs-dome { background: rgba(9, 14, 21, 0.5); border: 1px solid rgba(255, 255, 255, 0.1); border-bottom: 0; color: var(--text); font-variant-numeric: tabular-nums; backdrop-filter: blur(3px); }
+.duel-ship .hs-rect { display: flex; flex-direction: column; justify-content: center; gap: 4px; width: 232px; min-height: 48px; padding: 6px 10px; border-radius: 10px 10px 0 0; flex: 1 1 0; min-width: 150px; }
+.duel-ship .hs-rect > span { color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.duel-ship .hs-rect b { color: var(--text); }
+.duel-ship .hs-hull.hurt { border-color: rgba(255, 93, 97, 0.6); }
+.duel-ship .hs-dome { width: 196px; height: 102px; border-radius: 98px 98px 0 0; overflow: hidden; flex: none; }
+.duel-ship .dome-svg { display: block; width: 196px; height: 102px; }
+.dome-svg .rim { fill: none; stroke: rgba(255, 255, 255, 0.25); stroke-width: 1; }
+.dome-svg line { stroke: rgba(255, 255, 255, 0.55); stroke-width: 1; }
+.dome-svg line.mj { stroke: rgba(255, 255, 255, 0.9); stroke-width: 1.6; }
+.dome-svg .dl { fill: #fff; font: 700 12.5px 'Segoe UI', system-ui, sans-serif; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.75); stroke-width: 2.4px; stroke-linejoin: round; }
+.dome-svg .hd { fill: #fff; font: 800 18px 'Segoe UI', system-ui, sans-serif; letter-spacing: 0.03em; text-anchor: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.7); stroke-width: 2.6px; stroke-linejoin: round; }
+.dome-svg .lub { fill: var(--accent); }
+.dome-svg .rt { fill: none; stroke: rgba(255, 255, 255, 0.14); stroke-width: 5; stroke-linecap: round; }
+.dome-svg .rf { fill: none; stroke-width: 5; stroke-linecap: round; }
+.dome-svg .rf.stbd { stroke: #3ddc84; }
+.dome-svg .rf.port { stroke: #ff5d61; }
+.dome-svg line.rm { stroke: rgba(255, 255, 255, 0.8); stroke-width: 1.4; }
+.dome-svg .sp { fill: #fff; font: 700 14px 'Segoe UI', system-ui, sans-serif; text-anchor: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.6); stroke-width: 2px; }
+.dome-svg .sp tspan { fill: rgba(255, 255, 255, 0.6); font-size: 9.5px; font-weight: 500; }
+.duel-ship .hs-cells { display: flex; gap: 4px; }
+.duel-ship .cp { position: relative; flex: 1; height: 26px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.18); overflow: hidden; font-style: normal; }
+.duel-ship .cp s { position: absolute; left: 0; right: 0; bottom: 0; background: #3ddc84; opacity: 0.85; }
+.duel-ship .cp.hurt s { background: #f2c94c; } .duel-ship .cp.bad s { background: #ff7a1a; } .duel-ship .cp.out { border-color: #ff5d61; }
+.duel-ship .cp.sel { outline: 1px solid rgba(255, 255, 255, 0.7); outline-offset: 1px; }
+.duel-ship .cp b { position: absolute; left: 0; right: 0; top: 2px; text-align: center; font-size: 8.5px; letter-spacing: 0.04em; text-shadow: 0 1px 2px #000; z-index: 1; }
+.duel-ship .cp em { position: absolute; left: 0; right: 0; bottom: 1px; display: flex; justify-content: center; gap: 1px; font-style: normal; font-size: 8px; line-height: 1; z-index: 1; }
+.duel-ship .cp u { text-decoration: none; } .duel-ship .cp .fire { color: #ff7a1a; } .duel-ship .cp .leak { color: #35c8ff; } .duel-ship .cp .crew { color: #f2c94c; }
+.dh-range { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-top: 1px solid var(--hair); font-size: 11px; color: var(--muted); }
+.dh-range b { color: var(--text); font-size: 14px; }
+@media (max-width: 900px) { .duel-ship { bottom: calc(var(--keys-h, 56px) + 58px); } }
+/* Wide windows: the instruments stand on the bottom edge, out of the view; the key hints go up under the view buttons. */
+@media (min-width: 901px) {
+  .duel-ship { bottom: var(--gap, 14px); }
+  body.mission-duel .shot-caption { top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 96px); bottom: auto; }
+  body.mission-duel .fly-keys { width: max-content; flex-wrap: nowrap; bottom: auto; top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 56px); padding: 4px 12px; gap: 4px 12px; font-size: 11px; background: rgba(9, 14, 21, 0.35); backdrop-filter: none; }
+  .duel-radar .hr-pad { bottom: var(--gap, 14px); }
+}
+@media (min-width: 901px) {
+  body.mission-duel .fly-keys { max-width: calc(100vw - 540px); overflow: hidden; }
+  .duel-ship .hs-rect { width: 270px; }
+}
