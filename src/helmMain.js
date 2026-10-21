@@ -978,21 +978,18 @@ shipEl.className = 'helm-ship';
 document.body.appendChild(shipEl);
 let lastShip = '';
 function shipHtml() {
-  const o = TELEGRAPH[sim.order];
-  const ord = o.kn === 0 ? 'Stop' : `${o.name}${o.kn > 0 ? ' ahead' : ''}`;
   const rud = THREE.MathUtils.radToDeg(sim.rudder);
   const rudTxt = Math.abs(rud) < 0.5 ? 'midships' : `${f(Math.abs(rud))}° ${rud > 0 ? 'stbd' : 'port'}`;
   const rot = sim.rateOfTurn;
-  const chip = sim.out ? ['Out of action', 'bad'] : sim.strikes ? [`Damage ${sim.strikes}/3`, 'warn'] : ['Under way', 'live'];
-  let wChip = [`${sim.cellsLeft} of ${CELLS} ready`, sim.cellsLeft ? '' : 'bad'];
-  if (sim.shot) wChip = sim.shot.locked ? ['Target locked', 'live'] : sim.shot.acquiring ? ['Acquiring', 'warn'] : ['Launcher turning', 'warn'];
-  else if (sim.missiles.length) wChip = [`${sim.missiles.length} in flight`, 'warn'];
+  let wTxt = `${sim.cellsLeft} of ${CELLS}`;
+  if (sim.shot) wTxt = sim.shot.locked ? 'locked' : sim.shot.acquiring ? 'acquiring' : 'turning';
+  else if (sim.missiles.length) wTxt = `${sim.missiles.length} in flight`;
   const pips = Array.from({ length: CELLS }, (_, i) => `<i class="${i < sim.cellsLeft ? 'on' : ''}"></i>`).join('');
-  return `<div class="hs-card hs-rud"><span>Rudder · ${rudTxt}${Math.abs(rot) >= 1 ? ` · ${f(Math.abs(rot))}°/min` : ''}</span>`
+  const state = sim.out ? 'out of action' : sim.strikes ? `damage ${sim.strikes}/3` : '';
+  return `<div class="hs-rect hs-rud"><span>Rudder · ${rudTxt}${Math.abs(rot) >= 1 ? ` · ${f(Math.abs(rot))}°/min` : ''}</span>`
     + `<div class="hr-bar"><i style="--r:${(sim.rudder / RUDDER_MAX).toFixed(3)}"></i></div></div>`
-    + `<div class="hs-card hs-nav"><div class="hs-row"><b>${f(sim.headingDeg).padStart(3, '0')}°</b><b>${f(sim.knots, 1)}<small> kn</small></b><b class="hs-ord">${ord}</b></div>`
-    + `<span class="chip ${chip[1]}">${chip[0]}</span></div>`
-    + `<div class="hs-card hs-ammo"><span>Missiles</span><div class="hs-pips">${pips}</div><span class="chip ${wChip[1]}">${wChip[0]}</span></div>`;
+    + `<div class="hs-dome${sim.strikes ? ' hurt' : ''}"><em>▲</em><b>${f(sim.knots, 1)}<small> kn</small></b><span>${f(sim.headingDeg).padStart(3, '0')}°${state ? ` · ${state}` : ''}</span></div>`
+    + `<div class="hs-rect hs-ammo"><span>Missiles · ${wTxt}</span><div class="hs-pips">${pips}</div></div>`;
 }
 
 function hudHtml() {
@@ -1029,6 +1026,7 @@ keysEl.id = 'fly-keys';
 keysEl.className = 'fly-keys';
 document.body.appendChild(keysEl);
 let lastKeys = '';
+let lastKeysH = 0;
 function keysHtml() {
   const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`;
   if (sim.out) return `${k('R', 'sail again', true)}${k('V', 'camera')}`;
@@ -1256,6 +1254,8 @@ renderer.setAnimationLoop((now) => {
   }
   const keys = keysHtml();
   if (keys !== lastKeys) { keysEl.innerHTML = keys; lastKeys = keys; }
+  const kh = keysEl.offsetHeight;
+  if (kh !== lastKeysH) { lastKeysH = kh; document.documentElement.style.setProperty('--keys-h', `${kh}px`); }
   if (!banner.hidden && performance.now() > bannerUntil) banner.hidden = true;
   const sightCam = view === 'sight' || (cine && cine.phase === 'sight');
   if (sightCam) ship.group.visible = false; // the sight looks out from inside her: her own body never blocks it
