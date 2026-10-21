@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DuelSim, DT, MAIN_ARC, MAIN_RANGE, GUN_RANGE, HULL_HP, COMPARTMENTS, COMP_IDS, LEVELS, DUEL_LEVELS, SINK_TIME,
-  zoneAt, segmentBox, sinkState, gunBlind, TELEGRAPH,
+  zoneAt, segmentBox, sinkState, gunBlind, TELEGRAPH, AMMO_STOCK, AMMO_TYPES, SWITCH_TIME, MAIN_ROUNDS,
 } from '../src/duel.js';
 
 const run = (sim, seconds, input = {}) => { for (let i = 0; i < seconds * 10; i++) sim.advance(0.1, input); };
@@ -306,3 +306,60 @@ describe('a run is repeatable', () => {
   });
 });
 
+
+describe('ammunition: HE and AP', () => {
+  const still = (sim) => { sim.enemy.ai = null; sim.enemy.cmd = { want: 0, fire: false, gat: false }; };
+  it('stocks add up to the old magazine and start on HE', () => {
+    assert.equal(AMMO_STOCK.he + AMMO_STOCK.ap, MAIN_ROUNDS);
+    const g = new DuelSim({ seed: 1 }).player.gun;
+    assert.equal(g.type, 'he');
+    assert.equal(g.ammo, MAIN_ROUNDS);
+  });
+
+  it('changing the kind costs a reload, and only to a kind that is in stock', () => {
+    const sim = new DuelSim({ seed: 1 });
+    const g = sim.player.gun;
+    g.cool = 0;
+    assert.ok(sim.switchAmmo(0));
+    assert.equal(g.type, 'ap');
+    assert.ok(g.cool >= SWITCH_TIME - 1e-9, 'a reload');
+    assert.equal(sim.switchAmmo(0, 'ap'), false, 'already loaded');
+    g.stock.he = 0;
+    assert.equal(sim.switchAmmo(0), false, 'none left to load');
+  });
+
+  it('each shell is drawn from its own stock, and the total follows', () => {
+    const sim = new DuelSim({ seed: 2, level: 'easy' });
+    still(sim);
+    sim.enemy.x = 3500; sim.enemy.z = 0; sim.enemy.psi = Math.PI / 2;
+    sim.switchAmmo(0);
+    run(sim, 40, { fire: true });
+    const g = sim.player.gun;
+    assert.equal(g.stock.he, AMMO_STOCK.he, 'HE untouched');
+    assert.equal(g.stock.ap, AMMO_STOCK.ap - sim.player.stats.shells);
+    assert.equal(g.ammo, g.stock.he + g.stock.ap);
+    assert.ok(sim.player.stats.shells > 3);
+  });
+
+  it('AP hurts a compartment more than HE', () => {
+    const dmg = (kind) => {
+      const sim = new DuelSim({ seed: 5, level: 'easy' });
+      const e = sim.enemy; e.psi = Math.PI; e.heel = 0;
+      sim.shells.push({ id: 1, owner: 0, t0: 0, kind, p: [e.x - 30, 8, e.z], v: [0, -100, 0] });
+      sim.advance(0.05);
+      return sim.takeEvents().find((x) => x.type === 'hit').dmg;
+    };
+    assert.ok(dmg('ap') > dmg('he') * 2, 'AP is 2.5 times HE with the same draw');
+    assert.ok(AMMO_TYPES.he.fire > 0 && AMMO_TYPES.ap.fire === 0);
+  });
+
+  it('when the loaded kind runs out the other is loaded, with the reload', () => {
+    const sim = new DuelSim({ seed: 2, level: 'easy' });
+    still(sim);
+    const g = sim.player.gun;
+    g.stock.he = 0; g.ammo = g.stock.ap; g.cool = 0;
+    run(sim, 0.1);
+    assert.equal(g.type, 'ap');
+    assert.ok(g.cool > 3);
+  });
+});
