@@ -14,65 +14,60 @@
       <div class="mm">
         <header class="menu-head">
           <div class="menu-brand"><span class="dot" aria-hidden="true"></span><b>Intercept</b><span>drone · frigate · missile</span></div>
-          <p class="menu-hint"><kbd>M</kbd> next mission · <kbd>1</kbd> <kbd>2</kbd> launcher · <kbd>Enter</kbd> start</p>
+          <div class="tabs" role="radiogroup" aria-label="What to do">
+            <button class="tab" role="radio" aria-checked="true" data-tab="watch" title="Replays you can scrub both ways">Watch</button>
+            <button class="tab" role="radio" aria-checked="false" data-tab="play" title="You take the controls">Play</button>
+            <button class="tab" role="radio" aria-checked="false" data-tab="drill" title="Naval exercises run on orders">Drill</button>
+          </div>
+          <p class="menu-hint"><kbd>M</kbd> next mission · <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> variant · <kbd>Enter</kbd> start</p>
         </header>
 
         <div class="menu-body">
           <section class="menu-list" aria-label="Missions">
+            <p class="menu-sub" id="ch-tabhint"></p>
             <div class="missions" role="radiogroup" aria-label="Mission">
-              <h2 class="m-group" id="ch-step1">Drone &amp; missile</h2>
-              <button class="mission" role="radio" aria-checked="true" data-mode="intercept">
+              <button class="mission" role="radio" aria-checked="true" data-group="watch" data-mode="intercept">
                 <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-arc" d="M6 34 Q10 10 28 12"/><path class="i-drone" d="M24 10 h10 M29 6 v8"/><circle class="i-burst" cx="29" cy="11" r="6"/></svg>
                 <span class="m-txt"><b>Intercept</b><small>A missile shoots the drone down</small></span>
                 <em class="m-kind">Replay</em>
               </button>
-              <button class="mission" role="radio" aria-checked="false" data-mode="chute">
+              <button class="mission" role="radio" aria-checked="false" data-group="watch" data-mode="chute">
                 <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-canopy" d="M8 18 Q20 2 32 18 Z"/><path class="i-line" d="M8 18 L20 30 L32 18 M20 18 V30"/><path class="i-drone" d="M15 31 h10"/><path class="i-sea" d="M4 36 Q10 34 16 36 T28 36 T38 36"/></svg>
                 <span class="m-txt"><b>Recovery</b><small>No missile · lands by parachute</small></span>
                 <em class="m-kind">Replay</em>
               </button>
-              <button class="mission" role="radio" aria-checked="false" data-mode="fly">
+              <button class="mission" role="radio" aria-checked="false" data-group="play" data-mode="fly">
                 <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-drone" d="M14 22 h12 M20 17 v10 M15 19 l5-4 5 4"/><path class="i-arc" d="M5 33 Q8 28 14 28 M35 8 Q32 12 27 13"/><path class="i-line" d="M20 6 v5 M17 8.5 l3-3 3 3"/></svg>
                 <span class="m-txt"><b>Fly the drone</b><small>Arrow keys · E engine · L catapult · F missile</small></span>
                 <em class="m-kind">Manual</em>
               </button>
-              <h2 class="m-group">Tactical maneuvers <em class="m-kind">Drill</em></h2>
-              <div class="tac">
-                <button class="mission tile" role="radio" aria-checked="false" data-mode="maneuvers2">
-                  <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M6 9 H23 L29 13 L23 17 H6Z"/><path class="i-ship" d="M6 23 H23 L29 27 L23 31 H6Z"/><path class="i-line" d="M15 17 V23"/></svg>
-                  <span class="m-txt"><b>2 ships</b><small>ALG · RUS</small></span>
-                </button>
-                <button class="mission tile" role="radio" aria-checked="false" data-mode="maneuvers">
-                  <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M8 4 H22 L27 7.5 L22 11 H8Z"/><path class="i-ship" d="M8 16 H22 L27 19.5 L22 23 H8Z"/><path class="i-ship" d="M5 28 H24 L31 32 L24 36 H5Z"/><path class="i-line" d="M15 11 V16 M15 23 V28"/></svg>
-                  <span class="m-txt"><b>3 ships</b><small>ALG · RUS · unit</small></span>
-                </button>
-                <button class="mission tile" role="radio" aria-checked="false" data-mode="formations">
-                  <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M17 4 L20 10 L23 4Z M8 15 L11 21 L14 15Z M26 15 L29 21 L32 15Z M17 26 L20 32 L23 26Z"/><path class="i-line" d="M20 12 L11 15 M20 12 L29 15 M11 23 L20 26 M29 23 L20 26"/></svg>
-                  <span class="m-txt"><b>4 ships</b><small>SHIP1 – SHIP4</small></span>
-                </button>
-              </div>
-              <button class="mission" role="radio" aria-checked="false" data-mode="helm">
+              <button class="mission" role="radio" aria-checked="false" data-group="play" data-mode="helm">
                 <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M4 27 H25 L32 31 L25 35 H4Z"/><path class="i-line" d="M18 27 V20 M14 22 H22"/><path class="i-drone" d="M28 9 h8 M32 5 v8"/><path class="i-arc" d="M21 20 Q24 10 30 9"/></svg>
                 <span class="m-txt"><b>Solo Air Defense</b><small>Sail the frigate · fight off drones</small></span>
                 <em class="m-kind">Manual</em>
+              </button>
+              <button class="mission" role="radio" aria-checked="false" data-group="drill" data-family="drill" hidden>
+                <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M8 4 H22 L27 7.5 L22 11 H8Z"/><path class="i-ship" d="M8 16 H22 L27 19.5 L22 23 H8Z"/><path class="i-ship" d="M5 28 H24 L31 32 L24 36 H5Z"/><path class="i-line" d="M15 11 V16 M15 23 V28"/></svg>
+                <span class="m-txt"><b>Tactical maneuvers</b><small>Frigates wheel and change station on orders</small></span>
+                <em class="m-kind">Drill</em>
               </button>
             </div>
           </section>
 
           <section class="brief" aria-live="polite" aria-labelledby="ch-title">
             <div class="brief-top">
-              <div class="brief-art" id="ch-art" aria-hidden="true"></div>
+              <div class="stage" id="ch-stage" aria-hidden="true"></div>
               <div class="brief-head">
                 <p class="brief-kind" id="ch-kind"></p>
                 <h1 id="ch-title"></h1>
+                <p class="brief-tag" id="ch-tag"></p>
+                <ul class="brief-facts" id="ch-facts"></ul>
               </div>
             </div>
-            <p class="brief-tag" id="ch-tag"></p>
-            <ul class="brief-facts" id="ch-facts"></ul>
-            <div class="brief-ship" aria-labelledby="ch-step2">
+            <div class="brief-ship variant" aria-labelledby="ch-step2">
               <h2 id="ch-step2">Launcher</h2>
               <div class="cards" role="radiogroup" aria-label="Ship">
-            <button class="card" role="radio" aria-checked="false" data-ship="fwd">
+                <button class="card" role="radio" aria-checked="false" data-ship="fwd">
               <svg viewBox="0 0 320 110" aria-hidden="true">
               <path class="sea" d="M0 92 Q20 88 40 92 T80 92 T120 92 T160 92 T200 92 T240 92 T280 92 T320 92 V110 H0Z"/>
               <path class="wake" d="M8 88 H70 M18 94 H52"/>
@@ -90,7 +85,7 @@
               </svg>
               <span class="card-txt"><span class="card-name"><kbd>1</kbd>Forward launcher</span><span class="card-desc">Box on the forward deckhouse. Short, steep shot over the bow.</span></span>
             </button>
-            <button class="card" role="radio" aria-checked="false" data-ship="aft">
+                <button class="card" role="radio" aria-checked="false" data-ship="aft">
               <svg viewBox="0 0 320 110" aria-hidden="true">
               <path class="sea" d="M0 92 Q20 88 40 92 T80 92 T120 92 T160 92 T200 92 T240 92 T280 92 T320 92 V110 H0Z"/>
               <path class="wake" d="M8 88 H70 M18 94 H52"/>
@@ -108,17 +103,36 @@
               </svg>
               <span class="card-txt"><span class="card-name"><kbd>2</kbd>Aft launcher</span><span class="card-desc">Box on the hangar roof. Fires astern at a drone coming in from behind.</span></span>
             </button>
-          </div>
+              </div>
+            </div>
+            <div class="brief-drill variant" aria-labelledby="ch-step3" hidden>
+              <h2 id="ch-step3">Ships</h2>
+              <div class="picks" role="radiogroup" aria-label="Number of ships">
+                <button class="pick" role="radio" aria-checked="false" data-mode="maneuvers2">
+                  <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M6 9 H23 L29 13 L23 17 H6Z"/><path class="i-ship" d="M6 23 H23 L29 27 L23 31 H6Z"/><path class="i-line" d="M15 17 V23"/></svg>
+                  <span class="m-txt"><b><kbd>1</kbd>2 ships</b><small>ALG · RUS</small></span>
+                </button>
+                <button class="pick" role="radio" aria-checked="false" data-mode="maneuvers">
+                  <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M8 4 H22 L27 7.5 L22 11 H8Z"/><path class="i-ship" d="M8 16 H22 L27 19.5 L22 23 H8Z"/><path class="i-ship" d="M5 28 H24 L31 32 L24 36 H5Z"/><path class="i-line" d="M15 11 V16 M15 23 V28"/></svg>
+                  <span class="m-txt"><b><kbd>2</kbd>3 ships</b><small>ALG · RUS · unit</small></span>
+                </button>
+                <button class="pick" role="radio" aria-checked="false" data-mode="formations">
+                  <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M17 4 L20 10 L23 4Z M8 15 L11 21 L14 15Z M26 15 L29 21 L32 15Z M17 26 L20 32 L23 26Z"/><path class="i-line" d="M20 12 L11 15 M20 12 L29 15 M11 23 L20 26 M29 23 L20 26"/></svg>
+                  <span class="m-txt"><b><kbd>3</kbd>4 ships</b><small>SHIP1 – SHIP4</small></span>
+                </button>
+              </div>
             </div>
             <div class="brief-keys">
               <h2>Controls</h2>
               <ul class="keys-list" id="ch-keys"></ul>
+              <p class="keys-more" id="ch-keys-more"></p>
             </div>
           </section>
         </div>
 
         <footer class="menu-go">
           <p class="ch-sum"><span id="ch-summary"></span><small id="chooser-sub" class="chooser-sub"></small></p>
+          <em class="last" id="ch-last" hidden>Last played</em>
           <button id="ch-start" class="ch-start" type="button">Start simulation <span aria-hidden="true">→</span></button>
         </footer>
       </div>

@@ -5,9 +5,9 @@
 
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
-const url = `${pathToFileURL(new URL('../src/maneuvers.js', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')).href}?two`;
+const url = `${pathToFileURL(fileURLToPath(new URL('../src/maneuvers.js', import.meta.url))).href}?two`;
 let M;
 let P;
 before(async () => {

@@ -6,8 +6,8 @@
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
-import { MISSIONS, SHIPS, GROUPS, MISSION_IDS, FIXED_SHIP, menuText, missionById } from '../src/menu.js';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { MISSIONS, SHIPS, GROUPS, FAMILIES, ENTRIES, entriesOf, groupOf, MISSION_IDS, FIXED_SHIP, menuText, missionById } from '../src/menu.js';
 
 const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
 const html = read('../index.html');
@@ -16,7 +16,7 @@ const src = {
   formations: read('../src/formationsMain.js'), helm: read('../src/helmMain.js'),
   timeline: read('../src/timeline.js'),
 };
-const urlOf = (f, q) => `${pathToFileURL(new URL(f, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')).href}?${q}`;
+const urlOf = (f, q) => `${pathToFileURL(fileURLToPath(new URL(f, import.meta.url))).href}?${q}`;
 
 // The scenario in each of its two drone modes, each under its own module instance (it reads its mission at import).
 const scenarios = {};
@@ -42,8 +42,10 @@ before(async () => {
 });
 
 const chooser = () => html.slice(html.indexOf('<div id="chooser"'), html.indexOf('<svg width="0"'));
-const rowOf = (id) => chooser().match(new RegExp(`<button class="mission( tile)?"[^>]*data-mode="${id}">(.*?)</button>`, 's'))?.[2] ?? '';
-const isTile = (id) => new RegExp(`<button class="mission tile"[^>]*data-mode="${id}"`).test(chooser());
+// A mission is a list row, or (the three drills) a variant button in the Ships picker.
+const rowOf = (id) => chooser().match(new RegExp(`<button class="(mission|pick)"[^>]*data-mode="${id}">(.*?)</button>`, 's'))?.[2] ?? '';
+const rowKind = (id) => chooser().match(new RegExp(`<button class="(mission|pick)"[^>]*data-mode="${id}"`))?.[1];
+const tabButtons = () => [...chooser().matchAll(/<button class="tab"[^>]*data-tab="(\w+)"[^>]*>(.*?)<\/button>/g)].map((x) => [x[1], x[2]]);
 const cardOf = (id) => chooser().match(new RegExp(`<button class="card"[^>]*data-ship="${id}">(.*?)</button>`, 's'))?.[1] ?? '';
 const text = (s) => s.replace(/<svg.*?<\/svg>/gs, '').replace(/<kbd>.*?<\/kbd>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
@@ -61,17 +63,32 @@ describe('the menu data', () => {
     assert.deepEqual(MISSIONS.filter((m) => !m.ship).map((m) => m.id), ['fly', 'maneuvers2', 'maneuvers', 'formations', 'helm']);
   });
 
-  it('groups the missions: the drone ones, then the tactical maneuvers by the number of ships', () => {
-    assert.deepEqual(GROUPS.map((g) => g.id), ['drone', 'tactical']);
-    assert.deepEqual(MISSIONS.filter((m) => m.group === 'drone').map((m) => m.id), ['intercept', 'chute', 'fly']);
-    const tac = MISSIONS.filter((m) => m.group === 'tactical' && m.tile);
-    assert.deepEqual(tac.map((m) => m.ships), [2, 3, 4]);
-    assert.deepEqual(MISSIONS.filter((m) => m.group === 'tactical' && !m.tile).map((m) => m.id), ['helm'], 'Solo Air Defense is a row after the tiles');
-    for (const m of tac) {
+  it('has three tabs by what the player does, each with real missions', () => {
+    assert.deepEqual(GROUPS.map((g) => g.id), ['watch', 'play', 'drill']);
+    assert.deepEqual(GROUPS.map((g) => g.name), ['Watch', 'Play', 'Drill']);
+    assert.deepEqual(MISSIONS.filter((m) => m.group === 'watch').map((m) => m.id), ['intercept', 'chute']);
+    assert.deepEqual(MISSIONS.filter((m) => m.group === 'play').map((m) => m.id), ['fly', 'helm']);
+    assert.deepEqual(MISSIONS.filter((m) => m.group === 'drill').map((m) => m.id), ['maneuvers2', 'maneuvers', 'formations']);
+    assert.ok(MISSIONS.every((m) => GROUPS.some((g) => g.id === m.group)), 'every mission is on a tab');
+    for (const g of GROUPS) assert.ok(g.hint && entriesOf(g.id).length > 0, `${g.id} lists something`);
+    assert.ok(MISSIONS.filter((m) => m.group === 'watch').every((m) => m.kind === 'Replay'), 'Watch holds the replays');
+    assert.ok(MISSIONS.filter((m) => m.group === 'play').every((m) => m.kind === 'Manual'), 'Play holds the hands-on missions');
+    assert.ok(MISSIONS.filter((m) => m.group === 'drill').every((m) => m.kind === 'Drill'), 'Drill holds the exercises');
+  });
+
+  it('folds the three drills into one entry, by the number of ships', () => {
+    assert.equal(FAMILIES.length, 1);
+    assert.deepEqual(FAMILIES[0].members, ['maneuvers2', 'maneuvers', 'formations']);
+    assert.deepEqual(FAMILIES[0].members.map((id) => missionById(id).ships), [2, 3, 4]);
+    for (const id of FAMILIES[0].members) {
+      const m = missionById(id);
       assert.equal(m.tile, `${m.ships} ships`);
-      assert.ok(m.tileSub && m.facts[0].startsWith(`${m.ships} ships`), `${m.id} says how many ships`);
+      assert.ok(m.tileSub && m.facts[0].startsWith(`${m.ships} ships`), `${id} says how many ships`);
     }
-    assert.ok(MISSIONS.every((m) => GROUPS.some((g) => g.id === m.group)));
+    assert.deepEqual(entriesOf('drill').map((e) => e.members), [FAMILIES[0].members]);
+    assert.deepEqual(ENTRIES.map((e) => e.id), ['intercept', 'chute', 'fly', 'helm', 'maneuvers2'], 'the list order M steps through');
+    assert.equal(new Set(ENTRIES.flatMap((e) => e.members)).size, MISSIONS.length, 'every mission is reachable from one entry');
+    assert.equal(groupOf('formations'), 'drill');
     assert.equal(M.SHIP_IDS.length, 3);
     assert.equal(M2.SHIP_IDS.length, 2);
   });
@@ -235,25 +252,33 @@ describe('the words are true of the missions', () => {
 
 describe('index.html shows what the data says', () => {
   for (const m of MISSIONS) {
-    it(`the ${m.id} ${m.tile ? 'tile' : 'row'}`, () => {
+    it(`the ${m.id} ${m.group === 'drill' ? 'variant' : 'row'}`, () => {
       const row = rowOf(m.id);
       assert.ok(row, 'it exists');
-      assert.equal(isTile(m.id), !!m.tile, 'the tactical maneuvers by number of ships are tiles');
-      if (m.tile) {
+      assert.equal(rowKind(m.id), m.group === 'drill' ? 'pick' : 'mission', 'the drills are variants of one list row, the rest are rows');
+      assert.match(row, /<svg/);
+      if (m.group === 'drill') {
         assert.equal(text(row.match(/<b>(.*?)<\/b>/s)[1]), m.tile);
         assert.equal(text(row.match(/<small>(.*?)<\/small>/s)[1]), m.tileSub);
       } else {
         assert.equal(text(row.match(/<b>(.*?)<\/b>/s)[1]), m.name);
         assert.equal(text(row.match(/<small>(.*?)<\/small>/s)[1]), m.blurb);
         assert.equal(text(row.match(/<em class="m-kind">(.*?)<\/em>/s)[1]), m.kind);
+        assert.match(chooser(), new RegExp(`data-group="${m.group}"[^>]*data-mode="${m.id}"`), 'the row sits on its tab');
       }
-      assert.match(row, /<svg/);
     });
   }
 
-  it('heads each group with its name, in order', () => {
-    const heads = [...chooser().matchAll(/<h2 class="m-group"[^>]*>(.*?)<\/h2>/gs)].map((x) => text(x[1].replace(/<em.*?<\/em>/s, '')).replace(/&amp;/g, '&'));
-    assert.deepEqual(heads, GROUPS.map((g) => g.name));
+  it('has a tab for each group, in order, and a list row for each entry', () => {
+    assert.deepEqual(tabButtons(), GROUPS.map((g) => [g.id, g.name]));
+    for (const e of ENTRIES) {
+      const attr = e.family ? `data-family="${e.family}"` : `data-mode="${e.id}"`;
+      const row = chooser().match(new RegExp(`<button class="mission"[^>]*data-group="${e.group}"[^>]*${attr}[^>]*>(.*?)</button>`, 's'))?.[1];
+      assert.ok(row, `${e.name} has a row on the ${e.group} tab`);
+      assert.equal(text(row.match(/<b>(.*?)<\/b>/s)[1]), e.name);
+      assert.equal(text(row.match(/<small>(.*?)<\/small>/s)[1]), e.blurb);
+    }
+    assert.equal((chooser().match(/<button class="mission"/g) ?? []).length, ENTRIES.length, 'no row the data does not know');
   });
 
   for (const s of SHIPS) {
@@ -266,13 +291,19 @@ describe('index.html shows what the data says', () => {
   }
 
   it('has the slots the start screen fills (and no fixed title text of its own)', () => {
-    for (const id of ['ch-title', 'ch-kind', 'ch-tag', 'ch-facts', 'ch-keys', 'ch-art', 'ch-summary', 'chooser-sub', 'ch-start']) {
+    for (const id of ['ch-title', 'ch-kind', 'ch-tag', 'ch-facts', 'ch-keys', 'ch-keys-more', 'ch-stage', 'ch-tabhint', 'ch-summary', 'chooser-sub', 'ch-last', 'ch-start']) {
       assert.match(chooser(), new RegExp(`id="${id}"`), id);
     }
     assert.match(chooser(), /<h1 id="ch-title"><\/h1>/, 'the heading is filled from the data');
-    assert.match(chooser(), /aria-labelledby="ch-step2"/, 'the launcher block the start screen hides');
+    assert.match(chooser(), /class="brief-ship variant"/, 'the launcher block the start screen hides');
+    assert.match(chooser(), /class="brief-drill variant"/, 'the ships block, shown on the Drill tab');
     assert.equal((chooser().match(/data-mode="/g) ?? []).length, MISSIONS.length);
     assert.equal((chooser().match(/data-ship="/g) ?? []).length, SHIPS.length);
     assert.match(html, /<title>Intercept scene<\/title>/);
+  });
+
+  it('start.js fills the previews from menuArt.js, which imports nothing', () => {
+    assert.match(src.start, /from '\.\/menuArt\.js'/);
+    assert.doesNotMatch(read('../src/menuArt.js'), /^import /m);
   });
 });

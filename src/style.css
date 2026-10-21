@@ -561,9 +561,9 @@ body.mission-maneuvers .shot-caption { top: calc(var(--gap) + var(--safe-t) + va
 .tag.ok { border-left-color: #3ddc84; }
 .tag.dead .tag-title { color: #ff8a8d; }
 
-/* Start screen: the main menu. A mission list on the left; on the right a briefing that follows the choice
-   (its title, what it is, its facts, the launcher where there is one to pick, the controls); the way in
-   (a one-line summary and Start) along the bottom. */
+/* Start screen: the main menu. Three tabs by what you do (Watch, Play, Drill); a list for the tab on the
+   left; on the right a briefing that follows the choice (an animated preview, what it is, a variant where
+   there is one, the controls); the way in (a one-line summary and Start) along the bottom. */
 body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels-layer { display: none; }
 .chooser {
   position: fixed; inset: 0; z-index: 2; display: grid; padding: calc(20px + var(--safe-t)) calc(20px + var(--safe-r)) calc(20px + var(--safe-b)) calc(20px + var(--safe-l));
@@ -572,73 +572,99 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
     radial-gradient(900px 420px at 50% -10%, rgba(255, 122, 26, 0.10), transparent 70%),
     radial-gradient(1200px 700px at 50% 0%, #1b3550 0%, #0b1119 70%);
 }
-.chooser[hidden] { display: none; }
+.chooser[hidden], .chooser [hidden] { display: none; }
 /* margin: auto centres when there is room and never clips the top when there is not. */
-.mm { width: min(1080px, 100%); margin: auto; display: grid; gap: 16px; }
-.menu-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.mm { width: min(1080px, 100%); margin: auto; display: grid; gap: 14px; }
+.menu-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; }
 .menu-brand { display: flex; align-items: baseline; gap: 10px; color: var(--muted); font-size: 12.5px; }
 .menu-brand b { font-size: 15px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text); }
 .menu-brand .dot { align-self: center; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .menu-hint { margin: 0; color: var(--dim); font-size: 11.5px; text-align: right; }
-.menu-body { display: grid; grid-template-columns: minmax(260px, 330px) minmax(0, 1fr); gap: 18px; align-items: start; }
-.menu-list h2, .brief h2 { margin: 0 0 8px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.menu-body { display: grid; grid-template-columns: minmax(250px, 310px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.menu-list h2, .brief h2 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.menu-sub { margin: 0 0 8px; color: var(--muted); font-size: 12px; }
 
-/* The mission list. */
+/* The tabs: one segmented control. */
+.tabs { display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); }
+.tab { padding: 7px 22px; border: 0; border-radius: 999px; background: none; color: var(--muted); font-size: 13.5px; font-weight: 700; letter-spacing: 0.02em; transition: background 0.15s, color 0.15s; }
+.tab:hover { color: var(--text); background: rgba(255, 255, 255, 0.06); }
+.tab[aria-checked='true'] { background: var(--accent); color: #1a0d02; }
+
+/* The mission list (the rows of the current tab). */
 .missions { display: grid; gap: 6px; }
 .mission {
   display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; text-align: left; border-radius: 12px;
   background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); transition: border-color 0.15s, background 0.15s;
 }
 .mission:hover { background: rgba(255, 255, 255, 0.08); }
-.mission svg { width: 38px; height: 38px; stroke-width: 2; }
-.m-txt b { display: block; font-size: 14.5px; }
+.mission svg, .pick svg { width: 38px; height: 38px; stroke-width: 2; }
+.m-txt b { display: flex; align-items: center; gap: 7px; font-size: 14.5px; }
 .m-txt small { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.35; }
 .m-kind { font-style: normal; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; }
-.mission[aria-checked='true'] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.mission[aria-checked='true'], .pick[aria-checked='true'] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
 .mission[aria-checked='true'] .m-kind { color: var(--accent); border-color: rgba(255, 122, 26, 0.5); }
-.mission .i-arc, .brief-art .i-arc { stroke: var(--missile); stroke-dasharray: 3 3; }
-.mission .i-drone, .brief-art .i-drone { stroke: var(--accent); stroke-width: 2.6; }
-.mission .i-burst, .brief-art .i-burst { stroke: var(--bad); fill: rgba(255, 93, 97, 0.25); }
-.mission .i-canopy, .brief-art .i-canopy { stroke: var(--accent); fill: rgba(255, 122, 26, 0.3); }
-.mission .i-line, .brief-art .i-line { stroke: var(--muted); stroke-width: 1.2; }
-.mission .i-sea, .brief-art .i-sea { stroke: #3d7fa6; }
-.mission .i-ship, .brief-art .i-ship { stroke: var(--ok); stroke-width: 2.2; fill: rgba(61, 220, 132, 0.18); }
-.missions .m-group { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; margin: 6px 0 2px; }
-.missions .m-group:first-child { margin-top: 0; }
-.missions .m-group::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-.m-group .m-kind { letter-spacing: 0.12em; }
-/* Tactical maneuvers: one tile per number of ships. */
-.tac { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.mission.tile { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; gap: 6px; padding: 12px 6px 10px; }
-.mission.tile svg { width: 42px; height: 42px; }
-.mission.tile .m-txt b { font-size: 15px; }
-.mission.tile .m-txt small { font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mission .i-arc { stroke: var(--missile); stroke-dasharray: 3 3; }
+.mission .i-drone { stroke: var(--accent); stroke-width: 2.6; }
+.mission .i-burst { stroke: var(--bad); fill: rgba(255, 93, 97, 0.25); }
+.mission .i-canopy { stroke: #e5484d; fill: rgba(229, 72, 77, 0.3); }
+.mission .i-line, .pick .i-line { stroke: var(--muted); stroke-width: 1.2; }
+.mission .i-sea { stroke: #3d7fa6; }
+.mission .i-ship, .pick .i-ship { stroke: var(--ok); stroke-width: 2.2; fill: rgba(61, 220, 132, 0.18); }
 
-/* The briefing: it follows the selected mission (and launcher). */
-.brief { display: grid; gap: 14px; padding: 20px 22px 22px; border-radius: 18px; background: rgba(255, 255, 255, 0.045); border: 1px solid var(--border); }
-.brief-top { display: flex; align-items: center; gap: 18px; }
-.brief-art { flex: none; display: grid; place-items: center; width: 84px; height: 84px; border-radius: 22px; background: var(--accent-soft); border: 1px solid rgba(255, 122, 26, 0.45); }
-.brief-art svg { width: 58px; height: 58px; stroke-width: 2; }
-.brief-head { min-width: 0; }
+/* The briefing: it follows the selected mission (and variant). */
+.brief { display: grid; gap: 12px; padding: 16px 18px 16px; border-radius: 18px; background: rgba(255, 255, 255, 0.045); border: 1px solid var(--border); }
+.brief-top { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 18px; align-items: start; }
+.brief-head { min-width: 0; display: grid; gap: 8px; align-content: start; }
 .brief-kind { margin: 0; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
-.brief h1 { margin: 2px 0 0; font-size: clamp(26px, 3.4vw, 38px); line-height: 1.1; letter-spacing: -0.02em; }
-.brief-tag { margin: 0; max-width: 64ch; color: #c4ccd4; font-size: 14.5px; line-height: 1.55; }
-.brief-facts { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
-.brief-facts li { padding: 5px 11px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); border: 1px solid var(--border); font-size: 12px; }
-.brief-ship[hidden] { display: none; }
-.keys-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px 18px; color: var(--muted); font-size: 12.5px; }
+.brief h1 { margin: 0; font-size: clamp(24px, 3vw, 34px); line-height: 1.1; letter-spacing: -0.02em; }
+.brief-tag { margin: 0; color: #c4ccd4; font-size: 13.5px; line-height: 1.5; }
+.brief-facts { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.brief-facts li { padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); border: 1px solid var(--border); font-size: 11.5px; }
+.keys-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 5px 18px; color: var(--muted); font-size: 12.5px; }
 .keys-list li { display: flex; align-items: center; gap: 10px; }
 .keys-list kbd { flex: none; min-width: 48px; font-size: 10.5px; }
+.keys-more { margin: 4px 0 0; color: var(--dim); font-size: 11.5px; }
+.keys-more:empty { display: none; }
 
-/* The launcher cards (inside the briefing). */
-.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+/* The animated preview (menuArt.js): a looping schematic of the mission. */
+.stage { aspect-ratio: 480 / 220; border-radius: 14px; overflow: hidden; background: #0e1a27; border: 1px solid var(--border); }
+.stage .art { display: block; width: 100%; height: 100%; }
+.stage .a-sky { fill: #0e1a27; }
+.stage .a-water { fill: #0f2a40; }
+.stage .a-sea { fill: #123a55; }
+.stage .a-hull { fill: #8f99a0; }
+.stage .a-deck { stroke: #5b656c; stroke-width: 1.5; fill: none; }
+.stage .a-sup { fill: #b2bbc0; }
+.stage .a-mast { stroke: #b2bbc0; stroke-width: 2.4; fill: none; }
+.stage .a-dome { fill: #e6e8e4; }
+.stage .a-hot { fill: var(--accent); }
+.stage .a-trail { fill: none; stroke: rgba(255, 255, 255, 0.22); stroke-width: 1.4; stroke-dasharray: 4 5; }
+.stage .a-drone { fill: none; stroke: var(--accent); stroke-width: 2.6; stroke-linecap: round; }
+.stage .a-missile { stroke: var(--missile); stroke-width: 2.4; stroke-linecap: round; }
+.stage .a-missile-head { fill: var(--missile); }
+.stage .a-burst { fill: rgba(255, 93, 97, 0.35); stroke: var(--bad); stroke-width: 2; }
+.stage .a-canopy { fill: rgba(229, 72, 77, 0.55); stroke: #e5484d; stroke-width: 1.6; }
+.stage .a-line { fill: none; stroke: rgba(255, 255, 255, 0.12); stroke-width: 1; }
+.stage .a-ring { fill: none; stroke: rgba(255, 255, 255, 0.18); stroke-width: 1.2; }
+.stage .a-sweep { fill: rgba(61, 220, 132, 0.14); }
+.stage .a-blip { stroke: var(--accent); stroke-width: 2.6; stroke-linecap: round; fill: none; }
+.stage .a-tracer { stroke: var(--missile); stroke-width: 1.6; stroke-dasharray: 3 4; }
+.stage .a-ship { fill: rgba(61, 220, 132, 0.28); stroke: var(--ok); stroke-width: 1.8; }
+.stage .a-wake { stroke: rgba(255, 255, 255, 0.25); stroke-width: 1.4; stroke-dasharray: 3 4; }
+.stage .a-label { fill: var(--muted); font: 700 9px system-ui, sans-serif; letter-spacing: 0.08em; }
+.stage .a-key { fill: rgba(255, 255, 255, 0.08); stroke: rgba(255, 255, 255, 0.3); }
+.stage .a-keyon { fill: var(--accent); }
+.stage .a-keytext { fill: var(--text); font: 700 12px system-ui, sans-serif; }
+
+/* Variants: the launcher cards, or the number of ships in a drill. */
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .card {
-  display: grid; gap: 8px; padding: 12px 14px 14px; text-align: left; border-radius: 14px; color: var(--text);
-  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); transition: border-color 0.15s, background 0.15s, transform 0.15s;
+  display: grid; grid-template-columns: 38% 1fr; align-items: center; gap: 10px; padding: 8px 12px; text-align: left; border-radius: 14px; color: var(--text);
+  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); transition: border-color 0.15s, background 0.15s;
 }
-.card:hover { background: rgba(255, 255, 255, 0.07); transform: translateY(-2px); }
+.card:hover { background: rgba(255, 255, 255, 0.07); }
 .card[aria-checked='true'] { border-color: var(--accent); background: rgba(255, 122, 26, 0.08); box-shadow: inset 0 0 0 1px var(--accent); }
-.card svg { width: 100%; height: 104px; stroke: none; stroke-width: 1; }
+.card svg { width: 100%; height: 56px; stroke: none; stroke-width: 1; }
 .card .sea { fill: #123a55; }
 .card .wake { stroke: rgba(255, 255, 255, 0.35); stroke-width: 1.5; fill: none; }
 .card .hull { fill: #8f99a0; }
@@ -647,63 +673,69 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 .card .mast { stroke: #b2bbc0; stroke-width: 2.4; fill: none; }
 .card .dome { fill: #e6e8e4; }
 .card .hot { fill: var(--accent); }
-.card .pn { fill: #5b656c; font: 700 10px system-ui, sans-serif; }
 .card .arc { stroke: var(--missile); stroke-width: 1.8; stroke-dasharray: 5 4; fill: none; opacity: 0.55; }
 .card .tgt { fill: var(--accent); opacity: 0.55; }
-.card[aria-checked='true'] .arc, .card:hover .arc { opacity: 1; }
-.card[aria-checked='true'] .tgt, .card:hover .tgt { opacity: 1; }
+.card[aria-checked='true'] .arc, .card:hover .arc, .card[aria-checked='true'] .tgt, .card:hover .tgt { opacity: 1; }
 .card-txt { display: grid; gap: 2px; }
-.card-name { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
-.card-desc { color: var(--muted); font-size: 12.5px; }
-.card-name kbd { color: var(--muted); }
+.card-name { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+.card-desc { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+.card-name kbd, .pick kbd { color: var(--muted); }
+.picks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.pick {
+  display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: center; gap: 10px; padding: 8px 12px; text-align: left; border-radius: 14px; color: var(--text);
+  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); transition: border-color 0.15s, background 0.15s;
+}
+.pick:hover { background: rgba(255, 255, 255, 0.07); }
+.pick svg { width: 34px; height: 34px; }
 
 /* The way in. */
 .menu-go {
-  display: flex; align-items: center; gap: 16px; padding: 10px 10px 10px 18px; border-radius: 14px;
+  display: flex; align-items: center; gap: 14px; padding: 10px 10px 10px 18px; border-radius: 14px;
   background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border);
 }
 .ch-sum { margin: 0; flex: 1; min-width: 0; display: grid; }
 #ch-summary { font-weight: 700; font-size: 14.5px; }
 .chooser-sub { color: var(--muted); font-size: 12px; }
+.last { flex: none; font-style: normal; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); border: 1px solid rgba(255, 122, 26, 0.5); border-radius: 999px; padding: 3px 9px; }
 .ch-start {
   flex: none; padding: 12px 26px; border-radius: 10px; font-weight: 700; font-size: 14.5px;
   background: var(--accent); border-color: var(--accent); color: #1a0d02; box-shadow: 0 6px 20px rgba(255, 122, 26, 0.3);
 }
 .ch-start:hover { background: #ff8d3a; }
 .chooser kbd { font-size: 10px; }
-@media (pointer: coarse) { .menu-hint, .card-name kbd { display: none; } }
-@media (prefers-reduced-motion: reduce) { .card, .mission { transition: none; } .card:hover { transform: none; } }
+@media (pointer: coarse) { .menu-hint, .card-name kbd, .pick kbd { display: none; } }
+@media (prefers-reduced-motion: reduce) { .card, .mission, .pick, .tab { transition: none; } }
 
-/* Narrow windows: the briefing goes under the list. */
+/* Narrow windows: the list goes above the briefing, as a row. */
 @media (max-width: 860px) {
   .menu-body { grid-template-columns: minmax(0, 1fr); }
   .missions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .menu-head { grid-template-columns: 1fr auto; }
+  .menu-hint { display: none; }
+  .brief-top { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Phones, portrait: one column, compact rows, Start pinned to the bottom. */
 @media (max-width: 640px) and (min-height: 501px) {
-  .chooser { padding: calc(16px + var(--safe-t)) 12px 0; }
+  .chooser { padding: calc(14px + var(--safe-t)) 12px 0; }
   .mm { gap: 12px; margin-top: 0; }
-  .menu-hint { display: none; }
+  .menu-head { grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 10px; }
+  .menu-brand span { display: none; }
+  .tabs { width: 100%; }
+  .tab { flex: 1; padding: 9px 8px; }
   .missions { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .mission { padding: 8px 10px; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; }
   .mission svg { width: 30px; height: 30px; }
-  .mission.tile { padding: 8px 4px; grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .brief { padding: 14px; gap: 12px; }
-  .brief-art { width: 58px; height: 58px; border-radius: 16px; }
-  .brief-art svg { width: 40px; height: 40px; }
-  .brief-top { gap: 12px; }
+  .brief { padding: 12px; gap: 12px; }
   .brief-tag { font-size: 13px; }
-  .cards { grid-template-columns: 1fr; gap: 8px; }
-  .card { grid-template-columns: 42% 1fr; align-items: center; gap: 10px; padding: 8px 10px; }
-  .card svg { height: 64px; }
-  .card-name { font-size: 13.5px; }
-  .card-desc { font-size: 11.5px; }
+  .cards, .picks { grid-template-columns: 1fr; gap: 8px; }
+  .card { grid-template-columns: 38% 1fr; }
   .keys-list { grid-template-columns: minmax(0, 1fr); }
   .menu-go {
     position: sticky; bottom: 0; margin: 0 -12px; padding: 10px 12px calc(10px + var(--safe-b)); border-radius: 0; border-width: 1px 0 0;
     background: rgba(11, 17, 25, 0.94); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   }
+  .last { display: none; }
   .ch-start { padding: 12px 18px; }
 }
 /* Short windows (laptops, small browser windows): the same screen, tighter, so it fits without scrolling. */
@@ -711,54 +743,50 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
   .chooser { padding-top: calc(10px + var(--safe-t)); padding-bottom: calc(10px + var(--safe-b)); }
   .mm { gap: 10px; }
   .menu-body { gap: 12px; }
-  .menu-list h2, .brief h2 { margin-bottom: 5px; }
+  .menu-sub { margin-bottom: 5px; }
   .missions { gap: 4px; }
   .mission { padding: 6px 10px; gap: 10px; grid-template-columns: 32px minmax(0, 1fr) auto; }
   .mission svg { width: 30px; height: 30px; }
   .m-txt small { display: none; }
-  .mission.tile { padding: 8px 4px 6px; gap: 3px; grid-template-columns: minmax(0, 1fr); }
-  .mission.tile svg { width: 30px; height: 30px; }
-  .mission.tile .m-txt small { display: block; }
-  .missions .m-group { margin-top: 3px; }
-  .brief { padding: 12px 16px 14px; gap: 9px; }
-  .brief-top { gap: 12px; }
-  .brief-art { width: 54px; height: 54px; border-radius: 14px; }
-  .brief-art svg { width: 38px; height: 38px; }
+  .tab { padding: 5px 20px; }
+  .brief { padding: 12px 14px; gap: 9px; }
+  .brief-top { gap: 14px; }
+  .brief-head { gap: 6px; }
   .brief h1 { font-size: 24px; }
-  .brief-tag { font-size: 13px; line-height: 1.45; }
-  .brief-facts li { padding: 3px 9px; font-size: 11.5px; }
-  .cards { grid-template-columns: 1fr 1fr; gap: 8px; }
-  .card { grid-template-columns: 38% 1fr; align-items: center; gap: 8px; padding: 6px 8px; }
-  .card:hover { transform: none; }
-  .card svg { height: 50px; }
-  .card-name { font-size: 13.5px; }
+  .brief-tag { font-size: 12.5px; line-height: 1.42; }
+  .brief-facts li { padding: 3px 9px; font-size: 11px; }
+  .card { padding: 6px 8px; gap: 8px; }
+  .card svg { height: 46px; }
+  .card-name { font-size: 13px; }
   .card-desc { font-size: 11px; }
+  .pick { padding: 6px 8px; }
   .keys-list { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 3px 14px; font-size: 11.5px; }
   .menu-go { padding: 6px 8px 6px 14px; }
   .ch-start { padding: 9px 22px; }
 }
 /* Phones, landscape: list on the left, briefing on the right, Start pinned to the bottom. */
 @media (max-height: 500px) {
-  .chooser { padding: calc(10px + var(--safe-t)) calc(14px + var(--safe-r)) 0 calc(14px + var(--safe-l)); }
-  .mm { width: 100%; margin-top: 0; gap: 10px; }
+  .chooser { padding: calc(8px + var(--safe-t)) calc(14px + var(--safe-r)) 0 calc(14px + var(--safe-l)); }
+  .mm { width: 100%; margin-top: 0; gap: 8px; }
   .menu-head { gap: 12px; }
-  .menu-hint, .menu-brand span, .chooser-sub, .brief-keys, .brief-facts { display: none; }
+  .menu-hint, .menu-brand span, .chooser-sub, .brief-keys, .brief-facts, .menu-sub, .last { display: none; }
+  .tab { padding: 4px 16px; }
   .menu-body { grid-template-columns: 0.8fr 1.2fr; gap: 10px 14px; }
   .missions { grid-template-columns: 1fr; gap: 5px; }
   .mission { padding: 5px 10px; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; }
   .mission svg { width: 26px; height: 26px; }
   .m-txt small { display: none; }
-  .mission.tile { padding: 5px 4px; grid-template-columns: minmax(0, 1fr); gap: 2px; }
-  .missions .m-group { margin-top: 2px; }
   .brief { padding: 10px 12px; gap: 8px; border-radius: 12px; }
-  .brief-art { width: 44px; height: 44px; border-radius: 12px; }
-  .brief-art svg { width: 30px; height: 30px; }
-  .brief h1 { font-size: 20px; }
-  .brief-tag { font-size: 12px; line-height: 1.4; }
-  .cards { grid-template-columns: 1fr; gap: 6px; }
-  .card { grid-template-columns: 44% 1fr; align-items: center; gap: 10px; padding: 6px 10px; }
-  .card svg { height: 56px; }
-  .card-desc { font-size: 11px; }
+  .brief-top { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 10px; }
+  .brief h1 { font-size: 18px; }
+  .brief-tag { font-size: 11.5px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .cards, .picks { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .card { grid-template-columns: 34% 1fr; padding: 4px 8px; gap: 6px; }
+  .card svg { height: 36px; }
+  .card-desc { display: none; }
+  .pick { grid-template-columns: minmax(0, 1fr); padding: 4px 6px; }
+  .pick svg, .pick small { display: none; }
+  .brief .variant h2 { display: none; }
   .menu-go { position: sticky; bottom: 0; margin: 0 -14px; padding: 8px 14px calc(8px + var(--safe-b)); border-radius: 0; border-width: 1px 0 0; background: rgba(11, 17, 25, 0.94); }
 }
 .link-btn { display: block; margin-top: 8px; padding: 0; border: 0; background: none; color: var(--accent); font-size: 12px; cursor: pointer; }

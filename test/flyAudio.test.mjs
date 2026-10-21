@@ -4,7 +4,7 @@
 
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import * as THREE from 'three';
 
 let made = { sources: 0, loops: 0 };
@@ -47,7 +47,7 @@ before(async () => {
   const handlers = {};
   globalThis.AudioContext = FakeContext;
   globalThis.addEventListener = (ev, fn) => { handlers[ev] = fn; };
-  const url = (f) => `${pathToFileURL(new URL(f, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')).href}?flyaudio`;
+  const url = (f) => `${pathToFileURL(fileURLToPath(new URL(f, import.meta.url))).href}?flyaudio`;
   F = await import(url('../src/fly.js'));
   const { createFlyAudio, engineLevel: level } = await import(url('../src/flyAudio.js'));
   engineLevel = level;

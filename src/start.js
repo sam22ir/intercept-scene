@@ -35,7 +35,8 @@ function showFatal(err) {
   document.body.appendChild(box);
 }
 
-import { MISSION_IDS, FIXED_SHIP, menuText } from './menu.js';
+import { MISSION_IDS, FIXED_SHIP, ENTRIES, GROUPS, groupOf, missionById, menuText } from './menu.js';
+import { previewArt } from './menuArt.js';
 
 const MODES = MISSION_IDS;
 let mode = 'intercept';
@@ -51,7 +52,11 @@ async function launch(id) {
   // an intercept for the first and a recovery (no scripted missile to simulate) for the second.
   globalThis.__SCENARIO = isDrill(mode) || mode === 'formations' ? 'intercept' : mode === 'fly' || mode === 'helm' ? 'chute' : mode;
   if (isDrill(mode)) globalThis.__DRILL_SHIPS = mode === 'maneuvers2' ? 2 : 3;
-  if (menuText(mode, id).hasShip) write('localStorage', 'intercept.ship', id); // the missions without a choice leave it alone
+  if (menuText(mode, id).hasShip) { // the missions without a choice leave it alone
+    write('localStorage', 'intercept.ship', id);
+    write('localStorage', `intercept.ship.${mode}`, id); // each mission remembers its own launcher
+  }
+  if (groupOf(mode) === 'drill') write('localStorage', 'intercept.drill', mode); // and the drill its number of ships
   write('localStorage', 'intercept.mode', mode);
   try {
     const url = new URL(location.href);
@@ -76,80 +81,125 @@ async function launch(id) {
   }
 }
 
-// Two choices (mission, launcher) and a Start button. Selection changes only on click or
-// key; hover is visual only, so the summary and the Start target never follow the mouse. Every word the
-// screen says for a choice comes from menu.js (and test/menu.test.mjs checks it).
+// Three tabs (Watch, Play, Drill), a mission list for the tab, and a briefing that follows the choice: an
+// animated preview, what it is, a variant where the mission has one (the launcher, or the number of ships
+// in a drill) and its controls; then Start. Selection changes only on click or key; hover is visual only,
+// so the summary and the Start target never follow the mouse. Every word the screen says for a choice
+// comes from menu.js (and test/menu.test.mjs checks it); the previews come from menuArt.js.
 function showChooser(preselect) {
   const chooser = $('#chooser');
   chooser.hidden = false;
   const cards = [...chooser.querySelectorAll('[data-ship]')];
-  const missions = [...chooser.querySelectorAll('[data-mode]')];
+  const rows = [...chooser.querySelectorAll('.mission')];
+  const segs = [...chooser.querySelectorAll('.pick')];
+  const tabs = [...chooser.querySelectorAll('[data-tab]')];
   const summary = $('#ch-summary');
-  const shipStep = chooser.querySelector('[aria-labelledby="ch-step2"]');
+  const shipStep = chooser.querySelector('.brief-ship');
+  const drillStep = chooser.querySelector('.brief-drill');
   const startBtn = $('#ch-start');
   const sub = $('#chooser-sub');
-  const remembered = read('localStorage', 'intercept.ship');
-  const startShip = cards.some((c) => c.dataset.ship === preselect) ? preselect : remembered;
-  let ship = cards.some((c) => c.dataset.ship === startShip) ? startShip : 'fwd';
-
-  const art = $('#ch-art');
+  const lastEl = $('#ch-last');
+  const stage = $('#ch-stage');
   const kindEl = $('#ch-kind');
   const titleEl = $('#ch-title');
   const tagEl = $('#ch-tag');
   const factsEl = $('#ch-facts');
   const keysEl = $('#ch-keys');
+  const moreEl = $('#ch-keys-more');
+  const tabHint = $('#ch-tabhint');
   const li = (text) => Object.assign(document.createElement('li'), { textContent: text });
+  const reduced = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } })();
 
-  // Everything the screen says follows the choice, from menu.js.
+  // Each mission remembers its own launcher, and the drills their number of ships.
+  const validShip = (id) => (cards.some((c) => c.dataset.ship === id) ? id : null);
+  const shipFor = {};
+  for (const m of MISSION_IDS) {
+    if (!missionById(m).ship) continue;
+    shipFor[m] = validShip(read('localStorage', `intercept.ship.${m}`)) ?? validShip(read('localStorage', 'intercept.ship')) ?? 'fwd';
+  }
+  // The address names a launcher for its own mission only: launch() writes ?ship= even for the missions with none.
+  if (validShip(preselect) && missionById(mode).ship) shipFor[mode] = preselect;
+  const drills = ENTRIES.find((e) => e.family).members;
+  const lastIn = { watch: 'intercept', play: 'fly', drill: drills.includes(read('localStorage', 'intercept.drill')) ? read('localStorage', 'intercept.drill') : drills[0] };
+  lastIn[groupOf(mode)] = mode;
+  const lastPlayed = MISSION_IDS.includes(rememberedMode) ? rememberedMode : null;
+  const shipNow = () => shipFor[mode] ?? FIXED_SHIP;
+
+  let artKey = '';
   const paint = () => {
+    const ship = shipNow();
     const t = menuText(mode, ship);
+    const group = groupOf(mode);
+    tabs.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.tab === group)));
+    tabHint.textContent = GROUPS.find((g) => g.id === group).hint;
+    rows.forEach((b) => {
+      b.hidden = b.dataset.group !== group;
+      b.setAttribute('aria-checked', String(b.dataset.family ? group === 'drill' : b.dataset.mode === mode));
+    });
+    segs.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === mode)));
     cards.forEach((c) => c.setAttribute('aria-checked', String(c.dataset.ship === ship)));
-    missions.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === mode)));
-    const row = missions.find((b) => b.dataset.mode === mode);
-    art.innerHTML = row?.querySelector('svg')?.outerHTML ?? '';
+    const key = t.hasShip ? `${mode}:${ship}` : mode;
+    if (key !== artKey) { artKey = key; stage.innerHTML = previewArt(mode, ship, !reduced); } // a fresh svg restarts the loop
     kindEl.textContent = t.kind;
     titleEl.textContent = t.title;
     tagEl.textContent = t.tagline;
     factsEl.replaceChildren(...t.facts.map(li));
-    keysEl.replaceChildren(...t.keys.map(([key, label]) => {
+    const all = group === 'play' || t.keys.length <= 5;
+    const shown = all ? t.keys : t.keys.slice(0, 4);
+    keysEl.replaceChildren(...shown.map(([k, label]) => {
       const item = li('');
       const kbd = document.createElement('kbd');
-      kbd.textContent = key;
+      kbd.textContent = k;
       item.append(kbd, label);
       return item;
     }));
+    moreEl.textContent = all ? '' : `${t.keys.length - shown.length} more once it is running.`;
     shipStep.hidden = !t.hasShip; // the missions with a fixed ship have no launcher to pick
+    drillStep.hidden = group !== 'drill';
     startBtn.firstChild.textContent = `${t.button} `;
     summary.textContent = t.summary;
     sub.textContent = t.note;
+    lastEl.hidden = lastPlayed !== mode;
     document.title = t.tabTitle;
   };
-  const setMode = (m) => { mode = m; paint(); };
-  const setShip = (id) => { ship = id; paint(); };
-  const go = () => { window.removeEventListener('keydown', onKey); launch(menuText(mode, ship).hasShip ? ship : FIXED_SHIP); };
+  const setMode = (m) => { mode = m; lastIn[groupOf(m)] = m; paint(); };
+  const setShip = (id) => { if (missionById(mode).ship) { shipFor[mode] = id; paint(); } };
+  const setTab = (g) => setMode(lastIn[g]);
+  const pickRow = (row) => setMode(row.dataset.family ? lastIn.drill : row.dataset.mode);
+  const go = () => { window.removeEventListener('keydown', onKey); launch(menuText(mode, shipNow()).hasShip ? shipNow() : FIXED_SHIP); };
 
-  // Arrow keys move within a radio group (focus follows selection, as radios do).
-  const arrows = (list, i, e, set, key) => {
+  // Arrow keys move within a radio group (focus follows selection, as radios do); the list skips the rows of the other tabs.
+  const arrows = (list, i, e, pick) => {
     const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1;
     const next = list[(i + step + list.length) % list.length];
-    set(next.dataset[key]);
+    pick(next);
     next.focus();
   };
   const onKey = (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const group = groupOf(mode);
     if (e.key.startsWith('Arrow')) {
-      const mi = missions.indexOf(e.target);
-      const ci = cards.indexOf(e.target);
-      if (mi >= 0) arrows(missions, mi, e, setMode, 'mode');
-      else if (ci >= 0) arrows(cards, ci, e, setShip, 'ship');
-      else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && menuText(mode, ship).hasShip) setShip(ship === 'fwd' ? 'aft' : 'fwd');
+      const visible = rows.filter((r) => !r.hidden);
+      const groups = [[tabs, (b) => setTab(b.dataset.tab)], [visible, pickRow], [segs, (b) => setMode(b.dataset.mode)], [cards, (b) => setShip(b.dataset.ship)]];
+      const hit = groups.find(([list]) => list.includes(e.target));
+      if (hit) arrows(hit[0], hit[0].indexOf(e.target), e, hit[1]);
+      else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && group === 'drill') arrows(segs, segs.findIndex((b) => b.dataset.mode === mode), e, (b) => setMode(b.dataset.mode));
+      else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && menuText(mode, shipNow()).hasShip) setShip(shipNow() === 'fwd' ? 'aft' : 'fwd');
       else return;
       e.preventDefault();
-    } else if (e.key === 'm' || e.key === 'M') setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]);
-    else if ((e.key === '1' || e.key === '2') && menuText(mode, ship).hasShip) setShip(cards[Number(e.key) - 1].dataset.ship);
-    else if (e.key === 'Enter') { e.preventDefault(); go(); } // also when a card has focus after a click
+    } else if (e.key === 'm' || e.key === 'M') {
+      const next = ENTRIES[(ENTRIES.findIndex((en) => en.members.includes(mode)) + 1) % ENTRIES.length];
+      setMode(next.family ? lastIn[next.group] : next.id);
+    } else if (e.key >= '1' && e.key <= '3') {
+      const n = Number(e.key);
+      if (group === 'drill') setMode(segs[n - 1].dataset.mode);
+      else if (menuText(mode, shipNow()).hasShip && n <= cards.length) setShip(cards[n - 1].dataset.ship);
+    } else if (e.key === 'Enter') { e.preventDefault(); go(); } // also when a card has focus after a click
   };
 
-  missions.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  tabs.forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
+  rows.forEach((b) => b.addEventListener('click', () => pickRow(b)));
+  segs.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
   cards.forEach((c) => {
     c.addEventListener('click', () => setShip(c.dataset.ship));
     c.addEventListener('dblclick', go); // a double click still starts straight away
