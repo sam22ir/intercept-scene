@@ -373,20 +373,8 @@ function gunStatus(s) {
   if (s.manual) return g.engaged ? (g.onTarget ? 'ON YOUR AIM' : 'TRAINING') : 'point at her';
   return g.onTarget ? 'ON TARGET' : 'TRAINING';
 }
-function statusHtml() {
-  const p = sim.player;
-  const rel = sim.relBearing(p);
-  const rud = Math.round((p.rudder / RUDDER_MAX) * 35);
-  const dist = sim.range();
-  return `<div class="dh-status"><div><span>HDG</span><b>${String(Math.round(compass(p.psi))).padStart(3, '0')}°</b></div>`
-    + `<div><span>SPEED</span><b>${Math.round(sim.knots(p))} kn</b><small>${TELEGRAPH[p.order].name}</small></div>`
-    + `<div><span>RUDDER</span><b>${view === 'radar' ? 'LOCKED' : rud === 0 ? '0' : `${Math.abs(rud)}° ${rud > 0 ? 'stbd' : 'port'}`}</b></div>`
-    + `<div><span>ENEMY</span><b>${kmText(dist)}</b><small>${relName(rel)}</small></div></div>`
-    + `<div class="dh-weapons"><div><span>76 mm</span><b>${p.gun.ammo} rd</b><small>${gunStatus(p)}</small></div>`
-    + `<div><span>30 mm</span><b>${p.auto ? 'AUTO' : 'MANUAL'}</b><small>${p.gats.map((g) => (g.ammo > 0 ? '' : 'dry')).join('') || (sim.range() > GUN_RANGE ? 'out of range' : 'ready')}</small></div>`
-    + `<div><span>AMMO · Q</span><b>${AMMO_TYPES[p.gun.type].name}</b><small>HE ${p.gun.stock.he} · AP ${p.gun.stock.ap}${p.gun.cool > 0 && p.gun.cool > MAIN_RELOAD ? ' · changing' : ''}</small></div>`
-
-    + `<div class="wide"><span>CREWS · Z X</span><b>${p.crews.filter((c) => c.to).length} of ${CREWS} out</b><small>${COMPARTMENTS[COMP_IDS[selComp]].name} selected</small></div></div>`;
+function rangeHtml() {
+  return `<div class="dh-range"><span>ENEMY</span><b>${kmText(sim.range())}</b><small>${relName(sim.relBearing(sim.player))}</small></div>`;
 }
 function endHtml() {
   if (sim.winner === null) return '';
@@ -398,8 +386,60 @@ function endHtml() {
 let lastHtml = '';
 let hudOn = true;
 function updateHud() {
-  const html = cardHtml(1) + statusHtml() + cardHtml(0) + endHtml();
+  const html = cardHtml(1) + rangeHtml() + endHtml();
   if (html !== lastHtml) { hud.innerHTML = html; lastHtml = html; }
+}
+
+// --- The ship's instruments (as Solo Air Defense's strip) ---------------------------------------------------------------------
+// Two cards with a dome between them, standing on the bottom edge: your hull and compartments, the heading tape with the rudder arc and
+// the speed, and the guns, round, stocks and crews. The enemy and the range stay in the card at the right.
+const shipEl = document.createElement('div');
+shipEl.id = 'duel-ship';
+shipEl.className = 'duel-ship';
+document.body.appendChild(shipEl);
+let lastShip = '';
+const DOME_R = 94;
+const DOME_K = 1.5;
+const COMP_ABBR = { gun: '76', bridge: 'BRG', engine: 'ENG', guns: '30', steering: 'STR' };
+function domeSvg() {
+  const p = sim.player;
+  const h = sim.headingDeg(p);
+  const cx = 100, cy = 100;
+  const pt = (r, a) => [(cx + r * Math.cos(a)).toFixed(1), (cy - r * Math.sin(a)).toFixed(1)];
+  let ticks = '', labels = '';
+  for (let d = Math.ceil((h - 58) / 5) * 5; d <= h + 58; d += 5) {
+    const a = Math.PI / 2 - rad((d - h) * DOME_K);
+    if (a < 0.05 || a > Math.PI - 0.05) continue;
+    const major = d % 30 === 0;
+    const [x1, y1] = pt(DOME_R, a), [x2, y2] = pt(DOME_R - (major ? 9 : d % 10 === 0 ? 6 : 3.5), a);
+    ticks += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="${major ? 'mj' : ''}"/>`;
+    if (major) { const [x, y] = pt(DOME_R - 21, a); labels += `<text x="${x}" y="${y}" class="dl">${String(((d % 360) + 360) % 360).padStart(3, '0')}</text>`; }
+  }
+  const RR = 60, span = rad(62);
+  const th = clamp(p.rudder / RUDDER_MAX, -1, 1) * span;
+  const p0 = pt(RR, Math.PI / 2), p1 = pt(RR, Math.PI / 2 - th), pl = pt(RR, Math.PI / 2 + span), pr = pt(RR, Math.PI / 2 - span);
+  const fill = Math.abs(th) > 0.01 ? `<path d="M${p0[0]},${p0[1]} A${RR},${RR} 0 0 ${th > 0 ? 1 : 0} ${p1[0]},${p1[1]}" class="rf ${th > 0 ? 'stbd' : 'port'}"/>` : '';
+  return `<svg viewBox="0 0 200 104" class="dome-svg" aria-hidden="true"><path d="M6,100 A${DOME_R},${DOME_R} 0 0 1 194,100" class="rim"/>${ticks}${labels}`
+    + `<path d="M${cx - 4},${cy - DOME_R - 1} L${cx + 4},${cy - DOME_R - 1} L${cx},${cy - DOME_R + 6} Z" class="lub"/>`
+    + `<text x="${cx}" y="79" class="hd">${String(Math.round(h) % 360).padStart(3, '0')}°</text>`
+    + `<path d="M${pl[0]},${pl[1]} A${RR},${RR} 0 0 1 ${pr[0]},${pr[1]}" class="rt"/>${fill}`
+    + `<line x1="${p0[0]}" y1="${(Number(p0[1]) - 5).toFixed(1)}" x2="${p0[0]}" y2="${(Number(p0[1]) + 5).toFixed(1)}" class="rm"/>`
+    + `<text x="${cx}" y="94" class="sp">${sim.knots(p).toFixed(1)}<tspan> kn</tspan></text></svg>`;
+}
+function shipHtml() {
+  const p = sim.player;
+  const cells = COMP_IDS.map((id) => {
+    const f = p.comp[id] / COMPARTMENTS[id].hp;
+    const crew = p.crews.filter((c) => c.to === id).length;
+    return `<i class="cp ${f <= 0 ? 'out' : f < 0.5 ? 'bad' : f < 0.99 ? 'hurt' : ''}${COMP_IDS[selComp] === id ? ' sel' : ''}" title="${COMPARTMENTS[id].name}"><b>${COMP_ABBR[id]}</b><s style="height:${Math.round(clamp(f, 0, 1) * 100)}%"></s>`
+      + `<em>${p.fire[id] > 0 ? '<u class="fire">▲</u>' : ''}${p.leak[id] > 0.005 ? '<u class="leak">≈</u>' : ''}${crew ? '<u class="crew">⛑</u>' : ''}</em></i>`;
+  }).join('');
+  const g = p.gun;
+  const dry = p.gats.every((x) => x.ammo <= 0);
+  return `<div class="hs-rect hs-hull${p.hp < HULL_HP ? ' hurt' : ''}"><span>HULL <b>${Math.round(p.hp)}</b>${p.tSunk !== null ? ' · SINKING' : ''}</span><div class="hs-cells">${cells}</div></div>`
+    + `<div class="hs-dome">${domeSvg()}</div>`
+    + `<div class="hs-rect hs-wpn"><span>76 mm <b>${AMMO_TYPES[g.type].name}</b> · HE ${g.stock.he} AP ${g.stock.ap} · ${gunStatus(p)}</span>`
+    + `<span>30 mm <b>${dry ? 'DRY' : p.auto ? 'AUTO' : 'HOLD G'}</b> · crews <b>${p.crews.filter((c) => c.to).length}/${CREWS}</b> · ${COMPARTMENTS[COMP_IDS[selComp]].name}</span></div>`;
 }
 
 const map = createDuelMap();
@@ -463,6 +503,7 @@ const hudButton = document.querySelector('#btn-hud');
 function setHud(on) {
   hudOn = on;
   root.hidden = !on;
+  shipEl.hidden = !on;
   hudButton.classList.toggle('active', on);
   hudButton.setAttribute('aria-pressed', String(on));
 }
@@ -785,7 +826,11 @@ renderer.setAnimationLoop((now) => {
   env.setShadowFocus(_b.set((sim.player.x + sim.enemy.x) / 2, 0, (sim.player.z + sim.enemy.z) / 2), clamp(sim.range() * 0.5, 120, 600));
   fx.update(sim.t);
   audio.update(sim, camera);
-  if (hudOn) updateHud();
+  if (hudOn) {
+    updateHud();
+    const sh = shipHtml();
+    if (sh !== lastShip) { shipEl.innerHTML = sh; lastShip = sh; }
+  }
   if (mapOn) drawMap();
   updateTag();
   updateRadarUi();
