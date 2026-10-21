@@ -366,10 +366,10 @@ function flash(kind) {
 }
 
 // --- Camera views -----------------------------------------------------------------------------------------------------
-const VIEWS = ['bridge', 'behind', 'above', 'missile', 'sight', 'orbit'];
+const VIEWS = ['bridge', 'behind', 'above', 'missile', 'sight', 'target', 'orbit'];
 const VIEW_NAMES = {
   bridge: 'Bridge (drag to look round)', behind: 'Behind the ship', above: 'Above the ship, heading up',
-  missile: 'Riding the missile', sight: 'Radar (the fire-control sight on the target)', orbit: 'Orbit (drag and wheel)',
+  missile: 'Riding the missile', sight: 'Radar (the fire-control sight on the target)', target: 'Target (close behind the drone, the camera shaking)', orbit: 'Orbit (drag and wheel)',
 };
 let view = 'behind';
 let lookYaw = 0; // bridge: degrees off the bow, + to starboard
@@ -542,8 +542,8 @@ function cineStruck(e) {
     cine.look.copy(e.pos);
     cine.fresh = false;
   }
+  cine.cut = cine.phase !== 'dive2'; // from the final side camera the hit plays on from where it stands
   cine.phase = 'impact';
-  cine.cut = true;
   cine.tImpact = sim.t;
   cine.local.copy(sim.toLocal(e.pos, _a)).setY(Math.max(e.pos.y, 8)); // the same point the fire burns at
   cine.side = 0;
@@ -581,17 +581,38 @@ function frameSide(c, p, q, dt, away, tau = 0.12) {
   camera.lookAt(c.look);
   return THREE.MathUtils.clamp(28 + ((sep - 60) / 540) * 17, 28, 45);
 }
-// The attacking drone's shot: the camera close behind and a little above it, looking along its flight at the ship. It is
-// cut in only for the last DRONE_CAM_RANGE metres of the dive (a few seconds), then the hit comes as its own shot.
-const DRONE_CAM_RANGE = 280; // m from the ship
-function frameDroneCam(c, d) {
-  _a.copy(d.vel).normalize();
-  c.pos.copy(d.pos).addScaledVector(_a, -24).add(_b.set(0, 6, 0));
-  c.look.copy(d.pos).addScaledVector(_a, 70);
+// The attacking drone's shot, in two parts. When it really closes in (DRONE_CAM_RANGE) a camera on the sea, abeam of the
+// ship, pans with it as it comes in, the lens closing; for its last DRONE_FINAL metres the camera stands fixed to the side of
+// the line of the dive, drone and ship both in the frame, and the hit then plays out from that same side (frameImpact).
+const DRONE_CAM_RANGE = 650; // m from the ship
+const DRONE_FINAL = 230;
+function frameDroneCam(c, d, dt) {
+  const range = Math.hypot(d.pos.x - sim.x, d.pos.z - sim.z);
+  if (c.phase === 'dive' && range < DRONE_FINAL) { // the fixed side camera of the final seconds, set once
+    c.phase = 'dive2';
+    _a.set(sim.x - d.pos.x, 0, sim.z - d.pos.z).normalize(); // the line of the dive
+    _b.set(-_a.z, 0, _a.x); // to the side of it
+    _c.set((d.pos.x + sim.x) / 2, 0, (d.pos.z + sim.z) / 2);
+    c.side = _b.dot(_d.set(_c.x - sim.x, 0, _c.z - sim.z)) >= 0 ? 1 : -1;
+    c.pos.copy(_c).addScaledVector(_b, c.side * 230).setY(14);
+    c.look.copy(_c).setY(9);
+    c.fresh = false;
+  }
+  if (c.phase === 'dive2') {
+    _c.set(sim.x, 9, sim.z).lerp(d.pos, 0.5); // the middle of drone and ship
+    c.look.lerp(_c, 1 - Math.exp(-dt / 0.2));
+    camera.position.copy(c.pos);
+    camera.lookAt(c.look);
+    const sep = Math.hypot(d.pos.x - sim.x, d.pos.z - sim.z);
+    return THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(sep * 0.78 / 230)), 26, 58); // both stay in the frame, the lens closing as they meet
+  }
+  if (!c.side) c.side = d.pos.clone().sub(ship.group.position).dot(_a.set(-Math.sin(sim.psi), 0, Math.cos(sim.psi))) >= 0 ? 1 : -1;
+  ship.group.localToWorld(c.pos.set(0, 10, c.side * 85)); // abeam of her, low over the sea, moving with her
+  c.look.lerp(d.pos, c.fresh ? 1 : 1 - Math.exp(-dt / 0.08));
+  c.fresh = false;
   camera.position.copy(c.pos);
-  if (camera.position.y < 3) camera.position.y = 3;
   camera.lookAt(c.look);
-  return 52;
+  return THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(55 / camera.position.distanceTo(d.pos))), 9, 40); // the lens opens as it comes nearer
 }
 // The hit: in close, from outboard, on the place; the ship moves, so it is followed in her own frame.
 function frameImpact(c, dt) {
@@ -599,8 +620,8 @@ function frameImpact(c, dt) {
   const P = ship.group.localToWorld(_c.copy(c.local));
   _a.set(-Math.sin(sim.psi), 0, Math.cos(sim.psi)); // starboard
   if (!c.side) c.side = _a.dot(_b.set(camera.position.x - sim.x, 0, camera.position.z - sim.z)) >= 0 ? 1 : -1; // the side it was filmed from
-  const want = _d.copy(P).addScaledVector(_a, c.side * 75);
-  want.y = P.y + 8;
+  const want = _d.copy(P).addScaledVector(_a, c.side * 115);
+  want.y = P.y + 10;
   if (c.cut) { c.pos.copy(want); c.look.copy(P); c.cut = false; } // a cut to the side of the hit, not a move from the drone's shot
   c.pos.lerp(want, 1 - Math.exp(-dt / 0.6)); // the dolly in
   c.look.lerp(P, 1 - Math.exp(-dt / 0.15));
@@ -671,10 +692,10 @@ function updateCine(dt) {
     timeTarget = sep < HIT_SLOW_SEP ? SLOW.close : 1; // slow only in the last instant before the hit
     return frameSide(c, m.pos, d.pos, dt, false, 0.12 + 0.45 * (1 - THREE.MathUtils.clamp((sim.t - c.tBlend) / 1.0, 0, 1)));
   }
-  if (c.phase === 'dive') {
+  if (c.phase === 'dive' || c.phase === 'dive2') {
     if (!d.alive) { endCine(); return null; } // (a hit on the ship comes as its own event)
     timeTarget = 1; // no slow motion for the drone's hit on the ship
-    return frameDroneCam(c, d);
+    return frameDroneCam(c, d, dt);
   }
   // The missile's hit: the camera stays where it was and follows the falling pieces until the last one is in the sea.
   const v = vis.get(d.id);
@@ -786,6 +807,21 @@ function updateCamera(dt) {
     if (tgt && tgt.alive) lookAt.lerp(tgt.pos, 0.35);
     camera.lookAt(lookAt);
     snap = true;
+  } else if (view === 'target' && sim.target && sim.target.alive) {
+    // Close behind the target drone, a little above, looking along its flight; the camera shakes like a hand-held lens.
+    const d = sim.target;
+    _a.copy(d.vel).normalize();
+    camera.position.copy(d.pos).addScaledVector(_a, -38).y += 7;
+    lookAt.copy(d.pos).addScaledVector(_a, 40);
+    camera.lookAt(lookAt);
+    const ts = performance.now() / 1000;
+    camera.position.x += 0.22 * Math.sin(ts * 41) + 0.12 * Math.sin(ts * 67 + 1);
+    camera.position.y += 0.22 * Math.sin(ts * 47 + 2) + 0.1 * Math.sin(ts * 71);
+    camera.position.z += 0.22 * Math.sin(ts * 37 + 4) + 0.12 * Math.sin(ts * 59 + 3);
+    camera.rotateX(0.0035 * Math.sin(ts * 43 + 1) + 0.002 * Math.sin(ts * 73));
+    camera.rotateY(0.0035 * Math.sin(ts * 39 + 5) + 0.002 * Math.sin(ts * 61 + 2));
+    camera.rotateZ(0.004 * Math.sin(ts * 31 + 3));
+    wantFov = 46;
   } else if (view === 'sight' && sim.target) {
     wantFov = aimSight(dt, sim.target);
   } else {
@@ -838,7 +874,7 @@ function updatePip(dt) {
   const r = pa.length();
   pa.divideScalar(r || 1);
   if (pipSt.id !== d.id) { pipSt.id = d.id; pipSt.phase = 'slew'; }
-  const fovTrack = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(2.4 / r)), 0.08, 30); // the lens closes until the drone fills the square
+  const fovTrack = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(4.5 / r)), 0.15, 30); // the lens closes until the drone fills the square
   let cmd = pa;
   let fovWant = SIGHT_WIDE;
   if (pipSt.phase === 'search') {
@@ -991,7 +1027,7 @@ function keysHtml() {
   const t = sim.target;
   const ready = t && !sim.engageable(t) && !sim.shot && sim.cellsLeft > 0;
   return `${k('←', '')}${k('→', 'rudder')}${k('↑', '')}${k('↓', 'telegraph')}${k('F', 'fire', ready)}`
-    + `${k('Tab', 'target', sim.detected.length > 1)}${k('1–6', 'views')}${k('V', 'next view')}`;
+    + `${k('Tab', 'target', sim.detected.length > 1)}${k('1–7', 'views')}${k('V', 'next view')}`;
 }
 
 // --- Interface: the top bar, menu, keys sheet, sound, map ---------------------------------------------------------------
@@ -1085,7 +1121,7 @@ let tagsOn = true;
 // The view buttons: a strip at the top centre.
 const strip = document.createElement('div');
 strip.className = 'helm-views';
-strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (${i + 1})">${['Bridge', 'Behind', 'Above', 'Missile', 'Radar', 'Orbit'][i]}</button>`).join('');
+strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (${i + 1})">${['Bridge', 'Behind', 'Above', 'Missile', 'Radar', 'Target', 'Orbit'][i]}</button>`).join('');
 document.body.appendChild(strip);
 const viewButtons = [...strip.querySelectorAll('button')];
 viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
@@ -1140,7 +1176,7 @@ window.addEventListener('keydown', (e) => {
     case 'f': sim.fire(); break;
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
-    case '1': case '2': case '3': case '4': case '5': case '6': setView(VIEWS[Number(key) - 1]); break;
+    case '1': case '2': case '3': case '4': case '5': case '6': case '7': setView(VIEWS[Number(key) - 1]); break;
     case 'h': setHud(!hudOn); break;
     case 'm': setMap(!map.enabled); break;
     case 'i':
