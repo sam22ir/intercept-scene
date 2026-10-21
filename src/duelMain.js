@@ -9,11 +9,13 @@ import { createWake } from './fx/wake.js';
 import { pointScale } from './fx/particles.js';
 import { CameraRig } from './cameraRig.js';
 import { menuText } from './menu.js';
-import { compass, relName, kmText, RUDDER_MAX } from './hull.js';
+import { compass, relName, kmText, RUDDER_MAX, HALF_LENGTH, HALF_BEAM } from './hull.js';
 import {
   DuelSim, TELEGRAPH, COMPARTMENTS, COMP_IDS, HULL_HP, LEVELS, DUEL_LEVELS, MAIN_ARC, MAIN_RANGE, GUN_MOUNT_LOCAL, GUN_RANGE, sinkState,
+  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, zoneAt, AMMO_TYPES, SWITCH_TIME, CREWS,
 } from './duel.js';
 import { createDuelAudio } from './duelAudio.js';
+import { createDuelMap } from './duelMap.js';
 import './duel.css';
 
 // Entry point of "Ship duel", mission id `duel` (see duel.js for the model): you sail a frigate against another and
@@ -136,7 +138,7 @@ function poseShip(i, dt) {
   v.group.updateMatrixWorld(true);
   v.mainGun.pose(s.gun.yaw, s.gun.pitch);
   v.gats.forEach((g, k) => g.pose(s.gats[k].yaw, s.gats[k].pitch, s.gats[k].spin, s.gats[k].firing, sim.t));
-  v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0 }); // the radar turns; the missile box stays stowed
+  v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0 }); // the radar turns; the launcher box stays stowed
   v.wake.update({ t: sim.t, x: s.x, z: s.z, psi: s.psi, r: s.r, u: s.u });
   // Smoke and fire: a hurt compartment smokes, one that is out burns; a sinking ship pours it out.
   v.smokeT += dt;
@@ -147,6 +149,11 @@ function poseShip(i, dt) {
       if (frac > 0.55 || (sink && sink.gone)) continue;
       _a.set(ZONE_X[id] + (Math.random() - 0.5) * 6, 8, (Math.random() - 0.5) * 5);
       fx.fireSmoke(v.group.localToWorld(_a), sim.t, frac <= 0 ? 1.4 : 0.8);
+    }
+    for (const id of COMP_IDS) {
+      if (s.fire[id] < 0.05 || (sink && sink.gone)) continue;
+      _a.set(ZONE_X[id] + (Math.random() - 0.5) * 6, 8, (Math.random() - 0.5) * 5);
+      fx.fireSmoke(v.group.localToWorld(_a), sim.t, 0.7 + 1.6 * s.fire[id]);
     }
     if (sink && sink.smoke > 0.2) {
       _a.set((Math.random() - 0.5) * 60, 9, (Math.random() - 0.5) * 6);
@@ -246,6 +253,10 @@ function handleEvents() {
       say(`${who(e.ship)} ${COMPARTMENTS[e.comp].name.toLowerCase()} is out`, e.ship === 0 ? 'bad' : 'ok', 3000);
     } else if (e.type === 'sunk') {
       for (let k = 0; k < 3; k++) fx.explosion(_c.set(e.pos[0] + (k - 1) * 14, e.pos[1], e.pos[2]), sim.t + k * 0.35);
+    } else if (e.type === 'ammo') {
+      if (e.ship === 0) say(`${AMMO_TYPES[e.kind].name} loaded`, '', 1400);
+    } else if (e.type === 'fire') {
+      if (e.ship === 0) say(`Fire in the ${COMPARTMENTS[e.comp].name.toLowerCase()}: send a crew`, 'warn', 2400);
     } else if (e.type === 'over') {
       say(e.winner === 0 ? 'The enemy frigate is going down: you win' : 'Your ship is sinking: you lose', e.winner === 0 ? 'ok' : 'bad', 60000);
     }
@@ -253,9 +264,9 @@ function handleEvents() {
 }
 
 // --- Views --------------------------------------------------------------------------------------------------------------
-const VIEWS = ['behind', 'bridge', 'sight', 'above', 'shell', 'orbit'];
-const VIEW_LABELS = ['Behind', 'Bridge', 'Sight', 'Above', 'Shell', 'Orbit'];
-const VIEW_NAMES = { behind: 'Behind the ship', bridge: 'The bridge', sight: 'The gun sight', above: 'Straight above', shell: 'Riding your shell', orbit: 'Free orbit' };
+const VIEWS = ['behind', 'bridge', 'sight', 'above', 'shell', 'orbit', 'radar'];
+const VIEW_LABELS = ['Behind', 'Bridge', 'Sight', 'Above', 'Shell', 'Orbit', 'Radar'];
+const VIEW_NAMES = { behind: 'Behind the ship', bridge: 'The bridge', sight: 'The gun sight', above: 'Straight above', shell: 'Riding your shell', orbit: 'Free orbit', radar: 'Radar (the fire-control sight: aim it at any part of her hull; the helm is locked)' };
 let view = 'behind';
 function setFov(f) {
   if (Math.abs(camera.fov - f) < 0.01) return;
@@ -264,8 +275,27 @@ function setFov(f) {
   pointScale.value = (window.innerHeight * renderer.getPixelRatio()) / (2 * Math.tan(rad(f / 2)));
 }
 const viewButtons = [];
+let viewBeforeRadar = 'behind';
+let radarPrevManual = false;
 function setView(v) {
+  if (v === 'radar' && view !== 'radar') {
+    viewBeforeRadar = view;
+    radarPrevManual = sim.player.manual;
+    input.left = input.right = 0;
+    setManual(true);
+    say('Radar: arrows, drag or the pad aim the sight, F fires. The helm is locked: Esc goes back', 'warn', 4200);
+  } else if (v !== 'radar' && view === 'radar') {
+    input.fire = 0;
+    setManual(radarPrevManual);
+  }
   view = v;
+  radarKeys.l = radarKeys.r = radarKeys.u = radarKeys.d = 0;
+  sight.manual = false; // the radar's own controls start on automatic every time
+  sight.fresh = true;
+  radarEl.hidden = v !== 'radar';
+  sightEl.hidden = v !== 'radar';
+  document.body.classList.toggle('duel-radarview', v === 'radar');
+  map.sight = null;
   controls.enabled = v === 'orbit';
   if (v === 'orbit') rig.focus('ship', (out) => out.set(sim.player.x, 8, sim.player.z), 230, 25);
   else rig.free();
@@ -273,6 +303,7 @@ function setView(v) {
   viewButtons.forEach((b) => { const on = b.dataset.view === v; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
 }
 const enemyPoint = (out) => out.set(sim.enemy.x, 9, sim.enemy.z);
+let frameDt = 1 / 60;
 function updateCamera() {
   const me = ships[0].group;
   const foe = sim.enemy;
@@ -287,6 +318,8 @@ function updateCamera() {
     if (inView) camera.lookAt(enemyPoint(_b)); else camera.lookAt(me.localToWorld(_b.set(100, 10, 0)));
     const r = sim.range();
     setFov(view === 'sight' ? clamp((Math.atan(70 / r) * 2 * 180) / Math.PI * 2.4, 3.5, 30) : 55);
+  } else if (view === 'radar') {
+    aimSight(frameDt);
   } else if (view === 'above') {
     setFov(50);
     const mx = (sim.player.x + foe.x) / 2, mz = (sim.player.z + foe.z) / 2;
@@ -315,11 +348,14 @@ root.classList.add('duel-root');
 root.innerHTML = '<div class="duel-hud"></div>';
 const hud = root.querySelector('.duel-hud');
 const bar = (frac, cls = '') => `<i class="${cls}" style="width:${Math.round(clamp(frac, 0, 1) * 100)}%"></i>`;
+let selComp = 0; // the compartment Z has picked for X to send a crew to
 function cardHtml(i) {
   const s = sim.ships[i];
   const comps = COMP_IDS.map((id) => {
     const f = s.comp[id] / COMPARTMENTS[id].hp;
-    return `<div class="dh-row ${f <= 0 ? 'out' : f < 0.5 ? 'bad' : f < 0.99 ? 'hurt' : ''}"><span>${COMPARTMENTS[id].name}</span><b>${bar(f)}</b><em>${f <= 0 ? 'OUT' : `${Math.round(f * 100)}`}</em></div>`;
+    const crew = s.crews.filter((c) => c.to === id);
+    const tags = `${s.fire[id] > 0 ? `<u class="fire" title="fire">${'▲'.repeat(Math.ceil(s.fire[id] * 3))}</u>` : ''}${s.leak[id] > 0.005 ? '<u class="leak" title="flooding">≈</u>' : ''}${crew.map((c) => `<u class="crew${c.eta > 0 ? ' going' : ''}" title="repair crew">⛑</u>`).join('')}`;
+    return `<div class="dh-row ${f <= 0 ? 'out' : f < 0.5 ? 'bad' : f < 0.99 ? 'hurt' : ''}${i === 0 && COMP_IDS[selComp] === id ? ' sel' : ''}"><span>${COMPARTMENTS[id].name}</span><b>${bar(f)}</b><em>${f <= 0 ? 'OUT' : `${Math.round(f * 100)}`}</em>${tags ? `<div class="dh-tags">${tags}</div>` : ''}</div>`;
   }).join('');
   const hp = s.hp / HULL_HP;
   return `<section class="dh-ship ${i ? 'foe' : 'you'}${s.tSunk !== null ? ' sunk' : ''}"><h3>${i ? 'ENEMY' : 'YOUR SHIP'}<small>${i ? LEVELS[sim.level].name : ''}${s.tSunk !== null ? 'SINKING' : ''}</small></h3>`
@@ -334,19 +370,11 @@ function gunStatus(s) {
   if (sim.range() > MAIN_RANGE) return `OUT OF RANGE (${kmText(MAIN_RANGE)})`;
   if (sol > MAIN_ARC) return 'OUT OF ARC: turn her';
   if (g.cool > 0) return `LOADING ${g.cool.toFixed(1)} s`;
+  if (s.manual) return g.engaged ? (g.onTarget ? 'ON YOUR AIM' : 'TRAINING') : 'point at her';
   return g.onTarget ? 'ON TARGET' : 'TRAINING';
 }
-function statusHtml() {
-  const p = sim.player;
-  const rel = sim.relBearing(p);
-  const rud = Math.round((p.rudder / RUDDER_MAX) * 35);
-  const dist = sim.range();
-  return `<div class="dh-status"><div><span>HDG</span><b>${String(Math.round(compass(p.psi))).padStart(3, '0')}°</b></div>`
-    + `<div><span>SPEED</span><b>${Math.round(sim.knots(p))} kn</b><small>${TELEGRAPH[p.order].name}</small></div>`
-    + `<div><span>RUDDER</span><b>${rud === 0 ? '0' : `${Math.abs(rud)}° ${rud > 0 ? 'stbd' : 'port'}`}</b></div>`
-    + `<div><span>ENEMY</span><b>${kmText(dist)}</b><small>${relName(rel)}</small></div></div>`
-    + `<div class="dh-weapons"><div><span>76 mm</span><b>${p.gun.ammo} rd</b><small>${gunStatus(p)}</small></div>`
-    + `<div><span>30 mm</span><b>${p.auto ? 'AUTO' : 'MANUAL'}</b><small>${p.gats.map((g) => (g.ammo > 0 ? '' : 'dry')).join('') || (sim.range() > GUN_RANGE ? 'out of range' : 'ready')}</small></div></div>`;
+function rangeHtml() {
+  return `<div class="dh-range"><span>ENEMY</span><b>${kmText(sim.range())}</b><small>${relName(sim.relBearing(sim.player))}</small></div>`;
 }
 function endHtml() {
   if (sim.winner === null) return '';
@@ -358,45 +386,64 @@ function endHtml() {
 let lastHtml = '';
 let hudOn = true;
 function updateHud() {
-  const html = cardHtml(1) + statusHtml() + cardHtml(0) + endHtml();
+  const html = cardHtml(1) + rangeHtml() + endHtml();
   if (html !== lastHtml) { hud.innerHTML = html; lastHtml = html; }
 }
 
-// A small map: you at the centre, bow up, the enemy where she is (range rings every 2 km, the 76 mm's arc shaded).
-const map = document.createElement('canvas');
-map.className = 'duel-map';
-map.width = map.height = 300;
-document.body.appendChild(map);
-let mapOn = true;
-function drawMap() {
-  const c = map.getContext('2d');
-  const R = 150;
-  c.clearRect(0, 0, 300, 300);
-  c.save();
-  c.translate(R, R);
-  c.fillStyle = 'rgba(8, 13, 20, 0.62)';
-  c.beginPath(); c.arc(0, 0, R - 1, 0, Math.PI * 2); c.fill();
-  const scale = (R - 14) / Math.max(3000, Math.min(9000, sim.range() * 1.25));
-  c.strokeStyle = 'rgba(255,255,255,0.16)';
-  c.lineWidth = 1;
-  for (let n = 1; n <= 4; n++) { c.beginPath(); c.arc(0, 0, n * 2000 * scale, 0, Math.PI * 2); c.stroke(); }
-  c.fillStyle = 'rgba(255, 122, 26, 0.10)';
-  c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, Math.min(MAIN_RANGE * scale, R - 2), -Math.PI / 2 - MAIN_ARC, -Math.PI / 2 + MAIN_ARC); c.closePath(); c.fill();
-  const draw = (s, col) => { // up is the player's bow
-    const dx = s.x - sim.player.x, dz = s.z - sim.player.z;
-    const fwd = dx * Math.cos(sim.player.psi) + dz * Math.sin(sim.player.psi);
-    const side = -dx * Math.sin(sim.player.psi) + dz * Math.cos(sim.player.psi);
-    c.save();
-    c.translate(clamp(side * scale, -R + 8, R - 8), clamp(-fwd * scale, -R + 8, R - 8));
-    c.rotate(s.psi - sim.player.psi + Math.PI / 2);
-    c.fillStyle = col;
-    c.beginPath(); c.moveTo(0, -9); c.lineTo(-5, 7); c.lineTo(5, 7); c.closePath(); c.fill();
-    c.restore();
-  };
-  if (ships[1].group.visible) draw(sim.enemy, '#ff5d61');
-  draw(sim.player, '#3ddc84');
-  c.restore();
+// --- The ship's instruments (as Solo Air Defense's strip) ---------------------------------------------------------------------
+// Two cards with a dome between them, standing on the bottom edge: your hull and compartments, the heading tape with the rudder arc and
+// the speed, and the guns, round, stocks and crews. The enemy and the range stay in the card at the right.
+const shipEl = document.createElement('div');
+shipEl.id = 'duel-ship';
+shipEl.className = 'duel-ship';
+document.body.appendChild(shipEl);
+let lastShip = '';
+const DOME_R = 94;
+const DOME_K = 1.5;
+const COMP_ABBR = { gun: '76', bridge: 'BRG', engine: 'ENG', guns: '30', steering: 'STR' };
+function domeSvg() {
+  const p = sim.player;
+  const h = sim.headingDeg(p);
+  const cx = 100, cy = 100;
+  const pt = (r, a) => [(cx + r * Math.cos(a)).toFixed(1), (cy - r * Math.sin(a)).toFixed(1)];
+  let ticks = '', labels = '';
+  for (let d = Math.ceil((h - 58) / 5) * 5; d <= h + 58; d += 5) {
+    const a = Math.PI / 2 - rad((d - h) * DOME_K);
+    if (a < 0.05 || a > Math.PI - 0.05) continue;
+    const major = d % 30 === 0;
+    const [x1, y1] = pt(DOME_R, a), [x2, y2] = pt(DOME_R - (major ? 9 : d % 10 === 0 ? 6 : 3.5), a);
+    ticks += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="${major ? 'mj' : ''}"/>`;
+    if (major) { const [x, y] = pt(DOME_R - 21, a); labels += `<text x="${x}" y="${y}" class="dl">${String(((d % 360) + 360) % 360).padStart(3, '0')}</text>`; }
+  }
+  const RR = 60, span = rad(62);
+  const th = clamp(p.rudder / RUDDER_MAX, -1, 1) * span;
+  const p0 = pt(RR, Math.PI / 2), p1 = pt(RR, Math.PI / 2 - th), pl = pt(RR, Math.PI / 2 + span), pr = pt(RR, Math.PI / 2 - span);
+  const fill = Math.abs(th) > 0.01 ? `<path d="M${p0[0]},${p0[1]} A${RR},${RR} 0 0 ${th > 0 ? 1 : 0} ${p1[0]},${p1[1]}" class="rf ${th > 0 ? 'stbd' : 'port'}"/>` : '';
+  return `<svg viewBox="0 0 200 104" class="dome-svg" aria-hidden="true"><path d="M6,100 A${DOME_R},${DOME_R} 0 0 1 194,100" class="rim"/>${ticks}${labels}`
+    + `<path d="M${cx - 4},${cy - DOME_R - 1} L${cx + 4},${cy - DOME_R - 1} L${cx},${cy - DOME_R + 6} Z" class="lub"/>`
+    + `<text x="${cx}" y="79" class="hd">${String(Math.round(h) % 360).padStart(3, '0')}°</text>`
+    + `<path d="M${pl[0]},${pl[1]} A${RR},${RR} 0 0 1 ${pr[0]},${pr[1]}" class="rt"/>${fill}`
+    + `<line x1="${p0[0]}" y1="${(Number(p0[1]) - 5).toFixed(1)}" x2="${p0[0]}" y2="${(Number(p0[1]) + 5).toFixed(1)}" class="rm"/>`
+    + `<text x="${cx}" y="94" class="sp">${sim.knots(p).toFixed(1)}<tspan> kn</tspan></text></svg>`;
 }
+function shipHtml() {
+  const p = sim.player;
+  const cells = COMP_IDS.map((id) => {
+    const f = p.comp[id] / COMPARTMENTS[id].hp;
+    const crew = p.crews.filter((c) => c.to === id).length;
+    return `<i class="cp ${f <= 0 ? 'out' : f < 0.5 ? 'bad' : f < 0.99 ? 'hurt' : ''}${COMP_IDS[selComp] === id ? ' sel' : ''}" title="${COMPARTMENTS[id].name}"><b>${COMP_ABBR[id]}</b><s style="height:${Math.round(clamp(f, 0, 1) * 100)}%"></s>`
+      + `<em>${p.fire[id] > 0 ? '<u class="fire">▲</u>' : ''}${p.leak[id] > 0.005 ? '<u class="leak">≈</u>' : ''}${crew ? '<u class="crew">⛑</u>' : ''}</em></i>`;
+  }).join('');
+  const g = p.gun;
+  const dry = p.gats.every((x) => x.ammo <= 0);
+  return `<div class="hs-rect hs-hull${p.hp < HULL_HP ? ' hurt' : ''}"><span>HULL <b>${Math.round(p.hp)}</b>${p.tSunk !== null ? ' · SINKING' : ''}</span><div class="hs-cells">${cells}</div></div>`
+    + `<div class="hs-dome">${domeSvg()}</div>`
+    + `<div class="hs-rect hs-wpn"><span>76 mm <b>${AMMO_TYPES[g.type].name}</b> · HE ${g.stock.he} AP ${g.stock.ap} · ${gunStatus(p)}</span>`
+    + `<span>30 mm <b>${dry ? 'DRY' : p.auto ? 'AUTO' : 'HOLD G'}</b> · crews <b>${p.crews.filter((c) => c.to).length}/${CREWS}</b> · ${COMPARTMENTS[COMP_IDS[selComp]].name}</span></div>`;
+}
+
+const map = createDuelMap();
+const drawMap = () => map.update(sim);
 
 // --- Interface: the top bar, menu, keys sheet ---------------------------------------------------------------------------------
 const FOLD_KEY = 'intercept.uiHidden';
@@ -440,9 +487,10 @@ document.querySelector('#btn-home')?.addEventListener('click', () => document.qu
 }
 
 const mapButton = document.querySelector('#btn-map');
+let mapOn = true;
 function setMap(on) {
   mapOn = on;
-  map.hidden = !on;
+  map.setEnabled(on);
   mapButton.classList.toggle('active', on);
   mapButton.setAttribute('aria-pressed', String(on));
   try { localStorage.setItem('intercept.map', on ? '1' : '0'); } catch { /* storage unavailable */ }
@@ -455,6 +503,7 @@ const hudButton = document.querySelector('#btn-hud');
 function setHud(on) {
   hudOn = on;
   root.hidden = !on;
+  shipEl.hidden = !on;
   hudButton.classList.toggle('active', on);
   hudButton.setAttribute('aria-pressed', String(on));
 }
@@ -481,14 +530,17 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>F</kbd>', `Fire the 76 mm (hold): the gun trains on the enemy by itself within ${Math.round((MAIN_ARC * 180) / Math.PI)}° of the bow and ${kmText(MAIN_RANGE)}, and fires once it is on the aim and loaded`],
   ['<kbd>G</kbd>', `Fire the two 30 mm guns aft (hold): ${kmText(GUN_RANGE)}, astern and abeam only`],
   ['<kbd>A</kbd>', 'The 30 mm guns on automatic'],
-  ['<kbd>1</kbd> to <kbd>6</kbd>', 'Behind, bridge, sight, above, shell, orbit'],
+  ['<kbd>Q</kbd>', `Change the 76 mm round, HE or AP: HE starts fires and floods, AP hits one compartment harder; changing costs a ${SWITCH_TIME} s reload`],
+  ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
+  ['<kbd>1</kbd> to <kbd>7</kbd>', 'Behind, bridge, sight, above, shell, orbit, radar'],
+  ['<kbd>7</kbd>', 'Radar view, like Solo Air Defense: the fire-control sight on the enemy. Arrows, a drag or the on-screen pad aim it over any part of her hull (the label names the compartment), F fires there, Space returns it to auto. The helm is locked until Esc'],
   ['<kbd>V</kbd>', 'Next view · drag looks round in the orbit view, the wheel zooms'],
   ['<kbd>R</kbd>', 'Fight again'],
   ['<kbd>N</kbd>', 'Map'],
   ['<kbd>S</kbd>', 'Sound on / off'],
   ['<kbd>H</kbd> <kbd>C</kbd>', 'Readouts, hide the interface'],
 ].map(([k, d]) => `<dt>${k}</dt><dd>${d}</dd>`).join('');
-keysSheet.querySelector('.keys-note').textContent = 'The guns aim themselves: you win by where you point the ship · turning spoils your own aim · a shell takes seconds to arrive';
+keysSheet.querySelector('.keys-note').textContent = 'The 76 mm aims itself unless you take the radar view (7) · a shell takes seconds to arrive and turning spoils your aim';
 
 const audio = createDuelAudio();
 eventHooks.push((e) => audio.event(e));
@@ -512,11 +564,12 @@ const keysEl = document.createElement('div');
 keysEl.id = 'fly-keys';
 keysEl.className = 'fly-keys';
 document.body.appendChild(keysEl);
-const input = { left: 0, right: 0, fire: 0, gat: 0 };
+const input = { left: 0, right: 0, fire: 0, gat: 0, aim: null };
 const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`;
 function keysHtml() {
   return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', 'speed')}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}`
-    + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–6', 'views')}${k('R', 'again')}`;
+    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}`
+    + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–7', 'views')}${k('R', 'again')}`;
 }
 let lastKeys = '';
 
@@ -549,6 +602,10 @@ function restart() {
   lastShell = null;
   banner.hidden = true;
   alarmEl.classList.remove('hit');
+  if (view === 'radar') setView(viewBeforeRadar);
+  input.aim = null;
+  selComp = 0;
+  setManual(false);
   startBanner();
 }
 function startBanner() {
@@ -558,6 +615,13 @@ window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const tag = e.target?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (view === 'radar' && e.key.startsWith('Arrow')) { // the helm is locked: the arrows turn the sight
+    const k = { ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd' }[e.key];
+    radarKeys[k] = 1;
+    sight.manual = true;
+    e.preventDefault();
+    return;
+  }
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
     input[e.key === 'ArrowLeft' ? 'left' : 'right'] = 1;
     e.preventDefault();
@@ -571,28 +635,163 @@ window.addEventListener('keydown', (e) => {
     case 'ArrowUp': sim.telegraph(0, +1); break;
     case 'ArrowDown': sim.telegraph(0, -1); break;
     case 'a': sim.toggleAuto(0); break;
+    case 'q': sim.switchAmmo(0); break;
+    case 'z': selComp = (selComp + 1) % COMP_IDS.length; break;
+    case 'x': sim.assignCrew(0, COMP_IDS[selComp]); break;
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
-    case '1': case '2': case '3': case '4': case '5': case '6': setView(VIEWS[Number(key) - 1]); break;
+    case '1': case '2': case '3': case '4': case '5': case '6': case '7': setView(VIEWS[Number(key) - 1]); break;
     case 'h': setHud(!hudOn); break;
     case 'n': setMap(!mapOn); break;
     case 'l': tagsOn = !tagsOn; break;
     case 'c': setFolded(!document.body.classList.contains('ui-hidden')); break;
     case '?': setKeys(keysSheet.hidden); break;
-    case 'Escape': closePopovers(); break;
+    case 'Escape': if (!closePopovers() && view === 'radar') setView(viewBeforeRadar); break;
     case 's': setSound(!audio.enabled); break;
-    case ' ': break;
+    case ' ': if (view === 'radar') sight.manual = false; break;
     default: return;
   }
   if (key !== 'Escape') e.preventDefault();
 });
 window.addEventListener('keyup', (e) => {
+  if (e.key.startsWith('Arrow')) radarKeys[{ ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd' }[e.key]] = 0;
   if (e.key === 'ArrowLeft') input.left = 0;
   if (e.key === 'ArrowRight') input.right = 0;
   if (e.key === 'f' || e.key === 'F') input.fire = 0;
   if (e.key === 'g' || e.key === 'G') input.gat = 0;
 });
 window.addEventListener('blur', () => { input.left = 0; input.right = 0; input.fire = 0; input.gat = 0; });
+
+// --- The gun by hand: only through the radar view (below) ---------------------------------------------------------------------
+// In the radar view the 76 mm goes where the sight points (input.aim); everywhere else the fire control has it.
+function setManual(on) {
+  if (!sim.setManual(0, on)) return;
+  if (!on) input.aim = null;
+}
+function updateAim() {
+  if (view === 'radar') radarAimShell();
+  else input.aim = null;
+}
+
+// --- The radar view (the Solo Air Defense one) ----------------------------------------------------------------------------------
+// The fire-control sight on the bridge roof: a mount that turns at a limited rate. In AUTO it swings onto the enemy and holds her; the
+// arrows, a drag or the pad turn it by hand (MANUAL) over any part of her hull. The shell is aimed at the hull point under the
+// crosshair (the fire control leads that point), F or the Fire button shoots. The helm is locked until you go back.
+const SIGHT_RATE = THREE.MathUtils.degToRad(55);
+const sight = { aim: new THREE.Vector3(1, 0.03, 0), manual: false, fresh: true, omega: 0, dragYaw: 0, dragPitch: 0, zone: null };
+const radarKeys = { l: 0, r: 0, u: 0, d: 0 };
+let sightZoom = 1.5;
+const sightEl = document.createElement('div');
+sightEl.className = 'duel-sight';
+sightEl.hidden = true;
+sightEl.innerHTML = '<i class="hs-h"></i><i class="hs-v"></i><i class="hs-box"></i><b class="hs-txt"></b>';
+document.body.appendChild(sightEl);
+const sightTxt = sightEl.querySelector('.hs-txt');
+const radarEl = document.createElement('div');
+radarEl.className = 'duel-radar';
+radarEl.hidden = true;
+radarEl.innerHTML = '<div class="hr-pad">'
+  + '<div class="hr-acts"><button type="button" data-act="auto">Release / auto<kbd>Space</kbd></button><button type="button" data-act="back">Back to the helm<kbd>Esc</kbd></button></div>'
+  + '<div class="hr-mid"><div class="hr-read"><b class="hr-mode">AUTO</b><span class="hr-brg"></span></div>'
+  + '<div class="hr-dpad"><button type="button" data-dir="u" aria-label="Aim up">▲</button><button type="button" data-dir="l" aria-label="Aim left">◀</button>'
+  + '<i class="hr-hub"></i><button type="button" data-dir="r" aria-label="Aim right">▶</button><button type="button" data-dir="d" aria-label="Aim down">▼</button></div></div>'
+  + '<div class="hr-acts"><button type="button" data-act="fire" class="hr-fire">Fire<kbd>F</kbd></button><button type="button" data-act="ammo">Change round<kbd>Q</kbd></button></div></div>';
+document.body.appendChild(radarEl);
+const radarMode = radarEl.querySelector('.hr-mode');
+const radarBrg = radarEl.querySelector('.hr-brg');
+radarEl.addEventListener('pointerdown', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  e.preventDefault();
+  const release = (fn) => { const up = () => { fn(); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); }; window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up); };
+  if (b.dataset.dir) { radarKeys[b.dataset.dir] = 1; sight.manual = true; release(() => { radarKeys[b.dataset.dir] = 0; }); }
+  else if (b.dataset.act === 'fire') { input.fire = 1; release(() => { input.fire = 0; }); }
+  else if (b.dataset.act === 'auto') sight.manual = false;
+  else if (b.dataset.act === 'ammo') sim.switchAmmo(0);
+  else if (b.dataset.act === 'back') setView(viewBeforeRadar);
+});
+let sightDrag = null;
+canvas.addEventListener('pointerdown', (e) => { if (e.button === 0 && view === 'radar') sightDrag = { x: e.clientX, y: e.clientY }; });
+window.addEventListener('pointerup', () => { sightDrag = null; });
+window.addEventListener('pointermove', (e) => {
+  if (!sightDrag || view !== 'radar') return;
+  const dx = e.clientX - sightDrag.x, dy = e.clientY - sightDrag.y;
+  sightDrag = { x: e.clientX, y: e.clientY };
+  sight.manual = true;
+  sight.dragYaw += dx * THREE.MathUtils.degToRad(camera.fov) / window.innerHeight;
+  sight.dragPitch -= dy * THREE.MathUtils.degToRad(camera.fov) / window.innerHeight;
+});
+canvas.addEventListener('wheel', (e) => { if (view === 'radar') sightZoom = clamp(sightZoom * Math.exp(e.deltaY * 0.001), 0.4, 6); }, { passive: true });
+canvas.addEventListener('dblclick', () => { sightZoom = 1.5; });
+const _sm = new THREE.Matrix4();
+const hullBox = new THREE.Box3(new THREE.Vector3(-HALF_LENGTH, 0, -HALF_BEAM), new THREE.Vector3(HALF_LENGTH, 18, HALF_BEAM));
+const sightRay = new THREE.Ray();
+// The turning of the mount and the lens, every frame in the radar view.
+function aimSight(dt) {
+  const me = ships[0].group;
+  me.localToWorld(camera.position.copy(BRIDGE_EYE));
+  const foe = sim.enemy;
+  _a.set(foe.x, 9, foe.z).sub(camera.position);
+  const r = _a.length() || 1;
+  _a.divideScalar(r); // the way to the enemy
+  if (sight.fresh) { sight.aim.set(Math.cos(sim.player.psi), 0.03, Math.sin(sim.player.psi)).normalize(); sight.fresh = false; sight.omega = 0; }
+  const lens = clamp((Math.atan(80 / r) * 2 * 180) / Math.PI * sightZoom, 1.2, 30);
+  if (sight.manual) {
+    const rate = THREE.MathUtils.degToRad(50) * clamp(lens / 40, 0.03, 1);
+    let yaw = Math.atan2(sight.aim.z, sight.aim.x) + (radarKeys.r - radarKeys.l) * rate * dt + sight.dragYaw;
+    const pitch = clamp(Math.asin(clamp(sight.aim.y, -1, 1)) + (radarKeys.u - radarKeys.d) * rate * dt + sight.dragPitch, -0.25, 0.6);
+    yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+    sight.aim.set(Math.cos(pitch) * Math.cos(yaw), Math.sin(pitch), Math.cos(pitch) * Math.sin(yaw));
+  } else {
+    const e = sight.aim.angleTo(_a);
+    sight.omega += (Math.min(SIGHT_RATE, e * 9) - sight.omega) * (1 - Math.exp(-dt / 0.12));
+    if (e > 1e-5) sight.aim.lerp(_a, Math.min(sight.omega * dt, e) / e).normalize();
+  }
+  sight.dragYaw = 0;
+  sight.dragPitch = 0;
+  camera.lookAt(_b.copy(camera.position).add(sight.aim));
+  setFov(lens);
+}
+// The shell goes where the crosshair is: the hull point the sight's ray meets (the fire control leads it), else the sea beside her.
+function radarAimShell() {
+  const p = sim.player;
+  sight.zone = null;
+  if (p.tSunk !== null || sim.enemy.tSunk !== null) { input.aim = null; return; }
+  const g = ships[1].group;
+  g.updateMatrixWorld(true);
+  ships[0].group.localToWorld(_c.copy(BRIDGE_EYE));
+  sightRay.origin.copy(_c);
+  sightRay.direction.copy(sight.aim);
+  const local = sightRay.clone().applyMatrix4(_sm.copy(g.matrixWorld).invert());
+  const hit = local.intersectBox(hullBox, _a);
+  let P;
+  if (hit) { sight.zone = zoneAt(_a.x); P = g.localToWorld(_a.clone()); }
+  else { // off her hull: the point on the vertical plane through her, square to the line of sight
+    const d = _b.set(sim.enemy.x - _c.x, 0, sim.enemy.z - _c.z);
+    const dist = d.length() || 1;
+    const n = d.divideScalar(dist);
+    const denom = sight.aim.dot(n);
+    if (denom < 1e-4) { input.aim = null; return; }
+    const tt = (new THREE.Vector3(sim.enemy.x, 0, sim.enemy.z).sub(_c).dot(n)) / denom;
+    P = _c.clone().addScaledVector(sight.aim, tt);
+    P.y = Math.max(0, P.y);
+  }
+  const sol = sim.solve(p, MAIN_MOUNT, MUZZLE_V, true, {}, { p: [P.x, P.y, P.z], v: [p.est[0], 0, p.est[1]] });
+  input.aim = { yaw: sol.yaw, pitch: sol.pitch };
+}
+function updateRadarUi() {
+  if (view !== 'radar') return;
+  radarMode.textContent = sight.manual ? 'MANUAL' : 'AUTO';
+  radarMode.classList.toggle('manual', sight.manual);
+  const yaw = Math.atan2(sight.aim.z, sight.aim.x);
+  const rel = Math.atan2(Math.sin(yaw - sim.player.psi), Math.cos(yaw - sim.player.psi));
+  radarBrg.textContent = `${relName(rel)} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${camera.fov.toFixed(1)}°`;
+  const g = sim.player.gun;
+  sightEl.classList.toggle('lock', !!sight.zone);
+  sightEl.classList.toggle('searching', !sight.zone);
+  sightTxt.textContent = `${sight.zone ? `AIM: ${COMPARTMENTS[sight.zone].name.toUpperCase()}` : 'Off her hull'} · ${kmText(sim.range())} · ${AMMO_TYPES[g.type].name} ${g.stock[g.type]} · ${gunStatus(sim.player)}`;
+  map.sight = { yaw, locked: !!sight.zone };
+}
 
 // --- Loop --------------------------------------------------------------------------------------------------------------------
 function resize() {
@@ -614,6 +813,8 @@ let frames = 0;
 renderer.setAnimationLoop((now) => {
   const dt = Math.max(0, Math.min((now - last) / 1000, 0.1));
   last = now;
+  frameDt = dt;
+  updateAim();
   sim.advance(dt, input);
   handleEvents();
   env.ocean.material.uniforms.uTime.value = sim.t;
@@ -625,9 +826,14 @@ renderer.setAnimationLoop((now) => {
   env.setShadowFocus(_b.set((sim.player.x + sim.enemy.x) / 2, 0, (sim.player.z + sim.enemy.z) / 2), clamp(sim.range() * 0.5, 120, 600));
   fx.update(sim.t);
   audio.update(sim, camera);
-  if (hudOn) updateHud();
+  if (hudOn) {
+    updateHud();
+    const sh = shipHtml();
+    if (sh !== lastShip) { shipEl.innerHTML = sh; lastShip = sh; }
+  }
   if (mapOn) drawMap();
   updateTag();
+  updateRadarUi();
   const keys = keysHtml();
   if (keys !== lastKeys) { keysEl.innerHTML = keys; lastKeys = keys; }
   document.documentElement.style.setProperty('--keys-h', `${keysEl.offsetHeight}px`);

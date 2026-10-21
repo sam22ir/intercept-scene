@@ -23,14 +23,6 @@ body:not(.mission-duel) .duel-views, body.ui-hidden .duel-views { display: none;
 .duel-alarm.hit { animation: duel-hit 1.2s ease-out 1; }
 @keyframes duel-hit { 0% { opacity: 1; background: rgba(255, 140, 60, 0.35); } 100% { opacity: 0; background: transparent; } }
 
-/* The map: you at the centre, bow up. */
-.duel-map {
-  position: fixed; z-index: 9; width: var(--map-d); height: var(--map-d); border-radius: 50%; pointer-events: none;
-  left: calc(var(--gap) + var(--safe-l)); bottom: calc(var(--keys-h, 56px) + var(--gap) * 2 + var(--safe-b));
-  border: 1px solid var(--border); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
-}
-.duel-map[hidden], body:not(.mission-duel) .duel-map, body.ui-hidden .duel-map { display: none; }
-
 /* Readouts: the enemy, the dials, your ship. */
 body.mission-duel .hud { max-height: calc(100vh - 2 * var(--gap) - var(--keys-h, 56px) - 70px); overflow: hidden; }
 .duel-hud { display: grid; gap: 8px; }
@@ -60,4 +52,107 @@ body.mission-duel .hud { max-height: calc(100vh - 2 * var(--gap) - var(--keys-h,
 .dh-end p { margin: 2px 0; font-size: 11.5px; color: var(--muted); }
 .dh-end.won { border-color: rgba(61, 220, 132, 0.7); } .dh-end.won h2 { color: #3ddc84; }
 .dh-end.lost { border-color: rgba(255, 93, 97, 0.7); } .dh-end.lost h2 { color: #ff5d61; }
-@media (max-width: 640px) and (min-height: 501px) { .duel-map { display: none; } }
+
+/* Weapons, crews, missiles and the hand-aim reticle. */
+.dh-weapons .wide { grid-column: 1 / -1; }
+.dh-row { position: relative; }
+.dh-row.sel { outline: 1px solid rgba(255, 255, 255, 0.35); outline-offset: 1px; border-radius: 3px; }
+.dh-tags { grid-column: 1 / -1; display: flex; gap: 4px; font-size: 10px; line-height: 1; margin-top: -2px; }
+.dh-tags u { text-decoration: none; }
+.dh-tags .fire { color: #ff7a1a; letter-spacing: -1px; }
+.dh-tags .leak { color: #35c8ff; }
+.dh-tags .crew { color: #f2c94c; }
+.dh-tags .crew.going { opacity: 0.5; }
+
+body.mission-duel .hud { overflow-y: auto; scrollbar-width: thin; }
+.dh-row { line-height: 1.3; }
+.duel-hud { gap: 5px; }
+.dh-status, .dh-weapons { gap: 3px 10px; padding: 4px 0; }
+.dh-status b, .dh-weapons b { font-size: 13px; }
+
+/* The radar view (as Solo Air Defense's): the fire-control sight, its crosshair and the pad; the helm is locked. */
+body.duel-radarview canvas#scene { filter: saturate(0.6) contrast(1.12); }
+.duel-sight { position: fixed; inset: 0; z-index: 4; pointer-events: none; }
+.duel-sight[hidden] { display: none; }
+.duel-sight i { position: absolute; left: 50%; top: 50%; background: rgba(120, 255, 170, 0.75); }
+.duel-sight .hs-h { width: 34vmin; height: 1px; transform: translate(-50%, -50%); background: linear-gradient(90deg, rgba(120, 255, 170, 0.75) 40%, transparent 40% 60%, rgba(120, 255, 170, 0.75) 60%); }
+.duel-sight .hs-v { width: 1px; height: 34vmin; transform: translate(-50%, -50%); background: linear-gradient(180deg, rgba(120, 255, 170, 0.75) 40%, transparent 40% 60%, rgba(120, 255, 170, 0.75) 60%); }
+.duel-sight .hs-box { width: 9vmin; height: 9vmin; transform: translate(-50%, -50%); background: transparent; border: 1px solid rgba(120, 255, 170, 0.5); }
+.duel-sight.lock .hs-box { border: 2px solid #3ddc84; box-shadow: 0 0 12px rgba(61, 220, 132, 0.6); }
+.duel-sight .hs-txt {
+  position: absolute; left: 50%; top: calc(50% - 21vmin); transform: translate(-50%, -100%);
+  font: 700 12px/1.3 ui-monospace, Consolas, monospace; letter-spacing: 0.08em; color: #9dffc0; text-shadow: 0 1px 2px #000; white-space: nowrap;
+}
+.duel-radar { position: fixed; inset: 0; z-index: 5; pointer-events: none; }
+.duel-radar[hidden], body.ui-hidden .duel-radar { display: none; }
+.duel-radar .hr-marks { position: absolute; inset: 0; overflow: hidden; }
+.duel-radar .hr-mark { position: absolute; left: 0; top: 0; margin: 0; padding: 0; width: 0; height: 0; border: 0; background: none; pointer-events: auto; cursor: pointer; font: 600 11px 'Segoe UI', system-ui, sans-serif; color: #bfffd8; white-space: nowrap; text-shadow: 0 0 3px #000, 0 0 3px #000; }
+.duel-radar .hr-pad { position: absolute; left: 50%; bottom: calc(var(--keys-h, 56px) + var(--gap, 14px) + var(--safe-b, 0px)); transform: translateX(-50%); display: flex; gap: 10px; align-items: flex-end; max-width: calc(100vw - 2 * var(--map-d, 150px) - 40px); }
+.duel-radar .hr-mid { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 10px; background: rgba(9, 14, 21, 0.5); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 14px; backdrop-filter: blur(3px); pointer-events: auto; }
+.duel-radar .hr-read { display: flex; gap: 8px; align-items: baseline; color: var(--text); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.duel-radar .hr-mode { padding: 1px 7px; border-radius: 8px; background: #2a8f5c; color: #fff; font-size: 10.5px; letter-spacing: 0.08em; }
+.duel-radar .hr-mode.manual { background: #c98a1a; }
+.duel-radar .hr-dpad { display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 34px); grid-template-areas: '. u .' 'l k r' '. d .'; gap: 4px; }
+.duel-radar .hr-dpad [data-dir='u'] { grid-area: u; } .duel-radar .hr-dpad [data-dir='l'] { grid-area: l; } .duel-radar .hr-dpad [data-dir='r'] { grid-area: r; } .duel-radar .hr-dpad [data-dir='d'] { grid-area: d; } .duel-radar .hr-dpad .hr-hub { grid-area: k; }
+.duel-radar button { font: 600 12px 'Segoe UI', system-ui, sans-serif; color: var(--text); background: rgba(255, 255, 255, 0.09); border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 9px; cursor: pointer; touch-action: none; user-select: none; }
+.duel-radar .hr-pad button:hover { background: rgba(255, 255, 255, 0.18); }
+.duel-radar .hr-pad button:active { background: rgba(255, 255, 255, 0.3); }
+.duel-radar .hr-hub { background: rgba(61, 220, 132, 0.25); border-color: rgba(61, 220, 132, 0.7); font-size: 11px; letter-spacing: 0.06em; }
+.duel-radar .hr-acts { display: flex; flex-direction: column; gap: 4px; pointer-events: auto; }
+.duel-radar .hr-acts button { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-width: 128px; padding: 7px 10px; background: rgba(9, 14, 21, 0.55); backdrop-filter: blur(3px); }
+.duel-radar .hr-acts kbd { font-size: 10px; opacity: 0.7; }
+.duel-radar .hr-fire { background: rgba(255, 93, 97, 0.28); border-color: rgba(255, 93, 97, 0.7); }
+@media (max-width: 760px) { .duel-radar .hr-acts { display: none; } }
+.duel-radar .hr-mid { min-width: 236px; }
+@media (max-height: 600px) { .duel-radar .hr-dpad { grid-template-columns: repeat(3, 36px); grid-template-rows: repeat(3, 26px); } .duel-radar .hr-mid { padding: 5px 8px; gap: 4px; } }
+.duel-radar .hr-dpad .hr-hub { width: 100%; height: 100%; border-radius: 50%; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12); pointer-events: none; }
+.duel-radar[hidden], body:not(.mission-duel) .duel-radar, body:not(.mission-duel) .duel-sight { display: none; }
+.duel-radar .hr-pad { max-width: calc(100vw - 2 * var(--map-d, 150px) - 40px); }
+
+body.duel-radarview .duel-root { display: none; }
+
+/* The ship's instruments, as Solo Air Defense's strip: hull and compartments, the dome (heading tape, rudder, speed), the guns. */
+.duel-ship { position: fixed; z-index: 5; left: 50%; bottom: calc(var(--keys-h, 56px) + var(--gap, 14px) + var(--safe-b, 0px) - 1px); transform: translateX(-50%); display: flex; gap: 6px; align-items: flex-end; max-width: calc(100vw - 2 * var(--map-d, 150px) - 40px); pointer-events: none; }
+.duel-ship[hidden], body.ui-hidden .duel-ship, body.duel-radarview .duel-ship, body:not(.mission-duel) .duel-ship { display: none; }
+.duel-ship .hs-rect, .duel-ship .hs-dome { background: rgba(9, 14, 21, 0.5); border: 1px solid rgba(255, 255, 255, 0.1); border-bottom: 0; color: var(--text); font-variant-numeric: tabular-nums; backdrop-filter: blur(3px); }
+.duel-ship .hs-rect { display: flex; flex-direction: column; justify-content: center; gap: 4px; width: 232px; min-height: 48px; padding: 6px 10px; border-radius: 10px 10px 0 0; flex: 1 1 0; min-width: 150px; }
+.duel-ship .hs-rect > span { color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.duel-ship .hs-rect b { color: var(--text); }
+.duel-ship .hs-hull.hurt { border-color: rgba(255, 93, 97, 0.6); }
+.duel-ship .hs-dome { width: 196px; height: 102px; border-radius: 98px 98px 0 0; overflow: hidden; flex: none; }
+.duel-ship .dome-svg { display: block; width: 196px; height: 102px; }
+.dome-svg .rim { fill: none; stroke: rgba(255, 255, 255, 0.25); stroke-width: 1; }
+.dome-svg line { stroke: rgba(255, 255, 255, 0.55); stroke-width: 1; }
+.dome-svg line.mj { stroke: rgba(255, 255, 255, 0.9); stroke-width: 1.6; }
+.dome-svg .dl { fill: #fff; font: 700 12.5px 'Segoe UI', system-ui, sans-serif; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.75); stroke-width: 2.4px; stroke-linejoin: round; }
+.dome-svg .hd { fill: #fff; font: 800 18px 'Segoe UI', system-ui, sans-serif; letter-spacing: 0.03em; text-anchor: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.7); stroke-width: 2.6px; stroke-linejoin: round; }
+.dome-svg .lub { fill: var(--accent); }
+.dome-svg .rt { fill: none; stroke: rgba(255, 255, 255, 0.14); stroke-width: 5; stroke-linecap: round; }
+.dome-svg .rf { fill: none; stroke-width: 5; stroke-linecap: round; }
+.dome-svg .rf.stbd { stroke: #3ddc84; }
+.dome-svg .rf.port { stroke: #ff5d61; }
+.dome-svg line.rm { stroke: rgba(255, 255, 255, 0.8); stroke-width: 1.4; }
+.dome-svg .sp { fill: #fff; font: 700 14px 'Segoe UI', system-ui, sans-serif; text-anchor: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.6); stroke-width: 2px; }
+.dome-svg .sp tspan { fill: rgba(255, 255, 255, 0.6); font-size: 9.5px; font-weight: 500; }
+.duel-ship .hs-cells { display: flex; gap: 4px; }
+.duel-ship .cp { position: relative; flex: 1; height: 26px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.18); overflow: hidden; font-style: normal; }
+.duel-ship .cp s { position: absolute; left: 0; right: 0; bottom: 0; background: #3ddc84; opacity: 0.85; }
+.duel-ship .cp.hurt s { background: #f2c94c; } .duel-ship .cp.bad s { background: #ff7a1a; } .duel-ship .cp.out { border-color: #ff5d61; }
+.duel-ship .cp.sel { outline: 1px solid rgba(255, 255, 255, 0.7); outline-offset: 1px; }
+.duel-ship .cp b { position: absolute; left: 0; right: 0; top: 2px; text-align: center; font-size: 8.5px; letter-spacing: 0.04em; text-shadow: 0 1px 2px #000; z-index: 1; }
+.duel-ship .cp em { position: absolute; left: 0; right: 0; bottom: 1px; display: flex; justify-content: center; gap: 1px; font-style: normal; font-size: 8px; line-height: 1; z-index: 1; }
+.duel-ship .cp u { text-decoration: none; } .duel-ship .cp .fire { color: #ff7a1a; } .duel-ship .cp .leak { color: #35c8ff; } .duel-ship .cp .crew { color: #f2c94c; }
+.dh-range { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-top: 1px solid var(--hair); font-size: 11px; color: var(--muted); }
+.dh-range b { color: var(--text); font-size: 14px; }
+@media (max-width: 900px) { .duel-ship { bottom: calc(var(--keys-h, 56px) + 58px); } }
+/* Wide windows: the instruments stand on the bottom edge, out of the view; the key hints go up under the view buttons. */
+@media (min-width: 901px) {
+  .duel-ship { bottom: var(--gap, 14px); }
+  body.mission-duel .shot-caption { top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 96px); bottom: auto; }
+  body.mission-duel .fly-keys { width: max-content; flex-wrap: nowrap; bottom: auto; top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 56px); padding: 4px 12px; gap: 4px 12px; font-size: 11px; background: rgba(9, 14, 21, 0.35); backdrop-filter: none; }
+  .duel-radar .hr-pad { bottom: var(--gap, 14px); }
+}
+@media (min-width: 901px) {
+  body.mission-duel .fly-keys { max-width: calc(100vw - 540px); overflow: hidden; }
+  .duel-ship .hs-rect { width: 270px; }
+}
