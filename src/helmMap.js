@@ -195,7 +195,7 @@ export function createHelmMap() {
       }
     }
 
-    // The ship's own helicopter, a friendly (cyan) contact while its rotor turns: a ring with a rotor cross, and HELO once it is airborne.
+    // The ship's own helicopter, a friendly (cyan) contact while its rotor turns: a ring with a rotor cross (a symbol, no label).
     const hs = sim.heli.state;
     if (hs.rpm > 0) {
       const hx = R + hs.z * k;
@@ -208,7 +208,6 @@ export function createHelmMap() {
       ctx.moveTo(hx - 3, hy - 3); ctx.lineTo(hx + 3, hy + 3);
       ctx.moveTo(hx + 3, hy - 3); ctx.lineTo(hx - 3, hy + 3);
       ctx.stroke();
-      if (hs.flying) { ctx.font = '700 8px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillText('HELO', hx + 7, hy + 1); }
     }
 
     // The ship at the centre.
