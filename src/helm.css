@@ -282,8 +282,26 @@ body.mission-helm .fly-keys .fk-btn:active { background: rgba(255, 255, 255, 0.2
 .hud .tk-top em.pass, .hud .tk-top em.attack { background: #ff5d61; animation: rt-blink 0.8s steps(2) infinite; }
 .hud .tk-eta { margin-left: auto; font: 800 9.5px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.08em; color: #ffc454; white-space: nowrap; }
 .hud .tk-eta.soon { color: #ff5d61; animation: rt-blink 0.8s steps(2) infinite; }
-.hud .tk-main { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 7px; }
-.hud .tk-read { display: grid; gap: 5px; justify-items: end; }
+.hud .tk-main { display: flex; align-items: center; gap: 10px; margin-top: 7px; }
+.hud .tk-dial { flex: none; width: 92px; height: 92px; filter: drop-shadow(0 0 7px rgba(0, 0, 0, 0.45)); }
+.hud .dl-bg { fill: rgba(4, 14, 22, 0.62); stroke: rgba(255, 255, 255, 0.35); stroke-width: 1; }
+.hud .dl-ring { fill: none; stroke: rgba(255, 255, 255, 0.12); stroke-width: 0.6; }
+.hud .dl-ax { stroke: rgba(255, 255, 255, 0.12); stroke-width: 0.5; fill: none; }
+.hud .dl-arc { fill: rgba(61, 220, 132, 0.1); stroke: rgba(61, 220, 132, 0.55); stroke-width: 0.8; }
+.hud .dl-gun { fill: none; stroke: rgba(255, 179, 64, 0.55); stroke-width: 0.7; stroke-dasharray: 2 2.4; }
+.hud .dl-blk { fill: rgba(255, 93, 97, 0.22); stroke: none; }
+.hud .dl-sw path { fill: #3ddc84; stroke: none; }
+.hud .dl-sl { stroke: rgba(120, 255, 170, 0.85); stroke-width: 0.9; }
+.hud .dl-ship { fill: #fff; stroke: rgba(0, 0, 0, 0.5); stroke-width: 0.6; stroke-linejoin: round; }
+.hud .dl-dot { fill: #ffc454; stroke: rgba(0, 0, 0, 0.55); stroke-width: 0.6; }
+.hud .dl-dot.attack, .hud .dl-dot.pass { fill: #ff5d61; }
+.hud .dl-dot.sel { stroke: #fff; stroke-width: 1; }
+.hud .dl-halo { fill: none; stroke: #ffc454; stroke-width: 0.9; opacity: 0.85; transform-box: fill-box; transform-origin: center; animation: dl-ping 1.4s ease-out infinite; }
+.hud .dl-halo.attack, .hud .dl-halo.pass { stroke: #ff5d61; animation-duration: 0.6s; }
+@keyframes dl-ping { from { transform: scale(0.6); opacity: 1; } to { transform: scale(1.7); opacity: 0; } }
+.hud .dl-tail { fill: none; stroke: rgba(255, 196, 84, 0.6); stroke-width: 1; stroke-dasharray: 1.5 1.8; stroke-linecap: round; }
+.hud .dl-vec { stroke: #fff; stroke-width: 1.1; stroke-linecap: round; opacity: 0.85; }
+.hud .tk-read { flex: 1; min-width: 0; display: grid; gap: 5px; justify-items: start; }
 .hud .tg-range { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; line-height: 0.95; }
 .hud .tg-range small { margin-left: 3px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: rgba(255, 255, 255, 0.6); }
 .hud .tg-high .tg-range { color: #ff5d61; text-shadow: 0 0 14px rgba(255, 93, 97, 0.5); }
@@ -339,25 +357,4 @@ body.mission-helm .fly-keys .fk-btn:active { background: rgba(255, 255, 255, 0.2
 .helm-ship .st-kills { display: grid; justify-items: center; align-content: center; gap: 2px; padding-left: 14px; border-left: 1px solid rgba(255, 255, 255, 0.15); }
 .helm-ship .st-kills b { font: 800 26px/1 ui-monospace, Consolas, monospace; color: #ffc454; }
 /* Short windows: the card has to leave room for the contact list, so the strip of speed, closing and altitude steps aside. */
-@media (max-height: 640px) { .hud .tk-cells { display: none; } .hud .tg-range { font-size: 26px; } }
-
-/* The bearing tape and the side profile, in place of a second radar dial (the map has the radar). */
-.hud .tk-tape { display: block; width: 100%; height: 34px; margin-top: 6px; }
-.hud .tp-bg { fill: rgba(4, 14, 22, 0.55); stroke: rgba(255, 255, 255, 0.25); stroke-width: 0.6; }
-.hud .tp-arc { fill: rgba(61, 220, 132, 0.22); }
-.hud .tp-blk { fill: rgba(255, 93, 97, 0.35); }
-.hud .tp-bow { stroke: rgba(255, 255, 255, 0.7); stroke-width: 0.8; fill: none; }
-.hud .tp-t { stroke: rgba(255, 255, 255, 0.5); stroke-width: 0.8; fill: none; }
-.hud .tp-l { fill: rgba(255, 255, 255, 0.55); font: 700 6.5px ui-monospace, Consolas, monospace; text-anchor: middle; }
-.hud .tp-c { fill: #ffc454; opacity: 0.8; }
-.hud .tp-c.attack, .hud .tp-c.pass { fill: #ff5d61; }
-.hud .tp-m { fill: #ffc454; stroke: #fff; stroke-width: 0.8; }
-.hud .tp-m.attack, .hud .tp-m.pass { fill: #ff5d61; animation: rt-blink 0.6s steps(2) infinite; }
-.hud .tk-prof { display: block; width: 100%; height: 40px; margin-top: 4px; }
-.hud .pf-sea { stroke: rgba(255, 255, 255, 0.35); stroke-width: 1; }
-.hud .pf-msl { fill: rgba(61, 220, 132, 0.85); }
-.hud .pf-gun { fill: rgba(255, 179, 64, 0.85); }
-.hud .pf-ship { fill: #9fb4c8; }
-.hud .pf-drop { stroke: rgba(255, 196, 84, 0.6); stroke-dasharray: 2 2; stroke-width: 1; }
-.hud .pf-dot { fill: #ffc454; stroke: #fff; stroke-width: 1; }
-.hud .tk-prof.ready .pf-dot { fill: #3ddc84; }
+@media (max-height: 640px) { .hud .tk-cells { display: none; } .hud .tk-dial { width: 76px; height: 76px; } .hud .tg-range { font-size: 26px; } }

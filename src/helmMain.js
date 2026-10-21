@@ -1259,46 +1259,65 @@ function closingSpeed(t, r) {
   return -_a.dot(_cs) / (r || 1);
 }
 
-// The bearing tape: the bow in the middle, port to the left and starboard to the right, the missile arc and the guns' blind sector
-// shaded on it, every contact a tick and the target a lit marker; and the side profile: the ship at the left, the reach of the missile
-// and the guns as bars under the sea line, the target a dot at its range and height with a drop line to the sea.
-const TAPE_W = 220;
-function tapeSvg(sel) {
-  const X = (rad) => TAPE_W / 2 + (THREE.MathUtils.radToDeg(rad) / 180) * (TAPE_W / 2 - 6);
-  const arc = [X(-ARC), X(ARC)];
-  const blk = [X(-GUN_BLOCK), X(GUN_BLOCK)];
-  let ticks = '';
-  for (let d = -150; d <= 150; d += 30) {
-    const x = X(THREE.MathUtils.degToRad(d));
-    ticks += `<path d="M${x.toFixed(1)} 16v${d === 0 ? 7 : 4}" class="tp-t"/>`;
-    if (d !== 0 && d % 60 === 0) ticks += `<text x="${x.toFixed(1)}" y="31" class="tp-l">${Math.abs(d)}</text>`;
-  }
-  let dots = '';
+// The track dial: the ship at the centre, bow up, the missile arc and the guns' blind sector drawn on it, a sweep going round, every
+// contact a blip (fading after the sweep passes it, the target always lit) and, on the target, a tail of where it has been and a
+// vector of where it is going.
+const DIAL_K = 44 / 6000; // dial units per metre (the rim is 6 km)
+const SWEEP_T = 3; // s per turn
+const trk = new Map(); // drone id -> its recent world positions [t, x, z]
+function trackNote(d) {
+  let a = trk.get(d.id);
+  if (!a) { a = []; trk.set(d.id, a); }
+  if (a.length && sim.t < a[a.length - 1][0]) a.length = 0; // the sim was restarted
+  const last = a[a.length - 1];
+  if (!last || sim.t - last[0] >= 0.5) { a.push([sim.t, d.pos.x, d.pos.z]); if (a.length > 16) a.shift(); }
+  return a;
+}
+function dialPt(x, z) { // a world point in the ship's frame, bow up (clamped to the rim)
+  const dx = x - sim.x;
+  const dz = z - sim.z;
+  const c = Math.cos(sim.psi);
+  const s = Math.sin(sim.psi);
+  const fw = dx * c + dz * s;
+  const sb = -dx * s + dz * c;
+  const m = Math.hypot(fw, sb);
+  const k = m > 6000 ? 6000 / m : 1;
+  return [50 + sb * k * DIAL_K, 50 - fw * k * DIAL_K];
+}
+const arcPt = (r, a) => `${(50 + r * Math.sin(a)).toFixed(1)},${(50 - r * Math.cos(a)).toFixed(1)}`; // a: clockwise from the bow
+const wedge = (r, a0, a1) => `M50,50L${arcPt(r, a0)}A${r},${r} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${arcPt(r, a1)}Z`;
+function dialSvg(sel) {
+  const th = ((sim.t / SWEEP_T) % 1) * Math.PI * 2;
+  let sweep = '';
+  for (let i = 0; i < 9; i += 1) sweep += `<path d="${wedge(44, th - (i + 1) * 0.08, th - i * 0.08)}" style="opacity:${(0.3 * (1 - i / 9) ** 1.6).toFixed(3)}"/>`;
+  let blips = '';
   for (const d of sim.detected) {
     if (d === sel) continue;
-    dots += `<circle cx="${X(sim.relBearing(d.pos)).toFixed(1)}" cy="19" r="2.2" class="tp-c ${d.phase}"/>`;
+    const [x, y] = dialPt(d.pos.x, d.pos.z);
+    const lag = ((th - Math.atan2(x - 50, 50 - y)) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+    blips += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.3" class="dl-dot ${d.phase}" style="opacity:${(0.3 + 0.7 * Math.exp(-lag / 1.5)).toFixed(2)}"/>`;
   }
-  let mark = '';
+  let lock = '';
   if (sel) {
-    const x = X(sim.relBearing(sel.pos)).toFixed(1);
-    mark = `<path d="M${x} 21l-4.5-9h9z" class="tp-m ${sel.phase}"/>`;
+    const [x, y] = dialPt(sel.pos.x, sel.pos.z);
+    const tail = trackNote(sel).map((p) => dialPt(p[1], p[2]).map((v) => v.toFixed(1)).join(',')).join(' ');
+    _a.copy(sel.vel).sub(sim.shipVel(_b)); // its motion over the water, in the ship's frame
+    const fw = _a.x * Math.cos(sim.psi) + _a.z * Math.sin(sim.psi);
+    const sb = -_a.x * Math.sin(sim.psi) + _a.z * Math.cos(sim.psi);
+    const vm = Math.hypot(fw, sb) || 1;
+    const vx = x + (sb / vm) * 11;
+    const vy = y - (fw / vm) * 11;
+    lock = `<polyline points="${tail}" class="dl-tail"/><line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${vx.toFixed(1)}" y2="${vy.toFixed(1)}" class="dl-vec"/>`
+      + `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" class="dl-halo ${sel.phase}"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8" class="dl-dot sel ${sel.phase}"/>`;
   }
-  return `<svg class="tk-tape" viewBox="0 0 ${TAPE_W} 34" preserveAspectRatio="none" aria-hidden="true"><rect x="0" y="14" width="${TAPE_W}" height="10" rx="3" class="tp-bg"/>`
-    + `<rect x="${arc[0].toFixed(1)}" y="14" width="${(arc[1] - arc[0]).toFixed(1)}" height="10" class="tp-arc"/>`
-    + `<rect x="${blk[0].toFixed(1)}" y="14" width="${(blk[1] - blk[0]).toFixed(1)}" height="10" class="tp-blk"/>`
-    + `<path d="M${TAPE_W / 2} 12v14" class="tp-bow"/>${ticks}${dots}${mark}</svg>`;
-}
-const PROF_W = 200;
-function profileSvg(t, r, ready) {
-  const X = (m) => 10 + Math.min(m, 6000) / 6000 * (PROF_W - 16);
-  const dx = X(r);
-  const dy = 30 - Math.min(t.pos.y, 400) / 400 * 26;
-  return `<svg class="tk-prof${ready ? ' ready' : ''}" viewBox="0 0 ${PROF_W} 44" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="30" x2="${PROF_W}" y2="30" class="pf-sea"/>`
-    + `<rect x="${X(MIN_RANGE)}" y="33" width="${X(MISSILE_RANGE) - X(MIN_RANGE)}" height="3" rx="1.5" class="pf-msl"/>`
-    + `<rect x="${X(0)}" y="38" width="${X(GUN_RANGE) - X(0)}" height="3" rx="1.5" class="pf-gun"/>`
-    + `<path d="M4 30h8l-1.5-6h-5z" class="pf-ship"/>`
-    + `<line x1="${dx.toFixed(1)}" y1="${dy.toFixed(1)}" x2="${dx.toFixed(1)}" y2="30" class="pf-drop"/>`
-    + `<circle cx="${dx.toFixed(1)}" cy="${dy.toFixed(1)}" r="3.4" class="pf-dot"/></svg>`;
+  const gun = GUN_RANGE * DIAL_K;
+  return `<svg viewBox="0 0 100 100" class="tk-dial" aria-hidden="true"><circle cx="50" cy="50" r="46" class="dl-bg"/>`
+    + `<path d="${wedge(MISSILE_RANGE * DIAL_K, -ARC, ARC)}" class="dl-arc"/>`
+    + `<path d="${wedge(gun, -GUN_BLOCK, GUN_BLOCK)}" class="dl-blk"/><circle cx="50" cy="50" r="${gun.toFixed(1)}" class="dl-gun"/>`
+    + `<circle cx="50" cy="50" r="22" class="dl-ring"/><circle cx="50" cy="50" r="44" class="dl-ring"/>`
+    + `<path d="M50 6V94M6 50H94" class="dl-ax"/><g class="dl-sw">${sweep}</g>`
+    + `<path d="M50,50L${arcPt(44, th)}" class="dl-sl"/>${blips}${lock}`
+    + `<path d="M50 44l3.6 8.5h-7.2z" class="dl-ship"/></svg>`;
 }
 // A contact's own little bearing dial for the list: the bow up, a dot where it lies.
 function miniDial(d) {
@@ -1329,9 +1348,8 @@ function hudHtml() {
     const [rv, ru] = rangeParts(r);
     out.push(`<div class="hud-sec tg tg-${tone}"><div class="tk-top"><span class="tk-id">TRK<b>${t.name}</b></span><em class="${t.phase}">${phaseWord[t.phase] ?? t.phase}</em>`
       + `<span class="tk-eta${eta !== null && eta < 30 ? ' soon' : ''}">${eta === null ? 'OPENING' : `IMPACT ${mmss(eta)}`}</span></div>`
-      + `<div class="tk-main"><strong class="tg-range">${rv}<small>${ru}</small></strong><div class="tk-read">`
+      + `<div class="tk-main">${dialSvg(t)}<div class="tk-read"><strong class="tg-range">${rv}<small>${ru}</small></strong>`
       + `<span class="tk-brg ${rel < 0 ? 'port' : 'stbd'}">${relName(sim.relBearing(t.pos)).toUpperCase()}</span><span class="tk-true">TRUE ${String(Math.round(brg) % 360).padStart(3, '0')}°</span></div></div>`
-      + `${tapeSvg(t)}${profileSvg(t, r, !sim.engageable(t))}`
       + `<div class="tk-cells">${tkCell('SPEED', Math.round(t.vel.length() * 3.6), 'km/h')}`
       + `<div class="tk-cell${closing > 5 ? ' in' : ''}"><span>CLOSING</span><b>${closing < 0 ? '−' : ''}${Math.round(Math.abs(closing) * 3.6)}<small>km/h</small></b>${chevs(closing)}</div>`
       + `${tkCell('ALT', f(t.pos.y), 'm', `<i class="tk-alt" style="--p:${Math.min(1, t.pos.y / 400).toFixed(2)}"></i>`)}</div>`
@@ -1339,7 +1357,7 @@ function hudHtml() {
       + `${zoneHtml(t)}</div>`);
   } else {
     out.push(`<div class="hud-sec tg tg-none"><div class="tk-top"><span class="tk-id">TRK<b>—</b></span><em>scanning</em><span class="tk-eta">Tab selects</span></div>`
-      + `<div class="tk-main"><strong class="tg-range tg-idle">NO<small>CONTACT</small></strong><div class="tk-read"><span class="tk-true">RADAR ${kmText(RADAR_RANGE)}</span></div></div>${tapeSvg(null)}</div>`);
+      + `<div class="tk-main">${dialSvg(null)}<div class="tk-read"><strong class="tg-range tg-idle">NO<small>CONTACT</small></strong><span class="tk-true">RADAR ${kmText(RADAR_RANGE)}</span></div></div></div>`);
   }
 
   // The radar picture: every contact on one line, each with its own little bearing dial.
