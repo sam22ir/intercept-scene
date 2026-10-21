@@ -7,14 +7,14 @@
 
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
 let F;
 let S;
 before(async () => {
   globalThis.__SHIP_VARIANT = 'fwd';
   globalThis.__SCENARIO = 'chute';
-  const url = (f) => `${pathToFileURL(new URL(f, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')).href}?fly`;
+  const url = (f) => `${pathToFileURL(fileURLToPath(new URL(f, import.meta.url))).href}?fly`;
   S = await import(url('../src/scenario.js'));
   F = await import(url('../src/fly.js'));
 });
