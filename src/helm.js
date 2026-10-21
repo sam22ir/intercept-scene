@@ -36,6 +36,7 @@
 import * as THREE from 'three';
 import { G, LAUNCHER_PIVOT, TUBE_MOUTH, launcherQuat } from './scenario.js';
 import { attitude } from './fly.js';
+import { HeliFlight } from './heliFlight.js';
 
 const rad = THREE.MathUtils.degToRad;
 const deg = THREE.MathUtils.radToDeg;
@@ -191,6 +192,7 @@ export class HelmSim {
     this.gunsAuto = false;
     this.guns = GUN_MOUNTS.map(() => ({ yaw: GUN_STOW.yaw, pitch: GUN_STOW.pitch, ammo: GUN_ROUNDS, firing: false, rounds: 0, spin: 0, spinRate: 0, burst: 0, cool: 0 }));
     this.events = [];
+    this.heli = new HeliFlight((this.seed ^ 0x2718) >>> 0); // the deck helicopter, only for the look: it never flies while she turns
   }
 
   say(text, tone = '') { this.events.push({ type: 'say', text, tone }); }
@@ -329,6 +331,7 @@ export class HelmSim {
   step(dt, input) {
     this.t += dt;
     this.stepShip(dt, input);
+    this.heli.step(dt, !this.out && Math.abs(this.r) < rad(0.4) && Math.abs(this.rudder) < rad(2)); // a fixed course: no rudder, no turn
     this.stepSpawn();
     for (const d of this.drones) this.stepDrone(d, dt);
     this.stepLauncher();

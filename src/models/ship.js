@@ -977,7 +977,7 @@ export function createShip({ ensign = 'alg', catapult = true, helicopter = false
     // (The third argument, a second round's launch time, is accepted and unused: only one cell has a cap that blows off.)
     update(t, tLaunch, _tLaunch2 = Infinity, opts = null) {
       radar.rotation.y = t * 2.1;
-      heli?.userData.update(t);
+      if (heli && opts?.heli) heli.userData.update(opts.heli); // the sim's helicopter (heliFlight.js)
       const { yaw, pitch } = opts?.aim ?? launcherAim(t);
       yawGroup.rotation.y = yaw;
       pitchGroup.rotation.z = pitch;

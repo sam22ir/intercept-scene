@@ -362,7 +362,7 @@ function applyState(dt) {
   ship.group.position.set(sim.x, 0.12 * Math.sin(t * 0.61), sim.z);
   ship.group.rotation.set(roll, -sim.psi, pitch);
   ship.group.updateMatrixWorld(true);
-  ship.update(t, Infinity, Infinity, { aim: sim.launcher, cradleT: 0 });
+  ship.update(t, Infinity, Infinity, { aim: sim.launcher, cradleT: 0, heli: sim.heli.state });
   env.ocean.material.uniforms.uTime.value = t;
   updateWake();
 

@@ -1,4 +1,3 @@
-import { heliState } from './models/helicopter.js';
 import { RADAR_RANGE, ARC, MIN_RANGE, MISSILE_RANGE, GUN_RANGE, gunBlind, kmText } from './helm.js';
 
 // The Solo Air Defense mission's radar: the same round translucent disc as the other maps, but a ship's radar display:
@@ -196,19 +195,14 @@ export function createHelmMap() {
       }
     }
 
-    // The ship's own helicopter, a friendly (cyan) contact while its rotor turns: a ring with a rotor cross, a short leader and HELO.
-    const hs = heliState(sim.t);
+    // The ship's own helicopter, a friendly (cyan) contact while its rotor turns: a ring with a rotor cross, and HELO once it is airborne.
+    const hs = sim.heli.state;
     if (hs.rpm > 0) {
       const hx = R + hs.z * k;
       const hy = R - hs.x * k;
-      const h2 = heliState(sim.t + 10);
       ctx.strokeStyle = CYAN;
       ctx.fillStyle = CYAN;
       ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(hx, hy);
-      ctx.lineTo(R + h2.z * k, R - h2.x * k);
-      ctx.stroke();
       ctx.beginPath();
       ctx.arc(hx, hy, 4, 0, Math.PI * 2);
       ctx.moveTo(hx - 3, hy - 3); ctx.lineTo(hx + 3, hy + 3);

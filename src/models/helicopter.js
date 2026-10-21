@@ -1,80 +1,11 @@
 import * as THREE from 'three';
 import { Kit, mat } from './kit.js';
-import { mulberry32 } from '../rng.js';
+import { HeliFlight } from '../heliFlight.js';
 
 // A naval helicopter (Panther / Dauphin class): a rounded fuselage with a glazed nose, a tail boom with fin and tail rotor, a four-blade
 // main rotor, wheeled gear. Nose along +X, the wheels at y = 0; procedural geometry only. It stands on the pad (PAD) and, every so
-// often, spins up, lifts off, flies a circuit round the ship and lands again, only for the look of it: where it is at sim time t is a
-// pure function of t (`userData.update(t)`), with a seeded random schedule (how long it stays parked, which side, how wide it flies).
-export const PAD = { x: -45.8, y: 5.5, z: 0.5 }; // where the wheels rest, in the ship's frame
-const T_SPINUP = 6;
-const T_LIFT = 5;
-const T_DESC = 6;
-const T_SPINDOWN = 8;
-const HOVER = 14; // m above the pad
-const W_ROTOR = 30; // rad/s at full speed
-const smooth = (u) => { const x = Math.min(1, Math.max(0, u)); return x * x * (3 - 2 * x); };
-
-const rng = mulberry32(2718);
-const cycles = []; // each flight: its times and its shape, made as they are needed
-function cycleAt(i) {
-  while (cycles.length <= i) {
-    const prev = cycles[cycles.length - 1];
-    const park = cycles.length === 0 ? 20 + rng() * 20 : 35 + rng() * 75;
-    const R = 140 + rng() * 120;
-    const fly = (2 * Math.PI * R) / (26 + rng() * 10);
-    const c = { t0: prev ? prev.t1 : 0, park, R, fly, side: rng() < 0.5 ? -1 : 1, peak: 28 + rng() * 34, spin0: prev ? prev.spin1 : 0 };
-    c.tLift = c.t0 + park + T_SPINUP;
-    c.tFly = c.tLift + T_LIFT;
-    c.tDesc = c.tFly + fly;
-    c.tDown = c.tDesc + T_DESC;
-    c.t1 = c.tDown + T_SPINDOWN;
-    c.spin1 = c.spin0 + W_ROTOR * (0.5 * T_SPINUP + T_LIFT + fly + T_DESC + 0.5 * T_SPINDOWN);
-    cycles.push(c);
-  }
-  return cycles[i];
-}
-// Where the helicopter is, how it stands and how fast its rotor turns at sim time t (in the ship's frame).
-export function heliState(t) {
-  let i = 0;
-  let c = cycleAt(0);
-  while (t >= c.t1) c = cycleAt(++i);
-  const st = { x: PAD.x, y: PAD.y, z: PAD.z, yaw: 0, pitch: 0, roll: 0, rpm: 0, spin: c.spin0, flying: false };
-  const park = c.t0 + c.park;
-  if (t < park) return st;
-  if (t < c.tLift) { // spinning up on the deck
-    const u = (t - park) / T_SPINUP;
-    st.rpm = u;
-    st.spin = c.spin0 + W_ROTOR * 0.5 * (t - park) * u;
-    return st;
-  }
-  if (t < c.tDown) {
-    st.flying = true;
-    st.rpm = 1;
-    st.spin = c.spin0 + W_ROTOR * (0.5 * T_SPINUP + (t - c.tLift));
-    let h = 0;
-    if (t < c.tFly) h = HOVER * smooth((t - c.tLift) / T_LIFT);
-    else if (t < c.tDesc) {
-      // A circle through the pad, leaving toward the bow, flown slowly at both ends and fastest in the middle.
-      const u = (t - c.tFly) / c.fly;
-      const th = 2 * Math.PI * smooth(u);
-      const sf = Math.min(1.3, (2 * Math.PI * 6 * u * (1 - u) * c.R) / c.fly / 30); // its speed against 30 m/s
-      h = HOVER + (c.peak - HOVER) * Math.sin(th / 2);
-      st.x = PAD.x + c.R * Math.sin(th);
-      st.z = PAD.z + c.side * c.R * (1 - Math.cos(th));
-      st.yaw = -Math.atan2(c.side * Math.sin(th), Math.cos(th));
-      st.pitch = -0.1 * sf;
-      st.roll = c.side * 0.3 * Math.min(1, sf);
-    } else h = HOVER * (1 - smooth((t - c.tDesc) / T_DESC));
-    st.y = PAD.y + h;
-    return st;
-  }
-  const tau = t - c.tDown; // on the deck again, the rotor winding down
-  st.rpm = 1 - tau / T_SPINDOWN;
-  st.spin = c.spin0 + W_ROTOR * (0.5 * T_SPINUP + T_LIFT + c.fly + T_DESC + tau * (1 - (0.5 * tau) / T_SPINDOWN));
-  return st;
-}
-
+// often, spins up, lifts off, flies a circuit round the ship and lands again, only for the look of it (heliFlight.js decides when:
+// never while the ship is turning); `userData.update(state)` poses it from that state.
 export function createHelicopter() {
   const M = {
     body: mat(0x8d979e, { metalness: 0.3, roughness: 0.55 }),
@@ -149,8 +80,7 @@ export function createHelicopter() {
   group.name = 'helicopter';
   group.add(k.build({ name: 'fuselage' }), rotor, tail);
   const e = new THREE.Euler();
-  group.userData.update = (t) => {
-    const st = heliState(t);
+  group.userData.update = (st) => {
     group.position.set(st.x, st.y, st.z);
     group.rotation.copy(e.set(st.roll, st.yaw, st.pitch, 'YZX'));
     rotor.rotation.y = -st.spin;
@@ -158,6 +88,6 @@ export function createHelicopter() {
     disc.material.opacity = 0.16 * Math.min(1, st.rpm * 1.4) ** 2;
     blades.visible = st.rpm < 0.6; // a fast rotor is the disc, not 4 strobing blades
   };
-  group.userData.update(0);
+  group.userData.update(new HeliFlight().state);
   return group;
 }
