@@ -259,15 +259,19 @@ describe('the words are true of the ship duel', () => {
     const sim = new D.DuelSim({ seed: 1 });
     assert.equal(sim.ships.length, 2);
     assert.ok(sim.ships[1].ai && !sim.ships[0].ai, 'one helmsman, the enemy');
-    assert.match(m.facts[0], /^2 frigates, 1 enemy/);
+    assert.match(m.facts[0], /^HE and AP rounds, \d missiles/);
+    assert.match(m.facts[0], new RegExp(`${D.MSL_STOCK} missiles`));
+    assert.deepEqual(Object.keys(D.AMMO_TYPES), ['he', 'ap']);
     assert.equal(sim.ships[0].gats.length, 2, 'the two 30 mm guns');
-    assert.match(m.facts[1], /76 mm \+ two 30 mm/);
+    assert.match(m.facts[1], /aft guns shoot down missiles/);
+    assert.ok(D.GUN_MSL_RANGE > 0, 'the 30 mm guns can engage missiles');
     assert.ok(D.MAIN_ARC > 0 && D.MAIN_MOUNT[0] > 0, 'the 76 mm is on the bow');
     assert.equal(D.COMP_IDS.length, 5);
-    assert.match(m.facts[2], /^5 compartments/);
+    assert.match(m.facts[2], new RegExp(`^${D.CREWS} repair crews`));
     assert.match(m.tagline, /76 mm/);
     assert.match(m.tagline, /30 mm/);
     assert.match(m.tagline, /sinks/);
+    for (const w of ['HE', 'AP', 'missile', 'repair crews']) assert.match(m.tagline, new RegExp(w));
     assert.equal(m.level, true, 'the enemy level is a choice');
     assert.equal(menuText('duel').hasLevel, true);
     assert.equal(menuText('fly').hasLevel, false);
@@ -284,7 +288,8 @@ describe('the words are true of the ship duel', () => {
   it('every key it lists is really bound, and the tagline names the firing key', () => {
     const keys = missionById('duel').keys.map(([k]) => k);
     for (const k of keys.filter((x) => /^[A-Z]$/.test(x))) assert.match(src.duel, new RegExp(`(case '${k.toLowerCase()}'|key === '${k.toLowerCase()}')`), `duel: ${k}`);
-    assert.ok(keys.includes('← →') && keys.includes('↑ ↓'));
+    assert.ok(keys.includes('← →') && keys.includes('↑ ↓') && keys.includes('Enter'));
+    assert.match(src.duel, /case 'Enter'/, 'duel: Enter');
     for (const arrow of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) assert.match(src.duel, new RegExp(arrow));
     assert.match(missionById('duel').tagline, /hold F/);
     assert.match(src.start, /duelMain\.js/);
