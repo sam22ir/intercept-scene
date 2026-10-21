@@ -52,7 +52,7 @@ export const DT = 1 / 120;
 // How she handles (the wheel, the telegraph, the turn) is in hull.js, shared with the ship duel.
 export { TELEGRAPH, START_ORDER, RUDDER_MAX, KT, HALF_LENGTH, HALF_BEAM };
 // Where the officer of the watch stands, and the fire-control director (both in the ship's frame).
-export const BRIDGE_EYE = new THREE.Vector3(16.9, 11.4, 0);
+export const BRIDGE_EYE = new THREE.Vector3(11.7, 11.0, 0); // inside the wheelhouse (models/bridge.js), behind the helm wheel
 export const DIRECTOR_EYE = new THREE.Vector3(14.4, 15.6, 0);
 
 // --- The drones -------------------------------------------------------------------------------------------

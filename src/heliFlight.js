@@ -2,7 +2,8 @@
 // does not take off or land while the ship is turning: she must hold a steady course (rudder amidships, no turn on) for a few
 // seconds first. Parked, it waits (a random time, counted only on a steady course), spins its rotor up, lifts to a hover, flies a
 // circuit round the ship and comes back over the pad; it lands only once the ship has been steady for LAND_STEADY seconds, and
-// otherwise holds its hover above the pad (a landing under way is waved off and climbs back if she starts to turn). Imports nothing,
+// otherwise holds its hover above the pad (a landing under way is waved off and climbs back if she starts to turn). The player can
+// also ask for a take-off or a landing (`request`): the same rules hold, so a request waits for a steady course. Imports nothing,
 // stepped by the sim at its own rate, so it is tested in Node (test/helicopter.test.mjs).
 import { mulberry32 } from './rng.js';
 
@@ -28,6 +29,7 @@ export class HeliFlight {
     this.prog = 0; // 0 on the deck, 1 at the hover
     this.u = 0; // progress round the circuit
     this.steadyFor = 0;
+    this.landReq = false; // the player has asked it to land: the circuit is cut short and it comes in
     this.circuit = { R: 200, fly: 40, side: 1, peak: 40 };
     this.state = { x: PAD.x, y: PAD.y, z: PAD.z, yaw: 0, pitch: 0, roll: 0, rpm: 0, spin: 0, flying: false, phase: 'parked' };
   }
@@ -36,6 +38,29 @@ export class HeliFlight {
     const R = 140 + this.rng() * 120;
     this.circuit = { R, fly: (2 * Math.PI * R) / (26 + this.rng() * 10), side: this.rng() < 0.5 ? -1 : 1, peak: 28 + this.rng() * 34 };
     this.u = 0;
+  }
+
+  // What the player's button does now: 'takeoff' (parked or winding down), 'land' (airborne or the rotor turning) or null (a landing under way).
+  get action() {
+    if (this.phase === 'parked' || this.phase === 'spindown') return 'takeoff';
+    if (this.phase === 'descend' || (this.landReq && this.phase !== 'spinup' && this.phase !== 'ready')) return null;
+    return 'land';
+  }
+
+  // The player asks for the other thing than it is doing; returns what to tell them.
+  request() {
+    const act = this.action;
+    if (act === 'takeoff') {
+      if (this.phase === 'spindown') return 'The rotor is still winding down';
+      this.wait = 0;
+      return this.steadyFor >= LIFT_STEADY ? 'Helicopter: starting up' : 'Helicopter: starting up, it lifts off on a steady course';
+    }
+    if (act === 'land') {
+      if (this.phase === 'spinup' || this.phase === 'ready') { this.phase = 'spindown'; return 'Helicopter: shutting down'; }
+      this.landReq = true;
+      return this.phase === 'hold' && this.steadyFor < LAND_STEADY ? 'Helicopter: landing, it comes down on a steady course' : 'Helicopter: coming in to land';
+    }
+    return 'The helicopter is already landing';
   }
 
   // Advance dt seconds; `steady`: the ship is on a fixed course now (no rudder, no turn).
@@ -55,10 +80,10 @@ export class HeliFlight {
         break;
       case 'lift':
         this.prog = Math.min(1, this.prog + dt / T_LIFT);
-        if (this.prog >= 1) { this.newCircuit(); this.phase = 'circuit'; }
+        if (this.prog >= 1) { this.newCircuit(); this.phase = this.landReq ? 'hold' : 'circuit'; }
         break;
       case 'circuit':
-        this.u = Math.min(1, this.u + dt / this.circuit.fly);
+        this.u = Math.min(1, this.u + (dt / this.circuit.fly) * (this.landReq ? 1.5 : 1)); // asked to land: it flies the rest of the circuit faster
         if (this.u >= 1) this.phase = 'hold';
         break;
       case 'hold': // over the pad, waiting for a steady course to land
@@ -67,7 +92,7 @@ export class HeliFlight {
       case 'descend':
         if (!steady && this.prog > 0.12) { this.phase = 'waveoff'; break; } // she has begun to turn: not with the wheels this close
         this.prog = Math.max(0, this.prog - dt / T_DESC);
-        if (this.prog <= 0) this.phase = 'spindown';
+        if (this.prog <= 0) { this.phase = 'spindown'; this.landReq = false; }
         break;
       case 'waveoff':
         this.prog = Math.min(1, this.prog + dt / T_WAVEOFF);

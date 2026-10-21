@@ -74,4 +74,31 @@ describe('the deck helicopter', () => {
     for (let t = 0; t < 400; t += DT) { sim.step(DT, { left: 0, right: 0, gun: 0 }); started = started || sim.heli.phase !== 'parked'; }
     assert.ok(started, 'steady: it starts');
   });
+  it('the player can ask it to take off at once (on a steady course) and to land', () => {
+    const h = new HeliFlight(5);
+    assert.equal(h.action, 'takeoff');
+    run(h, 2, true);
+    h.request();
+    run(h, LIFT_STEADY + 6 + 5 + 1, true); // the steady wait, the spin-up and the lift
+    assert.ok(h.state.flying, 'it is airborne long before its random wait would be over');
+    assert.equal(h.action, 'land');
+    h.request();
+    assert.equal(h.action, null, 'a landing is under way');
+    run(h, 80, true);
+    assert.ok(onDeck(h), 'landed, the circuit cut short');
+    assert.equal(h.action, 'takeoff');
+  });
+  it('a take-off request still waits for a steady course, and landing while the rotor is only turning shuts it down', () => {
+    const h = new HeliFlight(5);
+    h.request();
+    run(h, 120, false);
+    assert.ok(onDeck(h) && h.phase === 'parked', 'she is turning: it does not start');
+    for (let t = 0; t < 30 && h.phase !== 'spinup'; t += 0.05) h.step(0.05, true);
+    assert.equal(h.phase, 'spinup');
+    assert.equal(h.action, 'land');
+    h.request();
+    assert.equal(h.phase, 'spindown');
+    run(h, 12, true);
+    assert.equal(h.phase, 'parked');
+  });
 });
