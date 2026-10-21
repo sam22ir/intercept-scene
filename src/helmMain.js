@@ -453,7 +453,7 @@ function setView(v, quiet = false) {
 const CINE_TAIL = 0; // s kept on the scene after the drone is in the sea: none, the view changes back at the splash
 const CINE_MAX = 60; // s: a shot never holds the camera longer than this
 const IMPACT_HOLD = 5; // s on the place of a hit
-const LAUNCH_HOLD = 0.8; // s (of simulated time) the camera stays on the launcher after the round leaves
+const LAUNCH_HOLD = 1.3; // s (of simulated time) the camera stays on the launcher after the round leaves
 // The speed of time (1 = real time) in each part of the shot; the loop eases toward it.
 const SLOW = { slew: 1, launch: 1, fly: 1, close: 0.3, wreck: 0.3 }; // real time all through, except at the moment of a hit
 const HIT_SLOW_SEP = 100; // m: the missile this close to the drone, or the drone this close to the ship: slow motion
@@ -484,6 +484,21 @@ function frameLauncher(c, progress) {
   ship.group.localToWorld(camera.position.copy(c.camLocal));
   camera.lookAt(ship.group.localToWorld(_c.copy(LAUNCHER_PIVOT).setY(LAUNCHER_PIVOT.y + 1.2)));
   return THREE.MathUtils.lerp(42, 28, THREE.MathUtils.smoothstep(progress, 0, 1)); // the zoom in on it
+}
+// The round leaves: the camera pulls out from the launcher to the side of the ship and frames her whole length.
+const LAUNCH_WIDE_DIST = 190; // m abeam of the ship's middle
+const LAUNCH_WIDE_TIME = 0.5; // s (simulated) of the pull-out
+function frameLaunchWide(c, k) {
+  const e = THREE.MathUtils.smoothstep(k, 0, 1);
+  const sideZ = Math.sign(c.camLocal.z) || 1;
+  _a.set(0, 14, sideZ * LAUNCH_WIDE_DIST);
+  _a.lerpVectors(c.camLocal, _a, e);
+  ship.group.localToWorld(camera.position.copy(_a));
+  _b.copy(LAUNCHER_PIVOT).setY(LAUNCHER_PIVOT.y + 1.2);
+  _c.set(0, 8, 0).lerp(_b, 1 - e).setY(THREE.MathUtils.lerp(LAUNCHER_PIVOT.y + 1.2, 8, e));
+  _c.x = THREE.MathUtils.lerp(LAUNCHER_PIVOT.x, 0, e);
+  camera.lookAt(ship.group.localToWorld(_c));
+  return THREE.MathUtils.lerp(28, 46, e);
 }
 // The launcher is on: the camera goes through the director's sight to the drone. The director starts where the launcher
 // points, hunts about the target for a moment (a short search) and locks; the sign comes with the lock.
@@ -613,7 +628,7 @@ function updateCine(dt) {
     return aimSight(dt, dd);
   }
   if (c.phase === 'launch') { // the round leaves its cell: still on the launcher
-    if (sim.t - c.tLaunch < LAUNCH_HOLD) { timeTarget = SLOW.launch; return frameLauncher(c, 1); }
+    if (sim.t - c.tLaunch < LAUNCH_HOLD) { timeTarget = SLOW.launch; return frameLaunchWide(c, (sim.t - c.tLaunch) / LAUNCH_WIDE_TIME); }
     c.phase = 'approach'; // then the camera leaves the ship to follow it
     c.tBlend = sim.t;
     c.chaseT = 0;
