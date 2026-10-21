@@ -192,6 +192,25 @@ export function createLiveFx(scene) {
       light.position.copy(pos);
       boomT = t;
     },
+    // A shell bursting on a hull (the ship duel): a small fireball and a puff of smoke.
+    shellBurst(pos, t) {
+      for (let i = 0; i < 140; i++) {
+        randomUnit(rng, _v).multiplyScalar(range(rng, 3, 16));
+        _o.copy(pos).addScaledVector(randomUnit(rng, _p), range(rng, 0, 0.8));
+        fire.push(_o, _v, t + range(rng, 0, 0.12) ** 2, range(rng, 1.2, 3.2), rng());
+      }
+      for (let i = 0; i < 40; i++) {
+        randomUnit(rng, _v).multiplyScalar(range(rng, 2, 8));
+        _v.y = Math.abs(_v.y) + 2;
+        blast.push(pos, _v, t + range(rng, 0, 0.2), range(rng, 2, 5), rng());
+      }
+    },
+    // Black smoke from a burning ship: one puff per call (`size` scales it).
+    fireSmoke(pos, t, size = 1) {
+      randomUnit(rng, _v).multiplyScalar(range(rng, 0.5, 2));
+      _v.y = Math.abs(_v.y) + range(rng, 3, 6) * size;
+      burning.push(pos, _v, t, range(rng, 5, 9) * size, rng());
+    },
     // Spray, a foam ring and a shower of droplets on the water. `size` scales them (1 = a drone under canopy).
     splashAt(pos, t, size = 1) {
       _o.set(pos.x, 0.2, pos.z);

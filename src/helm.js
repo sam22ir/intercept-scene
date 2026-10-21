@@ -36,6 +36,7 @@
 import * as THREE from 'three';
 import { G, LAUNCHER_PIVOT, TUBE_MOUTH, launcherQuat } from './scenario.js';
 import { attitude } from './fly.js';
+import { TELEGRAPH, START_ORDER, RUDDER_MAX, KT, HALF_LENGTH, HALF_BEAM, GUN_MOUNT_LOCAL, GUN_BLOCK, GUN_DEAD, gunBlind, stepHull, compass, relName, kmText } from './hull.js';
 
 const rad = THREE.MathUtils.degToRad;
 const deg = THREE.MathUtils.radToDeg;
@@ -45,29 +46,10 @@ const lerp = THREE.MathUtils.lerp;
 const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
 export const DT = 1 / 120;
-export const KT = 0.514444; // m/s per knot
 
 // --- The ship ---------------------------------------------------------------------------------------------
-export const TELEGRAPH = [
-  { name: 'Slow astern', kn: -5 },
-  { name: 'Stop', kn: 0 },
-  { name: 'Dead slow', kn: 5 },
-  { name: 'Slow', kn: 10 },
-  { name: 'Half', kn: 16 },
-  { name: 'Full', kn: 22 },
-  { name: 'Flank', kn: 28 },
-];
-export const START_ORDER = 4; // half ahead
-export const RUDDER_MAX = rad(35);
-const RUDDER_RATE = rad(15); // per second, hold the key (full rudder in about two seconds)
-const TURN_T = 2.5; // s: how long the swing takes to build up
-const TURN_RADIUS = 70; // m at full rudder (a tactical diameter of about a ship length and a bit: she is very nimble)
-const SPEED_T = 6; // s: the speed comes and goes on this time constant
-const ACCEL_MAX = 1.0; // m/s²
-const TURN_LOSS = 0.15; // fraction of the ordered speed lost at full rudder
-const HEEL = 0.07; // rad of heel per (rad/s of turn × m/s of speed)
-export const HALF_LENGTH = 58; // m, for the drones striking her
-export const HALF_BEAM = 7.5;
+// How she handles (the wheel, the telegraph, the turn) is in hull.js, shared with the ship duel.
+export { TELEGRAPH, START_ORDER, RUDDER_MAX, KT, HALF_LENGTH, HALF_BEAM };
 // Where the officer of the watch stands, and the fire-control director (both in the ship's frame).
 export const BRIDGE_EYE = new THREE.Vector3(16.9, 11.4, 0);
 export const DIRECTOR_EYE = new THREE.Vector3(14.4, 15.6, 0);
@@ -105,15 +87,10 @@ for (const y of [0.3, -0.3]) for (let c = 0; c < 4; c++) CELL_MOUTHS.push(new TH
 
 // --- The guns ---------------------------------------------------------------------------------------------
 // Two 30 mm seven-barrel rotary guns on the aft deckhouse roof, one each side (the pivots in the ship's frame).
-export const GUN_MOUNTS = [new THREE.Vector3(-33.6, 13.3, -4.2), new THREE.Vector3(-33.6, 13.3, 4.2)];
+export const GUN_MOUNTS = GUN_MOUNT_LOCAL.map(([x, y, z]) => new THREE.Vector3(x, y, z));
 export const GUN_RANGE = 2600; // m
 export const GUN_ROUNDS = 2500; // per gun
-export const GUN_BLOCK = rad(40); // each gun's own dead zone reaches this far past the bow on its own side ...
-// ... and, across the roof, the superstructure (radome, funnel, mast) hides the far side up to 110 degrees from the bow, so each gun
-// has its own dead zone, and each fires alone: yaw is + toward port, so the port gun is blind from 110 degrees to starboard to
-// GUN_BLOCK to port, and the starboard gun the mirror of it. Abeam only the near gun can fire, astern both.
-export const GUN_DEAD = [{ from: -rad(110), to: GUN_BLOCK }, { from: -GUN_BLOCK, to: rad(110) }];
-export const gunBlind = (i, yaw) => yaw > GUN_DEAD[i].from && yaw < GUN_DEAD[i].to;
+export { GUN_BLOCK, GUN_DEAD, gunBlind }; // the dead zones are in hull.js, shared with the ship duel
 export const GUN_STOW = { yaw: Math.PI, pitch: rad(8) }; // trained aft
 const GUN_RATE = 83; // rounds a second (5,000 a minute)
 const GUN_BURST = 30; // rounds in a burst, one chance to hit
@@ -131,16 +108,8 @@ const _q = new THREE.Quaternion();
 const _d = new THREE.Vector3();
 const _e = new THREE.Vector3();
 
-// Compass helpers: a bearing from north (deg 0..360), and a relative one as the navy says it: green to
-// starboard, red to port ("green 045").
-export const compass = (r) => ((deg(r) % 360) + 360) % 360;
-export function relName(relRad) {
-  const d = Math.round(deg(wrapPi(relRad)));
-  if (Math.abs(d) <= 2) return 'right ahead';
-  if (Math.abs(d) >= 178) return 'right astern';
-  return `${d > 0 ? 'green' : 'red'} ${String(Math.abs(d)).padStart(3, '0')}`;
-}
-export const kmText = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`);
+// Compass helpers (a bearing, "green 045", "2.4 km") are in hull.js, shared with the ship duel.
+export { compass, relName, kmText };
 
 // A seeded random source, so a run (and a test) can be repeated.
 function mulberry32(seed) {
@@ -339,22 +308,8 @@ export class HelmSim {
   }
 
   stepShip(dt, input) {
-    // The wheel: held keys put the rudder over; let go and it comes back amidships.
     const want = this.out ? 0 : (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    const goal = want * RUDDER_MAX;
-    const dr = goal - this.rudder;
-    this.rudder += clamp(dr, -RUDDER_RATE * dt, RUDDER_RATE * dt);
-    // Speed: toward the ordered speed (less in a hard turn), on a time constant, with a limit to the acceleration.
-    const ordered = (this.out ? 0 : TELEGRAPH[this.order].kn) * KT * (1 - TURN_LOSS * Math.abs(this.rudder) / RUDDER_MAX);
-    this.u += clamp((ordered - this.u) / SPEED_T, -ACCEL_MAX, ACCEL_MAX) * dt;
-    // Turn (Nomoto, first order): the rate builds toward the steady turn for this rudder and speed.
-    const rSteady = (this.u / TURN_RADIUS) * (this.rudder / RUDDER_MAX) * (this.u < 0 ? 0.5 : 1);
-    this.r += ((rSteady - this.r) / TURN_T) * dt;
-    this.psi = wrapPi(this.psi + this.r * dt);
-    this.x += Math.cos(this.psi) * this.u * dt;
-    this.z += Math.sin(this.psi) * this.u * dt;
-    // Heel outward in the turn (port side down turning to starboard), on a short lag.
-    this.heel += ((-HEEL * this.r * this.u - this.heel) / 3) * dt;
+    stepHull(this, dt, { want, orderKn: this.out ? 0 : TELEGRAPH[this.order].kn });
   }
 
   stepSpawn() {

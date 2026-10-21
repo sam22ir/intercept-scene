@@ -608,6 +608,8 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 .mission .i-burst { stroke: var(--bad); fill: rgba(255, 93, 97, 0.25); }
 .mission .i-canopy { stroke: #e5484d; fill: rgba(229, 72, 77, 0.3); }
 .mission .i-line, .pick .i-line { stroke: var(--muted); stroke-width: 1.2; }
+.pick .i-bar { stroke: var(--dim); stroke-width: 5; stroke-linecap: round; fill: none; }
+.pick .i-bar.on { stroke: var(--accent); }
 .mission .i-sea { stroke: #3d7fa6; }
 .mission .i-ship, .pick .i-ship { stroke: var(--ok); stroke-width: 2.2; fill: rgba(61, 220, 132, 0.18); }
 
@@ -650,6 +652,8 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 .stage .a-blip { stroke: var(--accent); stroke-width: 2.6; stroke-linecap: round; fill: none; }
 .stage .a-tracer { stroke: var(--missile); stroke-width: 1.6; stroke-dasharray: 3 4; }
 .stage .a-ship { fill: rgba(61, 220, 132, 0.28); stroke: var(--ok); stroke-width: 1.8; }
+.stage .a-foe { fill: rgba(255, 93, 97, 0.28); stroke: var(--bad); stroke-width: 1.8; }
+.stage .a-arc { fill: rgba(255, 122, 26, 0.09); stroke: rgba(255, 122, 26, 0.3); stroke-width: 1; stroke-dasharray: 3 4; }
 .stage .a-wake { stroke: rgba(255, 255, 255, 0.25); stroke-width: 1.4; stroke-dasharray: 3 4; }
 .stage .a-label { fill: var(--muted); font: 700 9px system-ui, sans-serif; letter-spacing: 0.08em; }
 .stage .a-key { fill: rgba(255, 255, 255, 0.08); stroke: rgba(255, 255, 255, 0.3); }

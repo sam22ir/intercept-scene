@@ -7,13 +7,13 @@ import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { MISSIONS, SHIPS, GROUPS, FAMILIES, ENTRIES, entriesOf, groupOf, MISSION_IDS, FIXED_SHIP, menuText, missionById } from '../src/menu.js';
+import { MISSIONS, SHIPS, ENEMY_LEVELS, DEFAULT_LEVEL, GROUPS, FAMILIES, ENTRIES, entriesOf, groupOf, MISSION_IDS, FIXED_SHIP, menuText, missionById } from '../src/menu.js';
 
 const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
 const html = read('../index.html');
 const src = {
   start: read('../src/start.js'), main: read('../src/main.js'), maneuvers: read('../src/maneuversMain.js'), fly: read('../src/flyMain.js'),
-  formations: read('../src/formationsMain.js'), helm: read('../src/helmMain.js'),
+  formations: read('../src/formationsMain.js'), helm: read('../src/helmMain.js'), duel: read('../src/duelMain.js'),
   timeline: read('../src/timeline.js'),
 };
 const urlOf = (f, q) => `${pathToFileURL(fileURLToPath(new URL(f, import.meta.url))).href}?${q}`;
@@ -50,8 +50,8 @@ const cardOf = (id) => chooser().match(new RegExp(`<button class="card"[^>]*data
 const text = (s) => s.replace(/<svg.*?<\/svg>/gs, '').replace(/<kbd>.*?<\/kbd>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
 describe('the menu data', () => {
-  it('lists the seven missions once each, in a fixed order, with every field', () => {
-    assert.deepEqual(MISSION_IDS, ['intercept', 'chute', 'fly', 'maneuvers2', 'maneuvers', 'formations', 'helm']);
+  it('lists the eight missions once each, in a fixed order, with every field', () => {
+    assert.deepEqual(MISSION_IDS, ['intercept', 'chute', 'fly', 'maneuvers2', 'maneuvers', 'formations', 'helm', 'duel']);
     assert.equal(new Set(MISSIONS.map((m) => m.name)).size, MISSIONS.length, 'names are unique');
     for (const m of MISSIONS) {
       for (const f of ['name', 'kind', 'blurb', 'tagline', 'brand', 'button']) assert.ok(typeof m[f] === 'string' && m[f].length >= 3, `${m.id}.${f}`);
@@ -60,14 +60,14 @@ describe('the menu data', () => {
       assert.ok(m.brand.length <= 16, `${m.id}'s top-bar title fits`);
       if (!m.ship) assert.ok(m.fixed && m.fixedNote && m.sub, `${m.id} says what is fixed`);
     }
-    assert.deepEqual(MISSIONS.filter((m) => !m.ship).map((m) => m.id), ['fly', 'maneuvers2', 'maneuvers', 'formations', 'helm']);
+    assert.deepEqual(MISSIONS.filter((m) => !m.ship).map((m) => m.id), ['fly', 'maneuvers2', 'maneuvers', 'formations', 'helm', 'duel']);
   });
 
   it('has three tabs by what the player does, each with real missions', () => {
     assert.deepEqual(GROUPS.map((g) => g.id), ['watch', 'play', 'drill']);
     assert.deepEqual(GROUPS.map((g) => g.name), ['Watch', 'Play', 'Drill']);
     assert.deepEqual(MISSIONS.filter((m) => m.group === 'watch').map((m) => m.id), ['intercept', 'chute']);
-    assert.deepEqual(MISSIONS.filter((m) => m.group === 'play').map((m) => m.id), ['fly', 'helm']);
+    assert.deepEqual(MISSIONS.filter((m) => m.group === 'play').map((m) => m.id), ['fly', 'helm', 'duel']);
     assert.deepEqual(MISSIONS.filter((m) => m.group === 'drill').map((m) => m.id), ['maneuvers2', 'maneuvers', 'formations']);
     assert.ok(MISSIONS.every((m) => GROUPS.some((g) => g.id === m.group)), 'every mission is on a tab');
     for (const g of GROUPS) assert.ok(g.hint && entriesOf(g.id).length > 0, `${g.id} lists something`);
@@ -86,7 +86,7 @@ describe('the menu data', () => {
       assert.ok(m.tileSub && m.facts[0].startsWith(`${m.ships} ships`), `${id} says how many ships`);
     }
     assert.deepEqual(entriesOf('drill').map((e) => e.members), [FAMILIES[0].members]);
-    assert.deepEqual(ENTRIES.map((e) => e.id), ['intercept', 'chute', 'fly', 'helm', 'maneuvers2'], 'the list order M steps through');
+    assert.deepEqual(ENTRIES.map((e) => e.id), ['intercept', 'chute', 'fly', 'helm', 'duel', 'maneuvers2'], 'the list order M steps through');
     assert.equal(new Set(ENTRIES.flatMap((e) => e.members)).size, MISSIONS.length, 'every mission is reachable from one entry');
     assert.equal(groupOf('formations'), 'drill');
     assert.equal(M.SHIP_IDS.length, 3);
@@ -250,6 +250,47 @@ describe('the words are true of the missions', () => {
   });
 });
 
+describe('the words are true of the ship duel', () => {
+  let D;
+  before(async () => { D = await import(urlOf('../src/duel.js', 'menu')); });
+
+  it('two frigates, one enemy helmsman, the guns and the compartments it lists', () => {
+    const m = missionById('duel');
+    const sim = new D.DuelSim({ seed: 1 });
+    assert.equal(sim.ships.length, 2);
+    assert.ok(sim.ships[1].ai && !sim.ships[0].ai, 'one helmsman, the enemy');
+    assert.match(m.facts[0], /^2 frigates, 1 enemy/);
+    assert.equal(sim.ships[0].gats.length, 2, 'the two 30 mm guns');
+    assert.match(m.facts[1], /76 mm \+ two 30 mm/);
+    assert.ok(D.MAIN_ARC > 0 && D.MAIN_MOUNT[0] > 0, 'the 76 mm is on the bow');
+    assert.equal(D.COMP_IDS.length, 5);
+    assert.match(m.facts[2], /^5 compartments/);
+    assert.match(m.tagline, /76 mm/);
+    assert.match(m.tagline, /30 mm/);
+    assert.match(m.tagline, /sinks/);
+    assert.equal(m.level, true, 'the enemy level is a choice');
+    assert.equal(menuText('duel').hasLevel, true);
+    assert.equal(menuText('fly').hasLevel, false);
+  });
+
+  it('the enemy levels on the screen are the simulation\'s', () => {
+    assert.deepEqual(ENEMY_LEVELS.map((l) => l.id), D.DUEL_LEVELS);
+    assert.ok(D.DUEL_LEVELS.includes(DEFAULT_LEVEL));
+    for (const l of ENEMY_LEVELS) assert.match(chooser(), new RegExp(`data-level="${l.id}"`));
+    assert.match(src.duel, /__DUEL_LEVEL/, 'the scene reads the level start.js sets');
+    assert.match(src.start, /__DUEL_LEVEL/);
+  });
+
+  it('every key it lists is really bound, and the tagline names the firing key', () => {
+    const keys = missionById('duel').keys.map(([k]) => k);
+    for (const k of keys.filter((x) => /^[A-Z]$/.test(x))) assert.match(src.duel, new RegExp(`(case '${k.toLowerCase()}'|key === '${k.toLowerCase()}')`), `duel: ${k}`);
+    assert.ok(keys.includes('← →') && keys.includes('↑ ↓'));
+    for (const arrow of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) assert.match(src.duel, new RegExp(arrow));
+    assert.match(missionById('duel').tagline, /hold F/);
+    assert.match(src.start, /duelMain\.js/);
+  });
+});
+
 describe('index.html shows what the data says', () => {
   for (const m of MISSIONS) {
     it(`the ${m.id} ${m.group === 'drill' ? 'variant' : 'row'}`, () => {
@@ -299,6 +340,8 @@ describe('index.html shows what the data says', () => {
     assert.match(chooser(), /class="brief-drill variant"/, 'the ships block, shown on the Drill tab');
     assert.equal((chooser().match(/data-mode="/g) ?? []).length, MISSIONS.length);
     assert.equal((chooser().match(/data-ship="/g) ?? []).length, SHIPS.length);
+    assert.equal((chooser().match(/data-level="/g) ?? []).length, ENEMY_LEVELS.length);
+    assert.match(chooser(), /class="brief-level variant"/, 'the enemy block, shown for the ship duel');
     assert.match(html, /<title>Intercept scene<\/title>/);
   });
 

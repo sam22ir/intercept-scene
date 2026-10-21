@@ -119,11 +119,32 @@ function drill(n, animate) {
   return `<rect class="a-water" width="480" height="220"/>${grid}${north}${ships}`;
 }
 
+
+// Ship duel: two frigates in plan view trade shells (yours hits, hers falls short, yours hits again); the 76 mm's arc is shaded.
+function duel(animate) {
+  const youShip = '<g transform="translate(100 152) rotate(-18)"><path class="a-ship" d="M-26 -6H12L26 0L12 6H-26Z"/><text class="a-label" x="-6" y="-12" text-anchor="middle">YOU</text></g>';
+  const foeShip = '<g transform="translate(380 70) rotate(162)"><path class="a-foe" d="M-26 -6H12L26 0L12 6H-26Z"/></g><text class="a-label" x="380" y="52" text-anchor="middle">ENEMY</text>';
+  const arc = '<path class="a-arc" transform="translate(100 152)" d="M0 0 L170 -128 A213 213 0 0 1 150 150Z"/>';
+  const shot1 = 'M128 142Q250 40 352 76', shot2 = 'M352 82Q240 170 140 164', shot3 = 'M128 142Q250 52 360 72';
+  const ring = animate
+    ? `<ellipse class="a-ring" cx="146" cy="168" rx="2" ry="1" opacity="0"><animate attributeName="rx" values="2;2;22;22" keyTimes="0;0.5;0.62;1" dur="${DUR}" ${FOREVER}/><animate attributeName="ry" values="1;1;8;8" keyTimes="0;0.5;0.62;1" dur="${DUR}" ${FOREVER}/><animate attributeName="opacity" values="0;0;0.8;0;0" keyTimes="0;0.5;0.53;0.64;1" dur="${DUR}" ${FOREVER}/></ellipse>`
+    : '<ellipse class="a-ring" cx="146" cy="168" rx="18" ry="6" opacity="0.6"/>';
+  const grid = '<path class="a-line" d="M0 55H480M0 110H480M0 165H480M80 0V220M160 0V220M240 0V220M320 0V220M400 0V220"/>';
+  return `<rect class="a-water" width="480" height="220"/>${grid}${arc}${trail(shot1)}${trail(shot2)}${youShip}${foeShip}`
+    + mover(missile, { path: shot1, kt: [0.1, 0.3], still: [300, 54, -12] }, animate)
+    + burst(352, 76, 0.3, animate, 18)
+    + mover(missile, { path: shot2, kt: [0.38, 0.5], still: [220, 150, 160] }, animate)
+    + ring
+    + mover(missile, { path: shot3, kt: [0.7, 0.88], still: [250, 56, -10] }, animate)
+    + burst(360, 72, 0.88, animate, 24);
+}
+
 const SCENES = {
   intercept: (ship, a) => intercept(ship, a),
   chute: (_s, a) => chute(a),
   fly: (_s, a) => fly(a),
   helm: (_s, a) => helm(a),
+  duel: (_s, a) => duel(a),
   maneuvers2: (_s, a) => drill(2, a),
   maneuvers: (_s, a) => drill(3, a),
   formations: (_s, a) => drill(4, a),
