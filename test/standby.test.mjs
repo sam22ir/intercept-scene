@@ -26,7 +26,8 @@ describe('standby time', () => {
     const b = await load(25);
     assert.equal(a.PHASES.length, b.PHASES.length);
     a.PHASES.forEach((p, i) => {
-      assert.equal(p.tx, b.PHASES[i].tx, `${p.id} executes at the same time`);
+      assert.equal(p.tx, b.PHASES[i].tx, `${p.id} starts at the same time`);
+      assert.equal(p.ta, b.PHASES[i].ta, `${p.id} arrives at the same time`);
       near(p.tx - p.t, 5, `${p.id} announced 5 s ahead`);
       near(b.PHASES[i].tx - b.PHASES[i].t, 25, `${p.id} announced 25 s ahead`);
     });
@@ -37,13 +38,15 @@ describe('standby time', () => {
     assert.equal(a.tEnd, b.tEnd);
   });
 
-  it('counts down the chosen time before each order', async () => {
+  it('is the time to get ready: it counts down to EXECUTE, when the ships start', async () => {
     const M = await load(18);
     for (const p of M.PHASES) {
       const s = M.orderStatus(p.t + 3);
       assert.equal(s.state, 'standby');
-      near(s.count, 15, 'countdown');
+      near(s.count, p.tx - (p.t + 3), 'countdown to EXECUTE');
+      near(p.tx - p.t, 18, 'the whole standby');
       assert.equal(M.orderStatus(p.tx + 1).state, 'execute');
+      if (p.hasStation) assert.equal(M.orderStatus(p.ta + 1).state, 'station');
     }
   });
 
@@ -59,9 +62,9 @@ describe('standby time', () => {
     assert.equal(usual.exercise.events[0].t, 0);
   });
 
-  it('never announces an order before the previous one has executed', async () => {
+  it('never announces an order before the previous one has arrived, even with the longest standby', async () => {
     const M = await load(25);
-    for (let i = 1; i < M.PHASES.length; i++) assert.ok(M.PHASES[i].t > M.PHASES[i - 1].tx, M.PHASES[i].id);
+    for (let i = 1; i < M.PHASES.length; i++) assert.ok(M.PHASES[i].t > M.PHASES[i - 1].ta, M.PHASES[i].id);
   });
 });
 

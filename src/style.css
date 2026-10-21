@@ -160,10 +160,36 @@ body.ui-hidden .panel:not(.editor) { display: none !important; }
 .big-count small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 3px; }
 .deb-head { font-size: 15px; font-weight: 700; margin: 2px 0 8px; }
 .deb-head.bad { color: var(--bad); } .deb-head.ok { color: var(--ok); }
-.deb-rows { display: grid; gap: 3px; }
-.deb-rows div { display: flex; justify-content: space-between; gap: 12px; }
+.deb-rows { display: grid; grid-template-columns: 1fr repeat(var(--cols, 1), auto); gap: 3px 12px; align-items: baseline; }
 .deb-rows span { color: var(--muted); }
-.deb-rows .sub { margin-top: 6px; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+.deb-rows b { text-align: right; white-space: nowrap; }
+.deb-rows .sub { font-style: normal; text-align: right; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
+.deb-rows .sub + .sub { color: #b892ff; } /* drone 2: the violet of its trail */
+/* What the story is doing now, and the next event on the timeline. */
+.hud-phase { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 9px; padding-bottom: 7px; border-bottom: 1px solid var(--hair); }
+.hud-phase b { font-size: 12px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-phase em { font-style: normal; font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.hud-phase em small { margin-left: 1px; }
+/* An inbound drone inside the launch range. */
+.tile.threat b { color: var(--missile); }
+.tile.threat-high b { color: var(--bad); }
+/* Pair mission: the drone the readouts are not following, on one line. */
+.hud-other { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 8px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--hair); }
+.hud-other b { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.hud-other .chip { justify-self: end; }
+.hud-other em { grid-column: 1 / -1; font-style: normal; font-size: 11.5px; }
+/* Range to the ship over the whole run, with a cursor at the current time. */
+.hud-spark { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--hair); }
+.hud-spark:empty { display: none; }
+.spark-cap { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
+.spark-cap small { font-size: 9.5px; color: var(--dim); }
+.hud-spark svg { display: block; width: 100%; height: 36px; margin: 3px 0 2px; overflow: visible; }
+.hud-spark polyline { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.hud-spark .d0 { stroke: var(--accent); }
+.hud-spark .d1 { stroke: #b892ff; }
+.hud-spark .lr { stroke: var(--missile); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.55; vector-effect: non-scaling-stroke; }
+.hud-spark .hit { stroke: var(--bad); stroke-width: 1; opacity: 0.6; vector-effect: non-scaling-stroke; }
+.hud-spark .cur { stroke: var(--text); stroke-width: 1; vector-effect: non-scaling-stroke; }
 body.editing .hud { display: none; }
 
 /* --- Timeline (bottom) ------------------------------------------------------- */
@@ -296,8 +322,8 @@ button, select, .link-btn, .menu a { touch-action: manipulation; }
   .hud-debrief { margin-top: 0; }
   .hud-live + .hud-debrief:not([hidden]) { margin-top: 0; }
   .deb-head { font-size: 13px; margin: 0 0 4px; }
-  .deb-rows { grid-template-columns: 1fr 1fr; column-gap: 14px; font-size: 11.5px; }
-  .deb-rows .sub { grid-column: 1 / -1; margin-top: 2px; }
+  .deb-rows { font-size: 11.5px; column-gap: 10px; }
+  .hud-phase, .hud-other, .hud-spark, .tile.brg { display: none; }
 
   .timeline { width: auto; left: calc(var(--gap) + var(--safe-l)); right: calc(var(--gap) + var(--safe-r)); transform: none; padding: 8px 10px 10px; }
   .controls { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; }
@@ -365,6 +391,13 @@ button, select, .link-btn, .menu a { touch-action: manipulation; }
   .tick.stem { height: 12px; }
   .tick { cursor: help; }
 }
+/* Desktop screens: the chapter names above the bar again, as many rows as it takes (see layoutMarkers),
+   each tick with a stem up to its name. Phones and short screens keep ticks and tooltips only. */
+@media (min-width: 641px) and (min-height: 501px) {
+  .markers { display: block; }
+  .track { padding-top: var(--label-rows, 0px); margin-top: 3px; }
+  .tick.stem { height: calc(14px + var(--stem, 0px)); }
+}
 @media (min-width: 641px) and (pointer: fine) {
   .tbtn { width: 30px; height: 28px; }
   .tbtn svg { width: 15px; height: 15px; }
@@ -389,13 +422,34 @@ button, select, .link-btn, .menu a { touch-action: manipulation; }
 /* Naval maneuvers mission: the intercept-only controls step aside, and the readout panel carries the
    signal (serial) text of the briefing deck. */
 body.mission-maneuvers #btn-director, body.mission-maneuvers #btn-edit,
-body.mission-maneuvers #btn-engage, body.mission-maneuvers #btn-record, body.mission-maneuvers #btn-link,
-body.mission-maneuvers #trail-legend { display: none; }
-/* The intercept readouts are click-through; this panel has buttons, so it takes the pointer. */
-body.mission-maneuvers .hud { pointer-events: auto; }
-body.mission-maneuvers .hud { width: 236px; padding: 8px 10px 9px; max-height: calc(100vh - 62px - var(--gap) * 3 - var(--tl-h, 80px) - 6px); overflow-y: auto; }
-body.mission-maneuvers .hud .tile b { font-size: 14px; }
-body.mission-maneuvers .hud .hud-head b { font-size: 11.5px; }
+body.mission-maneuvers #btn-engage, body.mission-maneuvers #btn-record, body.mission-maneuvers #btn-units { display: none; }
+/* The readout panel is a transparent holder for two small cards attached under the top bar (the intercept
+   readouts are click-through; the cards have buttons, so they take the pointer). */
+body.mission-maneuvers .hud {
+  top: calc(var(--gap) + var(--safe-t)); left: calc(var(--gap) + var(--safe-l) + var(--bar-w, 660px) + 8px);
+  right: calc(var(--gap) + var(--safe-r)); width: auto; padding: 0;
+  background: none; border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; pointer-events: none;
+}
+/* The order card sits right of the top bar, the small ships card in the top-right corner. */
+body.mission-maneuvers .hud-live { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 8px; align-items: stretch; }
+body.mission-maneuvers .hud-live:empty { display: none; }
+.mcard {
+  pointer-events: auto; padding: 8px 10px; border-radius: 12px; background: var(--panel); border: 1px solid var(--border);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+}
+/* The order card, and the ships card right beside it. */
+.mcard-order { flex: 0 1 300px; min-width: 220px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; }
+.mh-ships { flex: 0 1 270px; min-width: 0; box-sizing: border-box; padding: 6px; display: flex; align-items: center; }
+.mh-ships .mh-row { flex: 1; }
+.mh-ships .mh-row { gap: 4px; }
+.mh-ships .mh-cell { padding: 3px 5px 4px; }
+.mh-ships .mh-cell span { font-size: 9px; letter-spacing: 0.06em; }
+.mh-ships .mh-cell b { font-size: 13px; }
+.mh-ships .mh-cell em { font-size: 9.5px; }
+/* No brand in this mission's top bar: just the controls. */
+body.mission-maneuvers .brand { display: none; }
+body.mission-maneuvers .bar-tools { border-left: 0; padding-left: 0; }
+body.mission-maneuvers .topbar { padding-left: 6px; }
 .serial-box, .serial-speeds {
   margin-top: 6px; padding: 5px 8px; border: 1.5px solid rgba(110, 150, 240, 0.6); border-radius: 6px;
   background: rgba(40, 70, 140, 0.2); font-size: 10.5px; font-weight: 600; line-height: 1.4;
@@ -403,26 +457,33 @@ body.mission-maneuvers .hud .hud-head b { font-size: 11.5px; }
 .serial-speeds { font-variant-numeric: tabular-nums; }
 .serial-head { color: #ff6b6b; text-decoration: underline; letter-spacing: 0.04em; margin-bottom: 3px; }
 .serial .red { color: #ff5d61; }
-.hud-sec.serial { margin-top: 0; padding-top: 0; }
 /* The readout panel: a bar with the order, its state and the minimise / hide buttons, a progress line,
    colour-coded ship readouts and the signal text. */
-/* The panel sits in the top row, beside the top bar; only when the window is too narrow for both side by side does it start below the bar. */
-@media (max-width: 700px) { body.mission-maneuvers .hud { top: calc(var(--gap) + var(--safe-t) + 62px); } }
-.mh-bar { display: flex; align-items: flex-start; gap: 7px; }
-.mh-title { flex: 1; min-width: 0; }
+.mh-bar { display: flex; align-items: center; gap: 10px; }
+.mh-title { flex: 1 0 96px; min-width: 96px; }
 .mh-title b { display: block; font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mh-sub { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
-.mh-sub small { font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); }
-.mh-sub .chip { flex: none; }
+.mh-sub small { font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); white-space: nowrap; }
+.mh-sub .chip:not(.shown) { display: none; } /* the banner carries standby and execute */
+.mh-sub .chip { font-size: 9px; padding: 1px 6px; }
 .mh-btns { display: flex; gap: 3px; flex: none; }
 .mh-btns button { width: 22px; height: 22px; padding: 0; border-radius: 6px; font-size: 14px; line-height: 1; }
-.mh-progress { height: 3px; margin: 7px 0 7px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.mh-progress { height: 3px; margin: 7px 0 0; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
 .mh-progress i { display: block; width: 0; height: 100%; background: var(--accent); }
-.mh-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.mh-row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 5px; }
+.mh-cell b i, .mh-cell em i { font-style: normal; font-weight: 500; color: var(--missile); margin-left: 2px; }
+.mh-cell b i { font-size: 0.75em; }
+.mh-cell.cpa b { color: var(--missile); }
+.mh-cell span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The debrief card hangs under the order card at the end of the exercise. */
+body.mission-maneuvers .hud-debrief { margin-top: 8px; }
+.mcard-deb { width: 520px; max-width: 100%; pointer-events: auto; }
+.mcard-deb .deb-rows .sub:first-child { text-align: left; }
 .mh-cell { min-width: 0; padding: 4px 6px 5px; border-radius: 8px; background: rgba(0, 0, 0, 0.22); }
 .mh-cell span { display: flex; align-items: center; gap: 4px; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .mh-cell.alg span::before, .mh-cell.rus span::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #3ddc84; }
 .mh-cell.rus span::before { background: #ff7a1a; }
+.mh-cell.unit span::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #5ab4ff; }
 .mh-cell b { display: block; font-size: 14px; font-variant-numeric: tabular-nums; }
 .mh-cell em { font-style: normal; font-size: 10.5px; color: var(--muted); }
 .mh-standby { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--hair); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
@@ -430,29 +491,33 @@ body.mission-maneuvers .hud .hud-head b { font-size: 11.5px; }
 .mh-step button { width: 22px; height: 22px; padding: 0; border-radius: 6px; font-size: 14px; line-height: 1; }
 .mh-step b { min-width: 38px; text-align: center; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--text); }
 .mh-step b.pending { color: var(--accent); }
-.serial-bar { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
-.serial-bar button { width: 20px; height: 20px; padding: 0; border-radius: 6px; font-size: 13px; line-height: 1; }
-.hud.serial-off [data-serial] { display: none; }
-.hud.min .serial, .hud.min .mh-standby { display: none; }
-.hud.min .mh-progress { margin-bottom: 6px; }
-.hud.min { padding-bottom: 8px; }
 
 .serial-note { margin-top: 6px; font-size: 10.5px; font-style: italic; color: var(--muted); line-height: 1.35; }
 
 /* The order banner: STANDBY with its countdown, then EXECUTE. */
-body.mission-maneuvers .shot-caption { top: calc(var(--gap) + var(--safe-t) + 66px); font-weight: 700; letter-spacing: 0.16em; }
+/* Just under the options bar, at its left edge, so it never covers the ships. */
+body.mission-maneuvers .shot-caption { top: calc(var(--gap) + var(--safe-t) + var(--bar-h, 34px) + 8px); left: calc(var(--gap) + var(--safe-l) + 8px); transform: none; font-weight: 700; letter-spacing: 0.16em; }
 .shot-caption.call::before { content: none; }
 .shot-caption.standby { color: #ffd166; border-color: rgba(255, 209, 102, 0.7); }
 .shot-caption.execute { color: #6dffa0; border-color: rgba(109, 255, 160, 0.8); background: rgba(10, 40, 24, 0.7); }
+.shot-caption.station { color: #e6f0ff; border-color: rgba(200, 220, 255, 0.8); background: rgba(16, 28, 48, 0.75); }
 
 /* The Orders dropdown from the top bar: the briefing's contents column, ticks on the finished orders, and the
    standby time at the foot. */
+.signal-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 15; width: 292px; padding: 8px 8px 9px;
+  max-height: calc(100vh - 140px - var(--tl-h, 80px)); overflow-y: auto;
+  background: var(--panel-solid); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+.signal-menu .serial-box { margin-top: 6px; }
+.signal-menu .serial-note { margin: 2px 4px 0; }
+#btn-signal[aria-expanded='true'] { background: rgba(255, 255, 255, 0.1); color: var(--text); }
 .orders-menu {
   position: absolute; top: calc(100% + 6px); right: 0; z-index: 15; width: 268px; padding: 8px 8px 9px;
   max-height: calc(100vh - 140px - var(--tl-h, 80px)); display: flex; flex-direction: column;
   background: var(--panel-solid); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
 }
-.orders-menu[hidden] { display: none; }
+.orders-menu[hidden], .signal-menu[hidden] { display: none; }
 .orders-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 4px 5px; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
 .orders-head small { font-size: 10px; letter-spacing: 0; text-transform: none; opacity: 0.8; }
 .orders-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; scrollbar-width: thin; }
@@ -496,7 +561,9 @@ body.mission-maneuvers .shot-caption { top: calc(var(--gap) + var(--safe-t) + 66
 .tag.ok { border-left-color: #3ddc84; }
 .tag.dead .tag-title { color: #ff8a8d; }
 
-/* Start screen: choose the warship before the scene loads. */
+/* Start screen: the main menu. A mission list on the left; on the right a briefing that follows the choice
+   (its title, what it is, its facts, the launcher where there is one to pick, the controls); the way in
+   (a one-line summary and Start) along the bottom. */
 body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels-layer { display: none; }
 .chooser {
   position: fixed; inset: 0; z-index: 2; display: grid; padding: calc(20px + var(--safe-t)) calc(20px + var(--safe-r)) calc(20px + var(--safe-b)) calc(20px + var(--safe-l));
@@ -507,35 +574,63 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 }
 .chooser[hidden] { display: none; }
 /* margin: auto centres when there is room and never clips the top when there is not. */
-.chooser-inner { width: min(900px, 100%); margin: auto; display: grid; gap: 14px; }
-.ch-head { text-align: center; }
-.chooser-title { font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); font-size: 11.5px; }
-.chooser-title .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 8px; box-shadow: 0 0 0 3px var(--accent-soft); }
-.chooser h1 { margin: 6px 0 4px; font-size: clamp(24px, 4vw, 32px); letter-spacing: -0.015em; }
-.ch-tag { margin: 0 auto; max-width: 560px; color: var(--muted); font-size: 13px; }
-.ch-step h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 7px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
-.ch-step .n { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: rgba(255, 255, 255, 0.08); color: var(--text); font-size: 10.5px; letter-spacing: 0; }
+.mm { width: min(1080px, 100%); margin: auto; display: grid; gap: 16px; }
+.menu-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.menu-brand { display: flex; align-items: baseline; gap: 10px; color: var(--muted); font-size: 12.5px; }
+.menu-brand b { font-size: 15px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text); }
+.menu-brand .dot { align-self: center; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.menu-hint { margin: 0; color: var(--dim); font-size: 11.5px; text-align: right; }
+.menu-body { display: grid; grid-template-columns: minmax(260px, 330px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.menu-list h2, .brief h2 { margin: 0 0 8px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
 
-.missions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-@media (min-width: 1000px) { .missions { grid-template-columns: repeat(4, 1fr); } }
+/* The mission list. */
+.missions { display: grid; gap: 6px; }
 .mission {
-  display: flex; align-items: center; gap: 10px; padding: 9px 12px; text-align: left; border-radius: 11px;
+  display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; text-align: left; border-radius: 12px;
   background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); transition: border-color 0.15s, background 0.15s;
 }
 .mission:hover { background: rgba(255, 255, 255, 0.08); }
-.mission svg { width: 36px; height: 36px; stroke-width: 2; }
-.mission b { display: block; font-size: 14px; }
-.mission small { display: block; color: var(--muted); font-size: 11.5px; }
+.mission svg { width: 38px; height: 38px; stroke-width: 2; }
+.m-txt b { display: block; font-size: 14.5px; }
+.m-txt small { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+.m-kind { font-style: normal; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; }
 .mission[aria-checked='true'] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
-.mission .i-arc { stroke: var(--missile); stroke-dasharray: 3 3; }
-.mission .i-drone { stroke: var(--accent); stroke-width: 2.6; }
-.mission .i-burst { stroke: var(--bad); fill: rgba(255, 93, 97, 0.25); }
-.mission .i-canopy { stroke: var(--accent); fill: rgba(255, 122, 26, 0.3); }
-.mission .i-line { stroke: var(--muted); stroke-width: 1.2; }
-.mission .i-sea { stroke: #3d7fa6; }
-.mission .i-ship { stroke: var(--ok); stroke-width: 2.2; fill: rgba(61, 220, 132, 0.18); }
-.mission[data-mode='chute'] .i-drone { stroke-width: 2.6; }
+.mission[aria-checked='true'] .m-kind { color: var(--accent); border-color: rgba(255, 122, 26, 0.5); }
+.mission .i-arc, .brief-art .i-arc { stroke: var(--missile); stroke-dasharray: 3 3; }
+.mission .i-drone, .brief-art .i-drone { stroke: var(--accent); stroke-width: 2.6; }
+.mission .i-burst, .brief-art .i-burst { stroke: var(--bad); fill: rgba(255, 93, 97, 0.25); }
+.mission .i-canopy, .brief-art .i-canopy { stroke: var(--accent); fill: rgba(255, 122, 26, 0.3); }
+.mission .i-line, .brief-art .i-line { stroke: var(--muted); stroke-width: 1.2; }
+.mission .i-sea, .brief-art .i-sea { stroke: #3d7fa6; }
+.mission .i-ship, .brief-art .i-ship { stroke: var(--ok); stroke-width: 2.2; fill: rgba(61, 220, 132, 0.18); }
+.missions .m-group { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; margin: 6px 0 2px; }
+.missions .m-group:first-child { margin-top: 0; }
+.missions .m-group::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.m-group .m-kind { letter-spacing: 0.12em; }
+/* Tactical maneuvers: one tile per number of ships. */
+.tac { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.mission.tile { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; gap: 6px; padding: 12px 6px 10px; }
+.mission.tile svg { width: 42px; height: 42px; }
+.mission.tile .m-txt b { font-size: 15px; }
+.mission.tile .m-txt small { font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* The briefing: it follows the selected mission (and launcher). */
+.brief { display: grid; gap: 14px; padding: 20px 22px 22px; border-radius: 18px; background: rgba(255, 255, 255, 0.045); border: 1px solid var(--border); }
+.brief-top { display: flex; align-items: center; gap: 18px; }
+.brief-art { flex: none; display: grid; place-items: center; width: 84px; height: 84px; border-radius: 22px; background: var(--accent-soft); border: 1px solid rgba(255, 122, 26, 0.45); }
+.brief-art svg { width: 58px; height: 58px; stroke-width: 2; }
+.brief-head { min-width: 0; }
+.brief-kind { margin: 0; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+.brief h1 { margin: 2px 0 0; font-size: clamp(26px, 3.4vw, 38px); line-height: 1.1; letter-spacing: -0.02em; }
+.brief-tag { margin: 0; max-width: 64ch; color: #c4ccd4; font-size: 14.5px; line-height: 1.55; }
+.brief-facts { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.brief-facts li { padding: 5px 11px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); border: 1px solid var(--border); font-size: 12px; }
+.brief-ship[hidden] { display: none; }
+.keys-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px 18px; color: var(--muted); font-size: 12.5px; }
+.keys-list li { display: flex; align-items: center; gap: 10px; }
+.keys-list kbd { flex: none; min-width: 48px; font-size: 10.5px; }
+
+/* The launcher cards (inside the briefing). */
 .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .card {
   display: grid; gap: 8px; padding: 12px 14px 14px; text-align: left; border-radius: 14px; color: var(--text);
@@ -560,60 +655,111 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 .card-txt { display: grid; gap: 2px; }
 .card-name { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
 .card-desc { color: var(--muted); font-size: 12.5px; }
+.card-name kbd { color: var(--muted); }
 
-.ch-go {
-  display: flex; align-items: center; gap: 16px; padding: 10px 10px 10px 16px; border-radius: 14px;
+/* The way in. */
+.menu-go {
+  display: flex; align-items: center; gap: 16px; padding: 10px 10px 10px 18px; border-radius: 14px;
   background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border);
 }
 .ch-sum { margin: 0; flex: 1; min-width: 0; display: grid; }
-#ch-summary { font-weight: 700; font-size: 14px; }
+#ch-summary { font-weight: 700; font-size: 14.5px; }
 .chooser-sub { color: var(--muted); font-size: 12px; }
 .ch-start {
-  flex: none; padding: 11px 22px; border-radius: 10px; font-weight: 700; font-size: 14px;
+  flex: none; padding: 12px 26px; border-radius: 10px; font-weight: 700; font-size: 14.5px;
   background: var(--accent); border-color: var(--accent); color: #1a0d02; box-shadow: 0 6px 20px rgba(255, 122, 26, 0.3);
 }
 .ch-start:hover { background: #ff8d3a; }
-.chooser-hint { margin: 0; text-align: center; color: var(--dim); font-size: 11.5px; }
 .chooser kbd { font-size: 10px; }
-.card-name kbd { color: var(--muted); }
-@media (pointer: coarse) { .chooser-hint, .card-name kbd { display: none; } }
+@media (pointer: coarse) { .menu-hint, .card-name kbd { display: none; } }
 @media (prefers-reduced-motion: reduce) { .card, .mission { transition: none; } .card:hover { transform: none; } }
 
-/* Phones, portrait: one column, mission rows, smaller drawings, Start pinned to the bottom. */
+/* Narrow windows: the briefing goes under the list. */
+@media (max-width: 860px) {
+  .menu-body { grid-template-columns: minmax(0, 1fr); }
+  .missions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Phones, portrait: one column, compact rows, Start pinned to the bottom. */
 @media (max-width: 640px) and (min-height: 501px) {
   .chooser { padding: calc(16px + var(--safe-t)) 12px 0; }
-  .chooser-inner { gap: 12px; margin-top: 0; }
-  .ch-tag { font-size: 12.5px; }
-  .missions { grid-template-columns: 1fr; gap: 6px; }
-  .mission { padding: 8px 10px; }
+  .mm { gap: 12px; margin-top: 0; }
+  .menu-hint { display: none; }
+  .missions { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .mission { padding: 8px 10px; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; }
   .mission svg { width: 30px; height: 30px; }
+  .mission.tile { padding: 8px 4px; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .brief { padding: 14px; gap: 12px; }
+  .brief-art { width: 58px; height: 58px; border-radius: 16px; }
+  .brief-art svg { width: 40px; height: 40px; }
+  .brief-top { gap: 12px; }
+  .brief-tag { font-size: 13px; }
   .cards { grid-template-columns: 1fr; gap: 8px; }
   .card { grid-template-columns: 42% 1fr; align-items: center; gap: 10px; padding: 8px 10px; }
   .card svg { height: 64px; }
   .card-name { font-size: 13.5px; }
   .card-desc { font-size: 11.5px; }
-  .ch-go {
+  .keys-list { grid-template-columns: minmax(0, 1fr); }
+  .menu-go {
     position: sticky; bottom: 0; margin: 0 -12px; padding: 10px 12px calc(10px + var(--safe-b)); border-radius: 0; border-width: 1px 0 0;
     background: rgba(11, 17, 25, 0.94); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   }
-  .ch-start { padding: 12px 16px; }
+  .ch-start { padding: 12px 18px; }
 }
-/* Phones, landscape: missions on the left, ships on the right, Start pinned to the bottom. */
+/* Short windows (laptops, small browser windows): the same screen, tighter, so it fits without scrolling. */
+@media (max-height: 820px) and (min-height: 501px) {
+  .chooser { padding-top: calc(10px + var(--safe-t)); padding-bottom: calc(10px + var(--safe-b)); }
+  .mm { gap: 10px; }
+  .menu-body { gap: 12px; }
+  .menu-list h2, .brief h2 { margin-bottom: 5px; }
+  .missions { gap: 4px; }
+  .mission { padding: 6px 10px; gap: 10px; grid-template-columns: 32px minmax(0, 1fr) auto; }
+  .mission svg { width: 30px; height: 30px; }
+  .m-txt small { display: none; }
+  .mission.tile { padding: 8px 4px 6px; gap: 3px; grid-template-columns: minmax(0, 1fr); }
+  .mission.tile svg { width: 30px; height: 30px; }
+  .mission.tile .m-txt small { display: block; }
+  .missions .m-group { margin-top: 3px; }
+  .brief { padding: 12px 16px 14px; gap: 9px; }
+  .brief-top { gap: 12px; }
+  .brief-art { width: 54px; height: 54px; border-radius: 14px; }
+  .brief-art svg { width: 38px; height: 38px; }
+  .brief h1 { font-size: 24px; }
+  .brief-tag { font-size: 13px; line-height: 1.45; }
+  .brief-facts li { padding: 3px 9px; font-size: 11.5px; }
+  .cards { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .card { grid-template-columns: 38% 1fr; align-items: center; gap: 8px; padding: 6px 8px; }
+  .card:hover { transform: none; }
+  .card svg { height: 50px; }
+  .card-name { font-size: 13.5px; }
+  .card-desc { font-size: 11px; }
+  .keys-list { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 3px 14px; font-size: 11.5px; }
+  .menu-go { padding: 6px 8px 6px 14px; }
+  .ch-start { padding: 9px 22px; }
+}
+/* Phones, landscape: list on the left, briefing on the right, Start pinned to the bottom. */
 @media (max-height: 500px) {
   .chooser { padding: calc(10px + var(--safe-t)) calc(14px + var(--safe-r)) 0 calc(14px + var(--safe-l)); }
-  .chooser-inner { width: 100%; margin-top: 0; grid-template-columns: 0.8fr 1.2fr; gap: 10px 14px; align-items: start; }
-  .ch-head, .ch-go, .chooser-hint { grid-column: 1 / -1; }
-  .ch-head { display: flex; align-items: baseline; gap: 12px; text-align: left; }
-  .chooser h1 { margin: 0; font-size: 20px; }
-  .ch-tag, .chooser-hint, .chooser-sub { display: none; }
-  .missions { grid-template-columns: 1fr; gap: 6px; }
-  .mission { padding: 6px 10px; }
-  .mission svg { width: 28px; height: 28px; }
+  .mm { width: 100%; margin-top: 0; gap: 10px; }
+  .menu-head { gap: 12px; }
+  .menu-hint, .menu-brand span, .chooser-sub, .brief-keys, .brief-facts { display: none; }
+  .menu-body { grid-template-columns: 0.8fr 1.2fr; gap: 10px 14px; }
+  .missions { grid-template-columns: 1fr; gap: 5px; }
+  .mission { padding: 5px 10px; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; }
+  .mission svg { width: 26px; height: 26px; }
+  .m-txt small { display: none; }
+  .mission.tile { padding: 5px 4px; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .missions .m-group { margin-top: 2px; }
+  .brief { padding: 10px 12px; gap: 8px; border-radius: 12px; }
+  .brief-art { width: 44px; height: 44px; border-radius: 12px; }
+  .brief-art svg { width: 30px; height: 30px; }
+  .brief h1 { font-size: 20px; }
+  .brief-tag { font-size: 12px; line-height: 1.4; }
   .cards { grid-template-columns: 1fr; gap: 6px; }
   .card { grid-template-columns: 44% 1fr; align-items: center; gap: 10px; padding: 6px 10px; }
   .card svg { height: 56px; }
   .card-desc { font-size: 11px; }
-  .ch-go { position: sticky; bottom: 0; margin: 0 -14px; padding: 8px 14px calc(8px + var(--safe-b)); border-radius: 0; border-width: 1px 0 0; background: rgba(11, 17, 25, 0.94); }
+  .menu-go { position: sticky; bottom: 0; margin: 0 -14px; padding: 8px 14px calc(8px + var(--safe-b)); border-radius: 0; border-width: 1px 0 0; background: rgba(11, 17, 25, 0.94); }
 }
 .link-btn { display: block; margin-top: 8px; padding: 0; border: 0; background: none; color: var(--accent); font-size: 12px; cursor: pointer; }
 .link-btn:hover { text-decoration: underline; background: none; }
@@ -653,19 +799,16 @@ body.ui-hidden .minimap, body.editing .minimap { display: none; }
     width: min(1000px, calc(100vw - var(--gap) * 3 - var(--safe-l) - var(--safe-r) - var(--map-d)));
   }
 }
-
-/* Trajectory legend: one coloured chip per trail, under the top bar */
-.trail-legend {
-  position: fixed; z-index: 9; top: calc(var(--gap) + var(--safe-t) + 58px); left: calc(var(--gap) + var(--safe-l));
-  display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 5px 10px; border-radius: 9px; font-size: 11.5px; color: var(--muted);
-  background: var(--panel); border: 1px solid var(--border); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+/* Desktop screens: a bigger mini map, and a narrower timeline kept to the right. */
+@media (min-width: 641px) and (min-height: 501px) {
+  body { --map-d: 240px; }
+  body.has-map .timeline {
+    left: auto; right: calc(var(--gap) + var(--safe-r));
+    width: min(820px, calc(100vw - var(--gap) * 3 - var(--safe-l) - var(--safe-r) - var(--map-d)));
+  }
+  .minimap .mm-scale { font-size: 10px; bottom: 12px; }
 }
-.trail-legend[hidden], .trail-legend [hidden] { display: none; }
-.trail-legend i { display: inline-block; width: 18px; height: 4px; margin-right: 6px; vertical-align: middle; border-radius: 2px; background: var(--c); box-shadow: 0 0 6px var(--c); }
-.trail-legend span { white-space: nowrap; }
-body.ui-hidden .trail-legend, body.editing .trail-legend { display: none; }
-#engage:not([hidden]) ~ .trail-legend { display: none; }
-@media (max-width: 640px) and (min-height: 501px) { .trail-legend { top: auto; bottom: calc(var(--gap) + var(--safe-b) + 150px); font-size: 11px; } }
+
 
 /* Panel sections shared by the engagement panel and the path editor */
 .en-sec { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--hair); border-radius: 10px; background: rgba(255, 255, 255, 0.03); }
@@ -785,3 +928,245 @@ body.editing .timeline { display: none; }
 .share-box label { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; color: var(--muted); }
 .share-box input { width: 100%; box-sizing: border-box; font: inherit; color: var(--text); background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
 body.editing #btn-link { display: none; }
+
+/* "Fly the drone": no timeline, map, trails or tags (nothing is replayed); the keys for this moment sit at the
+   foot of the screen, and the banner carries the model's messages. */
+body.mission-fly .timeline, body.mission-fly .labels-layer,
+body.mission-fly #btn-director, body.mission-fly #btn-labels, body.mission-fly #btn-trails,
+body.mission-fly #btn-edit, body.mission-fly #btn-engage, body.mission-fly #btn-units,
+body.mission-fly #btn-record, body.mission-fly #btn-link { display: none; }
+body.mission-fly .shot-caption { top: calc(var(--gap) + var(--safe-t) + var(--bar-h, 34px) + 36px); font-weight: 700; letter-spacing: 0.12em; }
+.shot-caption.danger { color: #ff8a8d; border-color: rgba(255, 93, 97, 0.85); background: rgba(48, 12, 14, 0.78); }
+.fly-keys {
+  position: fixed; z-index: 11; left: 50%; bottom: calc(var(--gap) + var(--safe-b)); transform: translateX(-50%);
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; padding: 8px 16px; border-radius: 12px; max-width: calc(100vw - 2 * var(--gap));
+  background: var(--panel); border: 1px solid var(--border); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  font-size: 12px; color: var(--muted); pointer-events: none;
+}
+.fly-keys .fk { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.fly-keys kbd { min-width: 22px; text-align: center; font-size: 11px; }
+.fly-keys .fk.on { color: var(--text); font-weight: 600; }
+.fly-keys .fk.on kbd { background: var(--accent); border-color: var(--accent); color: #1a0d02; }
+body:not(.mission-fly) .fly-keys, body.ui-hidden .fly-keys { display: none; }
+
+/* Ship names (drill): two small fields in the More menu. */
+.names-form { display: grid; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--hair); font-size: 12px; color: var(--muted); }
+.names-form div { display: flex; align-items: center; gap: 6px; }
+.names-form label { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; }
+.names-form input { width: 100%; min-width: 0; padding: 5px 6px; border-radius: 6px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.06); color: var(--text); font: inherit; text-transform: uppercase; }
+.names-form button { flex: none; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent); }
+.mh-next { margin-top: 6px; font-size: 11.5px; color: var(--muted); }
+.mh-next[hidden] { display: none; }
+.mh-fast { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; margin-top: 8px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04); color: var(--text); font: inherit; font-size: 12px; text-align: left; }
+.mh-fast b { color: var(--muted); }
+.mh-fast[aria-pressed='true'] { border-color: var(--accent); }
+.mh-fast[aria-pressed='true'] b { color: var(--accent); }
+.minimap[data-call='standby'] { border-color: #ffd166; box-shadow: inset 0 0 0 3px rgba(255, 209, 102, 0.85), 0 0 18px rgba(255, 209, 102, 0.35); }
+.minimap[data-call='execute'] { border-color: #6dffa0; box-shadow: inset 0 0 0 3px rgba(109, 255, 160, 0.85), 0 0 18px rgba(109, 255, 160, 0.35); }
+.minimap[data-call='station'] { border-color: #e6f0ff; box-shadow: inset 0 0 0 3px rgba(200, 220, 255, 0.9), 0 0 18px rgba(200, 220, 255, 0.35); }
+/* The distance between the ships: a small see-through label on the line, never a box over the view. */
+.tag.tag-range { margin-top: 0; padding: 1px 7px; background: rgba(8, 12, 18, 0.35); border: 0; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: rgba(255, 255, 255, 0.92); backdrop-filter: none; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8); }
+.tag.tag-range::after, .tag-range .tag-title { display: none; }
+.mh-cell .rename { cursor: pointer; }
+.mh-cell .rename:hover { text-decoration: underline dotted; }
+
+/* --- Drill: the playback panel, redesigned ---------------------------------------------------------------
+   Camera pills on the left, a round Play in the middle, the clock and speed on the right; on a narrow window the
+   pills drop to their own row. A thicker bar with its chapter ticks underneath. */
+body.mission-maneuvers .timeline {
+  padding: 10px 18px 12px; border-radius: 18px; background: rgba(9, 14, 21, 0.74); border-color: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 10px 34px rgba(0, 0, 0, 0.35);
+}
+body.mission-maneuvers .controls { flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; }
+body.mission-maneuvers .seg { flex: none; order: 1; gap: 6px; padding: 0; background: none; border: 0; }
+body.mission-maneuvers .seg button {
+  padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04);
+  color: var(--muted); font-size: 12.5px; font-weight: 600; transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+body.mission-maneuvers .seg button:hover { color: var(--text); background: rgba(255, 255, 255, 0.1); }
+body.mission-maneuvers .seg button.active { background: var(--accent); border-color: var(--accent); color: #1a0d02; }
+body.mission-maneuvers .transport { order: 2; margin: 0; gap: 6px; }
+body.mission-maneuvers .tbtn { width: 38px; height: 38px; border-radius: 50%; border: 1px solid transparent; color: var(--muted); }
+body.mission-maneuvers .tbtn:hover { color: var(--text); background: rgba(255, 255, 255, 0.1); }
+body.mission-maneuvers .tbtn svg { width: 16px; height: 16px; }
+body.mission-maneuvers .tbtn.play { width: 54px; height: 54px; margin: 0 6px; background: var(--accent); border-color: var(--accent); color: #1a0d02; box-shadow: 0 4px 16px rgba(255, 122, 26, 0.35); }
+body.mission-maneuvers .tbtn.play:hover { background: #ff8d3a; color: #1a0d02; }
+body.mission-maneuvers .tbtn.play svg { width: 22px; height: 22px; }
+body.mission-maneuvers .tbtn.active:not(.play) { background: rgba(255, 122, 26, 0.2); border-color: var(--accent); color: var(--accent); }
+body.mission-maneuvers .clock-box { order: 3; gap: 10px; }
+body.mission-maneuvers .time { font-size: 13px; }
+body.mission-maneuvers .time b { font-size: 20px; font-weight: 700; letter-spacing: 0.01em; }
+body.mission-maneuvers #speed { min-width: 46px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--accent); background: rgba(255, 122, 26, 0.12); color: var(--accent); font-weight: 700; font-size: 12.5px; }
+body.mission-maneuvers #speed:hover { background: rgba(255, 122, 26, 0.24); }
+body.mission-maneuvers .now { margin-top: 10px; }
+body.mission-maneuvers #scrub::-webkit-slider-runnable-track { height: 8px; border-radius: 4px; }
+body.mission-maneuvers #scrub::-moz-range-track, body.mission-maneuvers #scrub::-moz-range-progress { height: 8px; border-radius: 4px; }
+body.mission-maneuvers #scrub::-webkit-slider-thumb { width: 18px; height: 18px; margin-top: -5px; }
+body.mission-maneuvers .tick { width: 3px; height: 8px; margin-left: -1.5px; bottom: 7px; background: rgba(255, 255, 255, 0.5); }
+body.mission-maneuvers .tick.stem { height: calc(8px + var(--stem, 0px)); }
+body.mission-maneuvers .tick.passed { background: #ffd2a8; }
+body.mission-maneuvers .marker { font-size: 11px; font-weight: 500; }
+
+/* --- Drill: the whole screen laid out for the widest view (desktop) --------------------------------------------
+   The top bar shrinks to icons, the order and ships cards stack in a narrow column at the right, the call banner
+   hangs under the bar, and the map and the playback panel stay along the bottom: the middle is all sea. */
+@media (min-width: 901px) {
+  body.mission-maneuvers .hud { left: auto; right: calc(var(--gap) + var(--safe-r)); top: calc(var(--gap) + var(--safe-t)); width: 272px; }
+  body.mission-maneuvers .hud-live { flex-direction: column; flex-wrap: nowrap; gap: 8px; }
+  body.mission-maneuvers .mcard-order, body.mission-maneuvers .mh-ships { flex: none; width: 100%; min-width: 0; }
+  body.mission-maneuvers .mh-ships { padding: 6px; display: block; }
+  /* The ships step down the column: name, heading and speed on one line each. */
+  body.mission-maneuvers .mh-ships .mh-row { grid-auto-flow: row; grid-auto-columns: auto; gap: 4px; }
+  body.mission-maneuvers .mh-ships .mh-cell { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; column-gap: 10px; padding: 5px 9px; }
+  body.mission-maneuvers .mh-ships .mh-cell span { font-size: 10px; }
+  body.mission-maneuvers .mh-ships .mh-cell b { font-size: 14px; }
+  body.mission-maneuvers .mh-ships .mh-cell em { font-size: 11px; min-width: 52px; text-align: right; }
+  /* Icons only on the top bar (the names are in the tooltips). */
+  body.mission-maneuvers .bar-tools .cap, body.mission-maneuvers .topbar .cap { display: none; }
+  body.mission-maneuvers .topbar button.icon { min-width: 38px; padding: 8px 6px; }
+  body.mission-maneuvers .topbar button.icon svg { width: 20px; height: 20px; }
+}
+
+/* Drill, desktop: the map sits at the bottom right and the playback panel fills the bottom left. */
+@media (min-width: 641px) and (min-height: 501px) {
+  body.mission-maneuvers .minimap { left: auto; right: calc(var(--gap) + var(--safe-r)); }
+  body.mission-maneuvers.has-map .timeline {
+    left: calc(var(--gap) + var(--safe-l)); right: auto; transform: none;
+    width: min(1000px, calc(100vw - var(--gap) * 3 - var(--safe-l) - var(--safe-r) - var(--map-d)));
+  }
+}
+
+/* --- Drill: the timeline on end down the left, camera on top, compact playback along the bottom (wide) ------- */
+.vtrack, .camstrip { display: none; }
+@media (min-width: 901px) {
+  /* The vertical timeline: the same line and chapters, time running downward. */
+  .vtrack {
+    display: block; position: fixed; z-index: 8; left: calc(var(--gap) + var(--safe-l));
+    top: calc(var(--gap) * 2 + var(--safe-t) + var(--bar-h, 40px)); bottom: calc(var(--gap) * 3 + var(--safe-b) + 84px); width: 230px; --p: 0;
+  }
+  /* Tall enough to run the whole height of the screen once the centred playback panel is clear of its labels. */
+  @media (min-width: 1250px) { .vtrack { bottom: calc(var(--gap) * 2 + var(--safe-b)); } }
+  .vt-rail { position: absolute; left: 10px; top: 0; bottom: 0; width: 7px; border-radius: 4px; background: rgba(255, 255, 255, 0.2); cursor: pointer; touch-action: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25); }
+  .vt-rail::before { content: ''; position: absolute; left: -10px; right: -10px; top: 0; bottom: 0; } /* a wider target to grab */
+  .vt-fill { position: absolute; left: 0; right: 0; top: 0; height: calc(var(--p) * 100%); border-radius: 4px; background: var(--accent); }
+  .vt-thumb { position: absolute; left: 50%; top: calc(var(--p) * 100%); width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: #fff; border: 3px solid var(--accent); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5); }
+  .vt-lead { position: absolute; left: 0; top: 0; width: 40px; height: 100%; overflow: visible; pointer-events: none; }
+  .vt-lead path { fill: none; stroke: rgba(255, 255, 255, 0.35); stroke-width: 1; }
+  .vt-lead circle { fill: rgba(255, 255, 255, 0.7); }
+  .vt-labels { position: absolute; left: 34px; top: 0; right: 0; bottom: 0; }
+  .vt-label {
+    position: absolute; left: 0; height: 18px; padding: 0 6px; border: 0; border-radius: 6px; background: none; color: rgba(255, 255, 255, 0.62);
+    font-size: 11.5px; line-height: 18px; white-space: nowrap; text-align: left; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9); cursor: pointer;
+  }
+  .vt-label:hover { color: #fff; background: rgba(8, 12, 18, 0.35); }
+  .vt-label.passed { color: rgba(255, 255, 255, 0.92); }
+  .vt-label.current { color: #fff; font-weight: 700; background: rgba(8, 12, 18, 0.4); box-shadow: inset 3px 0 0 var(--accent); }
+  body.ui-hidden .vtrack, body.ui-hidden .camstrip { display: none; }
+  /* The horizontal bar is replaced by it. */
+  body.mission-maneuvers .timeline .track { display: none; }
+}
+@media (min-width: 1100px) {
+  .camstrip { display: block; position: fixed; z-index: 11; top: calc(var(--gap) + var(--safe-t)); left: 50%; transform: translateX(-50%); }
+  .camstrip .seg { padding: 4px; gap: 6px; border-radius: 999px; background: rgba(9, 14, 21, 0.6); border: 1px solid var(--border); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+}
+/* Drill: the camera strip stays on top on every desktop window (a 1920 px screen at 175% scaling is about 1,100 px
+   wide). Below 1100 px it sits just left of the readout card, clear of the top bar, and the playback panel stays
+   narrow and clear of the map. */
+@media (min-width: 901px) and (max-width: 1099px) {
+  body.mission-maneuvers .camstrip { display: block; position: fixed; z-index: 11; top: calc(var(--gap) + var(--safe-t)); left: auto; right: calc(var(--gap) * 2 + var(--safe-r) + 236px); transform: none; }
+  body.mission-maneuvers .camstrip .seg { padding: 4px; gap: 4px; border-radius: 999px; background: rgba(9, 14, 21, 0.6); border: 1px solid var(--border); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+}
+@media (min-width: 901px) and (max-width: 1099px) {
+  /* The playback panel is centred in the room left of the map, so the two never meet. */
+  html body.mission-maneuvers .timeline, html body.mission-maneuvers.has-map .timeline { left: calc((100vw - var(--map-d) - var(--gap) * 2 - var(--safe-r)) / 2); }
+}
+@media (min-width: 901px) and (max-width: 1019px) {
+  /* Too narrow for the strip beside the top bar: it takes a row of its own just under it, and the timeline starts lower. */
+  body.mission-maneuvers .camstrip { top: calc(var(--gap) * 2 + var(--safe-t) + var(--bar-h, 40px)); right: auto; left: calc(var(--gap) + var(--safe-l)); }
+  body.mission-maneuvers .camstrip .seg button { padding: 4px 8px; font-size: 12px; }
+  body.mission-maneuvers .vtrack { top: calc(var(--gap) * 3 + var(--safe-t) + var(--bar-h, 40px) + 36px); }
+}
+@media (min-width: 901px) {
+  /* The playback panel, compact: just the transport and the clock, in the middle of the bottom edge. */
+  body.mission-maneuvers .timeline, body.mission-maneuvers.has-map .timeline {
+    left: 50%; right: auto; transform: translateX(-50%); width: auto; padding: 8px 18px; display: block;
+  }
+  body.mission-maneuvers .timeline .controls { gap: 24px; flex-wrap: nowrap; justify-content: center; }
+  body.mission-maneuvers .timeline .now { display: none; }
+  body.mission-maneuvers .tbtn { width: 34px; height: 34px; }
+  body.mission-maneuvers .tbtn.play { width: 44px; height: 44px; }
+}
+
+/* The rename box: a small floating form beside the name being edited. */
+.rename-box { position: fixed; z-index: 30; display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 10px; background: var(--panel-solid); border: 1px solid var(--border); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); font-size: 12px; color: var(--muted); }
+.rename-box label { display: flex; align-items: center; gap: 6px; }
+.rename-box input { width: 96px; padding: 5px 7px; border-radius: 6px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.07); color: var(--text); font: inherit; text-transform: uppercase; }
+.rename-box button { padding: 5px 10px; border-radius: 6px; }
+.rename-box button[type='submit'] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+
+/* --- Drill: the readouts, compact: one slim see-through card, the ships as thin rows ---------------------------- */
+@media (min-width: 901px) {
+  body.mission-maneuvers .hud { width: 236px; }
+  body.mission-maneuvers .hud-live { gap: 0; }
+  body.mission-maneuvers .mcard { padding: 7px 11px; background: rgba(9, 14, 21, 0.55); border-color: rgba(255, 255, 255, 0.08); box-shadow: none; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  body.mission-maneuvers .mcard-order { border-radius: 12px 12px 0 0; border-bottom: 0; }
+  body.mission-maneuvers .mh-ships { border-radius: 0 0 12px 12px; border-top: 0; padding: 0 11px 6px; }
+  body.mission-maneuvers .mh-title b { font-size: 11px; }
+  body.mission-maneuvers .mh-sub small { font-size: 9px; }
+  body.mission-maneuvers .mh-progress { height: 2px; margin-top: 6px; }
+  body.mission-maneuvers .mh-next { font-size: 10px; margin-top: 5px; }
+  body.mission-maneuvers .mh-ships .mh-row { gap: 0; }
+  body.mission-maneuvers .mh-ships .mh-cell { padding: 3px 0; background: none; border-radius: 0; column-gap: 8px; }
+  body.mission-maneuvers .mh-ships .mh-cell + .mh-cell { border-top: 1px solid rgba(255, 255, 255, 0.06); }
+  body.mission-maneuvers .mh-ships .mh-cell span { font-size: 10px; }
+  body.mission-maneuvers .mh-ships .mh-cell b { font-size: 12.5px; }
+  body.mission-maneuvers .mh-ships .mh-cell em { font-size: 10.5px; min-width: 46px; }
+}
+
+/* The order card: the title may shrink, and the state chip wraps under the line instead of running off the card. */
+.mh-title { min-width: 0; }
+.mh-sub { flex-wrap: wrap; gap: 3px 8px; }
+.mh-sub .chip { white-space: nowrap; }
+.mh-btns { align-self: flex-start; }
+
+/* Drill, desktop: the call (STANDBY, EXECUTE, A STATION) sits just above the map, centred on it. */
+@media (min-width: 641px) and (min-height: 501px) {
+  body.mission-maneuvers .shot-caption {
+    top: auto; left: auto; transform: none; right: calc(var(--gap) + var(--safe-r)); bottom: calc(var(--gap) + var(--safe-b) + var(--map-d) + 8px);
+    width: var(--map-d); box-sizing: border-box; text-align: center; letter-spacing: 0.12em; padding: 5px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+}
+
+/* Drill: the ship tags are see-through, so they hide less of the sea. */
+body.mission-maneuvers .tag:not(.tag-range) {
+  background: rgba(10, 14, 20, 0.34); border-color: rgba(255, 255, 255, 0.1); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+body.mission-maneuvers .tag:not(.tag-range)::after { background: rgba(255, 255, 255, 0.35); }
+
+/* Drill: soft dark scrims at the top and left edges keep the white readouts and chapter names legible over the sky. */
+body.mission-maneuvers.playing::before {
+  content: ''; position: fixed; inset: 0; z-index: 2; pointer-events: none;
+  background: linear-gradient(180deg, rgba(5, 10, 18, 0.55), rgba(5, 10, 18, 0) 230px), linear-gradient(90deg, rgba(5, 10, 18, 0.4), rgba(5, 10, 18, 0) 300px);
+}
+body.mission-maneuvers.ui-hidden::before { display: none; }
+
+/* The More menu in the drill: only what matters here (the Menu button already goes back to the main menu). */
+#btn-fullscreen, #btn-grid { display: none; }
+body.mission-maneuvers #btn-fullscreen:not([hidden]), body.mission-maneuvers #btn-grid { display: flex; }
+body.mission-maneuvers #btn-ship, body.mission-maneuvers #dl-offline, body.mission-maneuvers #menu hr { display: none; }
+.tag.tag-grid { background: none; color: rgba(190, 240, 100, 0.95); font-size: 10px; padding: 0 4px; }
+
+/* --- Four-ship formations (formationsMain.js): the drill's look (body.mission-maneuvers), with a dot per ship. --- */
+.mh-cell.ship1 span::before, .mh-cell.ship2 span::before, .mh-cell.ship3 span::before, .mh-cell.ship4 span::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #3ddc84; }
+.mh-cell.ship2 span::before { background: #ff7a1a; }
+.mh-cell.ship3 span::before { background: #5ab4ff; }
+.mh-cell.ship4 span::before { background: #d27bff; }
+/* Tags pushed apart on screen (declutterTags): the stem stretches down to the ship. */
+body.mission-formations .tag::after { height: calc(13px + var(--lift, 0px)); bottom: calc(-14px - var(--lift, 0px)); }
+/* Between 901 and 1099 px the camera buttons stay in the playback panel: they take a row of their own there, so the
+   panel stays narrow and clear of the map at the bottom right. */
+@media (min-width: 901px) and (max-width: 1099px) {
+  body.mission-formations .timeline .controls { flex-wrap: wrap; row-gap: 8px; }
+  body.mission-formations .timeline .seg.cam { flex-basis: 100%; justify-content: center; }
+}

@@ -1,0 +1,278 @@
+// The Solo Air Defense mission's model (src/helm.js): the ship answers the wheel and the telegraph like a ship, a drone
+// left alone escalates from detection to a low pass and a strike, and the missile kills it.
+
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import {
+  HelmSim, SLEW_TIME, ACQUIRE_TIME, LOCK_HOLD, TELEGRAPH, START_ORDER, KT, RUDDER_MAX, RADAR_RANGE, CELLS, ARC, relName, compass,
+  GUN_RANGE, GUN_ROUNDS, GUN_BLOCK, DRONE_HP, gunBlind,
+} from '../src/helm.js';
+
+const run = (sim, seconds, input = {}) => { for (let i = 0; i < seconds * 10; i++) sim.advance(0.1, input); };
+const events = (sim) => sim.takeEvents();
+
+describe('the ship', () => {
+  it('starts at half ahead, on 000, and holds her course with the wheel amidships', () => {
+    const sim = new HelmSim();
+    sim.nextSpawn = Infinity;
+    assert.equal(sim.order, START_ORDER);
+    run(sim, 60);
+    assert.ok(Math.abs(sim.knots - TELEGRAPH[START_ORDER].kn) < 0.05, `${sim.knots} kn`);
+    assert.equal(Math.round(sim.headingDeg), 0);
+    assert.ok(sim.x > 400 && Math.abs(sim.z) < 1e-6, 'she runs north');
+  });
+
+  it('puts the rudder over while the key is held, and eases it back when it is let go', () => {
+    const sim = new HelmSim();
+    sim.nextSpawn = Infinity;
+    run(sim, 1, { right: 1 });
+    assert.ok(sim.rudder > 0.25 && sim.rudder < RUDDER_MAX, `rudder ${sim.rudder}`);
+    run(sim, 10, { right: 1 });
+    assert.ok(Math.abs(sim.rudder - RUDDER_MAX) < 1e-9, 'full rudder at 35 degrees');
+    run(sim, 8);
+    assert.ok(Math.abs(sim.rudder) < 1e-9, 'amidships again');
+  });
+
+  it('turns to starboard on right rudder, the swing building up in a couple of seconds, with a tight tactical diameter', () => {
+    const sim = new HelmSim();
+    sim.nextSpawn = Infinity;
+    run(sim, 2, { right: 1 });
+    assert.ok(sim.rateOfTurn > 0 && sim.rateOfTurn < 220, `the swing builds up: ${sim.rateOfTurn} deg/min`);
+    const start = { x: sim.x, z: sim.z };
+    let maxZ = 0;
+    for (let i = 0; i < 2400 && sim.headingDeg < 180; i++) { sim.advance(0.1, { right: 1 }); maxZ = Math.max(maxZ, sim.z - start.z); }
+    assert.ok(sim.headingDeg >= 179, 'she comes round');
+    assert.ok(maxZ > 110 && maxZ < 260, `tactical diameter ${maxZ.toFixed(0)} m`);
+    assert.ok(sim.knots < TELEGRAPH[START_ORDER].kn - 1, 'she loses speed in the hard turn');
+    assert.ok(sim.heel < 0, 'she heels outward (port side down) turning to starboard');
+  });
+
+  it('answers the telegraph in a few seconds, one step at a time, and stops', () => {
+    const sim = new HelmSim();
+    sim.nextSpawn = Infinity;
+    sim.telegraph(+1);
+    sim.telegraph(+1);
+    assert.equal(TELEGRAPH[sim.order].name, 'Flank');
+    sim.telegraph(+1);
+    assert.equal(TELEGRAPH[sim.order].name, 'Flank', 'no step past flank');
+    run(sim, 10);
+    assert.ok(sim.knots > 16.5 && sim.knots < 26, `working up: ${sim.knots} kn`);
+    run(sim, 150);
+    assert.ok(Math.abs(sim.knots - 28) < 0.3);
+    for (let i = 0; i < 5; i++) sim.telegraph(-1);
+    assert.equal(TELEGRAPH[sim.order].kn, 0);
+    run(sim, 300);
+    assert.ok(Math.abs(sim.u) < 0.3 * KT, `stopped: ${sim.knots} kn`);
+  });
+});
+
+describe('a drone left alone', () => {
+  it('is detected, closes, makes one low pass, then comes round and dives into the ship on its second approach', () => {
+    const sim = new HelmSim({ seed: 3 });
+    const seen = [];
+    let passes = [];
+    let firstRange = null;
+    for (let i = 0; i < 6000 && !seen.includes('struck'); i++) {
+      sim.advance(0.1, {});
+      for (const e of events(sim)) {
+        if (e.type === 'alarm') seen.push(`alarm${e.level}`);
+        if (e.type === 'struck') seen.push('struck');
+        if (e.type === 'pass') passes.push(sim.rangeTo(e.pos));
+      }
+      const d = sim.drones[0];
+      if (d && d.detected && firstRange === null) firstRange = sim.rangeTo(d.pos);
+      if (d && !seen.includes(d.phase)) seen.push(d.phase);
+    }
+    assert.ok(firstRange !== null && firstRange <= RADAR_RANGE && firstRange > RADAR_RANGE - 100, `detected at ${firstRange}`);
+    for (const s of ['inbound', 'alarm1', 'alarm2', 'pass', 'extend', 'attack', 'alarm3', 'struck']) assert.ok(seen.includes(s), `${s} in ${seen}`);
+    assert.ok(!seen.includes('circle'), 'it does not circle');
+    assert.equal(passes.length, 1, `${passes.length} passes before the attack`);
+    assert.equal(sim.strikes, 1);
+    assert.ok(sim.t < 330, `strike after ${sim.t.toFixed(0)} s`);
+  });
+
+  it('three strikes put the ship out of action; she stops and reset sails again', () => {
+    const sim = new HelmSim({ seed: 5 });
+    for (let i = 0; i < 30000 && !sim.out; i++) sim.advance(0.1, {});
+    assert.ok(sim.out);
+    assert.equal(sim.strikes, 3);
+    run(sim, 200);
+    assert.ok(sim.knots < 0.5);
+    sim.reset();
+    assert.equal(sim.out, false);
+    assert.equal(sim.strikes, 0);
+    assert.equal(sim.cellsLeft, CELLS);
+  });
+});
+
+describe('the missile', () => {
+  it('shoots down a drone ahead, with one round', () => {
+    const sim = new HelmSim();
+    sim.nextSpawn = Infinity;
+    const d = sim.spawn({ bearing: 0.3, range: 3000, alt: 150 });
+    run(sim, 0.5);
+    assert.ok(d.detected);
+    events(sim);
+    sim.fire();
+    assert.equal(sim.cellsLeft, CELLS - 1);
+    let fired = false;
+    for (let i = 0; i < 300 && d.alive; i++) {
+      sim.advance(0.1, {});
+      for (const e of events(sim)) if (e.type === 'fire') fired = true;
+    }
+    assert.ok(fired, 'the round left the launcher');
+    assert.equal(d.alive, false);
+    assert.equal(d.phase, 'down');
+    assert.equal(sim.kills, 1);
+    assert.ok(d.wreck && d.wreck.burstDist < 4.5, 'fuzed close to the drone');
+  });
+
+  it('turns the launcher fast, finds the target through the sight, locks on, holds the lock, and only then fires', () => {
+    const sim = new HelmSim();
+    sim.nextSpawn = Infinity;
+    const d = sim.spawn({ bearing: 0.3, range: 3000, alt: 150 });
+    run(sim, 0.5);
+    events(sim);
+    sim.fire();
+    const t0 = sim.t;
+    assert.ok(events(sim).some((e) => e.type === 'slew'));
+    let tAcq = null;
+    let tLock = null;
+    let tFire = null;
+    for (let i = 0; i < 500 && tFire === null; i++) {
+      sim.advance(0.01, {});
+      for (const e of events(sim)) {
+        if (e.type === 'acquire') tAcq = sim.t;
+        if (e.type === 'lock') { tLock = sim.t; assert.equal(e.id, d.id); assert.equal(sim.shot.locked, true); }
+        if (e.type === 'fire') tFire = sim.t;
+      }
+    }
+    assert.ok(SLEW_TIME <= 0.8, 'the traverse is quick');
+    assert.ok(Math.abs(tAcq - t0 - SLEW_TIME) < 0.03, `the director looks for it ${(tAcq - t0).toFixed(2)} s after F`);
+    assert.ok(Math.abs(tLock - tAcq - ACQUIRE_TIME) < 0.03, `locked ${(tLock - tAcq).toFixed(2)} s after that`);
+    assert.ok(Math.abs(tFire - tLock - LOCK_HOLD) < 0.03, `fired ${(tFire - tLock).toFixed(2)} s after the lock`);
+  });
+
+  it('will not engage a drone astern, too close, or out of range', () => {
+    const sim = new HelmSim();
+    sim.nextSpawn = Infinity;
+    const astern = sim.spawn({ bearing: Math.PI, range: 2500, alt: 120 });
+    run(sim, 0.2);
+    sim.targetId = astern.id;
+    assert.match(sim.engageable(astern), /arc/);
+    sim.fire();
+    assert.equal(sim.cellsLeft, CELLS, 'no round spent');
+    astern.pos.set(sim.x + 100, 50, sim.z);
+    assert.match(sim.engageable(astern), /close/);
+    astern.pos.set(sim.x + 4900, 50, sim.z);
+    assert.match(sim.engageable(astern), /range/);
+    assert.ok(ARC > Math.PI / 2 && ARC < Math.PI, 'abeam is inside the arc, astern is not');
+  });
+
+  it('hits a drone on its low pass along the side', () => {
+    const sim = new HelmSim({ seed: 3 });
+    let d = null;
+    for (let i = 0; i < 6000; i++) {
+      sim.advance(0.1, {});
+      d = sim.drones[0];
+      if (d && d.phase === 'pass' && sim.rangeTo(d.pos) < 1200 && !sim.engageable(d)) break;
+    }
+    assert.equal(d.phase, 'pass');
+    sim.fire();
+    run(sim, 15);
+    assert.equal(d.alive, false, `drone still flying, ${sim.rangeTo(d.pos)} m`);
+    assert.equal(sim.kills, 1);
+  });
+});
+
+describe('the guns', () => {
+  it('shoot down a drone astern that the missile box cannot reach, and spend ammunition doing it', () => {
+    const sim = new HelmSim();
+    sim.nextSpawn = Infinity;
+    const d = sim.spawn({ bearing: Math.PI, range: 2300, alt: 90 });
+    run(sim, 0.5);
+    assert.ok(d.detected);
+    assert.match(sim.engageable(d), /arc/, 'the missile box cannot take it');
+    assert.equal(sim.gunReason(d), null);
+    sim.toggleAutoGuns();
+    assert.ok(sim.gunsAuto);
+    let hits = 0;
+    for (let i = 0; i < 400 && d.alive; i++) {
+      sim.advance(0.1, {});
+      for (const e of events(sim)) if (e.type === 'gunhit') hits += 1;
+    }
+    assert.equal(d.alive, false, 'brought down');
+    assert.equal(d.wreck.by, 'gun');
+    assert.equal(sim.kills, 1);
+    assert.ok(hits >= DRONE_HP, 'it took its share of hits');
+    assert.ok(sim.gunRounds < 2 * GUN_ROUNDS, 'rounds were spent');
+  });
+
+  it('stay silent when off, out of range, or when the drone is in the blocked sector ahead', () => {
+    const sim = new HelmSim();
+    sim.nextSpawn = Infinity;
+    const d = sim.spawn({ bearing: Math.PI, range: 2000, alt: 90 });
+    run(sim, 0.5);
+    run(sim, 2);
+    assert.equal(sim.guns.some((g) => g.firing), false, 'off: no fire');
+    sim.toggleAutoGuns();
+    d.pos.set(sim.x - GUN_RANGE - 300, 90, sim.z);
+    assert.match(sim.gunReason(d), /range/);
+    d.pos.set(sim.x + 1500, 90, sim.z + 100);
+    assert.match(sim.gunReason(d), /blocked/);
+    assert.ok(GUN_BLOCK > 0.5 && GUN_BLOCK < 1.2);
+  });
+});
+
+describe('each gun has its own dead zone', () => {
+  const fireAt = (bearing) => {
+    const sim = new HelmSim();
+    sim.nextSpawn = Infinity;
+    const d = sim.spawn({ bearing: sim.psi + bearing, range: 1800, alt: 80 });
+    run(sim, 0.5);
+    sim.targetId = d.id;
+    d.hp = 99;
+    sim.toggleAutoGuns();
+    run(sim, 2);
+    return sim.guns.map((g) => g.ammo < GUN_ROUNDS);
+  };
+  it('astern both fire, abeam only the near gun, and ahead neither (the guns are port, starboard)', () => {
+    assert.deepEqual(fireAt(Math.PI), [true, true]);
+    assert.deepEqual(fireAt(Math.PI / 2), [false, true], 'starboard beam: only the starboard gun');
+    assert.deepEqual(fireAt(-Math.PI / 2), [true, false], 'port beam: only the port gun');
+    assert.deepEqual(fireAt(0.1), [false, false], 'right ahead: both are blind');
+  });
+  it('fire only while G is held, stop when it is let go, and fire by themselves in automatic', () => {
+    const sim = new HelmSim();
+    sim.nextSpawn = Infinity;
+    const d = sim.spawn({ bearing: Math.PI, range: 1800, alt: 80 });
+    run(sim, 0.5);
+    sim.targetId = d.id;
+    d.hp = 999;
+    run(sim, 3);
+    assert.equal(sim.gunRounds, 2 * GUN_ROUNDS, 'trained on it, but nothing fired');
+    assert.ok(sim.guns.every((g) => !g.firing));
+    run(sim, 3, { gun: true });
+    const held = sim.gunRounds;
+    assert.ok(held < 2 * GUN_ROUNDS, 'held: it fired');
+    run(sim, 3);
+    assert.equal(sim.gunRounds, held, 'let go: it stopped');
+    sim.toggleAutoGuns();
+    run(sim, 3);
+    assert.ok(sim.gunRounds < held, 'automatic: it fires without the key');
+  });
+  it('the dead zones are mirror images', () => {
+    for (const a of [-3, -2, -1.5, -0.8, 0, 0.5, 1.2, 2.2, 3]) assert.equal(gunBlind(0, a), gunBlind(1, -a));
+  });
+});
+
+describe('words', () => {
+  it('names bearings the navy way', () => {
+    assert.equal(relName(THREE.MathUtils.degToRad(45)), 'green 045');
+    assert.equal(relName(THREE.MathUtils.degToRad(-90)), 'red 090');
+    assert.equal(relName(0), 'right ahead');
+    assert.equal(relName(Math.PI), 'right astern');
+    assert.equal(Math.round(compass(-Math.PI / 2)), 270);
+  });
+});

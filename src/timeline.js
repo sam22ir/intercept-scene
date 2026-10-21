@@ -18,13 +18,14 @@ export function createTimeline(scenario, { onKey } = {}) {
 
   const clock = {
     t: 0,
-    playing: true,
+    playing: false, // a mission opens paused; Play (or Space) starts it
     direction: 1,
     speed: 1,
     tick(dt) {
       if (!this.playing || scrubbing) return;
       // `slow(t)` may cap the speed for a stretch (the maneuvers mission slows down at each order).
-      const speed = this.slow ? Math.min(this.speed, this.slow(this.t)) : this.speed;
+      let speed = this.slow ? Math.min(this.speed, this.slow(this.t)) : this.speed;
+      if (this.boost) speed = this.boost(this.t, speed); // `boost(t, speed)` may raise it for a quiet stretch
       this.seek(this.t + dt * speed * this.direction);
       if ((this.direction > 0 && this.t >= scenario.tEnd) || (this.direction < 0 && this.t <= 0)) this.playing = false;
     },
@@ -66,7 +67,7 @@ export function createTimeline(scenario, { onKey } = {}) {
     renderUI() {
       if (!scrubbing) scrub.value = this.t;
       scrub.style.setProperty('--p', (this.t / scenario.tEnd).toFixed(4));
-      timeNow.textContent = this.t.toFixed(1);
+      timeNow.textContent = this.fmt ? this.fmt(this.t) : this.t.toFixed(1); // `fmt(seconds)` may show m:ss
       const fwd = this.playing && this.direction > 0;
       const rev = this.playing && this.direction < 0;
       playBtn.classList.toggle('active', fwd);
@@ -102,7 +103,8 @@ export function createTimeline(scenario, { onKey } = {}) {
   // pointercancel too: the browser cancels the pointer when a touch turns into a gesture.
   window.addEventListener('pointerup', () => { scrubbing = false; });
   window.addEventListener('pointercancel', () => { scrubbing = false; });
-  scrub.addEventListener('input', () => {
+  scrub.addEventListener('input', (e) => {
+    if (!e.isTrusted) return; // only a person dragging the bar stops playback
     clock.playing = false;
     clock.seek(parseFloat(scrub.value));
   });
@@ -124,15 +126,16 @@ export function createTimeline(scenario, { onKey } = {}) {
     return { t, frac, label, el, tick };
   });
 
-  // Greedy placement: each label goes on the first of two rows where it clears its
+  // Greedy placement: each label goes on the first of MAX_ROWS rows where it clears its
   // neighbour by GAP px, clamped inside the bar; a label that fits nowhere is hidden
-  // (its tick stays, and the Now line names it when reached). Re-run on every resize.
+  // (its tick stays, with the name as its tooltip). Re-run on every resize.
   const ROW_H = 16;
   const GAP = 8;
+  const MAX_ROWS = 4;
   function layoutMarkers() {
     const w = markersEl.clientWidth;
     if (!w) return; // hidden (phone layouts show ticks only)
-    const ends = [-Infinity, -Infinity];
+    const ends = new Array(MAX_ROWS).fill(-Infinity);
     let rows = 0;
     for (const m of markerEls) {
       m.el.hidden = false;
@@ -176,7 +179,11 @@ export function createTimeline(scenario, { onKey } = {}) {
   if (globalThis.ResizeObserver) new ResizeObserver(relayout).observe(markersEl.parentElement);
   window.addEventListener('resize', relayout);
 
-  playBtn.addEventListener('click', () => clock.play(1));
+  // The Start button of the main menu sits where the Play button appears, so the second click of a double
+  // click (or an impatient one) must not pause the scene that has only just opened.
+  const opened = performance.now();
+  const settled = () => performance.now() - opened > 900;
+  playBtn.addEventListener('click', () => { if (settled()) clock.play(1); });
   revBtn.addEventListener('click', () => clock.play(-1));
   $('#btn-step-back').addEventListener('click', () => clock.step(-0.1));
   $('#btn-step-fwd').addEventListener('click', () => clock.step(0.1));
@@ -197,7 +204,7 @@ export function createTimeline(scenario, { onKey } = {}) {
     if (e.ctrlKey || e.metaKey) { onKey?.(e.key, e); return; }
     const big = e.shiftKey ? 1 : 0.1;
     switch (e.key) {
-      case ' ': clock.play(1); break;
+      case ' ': if (settled()) clock.play(1); break;
       case 'r': case 'R': clock.play(-1); break;
       case 'ArrowLeft': clock.step(-big); break;
       case 'ArrowRight': clock.step(big); break;

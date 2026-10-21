@@ -20,7 +20,7 @@ async function load(ship, mode) {
 }
 
 for (const ship of ['fwd', 'aft']) {
-  for (const mode of ['intercept', 'chute', 'pair']) {
+  for (const mode of ['intercept', 'chute']) {
     describe(`attitude limits ${ship}-${mode}`, () => {
       it('never banks past 50 degrees or pitches past 20 degrees', async () => {
         const S = await load(ship, mode);

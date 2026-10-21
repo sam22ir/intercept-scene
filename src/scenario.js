@@ -34,9 +34,8 @@ export const PENNANT = SHIP_VARIANT === 'aft' ? '921' : '920';
 //   'intercept' — the missile shoots the drone down on its inbound run;
 //   'chute'     — recovery: no missile is ever fired; at the end of its path
 //                 the drone cuts its engine, opens an orange parachute and
-//                 settles into the sea;
-//   'pair'      — two drones off the same rail, a missile for each.
-const MODES = ['intercept', 'chute', 'pair'];
+//                 settles into the sea.
+const MODES = ['intercept', 'chute'];
 export const MODE = (() => {
   const chosen = globalThis.__SCENARIO;
   if (MODES.includes(chosen)) return chosen;
@@ -48,10 +47,6 @@ export const MODE = (() => {
   }
 })();
 export const CHUTE_MODE = MODE === 'chute';
-export const PAIR_MODE = MODE === 'pair';
-// Second drone: launched this long after the first, from the same rail (once the cradle is home).
-const PAIR_DT = 14;
-const PAIR_LOAD = PAIR_DT - 4; // drone 2 appears on the cradle once it is home (T_RELEASE + 6 = 9.6 s)
 export const SHIP_SPEED = 7; // m/s (~14 kn)
 
 export function shipPos(t, out) {
@@ -69,7 +64,7 @@ const RAIL_YAW = THREE.MathUtils.degToRad(50); // from the bow toward port
 const RAIL_PITCH = THREE.MathUtils.degToRad(18); // nose-up launch rail (with the spline blend after release the drone stays under 20 degrees of pitch)
 export const RAIL = {
   start: new THREE.Vector3(-52, deckHeight(-52) + 1.35, -1.2),
-  length: 9,
+  length: 3.6, // the stroke: a compact launcher, about the length of the drone's own body (as in the launch photos)
   dir: new THREE.Vector3(
     Math.cos(RAIL_PITCH) * Math.cos(RAIL_YAW), Math.sin(RAIL_PITCH), -Math.cos(RAIL_PITCH) * Math.sin(RAIL_YAW),
   ),
@@ -82,9 +77,9 @@ export const RAIL = {
 };
 
 const T_SPOOL = 3.0; // engine run-up on the cradle
-const CAT_ACCEL = 57; // m/s², pneumatic stroke (~6 g)
-const T_RELEASE = T_SPOOL + Math.sqrt((2 * RAIL.length) / CAT_ACCEL);
-const V_RELEASE = CAT_ACCEL * (T_RELEASE - T_SPOOL); // ~32 m/s relative to the ship
+const CAT_ACCEL = 94; // m/s² (~9.6 g): the booster ignites with the stroke, so the short rail is a kick, not a long pull
+const T_RELEASE = T_SPOOL + Math.sqrt((2 * RAIL.length) / CAT_ACCEL); // ~0.28 s of stroke
+const V_RELEASE = CAT_ACCEL * (T_RELEASE - T_SPOOL); // ~26 m/s relative to the ship
 
 function railStroke(t) {
   if (t <= T_SPOOL) return 0;
@@ -94,7 +89,6 @@ function railStroke(t) {
 
 // Cradle travel: strokes with the drone, sits on the buffers, then winches back.
 export function shuttleStroke(t) {
-  if (PAIR_MODE && t >= PAIR_DT) t -= PAIR_DT; // the cradle runs the same stroke again for drone 2
   if (t <= T_RELEASE + 1.5) return railStroke(t);
   return RAIL.length * (1 - THREE.MathUtils.smoothstep(t, T_RELEASE + 1.5, T_RELEASE + 6));
 }
@@ -166,7 +160,7 @@ export const DEFAULT_PATH = CHUTE_MODE ? CHUTE_PATH : INTERCEPT_PATH;
 // The aft ship flies a different default path, so its drawn paths are stored apart.
 export const PATH_STORAGE_KEY = CHUTE_MODE
   ? 'intercept.path.chute.v1'
-  : `intercept.path.${PAIR_MODE ? 'pair.' : ''}${SHIP_VARIANT === 'aft' ? 'aft.' : ''}v1`;
+  : `intercept.path.${SHIP_VARIANT === 'aft' ? 'aft.' : ''}v1`;
 export const MIN_ALT = 8; // never let a drawn path touch the sea
 
 // Returns a cleaned copy of editable points, or null if they are unusable.
@@ -272,6 +266,7 @@ export const ENGAGE = LOADED_ENGAGE ?? { ...ENGAGE_DEFAULTS };
 // Kept low enough that the default path's turns (R = 190 m) stay under 50 degrees of bank.
 const SPEED_KEYS = [
   [0, V_RELEASE],
+  [1.3, 36], // the booster takes it from the rail speed up to cruise (it burns for 1.2 s)
   [3, 36],
   [10, 38],
   [25, 40],
@@ -279,18 +274,6 @@ const SPEED_KEYS = [
   [40, 41],
   [80, 40],
 ];
-
-// Drone 2 (pair mode) flies a variant of the same path: wider and higher, with the
-// offset ramped in over the first editable points so there is no kink after the
-// catapult-fixed waypoints.
-const PAIR_ALT = 14;
-const PAIR_WIDEN = 0.28;
-function pairVariant(pts) {
-  return pts.map(([x, y, z], i) => {
-    const k = Math.min(1, (i + 1) / 4);
-    return [Math.round(x), Math.round(y + PAIR_ALT * k), Math.round(z * (1 + PAIR_WIDEN * k))];
-  });
-}
 
 // A flight: one drone's spline in the ship frame, its arc-length table, and the
 // time its catapult stroke starts (`shift`, 0 for the first drone).
@@ -336,8 +319,7 @@ export function flightTimeForLength(len, dt = 0.05) {
 }
 
 const ARC_DT = 0.01;
-const FLIGHTS =[makeFlight(ACTIVE_PATH, 0)];
-if (PAIR_MODE) FLIGHTS.push(makeFlight(pairVariant(ACTIVE_PATH), PAIR_DT));
+const FLIGHTS = [makeFlight(ACTIVE_PATH, 0)];
 const ARC_TAU_MAX = FLIGHTS[0].tauMax;
 // Recovery: the parachute opens when the planned path ends.
 const T_CHUTE = CHUTE_MODE ? T_RELEASE + ARC_TAU_MAX : Infinity;
@@ -368,7 +350,7 @@ const _c = new THREE.Vector3();
 const _d = new THREE.Vector3();
 
 // Drone position in the ship frame (under canopy it follows the world-frame descent).
-// `k` picks the drone (0, or 1 for the second drone in pair mode).
+// `k` picks the drone (always 0: one drone per mission).
 export function planeRelPos(t, out, k = 0) {
   if (t >= T_CHUTE) return descentWorld(t, out).sub(shipPos(t, _d));
   return pathRelPos(t, out, FLIGHTS[k]);
@@ -901,14 +883,6 @@ export function missileTrailPoints(step, k = 0) {
   return pts;
 }
 
-// Timeline entries for the extra drone and its missile.
-const pairEvents = PAIR_MODE
-  ? [
-    { t: FLIGHTS[1].tRelease, label: 'Drone 2 launch' },
-    { t: ENGS[1].tLaunch, label: 'Missile 2 launch' },
-    { t: ENGS[1].tHit, label: 'Impact 2' },
-  ]
-  : [];
 const tHit = E0.tHit;
 
 export const scenario = {
@@ -922,6 +896,8 @@ export const scenario = {
   engage: { ...ENGAGE },
   customEngage: CUSTOM_ENGAGE,
   autoLaunch: AUTO_LAUNCHES[0],
+  // Range (m) inside which an inbound drone is a threat the box will fire at (the HUD colours it).
+  launchRange: ENGAGE.timing === 'range' ? ENGAGE.range : LAUNCH_RANGE,
   // True if a (custom) path forced a launch while the drone was on the wrong side of the box.
   outOfArc: !CHUTE_MODE && ENGS.some((e) => !inArc(e.tLaunch, e.k ?? ENGS.indexOf(e))),
   customPath: CUSTOM_PATH,
@@ -936,7 +912,7 @@ export const scenario = {
   hasMissile: !CHUTE_MODE,
   tChute: T_CHUTE,
   tSplash: T_SPLASH,
-  // One entry per drone/missile pair: none in a recovery, one in an intercept, two in pair mode.
+  // One entry per engagement: none in a recovery, one in an intercept.
   // tLaunch/tHit above are always the first engagement.
   engagements: CHUTE_MODE ? [] : ENGS.map((e) => ({
     tLaunch: e.tLaunch, tHit: e.tHit, interceptMiss: e.interceptMiss, burstDist: e.burstDist, hitPos: e.hitPos,
@@ -944,7 +920,7 @@ export const scenario = {
   })),
   // Per drone: when its catapult stroke starts and its booster burns (drone 0 is the first).
   drones: FLIGHTS.map((f) => ({
-    tShift: f.shift, tLoad: f.shift ? PAIR_LOAD : 0, tSpool: T_SPOOL + f.shift, tRelease: f.tRelease,
+    tShift: f.shift, tLoad: 0, tSpool: T_SPOOL + f.shift, tRelease: f.tRelease,
     tBoost0: T_SPOOL + f.shift, tBoost1: T_RELEASE + 1.2 + f.shift,
   })),
   // Intercept: main raises tEnd once the debris knows how long it takes to fall.
@@ -956,7 +932,6 @@ export const scenario = {
     ...(CHUTE_MODE
       ? [{ t: T_CHUTE, label: 'Parachute opens' }, { t: T_SPLASH, label: 'Splashdown' }]
       : [{ t: T_LAUNCH, label: 'Missile launch' }, { t: tHit, label: 'Impact' }]),
-    ...pairEvents,
   ].sort((a, b) => a.t - b.t),
 };
 

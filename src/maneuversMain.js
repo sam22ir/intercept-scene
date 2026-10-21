@@ -13,16 +13,21 @@ import { createManeuverMap } from './maneuverMap.js';
 import { createManeuverAudio } from './maneuverAudio.js';
 import { toast } from './pathEditor.js';
 import {
-  exercise, shipState, relation, headingDeg, phaseAt, orderStatus, EXECUTE_FLASH, PHASES, STANDBY, STANDBY_LIMITS, KT, YD, LIGHT, FLAGS, lampOn,
+  exercise, guideShipAt, shipState, headingDeg, phaseAt, orderStatus, PHASES, STANDBY, STANDBY_LIMITS, KT, YD, LIGHT, FLAGS, lampOn,
+  stationAt, orderedAt, STATION_FLASH, STATIONS, SECTORS, screenRel, inSector, FORMS, stationPoint, SHIP_IDS, DRILL_SHIPS,
 } from './maneuvers.js';
-import { stripShareParams } from './share.js';
+import { stripShareParams, createShare, readShareParams } from './share.js';
+import { menuText } from './menu.js';
+import { shipNames, rn, saveNames, NAME_MAX } from './shipNames.js';
 
 // Entry point of the second mission, "Naval maneuvers" (see maneuvers.js). Two frigates, ALG and
 // RUS, fly through the signalled maneuvers of the briefing deck. Like the intercept scene, every
 // visual is a pure function of the clock, so the timeline scrubs both ways. start.js imports this
 // instead of main.js when that mission is picked.
 
-const COLORS = { alg: 0x3ddc84, rus: 0xff7a1a };
+const COLORS = { alg: 0x3ddc84, rus: 0xff7a1a, unit: 0x5ab4ff };
+// The ships come from the model: ALG and RUS, and the unit in the three-ship drill (DRILL_SHIPS, the start screen's tile).
+const HAS_UNIT = SHIP_IDS.includes('unit');
 // The exercise starts near (-3200, -3400) so that the roughly 6 km it covers is centred on the origin.
 const SHIFT = new THREE.Vector3(-3200, 0, -3400);
 
@@ -52,14 +57,17 @@ for (const type of ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown
 }
 canvas.addEventListener('webglcontextrestored', invalidate);
 
-const env = createEnvironment(renderer, scene);
+const env = createEnvironment(renderer, scene, { calm: true });
 env.setShadowSize(1024);
 
 // --- Ships -------------------------------------------------------------------------------------
 const ships = {
   alg: { id: 'alg', ship: createShip({ ensign: 'alg' }), state: {} },
   rus: { id: 'rus', ship: createShip({ ensign: 'rus' }), state: {} },
+  // The unit the others work around: a larger ship (the frigate model scaled up). Three-ship drill only.
+  ...(HAS_UNIT ? { unit: { id: 'unit', ship: createShip({ ensign: 'alg' }), state: {} } } : {}),
 };
+ships.unit?.ship.group.scale.setScalar(1.4);
 for (const s of Object.values(ships)) scene.add(s.ship.group);
 
 function placeShip(s, t) {
@@ -96,21 +104,129 @@ function createWake() {
   scene.add(mesh);
   return { pos, col, geo };
 }
-const wakes = { alg: createWake(), rus: createWake() };
+const wakes = Object.fromEntries(SHIP_IDS.map((id) => [id, createWake()]));
+
+// --- Station markers: where the ordered station is, drawn on the sea for the order in progress ------------------
+// A ring at the spot the other ship is to take up (the ordered range and bearing from the guide), in that
+// ship's colour while she works toward it, green when she arrives. A pure function of t: the guide's position
+// at t plus the station's offset.
+const stationPhases = PHASES.filter((p) => STATIONS[p.id]).map((p) => {
+  const g = stationAt(p.ta);
+  // The ring marks where the other ship is to be, from the guide, at the ordered bearing and range.
+  return { p, guide: g.guide, other: g.other, bearing: STATIONS[p.id][0] * Math.PI / 180, range: STATIONS[p.id][1] * YD };
+});
+const stationRing = new THREE.Mesh(
+  new THREE.RingGeometry(0.82, 1, 48).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, fog: false }),
+);
+stationRing.renderOrder = 5;
+stationRing.visible = false;
+scene.add(stationRing);
+const _stCol = new THREE.Color();
+function updateStationMarker(t) {
+  const order = orderStatus(t);
+  const sp = stationPhases.find((x) => x.p === order.phase);
+  const live = sp && (order.state === 'standby' || order.state === 'execute' || order.state === 'underway' || (order.state === 'station' && order.since < STATION_FLASH));
+  stationRing.visible = Boolean(live);
+  if (!live) return;
+  const g = ships[sp.guide].ship.group.position;
+  const dist = camera.position.distanceTo(g);
+  const r = Math.min(Math.max(dist / 22, 40), 160); // keeps its size on screen once you pull away
+  stationRing.position.set(g.x + Math.cos(sp.bearing) * sp.range, 2.6, g.z + Math.sin(sp.bearing) * sp.range);
+  stationRing.scale.setScalar(r * (1 + 0.06 * Math.sin(t * 2.4)));
+  if (order.state === 'station') _stCol.set(0x3ddc84); else _stCol.set(COLORS[sp.other]);
+  stationRing.material.color.copy(_stCol);
+  stationRing.material.opacity = order.state === 'standby' ? 0.45 : 0.85;
+}
+
+// --- Sector markers: the screen sectors drawn on the sea round the unit (the screen centre), in each screen ship's colour ---
+// A ring-sector (between the two bearings, from the inner to the outer depth) with its outline, shown from the order's
+// announcement until the next sector order. Pure functions of t: they sit on the unit.
+function sectorMesh(sec, hex) {
+  const span = (sec.b2 - sec.b1 + 360) % 360;
+  const N = Math.max(8, Math.ceil(span / 3));
+  const pos = [];
+  const idx = [];
+  const loop = [];
+  for (let i = 0; i <= N; i++) {
+    const b = ((sec.b1 + (span * i) / N) * Math.PI) / 180;
+    pos.push(Math.cos(b) * sec.d1, 0, Math.sin(b) * sec.d1, Math.cos(b) * sec.d2, 0, Math.sin(b) * sec.d2);
+    if (i < N) { const k = i * 2; idx.push(k, k + 1, k + 3, k, k + 3, k + 2); }
+  }
+  for (let i = 0; i <= N; i++) loop.push(pos[i * 6 + 3], 0, pos[i * 6 + 5]); // outer arc, left to right
+  for (let i = N; i >= 0; i--) loop.push(pos[i * 6], 0, pos[i * 6 + 2]); // inner arc back
+  loop.push(loop[0], 0, loop[2]);
+  const fill = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+  fill.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  fill.geometry.setIndex(idx);
+  const edge = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: hex, transparent: true, opacity: 0.7, depthWrite: false, fog: false }));
+  edge.geometry.setAttribute('position', new THREE.Float32BufferAttribute(loop, 3));
+  const g = new THREE.Group();
+  g.add(fill, edge);
+  g.renderOrder = 4;
+  g.visible = false;
+  g.frustumCulled = false;
+  scene.add(g);
+  return g;
+}
+// Formation stations: a ring on the sea at each screen ship's station on the unit, in her colour, while the order runs.
+const formRings = {};
+for (const id of ['alg', 'rus']) {
+  const m = new THREE.Mesh(new THREE.RingGeometry(0.82, 1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: COLORS[id], transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+  m.renderOrder = 5;
+  m.visible = false;
+  scene.add(m);
+  formRings[id] = m;
+}
+function updateFormationMarkers(t) {
+  const order = orderStatus(t);
+  const key = FORMS[order.phase.id] ? order.phase.id : null;
+  const live = key && (order.state === 'standby' || order.state === 'execute' || order.state === 'underway' || (order.state === 'station' && order.since < STATION_FLASH));
+  for (const id of ['alg', 'rus']) {
+    const m = formRings[id];
+    m.visible = Boolean(live);
+    if (!live) continue;
+    const P = stationPoint(id, key, t);
+    m.position.set(P.x + SHIFT.x, 2.5, P.z + SHIFT.z);
+    m.scale.setScalar(Math.min(Math.max(camera.position.distanceTo(m.position) / 26, 38), 150) * (1 + 0.05 * Math.sin(t * 2.4)));
+  }
+}
+const sectorMeshes = { screenk: {}, screenm: {} };
+for (const key of ['screenk', 'screenm']) for (const id of ['alg', 'rus']) sectorMeshes[key][id] = sectorMesh(SECTORS[key][id], COLORS[id]);
+function updateSectorMarkers(t) {
+  const phase = phaseAt(t);
+  const key = phase.id === 'screenk' || phase.id === 'screenm' ? phase.id : null;
+  const u = (ships.unit ?? ships.alg).ship.group.position;
+  for (const k of ['screenk', 'screenm']) {
+    for (const id of ['alg', 'rus']) {
+      const g = sectorMeshes[k][id];
+      g.visible = k === key;
+      if (g.visible) g.position.set(u.x, 2.3, u.z);
+    }
+  }
+}
 const _w = {};
+const _w2 = {};
 function updateWake(id, t) {
   const w = wakes[id];
   for (let i = 0; i < WAKE_STEPS; i++) {
     const u = i / (WAKE_STEPS - 1);
     const age = u * WAKE_SPAN;
     shipState(id, Math.max(t - age, 0), _w);
-    const half = 3 + 11 * Math.sqrt(u); // a few metres at the stern, spreading slowly
+    // Wider, and a little stronger, where the ship was turning when she made it.
+    const tt = Math.max(t - age, 0);
+    shipState(id, Math.max(tt - 2, 0), _w2);
+    let dh = _w.heading - _w2.heading;
+    while (dh > Math.PI) dh -= 2 * Math.PI;
+    while (dh < -Math.PI) dh += 2 * Math.PI;
+    const turn = Math.min(Math.abs(dh) * 90 / Math.PI / 1.2, 1.4); // 0 straight, 1 at the standard turn rate
+    const half = (3 + 11 * Math.sqrt(u)) * (1 + 0.7 * turn);
     const sx = -Math.sin(_w.heading); // to starboard of the heading
     const sz = Math.cos(_w.heading);
     const bx = _w.x + SHIFT.x - Math.cos(_w.heading) * 55; // from the stern, at each moment
     const bz = _w.z + SHIFT.z - Math.sin(_w.heading) * 55;
     w.pos.set([bx + sx * half, 0.5, bz + sz * half, bx, 0.5, bz, bx - sx * half, 0.5, bz - sz * half], i * 9);
-    const a = t - age < 0 ? 0 : 0.5 * (1 - u) ** 2;
+    const a = t - age < 0 ? 0 : Math.min(0.5 * (1 - u) ** 2 * (1 + 0.5 * turn), 0.85);
     w.col.set([0.95, 0.98, 1, 0, 0.95, 0.98, 1, a, 0.95, 0.98, 1, 0], i * 12);
   }
   w.geo.attributes.position.needsUpdate = true;
@@ -127,7 +243,7 @@ function trackLine(id) {
   const mk = (geo, color, width, opacity, dashed) => {
     const m = new LineMaterial({
       color, linewidth: width, transparent: true, opacity, depthWrite: false, resolution, worldUnits: false,
-      ...(dashed ? { dashed: true, dashSize: 30, gapSize: 30 } : {}),
+      ...(dashed ? { dashed: true, dashSize: 3, gapSize: 12 } : {}),
     });
     lineMats.push(m);
     const l = new Line2(geo, m);
@@ -136,15 +252,14 @@ function trackLine(id) {
     scene.add(l);
     return l;
   };
-  const plan = mk(new LineGeometry().setPositions(flat), COLORS[id], 1.1, 0.3, true);
-  plan.computeLineDistances();
+  // Only the part already steamed, as dots: there is no preview of the track ahead.
   const doneGeo = new LineGeometry().setPositions(flat);
-  const spent = new THREE.Color(COLORS[id]).lerp(new THREE.Color(0x7d8791), 0.6);
-  const done = mk(doneGeo, spent, 2, 0.9, false);
+  const done = mk(doneGeo, COLORS[id], 3, 0.9, true);
+  done.computeLineDistances();
   const segs = flat.length / 3 - 1;
-  return { plan, done, set(t) { doneGeo.instanceCount = Math.max(0, Math.min(segs, Math.ceil((t / exercise.tEnd) * segs))); } };
+  return { plan: done, done, set(t) { doneGeo.instanceCount = Math.max(0, Math.min(segs, Math.ceil((t / exercise.tEnd) * segs))); } };
 }
-const tracks = { alg: trackLine('alg'), rus: trackLine('rus') };
+const tracks = Object.fromEntries(SHIP_IDS.map((id) => [id, trackLine(id)]));
 const trackGroupVisible = (on) => { for (const k of Object.values(tracks)) k.plan.visible = k.done.visible = on; };
 
 // --- Signals: the lamp's flashes and the flag hoist -----------------------------------------------------
@@ -174,8 +289,8 @@ function createLamp(ship) {
 const lamps = { alg: createLamp(ships.alg.ship), rus: createLamp(ships.rus.ship) };
 const _from = new THREE.Vector3();
 const _to = new THREE.Vector3();
-const _dir = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
+const _dir = new THREE.Vector3();
 const _flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI);
 function updateLamps(t) {
   for (const id of ['rus', 'alg']) {
@@ -247,7 +362,7 @@ const ringTexture = (hex) => canvasTexture(64, 64, (c) => {
   c.fillStyle = hex; c.beginPath(); c.arc(32, 32, 5, 0, Math.PI * 2); c.fill();
 });
 const markers = {};
-for (const [id, hex] of [['alg', '#3ddc84'], ['rus', '#ff7a1a']]) {
+for (const [id, hex] of [['alg', '#3ddc84'], ['rus', '#ff7a1a'], ['unit', '#5ab4ff']].filter(([id]) => SHIP_IDS.includes(id))) {
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTexture(hex), depthTest: false, transparent: true, sizeAttenuation: false, fog: false }));
   sprite.scale.setScalar(0.05);
   sprite.renderOrder = 20;
@@ -255,7 +370,7 @@ for (const [id, hex] of [['alg', '#3ddc84'], ['rus', '#ff7a1a']]) {
   markers[id] = sprite;
 }
 function updateMarkers() {
-  for (const id of ['alg', 'rus']) {
+  for (const id of SHIP_IDS) {
     const pos = ships[id].ship.group.position;
     const a = THREE.MathUtils.smoothstep(camera.position.distanceTo(pos), 350, 900); // fades in as you pull away
     markers[id].position.copy(pos).setY(22);
@@ -279,23 +394,38 @@ function tag(kind, title, color) {
   const obj = new CSS2DObject(el);
   obj.center.set(0.5, 1);
   labelGroup.add(obj);
-  return { obj, body: el.querySelector('.tag-body') };
+  return { obj, title: el.querySelector('.tag-title'), body: el.querySelector('.tag-body') };
 }
-const tags = { alg: tag('ship', 'ALG', '#3ddc84'), rus: tag('ship', 'RUS', '#ff7a1a') };
-const stationTag = tag('missile', 'STATION', '#ffffff');
-const pad3 = (n) => String(Math.round(n)).padStart(3, '0');
+const tags = { alg: tag('ship', shipNames.alg, '#3ddc84'), rus: tag('ship', shipNames.rus, '#ff7a1a'), ...(HAS_UNIT ? { unit: tag('ship', shipNames.unit, '#5ab4ff') } : {}) };
+const stationTag = tag('range', '', '#ffffff'); // the distance between the ships, on the line between them
+stationTag.obj.center.set(0.5, 0.5);
+let shownRange = null;
+let shownAt = performance.now();
+const pad3 = (n) => String(Math.round(n) % 360).padStart(3, '0');
+const NAME = { alg: shipNames.alg, rus: shipNames.rus, unit: shipNames.unit };
 const fmtTag = (s) => `${pad3(headingDeg(s.heading))}° · ${(s.speed / KT).toFixed(0)}<span> kn</span>`;
 const _mid = new THREE.Vector3();
 function updateTags(t) {
-  for (const id of ['alg', 'rus']) {
+  for (const id of SHIP_IDS) {
     const s = ships[id];
-    tags[id].obj.position.copy(s.ship.group.position).setY(40);
+    // The tag rides higher the farther the camera is, and a ship's own tag is hidden from her bridge.
+    const dist = camera.position.distanceTo(s.ship.group.position);
+    tags[id].obj.position.copy(s.ship.group.position).setY(Math.min(Math.max(dist * 0.05, 26), 60));
+    tags[id].obj.visible = true;
     tags[id].body.innerHTML = fmtTag(s.state);
   }
-  const rel = relation(t, 'rus', 'alg');
-  stationTag.obj.position.addVectors(ships.alg.ship.group.position, ships.rus.ship.group.position).multiplyScalar(0.5).setY(20);
-  stationTag.body.innerHTML = `${Math.round(rel.range / YD)}<span> yd</span> · ${pad3(rel.bearing)}°`;
-  stationTag.obj.visible = rel.range > 450; // close together, the two ship tags say enough
+  const rel = stationAt(t);
+  // The distance rides on the middle of the line between the ships, small and see-through, and eases to each new
+  // value so the number never jitters.
+  const now = performance.now();
+  const target = rel.range / YD;
+  if (shownRange === null || Math.abs(target - shownRange) > 400) shownRange = target; // a jump in time: no easing
+  else shownRange += (target - shownRange) * (1 - Math.exp(-(now - shownAt) / 1000 * 8));
+  shownAt = now;
+  stationTag.obj.position.addVectors(ships.alg.ship.group.position, ships.rus.ship.group.position).multiplyScalar(0.5).setY(12);
+  const txt = `${Math.round(shownRange)} yd`;
+  if (stationTag.body.textContent !== txt) stationTag.body.textContent = txt;
+  stationTag.obj.visible = true;
 }
 // The station line itself.
 const stationGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
@@ -312,107 +442,252 @@ function updateStationLine() {
 
 // --- Camera focus --------------------------------------------------------------------------------------
 const rig = new CameraRig(camera, controls);
+function shipPoint(sh, x, y, out) {
+  const g = sh.ship.group, th = g.rotation.y;
+  return out.set(g.position.x + x * Math.cos(th), g.position.y + y, g.position.z - x * Math.sin(th));
+}
 const targets = {
-  alg: { pos: (out) => out.copy(ships.alg.ship.group.position).setY(12), distance: 230, minDistance: 40 },
-  rus: { pos: (out) => out.copy(ships.rus.ship.group.position).setY(12), distance: 230, minDistance: 40 },
+  // A ship's view (above it, looking at the other ship) is placed by applyBridge each frame; the rig only
+  // carries the ship's position for the shadow and the focus buttons.
+  alg: { pos: (out) => out.copy(ships.alg.ship.group.position).setY(12), distance: 150, minDistance: 40 },
+  rus: { pos: (out) => out.copy(ships.rus.ship.group.position).setY(12), distance: 150, minDistance: 40 },
+  ...(HAS_UNIT ? { unit: { pos: (out) => out.copy(ships.unit.ship.group.position).setY(14), distance: 190, minDistance: 40 } } : {}),
   formation: {
-    pos: (out) => out.addVectors(ships.alg.ship.group.position, ships.rus.ship.group.position).multiplyScalar(0.5).setY(0),
-    distance: 1500, minDistance: 150,
+    pos: (out) => { out.set(0, 0, 0); for (const id of SHIP_IDS) out.add(ships[id].ship.group.position); return out.multiplyScalar(1 / SHIP_IDS.length).setY(0); },
+    distance: 1000, minDistance: 120,
   },
 };
 // The camera buttons of the bottom bar: Free, ALG, RUS, Formation.
 const focusButtons = [...document.querySelectorAll('[data-focus]')];
-const FOCUS_ALIAS = { plane: 'alg', missile: 'rus', ship: 'formation' };
-const FOCUS_LABEL = { alg: 'ALG', rus: 'RUS', formation: 'Formation' };
+const FOCUS_ALIAS = { plane: 'alg', missile: 'rus', plane2: 'unit', ship: 'formation' };
+const FOCUS_LABEL = { alg: shipNames.alg, rus: shipNames.rus, unit: shipNames.unit, formation: 'Formation' };
 for (const b of focusButtons) {
   const id = FOCUS_ALIAS[b.dataset.focus];
-  if (id) { b.dataset.focus = id; b.textContent = FOCUS_LABEL[id]; b.disabled = false; b.title = `Look at ${FOCUS_LABEL[id]} (${{ alg: 1, rus: 2, formation: 3 }[id]})`; }
+  if (id === 'unit' && !HAS_UNIT) { b.hidden = true; b.disabled = true; b.removeAttribute('data-focus'); continue; } // the two-ship drill has no unit
+  if (id) { b.dataset.focus = id; b.textContent = FOCUS_LABEL[id]; b.disabled = false; b.hidden = false; b.removeAttribute('data-pair-only'); b.title = `Look at ${FOCUS_LABEL[id]} (${{ alg: 1, rus: 2, formation: 3, unit: 4 }[id]})`; }
 }
-// The Formation view keeps both ships in frame: it pulls back as they part and in as they close, until you
-// zoom yourself (the wheel) or pick Formation again.
-let autoZoom = true;
 function setFocus(id, distance) {
   invalidate();
-  autoZoom = id === 'formation';
   if (id === 'free' || !targets[id]) {
     rig.free();
   } else {
     const t = targets[id];
     rig.focus(id, t.pos, distance ?? t.distance, t.minDistance);
+    if (id === 'alg' || id === 'rus' || id === 'unit' || id === 'formation') enterBridge(id);
+    else leaveBridge();
   }
+  if (id === 'free' || !targets[id]) leaveBridge();
   focusButtons.forEach((b) => b.classList.toggle('active', b.dataset.focus === rig.id));
 }
 for (const b of focusButtons) b.addEventListener('click', () => setFocus(b.dataset.focus));
-canvas.addEventListener('wheel', () => { autoZoom = false; }, { passive: true });
-const _off = new THREE.Vector3();
-function applyAutoZoom(dt) {
-  if (!autoZoom || rig.id !== 'formation' || rig.transition) return;
-  const range = ships.alg.ship.group.position.distanceTo(ships.rus.ship.group.position);
-  const want = Math.min(Math.max(range * 1.45 + 300, 650), 3200);
-  _off.subVectors(camera.position, controls.target);
-  const len = _off.length();
-  if (len < 1) return;
-  const next = len + (want - len) * (1 - Math.exp(-dt * 1.2));
-  camera.position.copy(controls.target).addScaledVector(_off, next / len);
+// A ship's view: the camera hangs above and behind that ship and looks at the other one, so the other ship stays
+// in the middle of the picture however they move. Drag to swing round, wheel to move in and out, double click
+// to go back to the default view.
+let bridgeId = null; // the ship whose view this is
+const CHASE = { yaw: 0, pitch: 0.5, dist: 150 };
+// The Formation view: the camera looks along the guide's course, from behind and above the other ships, at them;
+// it turns as the guide turns, and pulls back as the ships part so that all of them, the guide too, stay in frame.
+// The wheel scales that distance (formZoom), drag swings round, double click resets.
+const FORM = { pitch: 0.42 };
+let formZoom = 1;
+let chaseYaw = CHASE.yaw;
+let chasePitch = CHASE.pitch;
+let chaseDist = CHASE.dist;
+const _eye = new THREE.Vector3();
+function enterBridge(id) {
+  bridgeId = id;
+  chaseYaw = CHASE.yaw;
+  chasePitch = CHASE.pitch;
+  chaseDist = CHASE.dist;
+  if (id === 'formation') { chasePitch = FORM.pitch; formZoom = 1; }
+  controls.enabled = false;
+  rig.transition = null; // straight into the view, no fly-in
+  rig.getPos(rig.last);
+  applyBridge();
 }
-
+function leaveBridge() {
+  if (!bridgeId) return;
+  bridgeId = null;
+  controls.enabled = true;
+}
+canvas.addEventListener('wheel', (e) => {
+  if (!bridgeId) return;
+  if (bridgeId === 'formation') formZoom = Math.min(Math.max(formZoom * Math.exp(e.deltaY * 0.001), 0.3), 4);
+  else chaseDist = Math.min(Math.max(chaseDist * Math.exp(e.deltaY * 0.001), 40), 1500);
+  invalidate();
+}, { passive: true });
+canvas.addEventListener('dblclick', () => {
+  if (!bridgeId) return;
+  chaseYaw = CHASE.yaw; chasePitch = bridgeId === 'formation' ? FORM.pitch : CHASE.pitch; chaseDist = CHASE.dist; formZoom = 1;
+  invalidate();
+});
+let lookDrag = null;
+canvas.addEventListener('pointerdown', (e) => { if (bridgeId && e.button === 0) lookDrag = { x: e.clientX, y: e.clientY }; });
+window.addEventListener('pointerup', () => { lookDrag = null; });
+window.addEventListener('pointermove', (e) => {
+  if (!bridgeId || !lookDrag) return;
+  chaseYaw -= (e.clientX - lookDrag.x) * 0.005;
+  chasePitch = Math.min(Math.max(chasePitch + (e.clientY - lookDrag.y) * 0.004, 0.05), 1.45);
+  lookDrag.x = e.clientX;
+  lookDrag.y = e.clientY;
+  invalidate();
+});
+const _look = new THREE.Vector3();
+function applyFormationView() {
+  const gid = guideShipAt(clock.t);
+  const g = ships[gid];
+  const others = SHIP_IDS.filter((id) => id !== gid).map((id) => ships[id].ship.group.position);
+  _look.set(0, 0, 0);
+  for (const p of others) _look.add(p);
+  _look.multiplyScalar(1 / others.length);
+  let spread = 0;
+  for (const id of SHIP_IDS) spread = Math.max(spread, ships[id].ship.group.position.distanceTo(_look));
+  const dist = Math.min(Math.max(spread * 1.6 + 220, 450), 4000) * formZoom;
+  const h = g.state.heading + chaseYaw; // x North, z East: the course points (cos h, sin h)
+  const cp = Math.cos(chasePitch);
+  camera.position.set(_look.x - Math.cos(h) * dist * cp, Math.sin(chasePitch) * dist, _look.z - Math.sin(h) * dist * cp);
+  controls.target.set(_look.x, 0, _look.z);
+}
+function applyBridge() {
+  if (!bridgeId || rig.id !== bridgeId) return;
+  if (bridgeId === 'formation') { applyFormationView(); return; }
+  const own = ships[bridgeId].ship.group.position;
+  const other = ships[bridgeId === 'alg' ? 'rus' : 'alg'].ship.group.position;
+  // From the other ship back toward this one, level: the camera sits behind this ship on that line.
+  _dir.set(own.x - other.x, 0, own.z - other.z);
+  if (_dir.lengthSq() < 1) _dir.set(-1, 0, 0);
+  _dir.normalize();
+  const c = Math.cos(chaseYaw), n = Math.sin(chaseYaw);
+  const dx = _dir.x * c + _dir.z * n, dz = -_dir.x * n + _dir.z * c;
+  const cp = Math.cos(chasePitch);
+  _eye.set(own.x + dx * chaseDist * cp, 14 + Math.sin(chasePitch) * chaseDist, own.z + dz * chaseDist * cp);
+  camera.position.copy(_eye);
+  controls.target.set(other.x, 10, other.z); // the other ship in the middle of the view
+}
 // --- Interface: readouts, serial box, toggles, menu --------------------------------------------------------
 const hudRoot = document.querySelector('#hud');
 const hudLive = hudRoot.querySelector('.hud-live');
-const hudDebrief = hudRoot.querySelector('.hud-debrief');
-hudDebrief.hidden = true;
 const tile = (label, value, unit, cls = '') => `<div class="tile ${cls}"><span>${label}</span><b>${value}${unit ? `<small>${unit}</small>` : ''}</b></div>`;
-const redTokens = (s) => s.replace(/\b(AS|AB|AC|ALG|RUS)\b/g, '<span class="red">$1</span>');
+const redTokens = (s) => rn(s).replace(new RegExp(`\\b(AS|AB|AC|${shipNames.alg}|${shipNames.rus})\\b`, 'g'), '<span class="red">$1</span>');
 let lastPhase = null;
 let lastLive = '';
-hudLive.innerHTML = '<div class="mh-bar"><div class="mh-title"><b data-title></b><div class="mh-sub"><small data-step></small><span class="chip" data-chip></span></div></div>'
-  + '<div class="mh-btns"><button type="button" data-min title="Minimise: keep only the readouts" aria-label="Minimise" aria-expanded="true">–</button>'
-  + '<button type="button" data-hide title="Hide the panel (H, or the Readouts button)" aria-label="Hide">×</button></div></div>'
-  + '<div class="mh-progress" title="How far through this order"><i data-progress></i></div>'
-  + '<div class="hud-sec" data-live></div>'
-  + '<div class="hud-sec serial"><div class="serial-bar"><span>Signal text</span><button type="button" data-ser aria-expanded="true" title="Hide the signal text" aria-label="Hide the signal text">–</button></div><div data-serial></div></div>';
+// Two small cards attached under the top bar: the order's state and the ships' readouts. The signal text is
+// the Signal dropdown of the top bar.
+hudLive.innerHTML = '<div class="mcard mcard-order"><div class="mh-bar"><div class="mh-title"><b data-title></b><div class="mh-sub"><small data-step></small><span class="chip" data-chip></span></div></div>'
+  + '<div class="mh-btns"><button type="button" data-hide title="Hide these cards (H, or the Readouts button)" aria-label="Hide">×</button></div></div>'
+  + '<div class="mh-progress" title="How far through this order"><i data-progress></i></div><div class="mh-next" data-next></div></div>'
+  + '<div class="mcard mcard-ships mh-ships" data-live></div>';
 const bar = {
   title: hudLive.querySelector('[data-title]'), step: hudLive.querySelector('[data-step]'), chip: hudLive.querySelector('[data-chip]'),
-  progress: hudLive.querySelector('[data-progress]'),
+  progress: hudLive.querySelector('[data-progress]'), next: hudLive.querySelector('[data-next]'),
 };
 const liveEl = hudLive.querySelector('[data-live]');
-const serialEl = hudLive.querySelector('[data-serial]');
-const serialHtml = (phase) => (phase.note ? `<div class="serial-note">${phase.note}</div>` : '') + (phase.speeds ? `<div class="serial-speeds">${phase.speeds.map((s) => `<div>${s}</div>`).join('')}</div>` : '')
+let serialEl = null; // inside the Signal dropdown
+let signalTitle = null;
+const serialHtml = (phase) => (phase.note ? `<div class="serial-note">${rn(phase.note)}</div>` : '') + (phase.speeds ? `<div class="serial-speeds">${phase.speeds.map((s) => `<div>${s}</div>`).join('')}</div>` : '')
   + phase.serial.map((blk) => `<div class="serial-box">${blk.head ? `<div class="serial-head">${blk.head}</div>` : ''}${blk.lines.map((l) => `<div>${redTokens(l)}</div>`).join('')}</div>`).join('');
+// A countdown: seconds under a minute, m:ss above.
+const fmtCount = (sec) => (sec >= 60 ? `${Math.floor(sec / 60)}:${String(Math.ceil(sec % 60) % 60).padStart(2, '0')}` : `${Math.ceil(sec)}`);
 const banner = document.querySelector('#shot-caption');
 banner.classList.add('call');
 let lastBanner = '';
 function updateBanner(order) {
   let text = '';
   let cls = '';
-  if (order.state === 'standby') { text = `STANDBY · ${Math.ceil(order.count)}`; cls = 'standby'; } else if (order.state === 'execute') { text = `EXECUTE · ${order.phase.title}`; cls = 'execute'; }
+  // STANDBY counts down to EXECUTE (getting ready); EXECUTE starts the maneuver; A STATION when in position.
+  // The call stays up until the next STANDBY: EXECUTE through the maneuver, then A STATION (an order that only
+  // signals has no station, so its EXECUTE stays).
+  if (order.state === 'standby') { text = `STANDBY · ${fmtCount(order.count)}`; cls = 'standby'; }
+  else if (order.state === 'execute' || order.state === 'underway' || (order.state === 'onstation' && !order.phase.hasStation)) { text = `EXECUTE · ${order.phase.title}`; cls = 'execute'; }
+  else if (order.state === 'station' || order.state === 'onstation') { text = 'A STATION'; cls = 'station'; }
   if (text + cls === lastBanner) return;
   lastBanner = text + cls;
   banner.hidden = !text;
-  banner.textContent = text;
-  banner.classList.remove('standby', 'execute');
+  banner.textContent = rn(text);
+  banner.classList.remove('standby', 'execute', 'station');
   if (cls) banner.classList.add(cls);
 }
-const mhCell = (name, s, cls) => `<div class="mh-cell ${cls}"><span>${name}</span><b>${pad3(headingDeg(s.heading))}°</b><em>${(s.speed / KT).toFixed(0)} kn</em></div>`;
-const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
+// A ship's heading and speed, with the ordered ones after an arrow while she is still turning or working up.
+const angGap = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
+function mhCell(id, s, t) {
+  const o = orderedAt(id, t);
+  const hdg = headingDeg(s.heading);
+  const kn = s.speed / KT;
+  const toHdg = angGap(hdg, o.course) > 0.5 ? `<i>→${pad3(o.course)}°</i>` : '';
+  const toKn = Math.abs(kn - o.speed) > 0.3 ? `<i>→${o.speed}</i>` : '';
+  return `<div class="mh-cell ${id}" title="${NAME[id]}: heading and speed${toHdg || toKn ? ', then the ordered ones' : ''}"><span class="rename" title="Click to rename">${NAME[id]}</span>`
+    + `<b>${pad3(hdg)}°${toHdg}</b><em>${kn.toFixed(0)}${toKn} kn</em></div>`;
+}
+const fmtClock = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+const setText = (el, raw) => { const text = rn(raw); if (el.textContent !== text) el.textContent = text; };
 function updateReadout(t) {
   const order = orderStatus(t);
   const phase = order.phase;
   const idx = PHASES.indexOf(phase);
-  const chip = t >= exercise.tEnd ? ['Complete', 'ok'] : order.state === 'standby' ? [`Standby ${Math.ceil(order.count)} s`, 'warn'] : order.state === 'execute' ? ['Execute', 'ok'] : ['Under way', 'live'];
+  const chip = t >= exercise.tEnd ? ['Complete', 'ok']
+    : order.state === 'standby' ? [`Standby ${fmtCount(order.count)}`, 'warn']
+      : order.state === 'execute' ? ['Execute', 'ok']
+        : order.state === 'underway' ? [`Under way · ${fmtCount(order.count)}`, 'live']
+          : order.state === 'station' || order.state === 'onstation' ? ['A station', 'ok'] : ['Standing by', ''];
   setText(bar.title, phase.title);
-  setText(bar.step, `Order ${idx + 1} of ${PHASES.length}`);
+  // The plain words under the signal's own shorthand (TURN STBD 9 is a turn of 90 degrees).
+  const plain = phase.label.toUpperCase() !== phase.title.toUpperCase() ? ` · ${phase.label}` : '';
+  setText(bar.step, `Order ${idx + 1} of ${PHASES.length}${plain}`);
   setText(bar.chip, chip[0]);
-  if (bar.chip.dataset.tone !== chip[1]) { bar.chip.dataset.tone = chip[1]; bar.chip.className = `chip ${chip[1]}`; }
+  // The banner carries standby, execute and A STATION; the rest of the time the chip says where the order stands.
+  const shown = order.state === 'underway' || order.state === 'onstation' || order.state === 'idle' ? ' shown' : '';
+  if (bar.chip.dataset.tone !== chip[1] + shown) { bar.chip.dataset.tone = chip[1] + shown; bar.chip.className = `chip ${chip[1]}${shown}`; }
   const end = PHASES[idx + 1]?.t ?? exercise.tEnd;
   bar.progress.style.width = `${(Math.min(Math.max((t - phase.t) / (end - phase.t), 0), 1) * 100).toFixed(1)}%`;
-  const rel = relation(t, 'rus', 'alg');
-  const html = `<div class="mh-row">${mhCell('ALG', ships.alg.state, 'alg')}${mhCell('RUS', ships.rus.state, 'rus')}`
-    + `<div class="mh-cell"><span>Station</span><b>${Math.round(rel.range / YD)}</b><em>yd · ${pad3(rel.bearing)}°</em></div></div>`;
+  // What comes next, and when it will be announced.
+  const nextPhase = PHASES[idx + 1];
+  const nextText = nextPhase && t < nextPhase.t ? `Next: ${nextPhase.label} · announced in ${fmtCount(nextPhase.t - t)}` : '';
+  setText(bar.next, nextText);
+  bar.next.hidden = !nextText;
+  if (nextPhase) bar.next.title = nextPhase.note ? rn(nextPhase.note) : '';
+  const rel = stationAt(t);
+  // Closest point of approach, through the skim: the range RUS will pass at and when.
+  const pass = exercise.pass;
+  const cpa = phase.id === 'skim' && t < pass.t + 60
+    ? `<div class="mh-cell cpa" title="Closest point of approach of ${NAME.rus} to ${NAME.alg}"><span>CPA</span><b>${Math.round(pass.range / YD)}</b>`
+      + `<em>yd · ${t < pass.t ? `in ${fmtClock(pass.t - t)}` : 'passed'}</em></div>`
+    : '';
+  // During a station change, the ordered range and bearing after an arrow while the ship is not there yet.
+  const goal = STATIONS[phase.id];
+  const working = order.state === 'execute' || order.state === 'underway';
+  const goalRange = goal && working && Math.abs(rel.range / YD - goal[1]) > 5 ? `<i>→${goal[1]}</i>` : '';
+  const goalBrg = goal && working && angGap(rel.bearing, goal[0]) > 1.5 ? ` <i>→${pad3(goal[0])}°</i>` : '';
+  // In a screen order the station cells are the screen ships' bearing and range from the unit (the screen centre), with a tick once inside the sector.
+  const inForm = Boolean(FORMS[phase.id]);
+  const inScreen = phase.id === 'screenk' || phase.id === 'screenm';
+  const stationCells = inForm
+    ? ['alg', 'rus'].map((id) => {
+      // In a formation order: each ship's bearing and range from the unit, the ordered range after an arrow while she is not on station.
+      const sr = screenRel(id, t);
+      const a = ships[id].state;
+      const P = stationPoint(id, phase.id, t);
+      const off = Math.hypot(a.x - P.x, a.z - P.z);
+      const [fwd, stb] = FORMS[phase.id][id];
+      const ordered = Math.round(Math.hypot(fwd, stb) * 500);
+      const here = Math.round(sr.range / YD);
+      return `<div class="mh-cell" title="${NAME[id]}: bearing and range from ${NAME.unit}; the station is ${ordered} yds from her">`
+        + `<span>${NAME[id]} from ${NAME.unit}</span><b>${pad3(sr.bearing)}°${off < 70 ? ' <i>✓</i>' : ''}</b><em>${here} yd${Math.abs(here - ordered) > 20 ? ` <i>→${ordered}</i>` : ''}</em></div>`;
+    }).join('')
+    : inScreen
+    ? ['alg', 'rus'].map((id) => {
+      const sr = screenRel(id, t);
+      const sec = SECTORS[phase.id][id];
+      return `<div class="mh-cell" title="${NAME[id]}'s sector: ${pad3(sec.b1)}° to ${pad3(sec.b2)}°, ${Math.round(sec.d1 / YD)} to ${Math.round(sec.d2 / YD)} yards from ${NAME.unit}">`
+        + `<span>${NAME[id]} from ${NAME.unit}</span><b>${pad3(sr.bearing)}°${inSector(id, t, phase.id) ? ' <i>✓</i>' : ''}</b><em>${(sr.range / YD / 1000).toFixed(1)} kyd</em></div>`;
+    }).join('')
+    : `<div class="mh-cell" title="Station: ${NAME[rel.other]}'s range and true bearing from the guide, ${NAME[rel.guide]}">`
+      + `<span>${NAME[rel.other]} from ${NAME[rel.guide]}</span><b>${Math.round(rel.range / YD)}${goalRange}</b><em>yd · ${pad3(rel.bearing)}°${goalBrg}</em></div>${cpa}`;
+  const html = `<div class="mh-row">${mhCell('alg', ships.alg.state, t)}${mhCell('rus', ships.rus.state, t)}${HAS_UNIT ? mhCell('unit', ships.unit.state, t) : ''}${stationCells}</div>`;
   if (html !== lastLive) { liveEl.innerHTML = html; lastLive = html; }
   if (phase !== lastPhase) {
     lastPhase = phase;
     serialEl.innerHTML = serialHtml(phase);
+    signalTitle.textContent = rn(phase.title);
   }
   updateBanner(order);
 }
@@ -429,38 +704,7 @@ function setHud(on) {
   if (!on && !hudHint) { hudHint = true; toast('Readouts hidden. The Readouts button or H brings them back.', 3800); }
 }
 hudButton.addEventListener('click', () => setHud(!hudOn));
-// Minimise keeps the header, progress and readouts and drops the signal text; the choice is remembered.
-const minButton = hudLive.querySelector('[data-min]');
-function setHudMin(on) {
-  hudRoot.classList.toggle('min', on);
-  minButton.textContent = on ? '+' : '–';
-  minButton.title = on ? 'Show the signal text again' : 'Minimise: keep only the readouts';
-  minButton.setAttribute('aria-label', on ? 'Expand' : 'Minimise');
-  minButton.setAttribute('aria-expanded', String(!on));
-  try { localStorage.setItem('intercept.hudMin', on ? '1' : '0'); } catch { /* storage unavailable */ }
-  invalidate();
-}
-minButton.addEventListener('click', () => setHudMin(!hudRoot.classList.contains('min')));
-// The signal text can be hidden on its own (the readouts stay); remembered too.
-const serButton = hudLive.querySelector('[data-ser]');
-function setSerialOff(off) {
-  hudRoot.classList.toggle('serial-off', off);
-  serButton.textContent = off ? '+' : '–';
-  serButton.title = off ? 'Show the signal text' : 'Hide the signal text';
-  serButton.setAttribute('aria-label', serButton.title);
-  serButton.setAttribute('aria-expanded', String(!off));
-  try { localStorage.setItem('intercept.serialOff', off ? '1' : '0'); } catch { /* storage unavailable */ }
-  invalidate();
-}
-serButton.addEventListener('click', () => setSerialOff(!hudRoot.classList.contains('serial-off')));
-let serialOffPref = false;
-try { serialOffPref = localStorage.getItem('intercept.serialOff') === '1'; } catch { /* storage unavailable */ }
-setSerialOff(serialOffPref);
 hudLive.querySelector('[data-hide]').addEventListener('click', () => setHud(false));
-hudLive.querySelector('.mh-bar').addEventListener('dblclick', (e) => { if (!e.target.closest('button')) setHudMin(!hudRoot.classList.contains('min')); });
-let hudMinPref = false;
-try { hudMinPref = localStorage.getItem('intercept.hudMin') === '1'; } catch { /* storage unavailable */ }
-setHudMin(hudMinPref);
 
 const labelsButton = document.querySelector('#btn-labels');
 function setLabels(on) {
@@ -488,8 +732,6 @@ let trailsPref = true;
 try { trailsPref = localStorage.getItem('intercept.trails') !== '0'; } catch { /* storage unavailable */ }
 setTrails(trailsPref);
 trailsButton.addEventListener('click', () => setTrails(!tracks.alg.plan.visible));
-const legendEl = document.querySelector('#trail-legend');
-legendEl.hidden = true; // the map and the tags already name the ships
 
 const map = createManeuverMap();
 const mapButton = document.querySelector('#btn-map');
@@ -505,6 +747,33 @@ try { mapPref = localStorage.getItem('intercept.map') !== '0'; } catch { /* stor
 setMap(mapPref);
 mapButton.addEventListener('click', () => setMap(!map.enabled));
 
+// The tactical grid: 500 yd squares on the sea (north up) and faint solid range rings at 250, 500 and 1000 yd round
+// ALG, in a yellow-green that is not ALG's green. Drawn inside the sea shader, so it costs no geometry.
+const gridButton = document.querySelector('#btn-grid');
+const gridU = env.ocean.material.uniforms;
+const ringLabels = [250, 500, 1000].map((yd) => ({ yd, tag: tag('range', '', '#ffffff') }));
+for (const r of ringLabels) { r.tag.body.textContent = `${r.yd} yd`; r.tag.obj.center.set(0.5, 0.5); r.tag.obj.element.classList.add('tag-grid'); r.tag.obj.visible = false; }
+let gridOn = false;
+function setGrid(on) {
+  gridOn = on;
+  gridU.uGrid.value = on ? 1 : 0;
+  gridButton.classList.toggle('active', on);
+  gridButton.setAttribute('aria-pressed', String(on));
+  for (const r of ringLabels) r.tag.obj.visible = on;
+  try { localStorage.setItem('intercept.grid', on ? '1' : '0'); } catch { /* storage unavailable */ }
+  invalidate();
+}
+function updateGrid(t) {
+  if (!gridOn) return;
+  const g = (HAS_UNIT && ['screenk', 'screenm', ...Object.keys(FORMS)].includes(phaseAt(t).id) ? ships.unit : ships.alg).ship.group.position; // the rings stay on ALG, or on the unit (the screen centre) in a screen
+  gridU.uRingC.value.set(g.x, g.z);
+  for (const r of ringLabels) r.tag.obj.position.set(g.x + r.yd * YD, 1, g.z);
+}
+let gridPref = false;
+try { gridPref = localStorage.getItem('intercept.grid') === '1'; } catch { /* storage unavailable */ }
+setGrid(gridPref);
+gridButton.addEventListener('click', () => setGrid(!gridOn));
+
 // Hide / show the whole interface.
 const FOLD_KEY = 'intercept.uiHidden';
 const foldButton = document.querySelector('#btn-fold');
@@ -515,19 +784,28 @@ const keysEl = document.querySelector('#keys');
 // The Orders button and its dropdown (the list and the standby time) are built below, in the top bar.
 let ordersEl = null;
 let ordersButton = null;
+let signalEl = null;
+let signalButton = null;
 let lastOrderIdx = -2;
 function setOrders(open) {
   if (!ordersEl) return;
   ordersEl.hidden = !open;
   ordersButton.setAttribute('aria-expanded', String(open));
-  if (open) { setMenu(false); lastOrderIdx = -2; } // redraw once, scrolled to the current order
+  if (open) { setMenu(false); setSignal(false); lastOrderIdx = -2; } // redraw once, scrolled to the current order
   invalidate();
 }
-function setMenu(open) { menuEl.hidden = !open; menuButton.setAttribute('aria-expanded', String(open)); if (open) setOrders(false); invalidate(); }
+function setSignal(open) {
+  if (!signalEl) return;
+  signalEl.hidden = !open;
+  signalButton.setAttribute('aria-expanded', String(open));
+  if (open) { setMenu(false); setOrders(false); }
+  invalidate();
+}
+function setMenu(open) { menuEl.hidden = !open; menuButton.setAttribute('aria-expanded', String(open)); if (open) { setOrders(false); setSignal(false); } invalidate(); }
 function setKeys(open) { keysEl.hidden = !open; invalidate(); }
 function closePopovers() {
-  const was = !menuEl.hidden || !keysEl.hidden || !!(ordersEl && !ordersEl.hidden);
-  setMenu(false); setKeys(false); setOrders(false);
+  const was = !menuEl.hidden || !keysEl.hidden || !!(ordersEl && !ordersEl.hidden) || !!(signalEl && !signalEl.hidden);
+  setMenu(false); setKeys(false); setOrders(false); setSignal(false);
   return was;
 }
 function setPanelFolded(on, save = true) {
@@ -548,6 +826,7 @@ window.addEventListener('pointerdown', (e) => {
   if (!menuEl.hidden && !e.target.closest('#menu, #btn-menu')) setMenu(false);
   if (!keysEl.hidden && !e.target.closest('#keys, #btn-keys')) setKeys(false);
   if (ordersEl && !ordersEl.hidden && !e.target.closest('#orders, #btn-orders')) setOrders(false);
+  if (signalEl && !signalEl.hidden && !e.target.closest('#signal, #btn-signal')) setSignal(false);
 }, true);
 let panelFolded = false;
 try { panelFolded = localStorage.getItem(FOLD_KEY) === '1'; } catch { /* storage unavailable */ }
@@ -555,8 +834,20 @@ setPanelFolded(panelFolded, false);
 document.querySelector('#btn-ship').addEventListener('click', () => {
   try { sessionStorage.setItem('intercept.chooser', '1'); location.reload(); } catch { location.search = ''; }
 });
-document.querySelector('.brand b').textContent = 'Maneuvers';
-document.querySelector('#mission-sub').textContent = 'ALG & RUS · signalled drill';
+// The cards hang just under the top bar, whatever its height is at this window width. (Set on the next frame, never
+// inside the callback: changing layout there is a "ResizeObserver loop", which start.js shows as a fatal error.)
+if (typeof ResizeObserver === 'function') {
+  const topbar = document.querySelector('#topbar');
+  new ResizeObserver(() => requestAnimationFrame(() => {
+    document.documentElement.style.setProperty('--bar-h', `${topbar.offsetHeight}px`);
+    document.documentElement.style.setProperty('--bar-w', `${topbar.offsetWidth}px`);
+  })).observe(topbar);
+}
+{
+  const t = menuText(DRILL_SHIPS === 2 ? 'maneuvers2' : 'maneuvers'); // the same words as the start screen (menu.js)
+  document.querySelector('.brand b').textContent = t.brand;
+  document.querySelector('#mission-sub').textContent = rn(t.sub);
+}
 
 // --- Orders: the briefing's contents column, now a dropdown from the top bar ---------------------------------
 // A tick on each finished order, the current one highlighted, click one to jump to it; the standby time is set at the foot.
@@ -575,12 +866,113 @@ ordersEl.id = 'orders';
 ordersEl.className = 'orders-menu';
 ordersEl.hidden = true;
 ordersEl.innerHTML = '<div class="orders-head"><b>Orders</b><small>Click one to jump to it</small></div>'
-  + `<ol class="orders-list">${PHASES.map((p, i) => `<li><button type="button" class="order" data-i="${i}" title="Jump to just before this order is announced"><span class="chk"></span><span class="name">${p.label}</span><span class="when">${mmss(p.t)}</span></button></li>`).join('')}</ol>`
-  + '<div class="mh-standby" title="How long an order stands by between its announcement and its execution. Changing it reloads the scene at this moment."><span>Standby time</span>'
+  + `<ol class="orders-list">${PHASES.map((p, i) => `<li><button type="button" class="order" data-i="${i}" title="Jump to just before this order is announced"><span class="chk"></span><span class="name">${rn(p.label)}</span><span class="when">${mmss(p.t)}</span></button></li>`).join('')}</ol>`
+  + '<button type="button" class="mh-fast" data-fast aria-pressed="false" title="Play fast (16x) through the long quiet stretches, and at the speed you set from just before each order is announced until A STATION"><span>Fast between orders</span><b data-fast-val>Off</b></button>'
+  + '<div class="mh-standby" title="The time to get ready between the announcement of an order and EXECUTE, when the ships start to maneuver. Changing it reloads the scene at this moment."><span>Standby time</span>'
   + '<div class="mh-step"><button type="button" data-sb="-1" aria-label="Shorter standby">–</button><b data-sb-val></b><button type="button" data-sb="1" aria-label="Longer standby">+</button></div></div>';
 document.querySelector('#topbar').appendChild(ordersEl);
 ordersButton.addEventListener('click', () => setOrders(ordersEl.hidden));
+
+// The signal text of the current order: a dropdown from the top bar, beside Orders.
+signalButton = document.createElement('button');
+signalButton.id = 'btn-signal';
+signalButton.className = 'icon';
+signalButton.setAttribute('aria-haspopup', 'true');
+signalButton.setAttribute('aria-expanded', 'false');
+signalButton.setAttribute('aria-controls', 'signal');
+signalButton.title = 'The signal text of the current order (I)';
+signalButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg><span class="cap">Signal</span>';
+ordersButton.parentElement.insertBefore(signalButton, ordersButton);
+signalEl = document.createElement('div');
+signalEl.id = 'signal';
+signalEl.className = 'signal-menu';
+signalEl.hidden = true;
+signalEl.innerHTML = '<div class="orders-head"><b>Signal text</b><small data-signal-title></small></div><div data-serial></div>';
+document.querySelector('#topbar').appendChild(signalEl);
+serialEl = signalEl.querySelector('[data-serial]');
+signalTitle = signalEl.querySelector('[data-signal-title]');
+signalButton.addEventListener('click', () => setSignal(signalEl.hidden));
 const orderButtons = [...ordersEl.querySelectorAll('.order')];
+
+// The timeline stands on end down the left side (wide windows): the same line with its chapters, laid out
+// vertically, time running downward. Names are pushed apart so they never overlap, each joined to its tick by a
+// short leader. Drag the line or click a name to move through time. (The horizontal bar in the playback panel
+// is hidden then, so there is one timeline, not two.)
+const vtrack = document.createElement('div');
+vtrack.id = 'vtrack';
+vtrack.className = 'vtrack';
+vtrack.innerHTML = '<div class="vt-rail"><i class="vt-fill"></i><i class="vt-thumb"></i></div><svg class="vt-lead" aria-hidden="true"></svg><div class="vt-labels"></div>';
+document.body.appendChild(vtrack);
+const vtRail = vtrack.querySelector('.vt-rail');
+const vtLead = vtrack.querySelector('.vt-lead');
+const vtLabels = vtrack.querySelector('.vt-labels');
+const vtEvents = exercise.events.map((e) => {
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = 'vt-label';
+  el.textContent = rn(e.label);
+  el.title = `${rn(e.label)} · ${mmss(e.t)}`;
+  el.addEventListener('click', () => { clock.playing = false; clock.seek(e.t); invalidate(); });
+  vtLabels.appendChild(el);
+  return { t: e.t, el };
+});
+let vtH = 0;
+let vtDone = -2;
+function layoutVTrack() {
+  vtH = vtrack.clientHeight;
+  if (vtH < 40) return;
+  const GAP = 19;
+  const ys = vtEvents.map((e) => (e.t / exercise.tEnd) * (vtH - 12) + 6);
+  const ly = ys.slice();
+  for (let i = 1; i < ly.length; i++) ly[i] = Math.max(ly[i], ly[i - 1] + GAP); // push down
+  const over = ly[ly.length - 1] - (vtH - 8);
+  if (over > 0) for (let i = ly.length - 1; i >= 0; i--) { ly[i] -= over; if (i < ly.length - 1) ly[i] = Math.min(ly[i], ly[i + 1] - GAP); } // pull back up
+  let d = '';
+  vtEvents.forEach((e, i) => {
+    e.el.style.top = `${ly[i] - 9}px`;
+    d += `<path d="M13 ${ys[i].toFixed(1)} H20 L28 ${ly[i].toFixed(1)}"/><circle cx="13" cy="${ys[i].toFixed(1)}" r="2.6"/>`;
+  });
+  vtLead.innerHTML = d;
+  vtDone = -2;
+}
+function seekFromRail(e) {
+  const r = vtRail.getBoundingClientRect();
+  clock.playing = false;
+  clock.seek(Math.min(Math.max((e.clientY - r.top) / r.height, 0), 1) * exercise.tEnd);
+  invalidate();
+}
+let vtDrag = false;
+vtrack.querySelector('.vt-rail').addEventListener('pointerdown', (e) => { vtDrag = true; vtRail.setPointerCapture?.(e.pointerId); seekFromRail(e); });
+vtRail.addEventListener('pointermove', (e) => { if (vtDrag) seekFromRail(e); });
+vtRail.addEventListener('pointerup', () => { vtDrag = false; });
+vtRail.addEventListener('pointercancel', () => { vtDrag = false; });
+function updateVTrack(t) {
+  const p = Math.min(Math.max(t / exercise.tEnd, 0), 1);
+  vtrack.style.setProperty('--p', p.toFixed(4));
+  let cur = -1;
+  vtEvents.forEach((e, i) => { if (t >= e.t) cur = i; });
+  if (cur !== vtDone) {
+    vtDone = cur;
+    vtEvents.forEach((e, i) => { e.el.classList.toggle('passed', i <= cur); e.el.classList.toggle('current', i === cur); });
+  }
+}
+if (typeof ResizeObserver === 'function') new ResizeObserver(() => requestAnimationFrame(layoutVTrack)).observe(vtrack); // a frame later, as above
+window.addEventListener('resize', layoutVTrack);
+
+// The camera buttons move to a strip at the top on desktop windows (at the top centre from 1100 px, just left of the
+// readout card below that); the playback panel keeps them on phones.
+{
+  const camSeg = document.querySelector('.seg.cam');
+  const camHome = camSeg.parentElement;
+  const strip = document.createElement('div');
+  strip.id = 'camstrip';
+  strip.className = 'camstrip';
+  document.body.appendChild(strip);
+  const wide = window.matchMedia('(min-width: 901px)');
+  const place = () => { if (wide.matches) strip.appendChild(camSeg); else camHome.prepend(camSeg); invalidate(); };
+  place();
+  wide.addEventListener?.('change', place);
+}
 function updateOrders(t) {
   const idx = t >= exercise.tEnd ? PHASES.length : PHASES.indexOf(phaseAt(t));
   if (idx === lastOrderIdx) return;
@@ -590,6 +982,7 @@ function updateOrders(t) {
     b.classList.toggle('current', i === idx);
     if (i === idx && !ordersEl.hidden) b.scrollIntoView({ block: 'nearest' });
   });
+
 }
 
 // --- Sound: horns on the orders and serials, a click per flash of the lamp -------------------------------
@@ -624,15 +1017,108 @@ const clock = createTimeline(exercise, {
     if (key === '1') setFocus('alg');
     if (key === '2') setFocus('rus');
     if (key === '3') setFocus('formation');
+    if (key === '4' && HAS_UNIT) setFocus('unit');
     if (key === 'l' || key === 'L') setLabels(!labelGroup.visible);
     if (key === 't' || key === 'T') setTrails(!tracks.alg.plan.visible);
     if (key === 'm' || key === 'M') setMap(!map.enabled);
     if (key === 'h' || key === 'H') setHud(!hudOn);
     if (key === 's' || key === 'S') setSound(!audio.enabled);
     if (key === 'o' || key === 'O') setOrders(ordersEl.hidden);
+    if (key === 'i' || key === 'I') setSignal(signalEl.hidden);
+    if (key === 'f' || key === 'F') toggleFullscreen();
+    if (key === 'g' || key === 'G') setGrid(!gridOn);
     if (key === 'c' || key === 'C') setPanelFolded(!document.body.classList.contains('ui-hidden'));
   },
 });
+// Fullscreen (the widest view), from the More menu or F.
+function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen?.();
+  } catch { /* not allowed here */ }
+}
+{
+  const fsBtn = document.querySelector('#btn-fullscreen');
+  if (!document.fullscreenEnabled) fsBtn.hidden = true;
+  fsBtn.addEventListener('click', () => { toggleFullscreen(); setMenu(false); });
+  document.addEventListener('fullscreenchange', invalidate);
+}
+// The shortcuts sheet lists this drill's own keys.
+keysEl.querySelector('dl').innerHTML = [
+  ['<kbd>Space</kbd>', 'Play / pause'], ['<kbd>R</kbd>', 'Play backwards'], ['<kbd>←</kbd> <kbd>→</kbd>', 'Step 0.1 s (Shift: 1 s)'],
+  ['<kbd>Home</kbd> <kbd>End</kbd>', 'Start / end'], ['<kbd>,</kbd> <kbd>.</kbd>', 'Previous / next event'], ['<kbd>[</kbd> <kbd>]</kbd>', 'Slower / faster'],
+  HAS_UNIT ? ['<kbd>1</kbd> <kbd>2</kbd> <kbd>4</kbd> <kbd>3</kbd>', `View from above ${NAME.alg}, ${NAME.rus}, ${NAME.unit}, the formation`] : ['<kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>', `View from above ${NAME.alg}, ${NAME.rus}, the formation`], ['<kbd>Esc</kbd>', 'Free camera'],
+  ['<kbd>O</kbd> <kbd>I</kbd>', 'The orders, the signal text'], ['<kbd>L</kbd> <kbd>T</kbd> <kbd>M</kbd>', 'Tags, tracks, map'],
+  ['<kbd>G</kbd>', 'Tactical grid and range rings'], ['<kbd>H</kbd> <kbd>S</kbd>', 'Readouts, sound'], ['<kbd>F</kbd>', 'Fullscreen'], ['<kbd>C</kbd>', 'Hide / show the interface'],
+].map(([k, d]) => `<dt>${k}</dt><dd>${d}</dd>`).join('');
+keysEl.querySelector('.keys-note').textContent = 'Drag to swing the ship view round · wheel to zoom · double click resets it';
+// Rename the ships: store the names and reload the scene at this moment (names are read once at import).
+function applyNames(alg, rus, unit) {
+  const a = alg.toUpperCase().trim() || 'ALG';
+  const r = rus.toUpperCase().trim() || 'RUS';
+  const u = unit.toUpperCase().trim() || 'UNIT';
+  if (a === shipNames.alg && r === shipNames.rus && u === shipNames.unit) return;
+  try {
+    if (!saveNames(a, r, u)) throw new Error('storage');
+    sessionStorage.setItem('intercept.skip', '1');
+    sessionStorage.setItem('intercept.seek', String(clock.t));
+    sessionStorage.setItem('intercept.renamed', HAS_UNIT ? `${a}, ${r} and ${u}` : `${a} and ${r}`);
+  } catch { toast('Could not save the names (browser storage is blocked).'); return; }
+  stripShareParams();
+  location.reload();
+}
+// A ship's name is also editable where it is shown: click it in the ships card. A small box opens beside it
+// (never a browser dialog, which would freeze the scene): Enter applies, Escape cancels.
+let renameBox = null;
+function closeRename() { renameBox?.remove(); renameBox = null; }
+function renameShip(id, anchor) {
+  closeRename();
+  const box = document.createElement('form');
+  box.className = 'rename-box';
+  box.innerHTML = `<label>Name <input maxlength="${NAME_MAX}" autocomplete="off" spellcheck="false" aria-label="Name of this ship"></label><button type="submit">OK</button><button type="button" data-cancel aria-label="Cancel">×</button>`;
+  const input = box.querySelector('input');
+  input.value = NAME[id];
+  const r = anchor.getBoundingClientRect();
+  box.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 250))}px`;
+  box.style.top = `${r.bottom + 6}px`;
+  box.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') closeRename(); });
+  box.addEventListener('submit', (e) => { e.preventDefault(); const v = input.value; closeRename(); applyNames(id === 'alg' ? v : NAME.alg, id === 'rus' ? v : NAME.rus, id === 'unit' ? v : NAME.unit); });
+  box.querySelector('[data-cancel]').addEventListener('click', closeRename);
+  document.body.appendChild(box);
+  renameBox = box;
+  input.focus();
+  input.select();
+}
+liveEl.addEventListener('click', (e) => {
+  const cell = e.target.closest('.mh-cell.alg, .mh-cell.rus, .mh-cell.unit');
+  const name = e.target.closest('.rename');
+  if (cell && name) renameShip(SHIP_IDS.find((id) => cell.classList.contains(id)), name);
+});
+// Ship names: two fields in the More menu. They replace ALG and RUS everywhere the scene shows them (shipNames.js);
+// applying reloads the scene at this moment, as the standby stepper does.
+{
+  const box = document.createElement('form');
+  box.className = 'names-form';
+  box.innerHTML = '<span>Ship names</span><div><label>1 <input name="alg" maxlength="' + NAME_MAX + '" autocomplete="off" spellcheck="false" aria-label="Name of the first ship"></label>'
+    + '<label>2 <input name="rus" maxlength="' + NAME_MAX + '" autocomplete="off" spellcheck="false" aria-label="Name of the second ship"></label>'
+    + (HAS_UNIT ? '<label>3 <input name="unit" maxlength="' + NAME_MAX + '" autocomplete="off" spellcheck="false" aria-label="Name of the third ship"></label>' : '')
+    + '<button type="submit" title="Rename the ships (reloads the scene at this moment)">Set</button>'
+    + `<button type="button" data-reset title="Back to ${HAS_UNIT ? 'ALG, RUS and UNIT' : 'ALG and RUS'}">Reset</button></div>`;
+  const inAlg = box.querySelector('[name=alg]');
+  const inRus = box.querySelector('[name=rus]');
+  const inUnit = box.querySelector('[name=unit]'); // null in the two-ship drill: the unit keeps her name
+  inAlg.value = shipNames.alg;
+  inRus.value = shipNames.rus;
+  if (inUnit) inUnit.value = shipNames.unit;
+  box.addEventListener('submit', (e) => {
+    e.preventDefault();
+    applyNames(inAlg.value, inRus.value, inUnit ? inUnit.value : shipNames.unit);
+  });
+  box.querySelector('[data-reset]').addEventListener('click', () => { inAlg.value = 'ALG'; inRus.value = 'RUS'; if (inUnit) inUnit.value = 'UNIT'; box.requestSubmit(); });
+  box.addEventListener('keydown', (e) => e.stopPropagation()); // typing a name is never a shortcut
+  menuEl.insertBefore(box, menuEl.querySelector('hr'));
+}
+
 // Standby time: the stepper at the foot of the Orders dropdown. The ships' orders execute at fixed times, so this only moves
 // when each order is announced; it is applied by reloading the scene at this moment, a second after the last click.
 const sbVal = ordersEl.querySelector('[data-sb-val]');
@@ -658,30 +1144,74 @@ for (const b of ordersEl.querySelectorAll('[data-sb]')) {
   });
 }
 
+// Fast between orders: 16x while nothing is happening, the chosen speed around each order (from a little before it
+// is announced to a little after A STATION). Remembered; it only changes how fast the clock runs, not what t shows.
+{
+  const FAST = 16;
+  const windows = PHASES.map((p) => [p.t - 6, p.ta + STATION_FLASH + 6]);
+  const fastBtn = ordersEl.querySelector('[data-fast]');
+  const fastVal = ordersEl.querySelector('[data-fast-val]');
+  let fastOn = false;
+  try { fastOn = localStorage.getItem('intercept.autoFast') === '1'; } catch { /* storage unavailable */ }
+  const apply = () => {
+    fastBtn.setAttribute('aria-pressed', String(fastOn));
+    fastVal.textContent = fastOn ? 'On' : 'Off';
+    clock.boost = fastOn ? (t, speed) => (windows.some(([a, b]) => t >= a && t <= b) ? speed : Math.max(speed, FAST)) : null;
+  };
+  apply();
+  fastBtn.addEventListener('click', () => {
+    fastOn = !fastOn;
+    try { localStorage.setItem('intercept.autoFast', fastOn ? '1' : '0'); } catch { /* storage unavailable */ }
+    apply();
+    toast(fastOn ? 'Fast between orders: on' : 'Fast between orders: off', 2200);
+  });
+}
+
 // Clicking an order in the list jumps to just before it is announced.
 orderButtons.forEach((b, i) => b.addEventListener('click', () => { clock.seek(Math.max(PHASES[i].t - 1, 0)); setOrders(false); invalidate(); }));
-// 51 minutes of exercise: sixteen times real time by default, slowing to 1.5x from each order's
-// announcement to just after it executes, so the STANDBY and EXECUTE calls can be followed.
-clock.setSpeed(16);
-const SLOW_WINDOWS = PHASES.map((p) => [p.t, p.tx + EXECUTE_FLASH]);
-clock.slow = (t) => (SLOW_WINDOWS.some(([a, b]) => t >= a && t < b) ? 1.5 : Infinity);
+// About 51 minutes of exercise: four times real time by default. Time never slows for an order: STANDBY
+// counts down to EXECUTE, the ships maneuver, and A STATION is called when they are in position.
+clock.setSpeed(4);
+// The playback panel reads m:ss (the exercise is 51 minutes long), not seconds.
+{
+  const mmss = (v) => `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, '0')}`;
+  clock.fmt = mmss;
+  const end = document.querySelector('#time-end');
+  if (end) end.parentElement.innerHTML = ` / <span id="time-end">${mmss(exercise.tEnd)}</span>`;
+}
+// Copy link: this moment, the camera on a ship or the formation, and the ships' names.
+{
+  const linkBtn = document.querySelector('#btn-link');
+  document.body.classList.add('drill-link');
+  createShare({
+    button: linkBtn,
+    toast,
+    onChange: invalidate,
+    getState: () => ({
+      ship: 'fwd', mode: DRILL_SHIPS === 2 ? 'maneuvers2' : 'maneuvers', t: clock.t, focus: rig.id, director: false,
+      extra: shipNames.alg !== 'ALG' || shipNames.rus !== 'RUS' || shipNames.unit !== 'UNIT' ? { names: `${shipNames.alg},${shipNames.rus},${shipNames.unit}` } : {},
+    }),
+  });
+}
 // Deep link: ?t= opens paused at that moment; the standby stepper reloads at the same moment, playing.
 try {
   const t = parseFloat(new URLSearchParams(location.search).get('t'));
   const back = parseFloat(sessionStorage.getItem('intercept.seek'));
   sessionStorage.removeItem('intercept.seek');
-  if (Number.isFinite(t)) { clock.playing = false; clock.seek(t); } else if (Number.isFinite(back)) clock.seek(back);
+  if (Number.isFinite(t)) { clock.playing = false; clock.seek(t); } else if (Number.isFinite(back)) { clock.seek(back); clock.playing = true; }
 } catch { /* no query string */ }
 
 // Opening view: the whole formation from the east, slightly above.
-placeShip(ships.alg, clock.t);
-placeShip(ships.rus, clock.t);
+for (const id of SHIP_IDS) placeShip(ships[id], clock.t);
 {
   const mid = targets.formation.pos(new THREE.Vector3());
   controls.target.copy(mid);
-  camera.position.copy(mid).add(new THREE.Vector3(-450, 560, 980));
+  camera.position.copy(mid).add(new THREE.Vector3(-300, 380, 680));
 }
-setFocus('formation');
+{
+  const f = readShareParams().focus; // a shared link may open on a ship's bridge
+  setFocus(f === 'alg' || f === 'rus' || (f === 'unit' && HAS_UNIT) ? f : 'formation');
+}
 
 // --- Loop -------------------------------------------------------------------------------------------------
 function resize() {
@@ -713,10 +1243,11 @@ renderer.setAnimationLoop((now) => {
   last = now;
   clock.tick(dt);
   const t = clock.t;
-  placeShip(ships.alg, t);
-  placeShip(ships.rus, t);
-  updateWake('alg', t);
-  updateWake('rus', t);
+  for (const id of SHIP_IDS) { placeShip(ships[id], t); updateWake(id, t); }
+  updateStationMarker(t);
+  updateSectorMarkers(t);
+  updateFormationMarkers(t);
+  updateGrid(t);
   for (const k of Object.values(tracks)) k.set(t);
   updateLamps(t);
   updateFlags(t);
@@ -726,16 +1257,18 @@ renderer.setAnimationLoop((now) => {
   ou.uTime.value = t;
   ou.uShipX.value = 1e7; // no single-ship wake: each ship has its own ribbon
   rig.update();
-  applyAutoZoom(dt);
+  applyBridge();
   controls.update();
   if (camera.position.y < 1) camera.position.y = 1;
-  const close = rig.id === 'alg' || rig.id === 'rus';
+  env.follow(camera.position); // sky, mountains and the far sea ride with the camera, so the ships can never reach them
+  const close = rig.id === 'alg' || rig.id === 'rus' || rig.id === 'unit';
   env.setShadowFocus(close ? targets[rig.id].pos(shadowCenter) : targets.formation.pos(shadowCenter), close ? 150 : 1300);
   clock.renderUI();
   updateReadout(t);
   updateOrders(t);
+  updateVTrack(t);
   updateMarkers();
-  audio.update(t, camera, { alg: ships.alg.ship.group.position, rus: ships.rus.ship.group.position }, clock);
+  audio.update(t, camera, Object.fromEntries(SHIP_IDS.map((id) => [id, ships[id].ship.group.position])), clock);
   map.update(t);
   if (needsRender()) {
     renderer.render(scene, camera);
@@ -745,7 +1278,12 @@ renderer.setAnimationLoop((now) => {
   }
 });
 
-toast('Plays at 16×, slowing at each order. Speed: the button or [ ].', 4500);
+try {
+  const renamed = sessionStorage.getItem('intercept.renamed');
+  sessionStorage.removeItem('intercept.renamed');
+  if (renamed) toast(`Ships renamed: ${renamed}.`, 3500);
+} catch { /* storage unavailable */ }
+toast('Plays at 4×. Each order: STANDBY, then EXECUTE (the ships start), then A STATION. Speed: the button or [ ].', 4500);
 
 // Debug / inspection handle (mirrors the intercept scene's).
 window.__scene = { exercise, clock, rig, camera, controls, setFocus, ships, scene, renderer };

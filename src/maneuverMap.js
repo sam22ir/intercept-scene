@@ -1,16 +1,18 @@
-import { shipState, relation, headingDeg, orderStatus, EXECUTE_FLASH, YD } from './maneuvers.js';
+import { shipNames } from './shipNames.js';
+import { shipState, relation, headingDeg, orderStatus, phaseAt, guideShipAt, SECTORS, EXECUTE_FLASH, STATION_FLASH, YD, SHIP_IDS } from './maneuvers.js';
+
+const HAS_UNIT = SHIP_IDS.includes('unit'); // the three-ship drill
 
 // Exercise map for the naval maneuvers mission: the same round translucent disc as the intercept
-// minimap, but north up (like the briefing diagrams) and centred between the two ships, with
+// minimap, but north up (like the briefing diagrams) and centred on the guide, which stays fixed in the middle, with
 // both ships as arrows along their heading, their recent tracks, and the station line with its
 // range in yards. Everything is a pure function of t. Click it to change the zoom; M hides it.
 
-const SIZE = 150; // CSS px
 const SCALES = [600, 1000, 1500, 2500, 4000]; // auto-zoom steps: metres to the rim
 const ZOOMS = ['auto', 1000, 2500];
 const TRACK_SECONDS = 300;
 const TRACK_STEP = 6;
-const COLORS = { alg: '#3ddc84', rus: '#ff7a1a' };
+const COLORS = { alg: '#3ddc84', rus: '#ff7a1a', unit: '#5ab4ff' };
 
 export function createManeuverMap() {
   const root = document.querySelector('#minimap');
@@ -18,26 +20,42 @@ export function createManeuverMap() {
   const label = root.querySelector('.mm-scale');
   const ctx = canvas.getContext('2d');
   const dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
-  canvas.width = SIZE * dpr;
-  canvas.height = SIZE * dpr;
-  canvas.style.width = canvas.style.height = `${SIZE}px`;
+  // The disc's size comes from the CSS (--map-d: larger on desktop, 150 px on phones), so it is
+  // measured again when the window changes size.
+  let SIZE = 0;
+  function measure() {
+    const d = Math.round(parseFloat(getComputedStyle(document.body).getPropertyValue('--map-d'))) || 150;
+    if (d === SIZE) return;
+    SIZE = d;
+    canvas.width = SIZE * dpr;
+    canvas.height = SIZE * dpr;
+    canvas.style.width = canvas.style.height = `${SIZE}px`;
+    lastKey = '';
+  }
 
   let enabled = true;
-  let zoom = 0;
   let lastKey = '';
+  measure();
+  window.addEventListener('resize', measure);
+  let zoom = 0;
   const a = {};
   const b = {};
+  const u = {};
   const p = {};
 
   function draw(t) {
     shipState('alg', t, a);
     shipState('rus', t, b);
-    const cx = (a.x + b.x) / 2; // map centre, metres North
-    const cz = (a.z + b.z) / 2; // metres East
+    if (HAS_UNIT) shipState('unit', t, u);
+    // The map is centred on the guide: ALG, RUS after G FORM RUS, the unit through the formations on her and the
+    // screens (G FORM UNIT, the screen centre), ALG again in the final FORM 1.
+    const g = { alg: a, rus: b, unit: u }[guideShipAt(t)];
+    const cx = g.x; // map centre, metres North
+    const cz = g.z; // metres East
     const half = SIZE / 2;
     const rim = half - 7;
-    const span = Math.hypot(a.x - b.x, a.z - b.z) / 2;
-    const R = ZOOMS[zoom] === 'auto' ? (SCALES.find((s) => s >= span * 1.45) ?? SCALES[SCALES.length - 1]) : ZOOMS[zoom];
+    const span = Math.max(...(HAS_UNIT ? [a, b, u] : [a, b]).map((s) => Math.hypot(s.x - cx, s.z - cz))); // the farthest ship from the guide
+    const R = ZOOMS[zoom] === 'auto' ? (SCALES.find((s) => s >= span * 1.12) ?? SCALES[SCALES.length - 1]) : ZOOMS[zoom];
     const k = rim / R;
     const sx = (z) => half + (z - cz) * k;
     const sy = (x) => half - (x - cx) * k;
@@ -69,7 +87,7 @@ export function createManeuverMap() {
     ctx.fillText('W', 8, half + 3);
 
     // Recent tracks (the part already steamed).
-    for (const id of ['alg', 'rus']) {
+    for (const id of SHIP_IDS) {
       ctx.strokeStyle = COLORS[id];
       ctx.lineWidth = 1.4;
       ctx.globalAlpha = 0.5;
@@ -85,6 +103,29 @@ export function createManeuverMap() {
       ctx.lineTo(sx(p.z), sy(p.x));
       ctx.stroke();
       ctx.globalAlpha = 1;
+    }
+
+    // In a screen order, each screen ship's sector round the unit (the screen centre).
+    const scr = phaseAt(t).id;
+    if (scr === 'screenk' || scr === 'screenm') {
+      for (const id of ['alg', 'rus']) {
+        const sec = SECTORS[scr][id];
+        const span = (sec.b2 - sec.b1 + 360) % 360;
+        const pt = (bd, d) => { const r = (bd * Math.PI) / 180; return [sx(u.z + Math.sin(r) * d), sy(u.x + Math.cos(r) * d)]; };
+        ctx.strokeStyle = COLORS[id];
+        ctx.fillStyle = COLORS[id];
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        const N = Math.max(6, Math.ceil(span / 5));
+        for (let i = 0; i <= N; i++) { const [x, y] = pt(sec.b1 + (span * i) / N, sec.d2); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+        for (let i = N; i >= 0; i--) { const [x, y] = pt(sec.b1 + (span * i) / N, sec.d1); ctx.lineTo(x, y); }
+        ctx.closePath();
+        ctx.globalAlpha = 0.14;
+        ctx.fill();
+        ctx.globalAlpha = 0.7;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
     }
 
     // The station line with its range, between the two ships.
@@ -119,29 +160,39 @@ export function createManeuverMap() {
     };
     arrow(ax, ay, a.heading, COLORS.alg);
     arrow(bx, by, b.heading, COLORS.rus);
+    const ux2 = sx(u.z); const uy2 = sy(u.x);
+    if (HAS_UNIT) arrow(ux2, uy2, u.heading, COLORS.unit);
     ctx.font = '600 9px system-ui, sans-serif';
     ctx.fillStyle = COLORS.alg;
-    ctx.fillText('ALG', ax, ay - 10);
+    ctx.fillText(shipNames.alg, ax, ay - 10);
     ctx.fillStyle = COLORS.rus;
-    ctx.fillText('RUS', bx, by - 10);
+    ctx.fillText(shipNames.rus, bx, by - 10);
+    if (HAS_UNIT) {
+      ctx.fillStyle = COLORS.unit;
+      ctx.fillText(shipNames.unit, ux2, uy2 - 10);
+    }
 
-    // The order's life: an amber countdown while it stands by, a green pulse the moment it executes.
+    // EXECUTE (the ships start the maneuver): a green pulse; A STATION (they are in position): a white one.
     const order = orderStatus(t);
+    // The map's rim shows the order's state, as the banner does: amber on standby, green from EXECUTE through
+    // the maneuver, white from A STATION, until the next standby.
+    const call = order.state === 'standby' ? 'standby'
+      : order.state === 'execute' || order.state === 'underway' || (order.state === 'onstation' && !order.phase.hasStation) ? 'execute'
+        : order.state === 'station' || order.state === 'onstation' ? 'station' : '';
+    if (root.dataset.call !== call) { if (call) root.dataset.call = call; else delete root.dataset.call; }
     ctx.textAlign = 'center';
-    if (order.state === 'standby') {
-      ctx.fillStyle = 'rgba(255, 205, 90, 0.95)';
-      ctx.font = '700 9.5px system-ui, sans-serif';
-      ctx.fillText(`STANDBY ${Math.ceil(order.count)}`, half, 26);
-    } else if (order.state === 'execute') {
-      const u = order.since / EXECUTE_FLASH;
-      ctx.strokeStyle = `rgba(110, 255, 160, ${1 - u})`;
+    const flash = order.state === 'execute' ? ['EXECUTE', order.since / EXECUTE_FLASH, '110, 255, 160']
+      : order.state === 'station' ? ['A STATION', order.since / STATION_FLASH, '225, 240, 255'] : null;
+    if (flash) {
+      const [text, u, rgb] = flash;
+      ctx.strokeStyle = `rgba(${rgb}, ${1 - u})`;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.arc(half, half, rim * (0.15 + 0.85 * u), 0, Math.PI * 2);
       ctx.stroke();
-      ctx.fillStyle = `rgba(110, 255, 160, ${1 - u * 0.4})`;
+      ctx.fillStyle = `rgba(${rgb}, ${1 - u * 0.4})`;
       ctx.font = '700 10px system-ui, sans-serif';
-      ctx.fillText('EXECUTE', half, 26);
+      ctx.fillText(text, half, 26);
     }
 
     label.textContent = `${ZOOMS[zoom] === 'auto' ? 'AUTO · ' : ''}${R >= 1000 ? `${R / 1000} km` : `${R} m`} · ${Math.round(headingDeg(a.heading)).toString().padStart(3, '0')}°`;
