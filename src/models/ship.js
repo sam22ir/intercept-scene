@@ -428,13 +428,7 @@ export function createShip({ ensign = 'alg' } = {}) {
   const gunX = 32;
   const gy = dk(gunX);
   k.add(new THREE.CylinderGeometry(1.7, 1.9, 0.5, 24), M.greyDark, { pos: [gunX, gy + 0.25, 0] });
-  const turret = { x0: gunX - 2.4, x1: gunX + 1.2, tx0: gunX - 2.1, tx1: gunX - 0.2, y0: gy + 0.5, y1: gy + 2.2, w: 1.55, tw: 1.0 };
-  k.add(slab(turret), M.grey);
-  k.add(slab({ x0: gunX - 2.1, x1: gunX - 0.2, y0: gy + 2.2, y1: gy + 2.45, w: 1.0, tw: 0.75 }), M.grey);
-  k.add(facePanel(turret, 'fore', 0.35, 0.65, 0.2, 0.75, 0.02), M.greyDark);
-  k.add(new THREE.CylinderGeometry(0.11, 0.13, 4.6, 12), M.grey, { pos: [gunX + 3.2, gy + 1.45, 0], rot: [0, 0, -Math.PI / 2 + 0.06] });
-  k.add(new THREE.CylinderGeometry(0.22, 0.25, 0.9, 14), M.grey, { pos: [gunX + 1.45, gy + 1.35, 0], rot: [0, 0, -Math.PI / 2 + 0.06] });
-  k.add(new THREE.CylinderGeometry(0.15, 0.15, 0.5, 12), M.greyDark, { pos: [gunX + 5.4, gy + 1.58, 0], rot: [0, 0, -Math.PI / 2 + 0.06] });
+  // (The turret and barrel are their own parts, below: they train and elevate in the ship duel.)
 
   // Forward deckhouse carrying the missile launcher ---------------------------
   const fdh = { x0: 19, x1: 28.5, tx0: 19, tx1: 27.6, y0: dk(19) - 0.1, y1: dk(24) + 2.2, w: 4.6, tw: 4.1 };
@@ -603,6 +597,34 @@ export function createShip({ ensign = 'alg' } = {}) {
   }
 
   group.add(k.build({ name: 'superstructure' }));
+
+  // 76 mm gun: the turret yaws on its base (+ toward port, as the 30 mm guns) and the barrel elevates on its trunnions.
+  // At rest (yaw 0, pitch MAIN_GUN_REST) it is the picture the ship always had.
+  const mainGun = new THREE.Group();
+  mainGun.position.set(gunX, gy + 0.5, 0);
+  const mainYaw = new THREE.Group();
+  const mainPitch = new THREE.Group();
+  mainPitch.position.set(0.9, 0.9, 0); // the trunnions, inside the turret's front
+  const tk = new Kit();
+  const turret = { x0: -2.4, x1: 1.2, tx0: -2.1, tx1: -0.2, y0: 0, y1: 1.7, w: 1.55, tw: 1.0 };
+  tk.add(slab(turret), M.grey);
+  tk.add(slab({ x0: -2.1, x1: -0.2, y0: 1.7, y1: 1.95, w: 1.0, tw: 0.75 }), M.grey);
+  tk.add(facePanel(turret, 'fore', 0.35, 0.65, 0.2, 0.75, 0.02), M.greyDark);
+  mainYaw.add(tk.build({ name: 'main_gun_turret' }));
+  const bk = new Kit();
+  bk.add(new THREE.CylinderGeometry(0.11, 0.13, 4.6, 12), M.grey, { pos: [2.3, 0, 0], rot: [0, 0, -Math.PI / 2] });
+  bk.add(new THREE.CylinderGeometry(0.22, 0.25, 0.9, 14), M.grey, { pos: [0.55, -0.05, 0], rot: [0, 0, -Math.PI / 2] });
+  bk.add(new THREE.CylinderGeometry(0.15, 0.15, 0.5, 12), M.greyDark, { pos: [4.5, 0, 0], rot: [0, 0, -Math.PI / 2] });
+  mainPitch.add(bk.build({ name: 'main_gun_barrel' }));
+  const mainMuzzle = new THREE.Object3D();
+  mainMuzzle.position.set(4.8, 0, 0); // the muzzle, in the barrel's frame
+  mainPitch.add(mainMuzzle);
+  mainYaw.add(mainPitch);
+  mainGun.add(mainYaw);
+  group.add(mainGun);
+  const MAIN_GUN_REST = 0.06;
+  mainYaw.rotation.y = 0;
+  mainPitch.rotation.z = MAIN_GUN_REST;
 
   // --- Animated parts ----------------------------------------------------------
 
@@ -968,6 +990,11 @@ export function createShip({ ensign = 'alg' } = {}) {
     group,
     picks,
     launcher,
+    // The 76 mm gun: pose(yaw, pitch) turns the turret and raises the barrel; `muzzle` is where the round leaves.
+    mainGun: {
+      group: mainGun, muzzle: mainMuzzle, rest: MAIN_GUN_REST,
+      pose(yaw, pitch) { mainYaw.rotation.y = yaw; mainPitch.rotation.z = pitch; },
+    },
     // `opts` (the manual-flight mission): { aim: {yaw, pitch} } overrides the scripted launcher aim and
     // { cradleT } the catapult clock, so the cradle can fire when the pilot says.
     // (The third argument, a second round's launch time, is accepted and unused: only one cell has a cap that blows off.)
