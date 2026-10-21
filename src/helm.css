@@ -387,3 +387,6 @@ body.helm-radarview .helm-ship { display: none; }
 @media (max-width: 760px) { .helm-radar .hr-acts { display: none; } }
 .helm-radar .hr-mid { min-width: 236px; }
 @media (max-height: 600px) { .helm-radar .hr-dpad { grid-template-columns: repeat(3, 36px); grid-template-rows: repeat(3, 26px); } .helm-radar .hr-mid { padding: 5px 8px; gap: 4px; } }
+.helm-radar.locked .hr-mode { background: #1f9d57; box-shadow: 0 0 10px rgba(61, 220, 132, 0.7); }
+.helm-radar.locked .hr-dpad [data-dir] { opacity: 0.35; }
+.helm-radar.locked .hr-lock { background: rgba(61, 220, 132, 0.55); }
