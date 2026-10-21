@@ -1066,19 +1066,31 @@ function shipHtml() {
 
 function hudHtml() {
   const out = [];
-  // The drone data: the target, then the radar contacts.
+  // The drone data: the target (name and state, range, bearing, height, closing speed, the time it has left, whether F can fire), then the radar contacts.
   const t = sim.target;
-  let tTiles = tile('Target', 'none', '', 'wide');
-  let tChip = ['No target', ''];
+  const phaseWord = { inbound: 'inbound', pass: 'low pass', extend: 'opening', attack: 'ATTACK RUN' };
   if (t) {
+    const r = sim.rangeTo(t.pos);
     const why = sim.engageable(t);
-    tChip = why ? ['Out of arc', 'warn'] : ['In arc, ready', 'live'];
-    tTiles = tile('Target', t.name, '') + tile('Bearing', relName(sim.relBearing(t.pos)), '', 'brg')
-      + tile('Range', kmText(sim.rangeTo(t.pos)), '', sim.rangeTo(t.pos) < 1500 ? 'threat-high' : sim.rangeTo(t.pos) < 3000 ? 'threat' : '')
-      + tile('Height', f(t.pos.y), 'm')
-      + tile('F', why ? why.replace(/: turn the ship$/, '') : 'in arc, ready', '', `wide ${why ? 'threat' : 'helm-ok'}`);
+    sim.shipVel(pipV3[0]);
+    pipV3[1].set(t.pos.x - sim.x, t.pos.y, t.pos.z - sim.z);
+    pipV3[2].subVectors(t.vel, pipV3[0]);
+    const closing = -pipV3[1].dot(pipV3[2]) / (pipV3[1].length() || 1); // m/s, + when it is coming in
+    const eta = closing > 8 ? r / closing : null;
+    const tone = r < 1500 ? 'high' : r < 3000 ? 'mid' : 'low';
+    const fire = why ? why.replace(/: turn the ship$/, '').replace(/^Target astern, outside the launcher's arc$/, 'Out of arc') : 'Ready to fire';
+    out.push(`<div class="hud-sec tg tg-${tone}"><div class="tg-top"><b>${t.name}</b><em class="${t.phase}">${phaseWord[t.phase] ?? t.phase}</em></div>`
+      + `<div class="tg-range"><b>${kmText(r)}</b><span>range</span></div>`
+      + '<div class="tg-grid">'
+      + `<div><span>Bearing</span><b>${relName(sim.relBearing(t.pos))}</b></div>`
+      + `<div><span>Height</span><b>${f(t.pos.y)}<small> m</small></b></div>`
+      + `<div><span>Closing</span><b>${closing > 2 ? f(closing * 1.944) : '–'}<small> kn</small></b></div>`
+      + `<div><span>Reaches ship</span><b>${eta !== null && eta < 120 ? `${f(eta)}<small> s</small>` : '–'}</b></div>`
+      + '</div>'
+      + `<div class="tg-fire ${why ? 'no' : 'ok'}"><i></i>F · ${fire}</div></div>`);
+  } else {
+    out.push('<div class="hud-sec tg tg-none"><div class="tg-top"><b>No target</b><em>Tab selects one</em></div></div>');
   }
-  out.push(`<div class="hud-sec">${head('Target', ...tChip)}<div class="tiles">${tTiles}</div></div>`);
 
   // The radar picture: every contact on one line.
   const contacts = sim.detected.sort((a, b) => sim.rangeTo(a.pos) - sim.rangeTo(b.pos));
