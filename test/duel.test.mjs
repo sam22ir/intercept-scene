@@ -645,6 +645,7 @@ describe('the whole duel, with every system running', () => {
     }
     assert.ok(wins >= 4, `won ${wins} of ${total}`);
     const mean = times.reduce((x, y) => x + y, 0) / times.length;
-    assert.ok(mean > 100 && mean < 330, `a duel lasts ${mean.toFixed(0)} s`);
+    assert.ok(mean > 120 && mean < 300, `a duel lasts ${mean.toFixed(0)} s`);
+    assert.ok(Math.min(...times) > 90 && Math.max(...times) < 420, `durations ${times.map(Math.round)}`);
   });
 });

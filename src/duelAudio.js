@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { SOUNDS } from './audioAssets.js';
-import { GUN, HIT, SINK } from './duelAssets.js';
+import { GUN, HIT, SINK, MISSILE, KILL } from './duelAssets.js';
 
 // Sound for the ship duel, driven live from the simulation (duel.js) like Solo Air Defense's (helmAudio.js): the
 // samples are the bundle's ElevenLabs effects (audio.js); the listener is the camera, so loudness falls with
@@ -88,7 +88,7 @@ export function createDuelAudio() {
     await Promise.all(names.map(async (n) => {
       try { buffers[n] = await ctx.decodeAudioData(bytes(SOUNDS[n])); } catch { /* that sound stays silent */ }
     }));
-    for (const [n, b64] of Object.entries({ gun: GUN, hit: HIT, sink: SINK })) {
+    for (const [n, b64] of Object.entries({ gun: GUN, hit: HIT, sink: SINK, missile: MISSILE, kill: KILL })) {
       try { buffers[n] = await ctx.decodeAudioData(bytes(b64)); } catch { /* that sound stays silent */ }
     }
     if (buffers.hum) { loop('hum0', buffers.hum); loop('hum1', buffers.hum, 0.97); }
@@ -174,6 +174,10 @@ export function createDuelAudio() {
       else if (e.type === 'hit') shot('hit', e.pos, { level: 1.3, ref: 200, rate: 1 });
       else if (e.type === 'splash') shot('splash', e.pos, { level: 0.8, ref: 90, rate: 0.9 });
       else if (e.type === 'out' && e.ship === 0) beep();
+      else if (e.type === 'mslLaunch') shot('missile', e.pos, { level: 1.2, ref: 260, rate: 1 });
+      else if (e.type === 'mslKilled') shot('kill', e.pos, { level: 1.3, ref: 240, rate: 1 });
+      else if (e.type === 'mslHit') shot('hit', e.pos, { level: 1.6, ref: 260, rate: 0.85 });
+      else if (e.type === 'lockon' && e.ship === 0) beep();
       else if (e.type === 'sunk') shot('sink', e.pos, { level: 1.5, ref: 500, rate: 1 });
     },
     // Every frame: the beds and the guns, from the ships' state and the camera.
