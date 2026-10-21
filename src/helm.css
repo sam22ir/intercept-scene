@@ -182,3 +182,13 @@ body.mission-helm .hud { width: 200px; padding: 8px 11px 9px; }
 .helm-ship .hs-rect { min-height: 34px; height: auto; padding-top: 3px; padding-bottom: 3px; }
 .helm-ship .hs-guns { font-size: 9.5px; color: rgba(255, 255, 255, 0.7); white-space: nowrap; }
 .helm-ship .hs-guns.on { color: #ffc454; font-weight: 650; }
+
+/* The target's damage from the guns: one box per hit it can take, filling red. */
+.hud .tg-dmg { display: flex; align-items: center; gap: 7px; margin-top: 4px; font-size: 10px; color: rgba(255, 255, 255, 0.78); }
+.hud .tg-dmg > span { text-transform: uppercase; letter-spacing: 0.06em; font-size: 9.5px; }
+.hud .tg-dmg .hs-pips { display: flex; gap: 3px; }
+.hud .tg-dmg .hs-pips i { width: 12px; height: 8px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.18); }
+.hud .tg-dmg .hs-pips i.hit { background: #ff5d61; border-color: #ff5d61; }
+.hud .tg-dmg em { font-style: normal; margin-left: auto; font-weight: 650; }
+.hud .tg-dmg.hurt em { color: #ff8a8d; }
+.tag .tag-hits { color: #ff7478; letter-spacing: 0.02em; }

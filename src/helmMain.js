@@ -15,7 +15,7 @@ import { createHelmMap } from './helmMap.js';
 import { createHelmAudio } from './helmAudio.js';
 import { menuText } from './menu.js';
 import {
-  HelmSim, SLEW_TIME, TELEGRAPH, RUDDER_MAX, CELLS, MISSILE_RANGE, BRIDGE_EYE, DIRECTOR_EYE, GUN_MOUNTS, GUN_ROUNDS, relName, kmText,
+  HelmSim, SLEW_TIME, TELEGRAPH, RUDDER_MAX, CELLS, MISSILE_RANGE, BRIDGE_EYE, DIRECTOR_EYE, GUN_MOUNTS, GUN_ROUNDS, DRONE_HP, relName, kmText,
 } from './helm.js';
 import './helm.css';
 
@@ -391,7 +391,13 @@ function applyState(dt) {
       v.tag.el.classList.toggle('dead', d.phase === 'attack' || d.phase === 'pass');
       v.tag.el.classList.toggle('helm-target', d.id === sim.targetId);
       v.tag.title.textContent = `${d.name}${d.id === sim.targetId ? ' · TARGET' : ''}${d.phase === 'attack' ? ' · ATTACK' : ''}`;
-      v.tag.body.innerHTML = `${kmText(r)} · ${Math.round(d.pos.y)}<span> m up</span>`;
+      const taken = Math.max(0, DRONE_HP - d.hp);
+      v.tag.body.innerHTML = `${kmText(r)} · ${Math.round(d.pos.y)}<span> m up</span>${taken ? `<span class="tag-hits"> ${'●'.repeat(taken)}${'○'.repeat(DRONE_HP - taken)}</span>` : ''}`;
+      // A drone the guns have hurt trails smoke, more the worse it is.
+      if (taken >= 2) {
+        v.smokeAt = (v.smokeAt ?? 0) - dt;
+        if (v.smokeAt <= 0) { v.smokeAt = taken >= 4 ? 0.05 : 0.14; fx.missileTrail(d.pos, t); }
+      }
     }
   }
   for (const id of [...vis.keys()]) if (!seen.has(id)) dropVis(id);
@@ -1160,9 +1166,11 @@ function hudHtml() {
     const r = sim.rangeTo(t.pos);
     const why = sim.engageable(t);
     const tone = r < 1500 ? 'high' : r < 3000 ? 'mid' : 'low';
+    const taken = Math.max(0, DRONE_HP - t.hp);
     const fire = why ? why.replace(/: turn the ship$/, '').replace(/^Target astern, outside the launcher's arc$/, 'Out of arc') : 'Ready to fire';
     out.push(`<div class="hud-sec tg tg-${tone}"><div class="tg-line"><b>${t.name}</b><strong>${kmText(r)}</strong><em class="${t.phase}">${phaseWord[t.phase] ?? t.phase}</em></div>`
       + `<div class="tg-sub">${relName(sim.relBearing(t.pos))} · ${f(t.pos.y)} m</div>`
+      + `<div class="tg-dmg${taken ? ' hurt' : ''}"><span>Damage</span><div class="hs-pips">${Array.from({ length: DRONE_HP }, (_, i) => `<i class="${i < taken ? 'hit' : ''}"></i>`).join('')}</div><em>${taken ? `${taken} of ${DRONE_HP} hits` : 'none'}</em></div>`
       + `<div class="tg-fire ${why ? 'no' : 'ok'}"><i></i>${fire}</div></div>`);
   } else {
     out.push('<div class="hud-sec tg tg-none"><div class="tg-line"><b>No target</b><em>Tab selects</em></div></div>');
