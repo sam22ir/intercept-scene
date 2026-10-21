@@ -882,7 +882,10 @@ function renderPip() {
   renderer.setScissorTest(true);
   renderer.setViewport(pipRect.x, pipRect.y, pipRect.w, pipRect.h);
   renderer.setScissor(pipRect.x, pipRect.y, pipRect.w, pipRect.h);
+  const shipShown = ship.group.visible;
+  ship.group.visible = false; // the sight looks out from inside her: her own body never blocks it, even into the dead zone
   renderer.render(scene, pipCam);
+  ship.group.visible = shipShown;
   renderer.setScissorTest(false);
   renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
   renderer.shadowMap.autoUpdate = auto;
@@ -1207,7 +1210,10 @@ renderer.setAnimationLoop((now) => {
   const keys = keysHtml();
   if (keys !== lastKeys) { keysEl.innerHTML = keys; lastKeys = keys; }
   if (!banner.hidden && performance.now() > bannerUntil) banner.hidden = true;
+  const sightCam = view === 'sight' || (cine && cine.phase === 'sight');
+  if (sightCam) ship.group.visible = false; // the sight looks out from inside her: her own body never blocks it
   renderer.render(scene, camera);
+  if (sightCam) ship.group.visible = true;
   renderPip();
   labels.render(scene, camera);
   if (frames++ === 0) loadingEl?.remove();
