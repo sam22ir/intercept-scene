@@ -552,7 +552,7 @@ export class HelmSim {
     if (this.out) return;
     if (this.gunRounds <= 0) { this.say('The guns are out of ammunition', 'warn'); return; }
     this.gunsAuto = !this.gunsAuto;
-    this.say(this.gunsAuto ? 'Guns on automatic: each fires alone on the target inside 2.6 km, outside its own dead zone' : 'Guns off automatic: hold G to fire', this.gunsAuto ? 'warn' : '');
+    this.say(this.gunsAuto ? 'Guns on automatic: each fires alone on a drone from its own side inside 2.6 km, outside its own dead zone' : 'Guns off automatic: hold G to fire', this.gunsAuto ? 'warn' : '');
   }
   // Can any gun engage this drone now? null if one can, else the reason. (Which ones: gunsBearing.)
   gunsBearing(d) {
@@ -571,11 +571,32 @@ export class HelmSim {
     return null;
   }
 
+  // Which gun a drone belongs to: the one on its side of the ship (0 port, 1 starboard).
+  gunSide(d) { return this.toLocal(d.pos, _e).z < 0 ? 0 : 1; }
+  // The drone gun i works on: each gun takes a drone from its own side (the selected one first, else the nearest), so two drones on
+  // two sides are shot by one gun each. It takes one from the other side only when that side's gun is out of ammunition or blind to it.
+  gunTarget(i) {
+    let best = null;
+    let bestScore = Infinity;
+    for (const d of this.drones) {
+      if (!d.alive || !d.detected || d.hidden) continue;
+      const range = this.rangeTo(d.pos);
+      if (range > GUN_RANGE) continue;
+      const able = this.gunsBearing(d);
+      if (!able.includes(i)) continue;
+      const mine = this.gunSide(d) === i;
+      if (!mine && this.guns[1 - i].ammo > 0 && able.includes(1 - i)) continue;
+      const score = range - (d.id === this.targetId ? 1e5 : 0) - (mine ? 1e6 : 0);
+      if (score < bestScore) { bestScore = score; best = d; }
+    }
+    return best;
+  }
+
   stepGuns(dt, input = {}) {
-    const d = this.target;
     const trigger = !this.out && (this.gunsAuto || !!input.gun); // held, or automatic
     for (let i = 0; i < this.guns.length; i++) {
       const g = this.guns[i];
+      const d = this.gunTarget(i);
       let wantYaw = GUN_STOW.yaw;
       let wantPitch = GUN_STOW.pitch;
       let engage = false;
