@@ -313,7 +313,8 @@ const VIEW_NAMES = {
 let view = 'behind';
 let lookYaw = 0; // bridge: degrees off the bow, + to starboard
 let lookPitch = -0.03;
-let behindDist = 190;
+const BEHIND_DIST = 100; // m behind the ship, close
+let behindDist = BEHIND_DIST;
 let aboveH = 520;
 let camYaw = 0; // the behind view's heading, smoothed
 let snap = true;
@@ -691,8 +692,10 @@ function updateCamera(dt) {
     if (snap) camYaw = sim.psi;
     else camYaw += Math.atan2(Math.sin(sim.psi - camYaw), Math.cos(sim.psi - camYaw)) * k;
     const ang = camYaw + THREE.MathUtils.degToRad(behindYaw);
-    camera.position.set(sim.x - Math.cos(ang) * behindDist, behindDist * 0.3 + 18, sim.z - Math.sin(ang) * behindDist);
-    lookAt.set(sim.x + Math.cos(camYaw) * 50, 8, sim.z + Math.sin(camYaw) * 50);
+    camera.position.set(sim.x - Math.cos(ang) * behindDist, behindDist * 0.06 + 12, sim.z - Math.sin(ang) * behindDist);
+    // Low and close, on the ship herself and looking a little up (about 3.5 degrees above the horizon): she fills the middle of
+    // the frame, the bridge and mast against the sky.
+    lookAt.set(sim.x + Math.cos(camYaw) * 10, camera.position.y + (behindDist + 10) * 0.062, sim.z + Math.sin(camYaw) * 10);
     camera.lookAt(lookAt);
     snap = false;
     if (view === 'sight') sightTxt.textContent = 'No target on the radar';
@@ -725,7 +728,7 @@ window.addEventListener('pointermove', (e) => {
     lookPitch = THREE.MathUtils.clamp(lookPitch - dy * 0.004, -0.9, 0.6);
   } else if (view === 'behind') behindYaw += dx * 0.3; // the camera swings to starboard, so the view turns to port
 });
-canvas.addEventListener('dblclick', () => { lookYaw = 0; lookPitch = -0.03; behindYaw = 0; behindDist = 190; aboveH = 520; sightZoom = 1; });
+canvas.addEventListener('dblclick', () => { lookYaw = 0; lookPitch = -0.03; behindYaw = 0; behindDist = BEHIND_DIST; aboveH = 520; sightZoom = 1; });
 canvas.addEventListener('wheel', (e) => {
   if (view === 'behind') behindDist = THREE.MathUtils.clamp(behindDist * Math.exp(e.deltaY * 0.001), 60, 1200);
   else if (view === 'above') aboveH = THREE.MathUtils.clamp(aboveH * Math.exp(e.deltaY * 0.001), 150, 4000);
