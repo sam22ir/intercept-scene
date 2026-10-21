@@ -103,3 +103,23 @@ body.mission-helm .tag .tag-title { font-size: 9px; letter-spacing: 0.04em; }
 body.mission-helm .tag .tag-body span { font-size: 9px; }
 body.mission-helm .tag.helm-target { box-shadow: none; border-left-color: #fff; }
 body.mission-helm .topbar .brand, body.mission-helm .brand { display: none; }
+
+/* The ship's instruments: a strip above the keys (rudder, telegraph, rounds); the drone data stays up at the right, a bit see-through. */
+.helm-ship { position: fixed; z-index: 5; left: 50%; bottom: 80px; transform: translateX(-50%); display: flex; gap: 10px; align-items: stretch; max-width: calc(100vw - 2 * var(--map-d, 150px) - 56px); pointer-events: none; }
+.helm-ship[hidden], body.ui-hidden .helm-ship { display: none; }
+.helm-ship .hs-card { display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 6px 12px 7px; border-radius: 12px; background: rgba(9, 14, 21, 0.42); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text); font-variant-numeric: tabular-nums; }
+.helm-ship .hs-card > span:not(.chip) { color: var(--muted); font-size: 10.5px; white-space: nowrap; }
+.helm-ship .hs-rud { min-width: 190px; }
+.helm-ship .hs-rud .hr-bar { position: relative; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); }
+.helm-ship .hs-rud .hr-bar::before { content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: rgba(255, 255, 255, 0.5); }
+.helm-ship .hs-rud .hr-bar i { position: absolute; top: 0; bottom: 0; border-radius: 4px; left: calc(50% + min(0, var(--r)) * 50%); width: calc(max(var(--r), -1 * var(--r)) * 50%); background: var(--accent); }
+.helm-ship .hs-row { display: flex; gap: 14px; align-items: baseline; }
+.helm-ship .hs-row b { font-size: 16px; font-weight: 650; white-space: nowrap; }
+.helm-ship .hs-row small { font-size: 10.5px; color: var(--muted); font-weight: 500; }
+.helm-ship .chip { align-self: flex-start; }
+.helm-ship .hs-pips { display: flex; gap: 4px; }
+.helm-ship .hs-pips i { width: 9px; height: 16px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.18); }
+.helm-ship .hs-pips i.on { background: #ffc454; border-color: #ffc454; }
+body.mission-helm .hud { background: rgba(9, 14, 21, 0.38); backdrop-filter: blur(3px); max-height: calc(100vh - var(--map-d, 150px) - 64px); overflow: hidden; }
+.helm-ship { flex-wrap: wrap; justify-content: center; }
+@media (max-width: 1100px) { .helm-ship { bottom: 128px; } }

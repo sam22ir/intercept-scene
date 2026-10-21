@@ -971,37 +971,45 @@ const f = (v, d = 0) => v.toFixed(d);
 const tile = (label, value, unit, cls = '') => `<div class="tile ${cls}"><span>${label}</span><b>${value}${unit ? `<small>${unit}</small>` : ''}</b></div>`;
 const head = (title, chip, tone) => `<div class="hud-head"><b>${title}</b><span class="chip ${tone}">${chip}</span></div>`;
 
-function hudHtml() {
-  const out = [];
-  // The ship: heading, speed, the telegraph and the wheel.
+// The ship's own instruments, in a strip at the foot of the screen above the keys: the wheel, the telegraph, the rounds.
+const shipEl = document.createElement('div');
+shipEl.id = 'helm-ship';
+shipEl.className = 'helm-ship';
+document.body.appendChild(shipEl);
+let lastShip = '';
+function shipHtml() {
   const o = TELEGRAPH[sim.order];
   const ord = o.kn === 0 ? 'Stop' : `${o.name}${o.kn > 0 ? ' ahead' : ''}`;
   const rud = THREE.MathUtils.radToDeg(sim.rudder);
   const rudTxt = Math.abs(rud) < 0.5 ? 'midships' : `${f(Math.abs(rud))}° ${rud > 0 ? 'stbd' : 'port'}`;
   const rot = sim.rateOfTurn;
   const chip = sim.out ? ['Out of action', 'bad'] : sim.strikes ? [`Damage ${sim.strikes}/3`, 'warn'] : ['Under way', 'live'];
-  out.push(`<div class="hud-sec">${head('Ship', ...chip)}<div class="tiles">`
-    + tile('Heading', f(sim.headingDeg).padStart(3, '0'), '°')
-    + tile('Speed', f(sim.knots, 1), 'kn')
-    + tile('Telegraph', ord, '', 'wide')
-    + `<div class="tile wide helm-rudder"><span>Rudder · ${rudTxt}${Math.abs(rot) >= 1 ? ` · turning ${f(Math.abs(rot))}°/min ${rot > 0 ? 'stbd' : 'port'}` : ''}</span>`
-    + `<div class="hr-bar"><i style="--r:${(sim.rudder / RUDDER_MAX).toFixed(3)}"></i></div></div>`
-    + '</div></div>');
-
-  // Weapons: rounds, the launcher, the target.
-  const t = sim.target;
   let wChip = [`${sim.cellsLeft} of ${CELLS} ready`, sim.cellsLeft ? '' : 'bad'];
   if (sim.shot) wChip = sim.shot.locked ? ['Target locked', 'live'] : sim.shot.acquiring ? ['Acquiring', 'warn'] : ['Launcher turning', 'warn'];
   else if (sim.missiles.length) wChip = [`${sim.missiles.length} in flight`, 'warn'];
+  const pips = Array.from({ length: CELLS }, (_, i) => `<i class="${i < sim.cellsLeft ? 'on' : ''}"></i>`).join('');
+  return `<div class="hs-card hs-rud"><span>Rudder · ${rudTxt}${Math.abs(rot) >= 1 ? ` · ${f(Math.abs(rot))}°/min` : ''}</span>`
+    + `<div class="hr-bar"><i style="--r:${(sim.rudder / RUDDER_MAX).toFixed(3)}"></i></div></div>`
+    + `<div class="hs-card hs-nav"><div class="hs-row"><b>${f(sim.headingDeg).padStart(3, '0')}°</b><b>${f(sim.knots, 1)}<small> kn</small></b><b class="hs-ord">${ord}</b></div>`
+    + `<span class="chip ${chip[1]}">${chip[0]}</span></div>`
+    + `<div class="hs-card hs-ammo"><span>Missiles</span><div class="hs-pips">${pips}</div><span class="chip ${wChip[1]}">${wChip[0]}</span></div>`;
+}
+
+function hudHtml() {
+  const out = [];
+  // The drone data: the target, then the radar contacts.
+  const t = sim.target;
   let tTiles = tile('Target', 'none', '', 'wide');
+  let tChip = ['No target', ''];
   if (t) {
     const why = sim.engageable(t);
+    tChip = why ? ['Out of arc', 'warn'] : ['In arc, ready', 'live'];
     tTiles = tile('Target', t.name, '') + tile('Bearing', relName(sim.relBearing(t.pos)), '', 'brg')
       + tile('Range', kmText(sim.rangeTo(t.pos)), '', sim.rangeTo(t.pos) < 1500 ? 'threat-high' : sim.rangeTo(t.pos) < 3000 ? 'threat' : '')
       + tile('Height', f(t.pos.y), 'm')
       + tile('F', why ? why.replace(/: turn the ship$/, '') : 'in arc, ready', '', `wide ${why ? 'threat' : 'helm-ok'}`);
   }
-  out.push(`<div class="hud-sec">${head('Missiles', ...wChip)}<div class="tiles">${tTiles}</div></div>`);
+  out.push(`<div class="hud-sec">${head('Target', ...tChip)}<div class="tiles">${tTiles}</div></div>`);
 
   // The radar picture: every contact on one line.
   const contacts = sim.detected.sort((a, b) => sim.rangeTo(a.pos) - sim.rangeTo(b.pos));
@@ -1111,6 +1119,7 @@ const hudButton = document.querySelector('#btn-hud');
 function setHud(on) {
   hudOn = on;
   root.hidden = !on;
+  shipEl.hidden = !on;
   hudButton.classList.toggle('active', on);
   hudButton.setAttribute('aria-pressed', String(on));
 }
@@ -1242,6 +1251,8 @@ renderer.setAnimationLoop((now) => {
   if (hudOn) {
     const html = hudHtml();
     if (html !== lastHtml) { live.innerHTML = html; lastHtml = html; }
+    const sh = shipHtml();
+    if (sh !== lastShip) { shipEl.innerHTML = sh; lastShip = sh; }
   }
   const keys = keysHtml();
   if (keys !== lastKeys) { keysEl.innerHTML = keys; lastKeys = keys; }
