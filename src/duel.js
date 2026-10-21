@@ -52,6 +52,14 @@ export const MAIN_RANGE = 8000; // m
 export const MUZZLE_V = 650; // m/s (slow enough that a long shot takes seconds, and a turn spoils it)
 export const MAIN_RELOAD = 2.5; // s between rounds
 export const MAIN_ROUNDS = 150;
+// Two kinds of round, with limited stocks of each (the total stays MAIN_ROUNDS). HE hurts a compartment less but sets it on fire
+// and opens the hull to the sea; AP hurts it more and does neither. Changing the loaded kind costs a reload.
+export const AMMO_STOCK = { he: 90, ap: 60 };
+export const AMMO_TYPES = {
+  he: { name: 'HE', dmg: 0.6, fire: 0.45, flood: 0.04 },
+  ap: { name: 'AP', dmg: 1.5, fire: 0, flood: 0 },
+};
+export const SWITCH_TIME = 3.5; // s of reload to change the loaded kind
 const MAIN_YAW_RATE = rad(45);
 const MAIN_PITCH_RATE = rad(30);
 const MAIN_PITCH = [rad(-5), rad(45)];
@@ -145,7 +153,7 @@ function makeShip(idx, x, z, psi) {
     idx, x, z, psi, u: 0, r: 0, rudder: 0, heel: 0, order: START_ORDER,
     hp: HULL_HP, comp, flood: 0, tSunk: null, listSide: 1,
     // The 76 mm: yaw (+ toward port), pitch, the time until it is loaded, the rounds, and whether it is on the solution.
-    gun: { yaw: 0, pitch: rad(2), cool: 1.5, ammo: MAIN_ROUNDS, onTarget: false, engaged: false },
+    gun: { yaw: 0, pitch: rad(2), cool: 1.5, ammo: MAIN_ROUNDS, stock: { ...AMMO_STOCK }, type: 'he', onTarget: false, engaged: false },
     gats: [0, 1].map(() => ({ yaw: GUN_STOW.yaw, pitch: GUN_STOW.pitch, ammo: GUN_ROUNDS, firing: false, rounds: 0, spin: 0, spinRate: 0, burst: 0, cool: 0 })),
     auto: true, // the aft guns fire by themselves
     est: null, // the velocity this ship's fire control believes the other ship has, [x, z]
@@ -197,6 +205,16 @@ export class DuelSim {
   takeEvents() { const e = this.events; this.events = []; return e; }
   telegraph(i, d) { const s = this.ships[i]; if (s.tSunk === null) s.order = clamp(s.order + d, 0, TELEGRAPH.length - 1); }
   toggleAuto(i = 0) { this.ships[i].auto = !this.ships[i].auto; }
+  // Change the loaded kind of 76 mm round (one call per key press, never from `input`): costs a reload. `type` omitted: the other kind.
+  switchAmmo(i, type = null) {
+    const s = this.ships[i], g = s.gun;
+    const to = type ?? (g.type === 'he' ? 'ap' : 'he');
+    if (s.tSunk !== null || to === g.type || !AMMO_TYPES[to] || g.stock[to] <= 0) return false;
+    g.type = to;
+    g.cool = Math.max(g.cool, SWITCH_TIME);
+    this.events.push({ type: 'ammo', ship: i, kind: to });
+    return true;
+  }
   get player() { return this.ships[0]; }
   get enemy() { return this.ships[1]; }
   knots(s) { return s.u / KT; }
@@ -307,6 +325,7 @@ export class DuelSim {
     let wantYaw = 0, wantPitch = rad(2);
     g.engaged = false;
     g.onTarget = false;
+    if (g.stock[g.type] <= 0 && g.ammo > 0) this.switchAmmo(s.idx); // the loaded kind ran out: the other is loaded
     const alive = !sunk && s.comp.gun > 0 && g.ammo > 0 && this.ships[1 - s.idx].tSunk === null;
     if (alive) {
       const sol = this.solve(s, MAIN_MOUNT, MUZZLE_V, true);
@@ -327,7 +346,8 @@ export class DuelSim {
   fireMain(s) {
     const g = s.gun;
     g.cool = MAIN_RELOAD;
-    g.ammo -= 1;
+    g.stock[g.type] -= 1;
+    g.ammo = g.stock.he + g.stock.ap;
     s.stats.shells += 1;
     const sigma = this.scatter(s);
     const gauss = () => Math.sqrt(-2 * Math.log(1 - this.rng())) * Math.cos(2 * Math.PI * this.rng());
@@ -336,7 +356,7 @@ export class DuelSim {
     const M = this.toWorld(s, MAIN_MOUNT);
     const sv = this.velOf(s);
     const sh = {
-      id: ++this.shellId, owner: s.idx, t0: this.t,
+      id: ++this.shellId, owner: s.idx, t0: this.t, kind: g.type,
       p: [M[0] + dir[0] * BARREL, M[1] + dir[1] * BARREL, M[2] + dir[2] * BARREL],
       v: [dir[0] * MUZZLE_V + sv[0], dir[1] * MUZZLE_V, dir[2] * MUZZLE_V + sv[2]],
     };
@@ -367,12 +387,13 @@ export class DuelSim {
   hit(sh, tgt, local) {
     const from = this.ships[sh.owner];
     const comp = zoneAt(local[0]);
-    const dmg = lerp(SHELL_DAMAGE[0], SHELL_DAMAGE[1], this.rng());
+    const am = AMMO_TYPES[sh.kind] ?? AMMO_TYPES.he;
+    const dmg = lerp(SHELL_DAMAGE[0], SHELL_DAMAGE[1], this.rng()) * am.dmg;
     from.stats.hits += 1;
     tgt.stats.taken += 1;
     const pos = this.toWorld(tgt, [local[0], clamp(local[1], 0, BOX.y1), local[2]]);
     this.damage(tgt, comp, dmg, SHELL_HULL, local[2]);
-    this.events.push({ type: 'hit', owner: sh.owner, ship: tgt.idx, comp, dmg, pos, local: local.slice(), out: tgt.comp[comp] <= 0 });
+    this.events.push({ type: 'hit', owner: sh.owner, ship: tgt.idx, comp, dmg, kind: sh.kind, pos, local: local.slice(), out: tgt.comp[comp] <= 0 });
     this.shells.splice(this.shells.indexOf(sh), 1);
   }
 
