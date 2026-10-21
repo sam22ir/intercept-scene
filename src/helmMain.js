@@ -838,7 +838,7 @@ function updatePip(dt) {
   const r = pa.length();
   pa.divideScalar(r || 1);
   if (pipSt.id !== d.id) { pipSt.id = d.id; pipSt.phase = 'slew'; }
-  const fovTrack = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(22 / r)), 1.2, 30);
+  const fovTrack = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(1.5 / r)), 0.05, 30); // the lens closes until the drone fills the square
   let cmd = pa;
   let fovWant = SIGHT_WIDE;
   if (pipSt.phase === 'search') {
@@ -853,7 +853,7 @@ function updatePip(dt) {
       fovWant = THREE.MathUtils.lerp(SIGHT_WIDE, fovTrack, s * s * (3 - 2 * s));
     }
   }
-  if (pipSt.phase === 'lock') fovWant = fovTrack;
+  if (pipSt.phase === 'lock') { fovWant = fovTrack; pipSt.aim.copy(pa); } // locked: held exactly on it
   const e = pipSt.aim.angleTo(cmd);
   pipSt.omega += (Math.min(SIGHT_RATE, e * 9) - pipSt.omega) * (1 - Math.exp(-dt / 0.12));
   if (e > 1e-5) pipSt.aim.lerp(cmd, Math.min(pipSt.omega * dt, e) / e).normalize();
