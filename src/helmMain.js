@@ -1647,4 +1647,4 @@ renderer.setAnimationLoop((now) => {
 
 setView('behind', true);
 say('Half ahead on 000. ← → rudder, ↑ ↓ telegraph: watch the radar for drones', '', 5200);
-window.__helm = { sim, camera, controls, rig, renderer, scene, env, fx, ship: ship.group, setView, restart, get view() { return view; }, get cine() { return cine; } };
+window.__helm = { sim, audio, camera, controls, rig, renderer, scene, env, fx, ship: ship.group, setView, restart, get view() { return view; }, get cine() { return cine; } };
