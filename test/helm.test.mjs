@@ -25,7 +25,7 @@ describe('the ship', () => {
   it('puts the rudder over while the key is held, and eases it back when it is let go', () => {
     const sim = new HelmSim();
     sim.nextSpawn = Infinity;
-    run(sim, 3, { right: 1 });
+    run(sim, 1, { right: 1 });
     assert.ok(sim.rudder > 0.25 && sim.rudder < RUDDER_MAX, `rudder ${sim.rudder}`);
     run(sim, 10, { right: 1 });
     assert.ok(Math.abs(sim.rudder - RUDDER_MAX) < 1e-9, 'full rudder at 35 degrees');
@@ -33,21 +33,21 @@ describe('the ship', () => {
     assert.ok(Math.abs(sim.rudder) < 1e-9, 'amidships again');
   });
 
-  it('turns to starboard on right rudder, slowly at first, with a tactical diameter of a few ship lengths', () => {
+  it('turns to starboard on right rudder, the swing building up in a couple of seconds, with a tight tactical diameter', () => {
     const sim = new HelmSim();
     sim.nextSpawn = Infinity;
     run(sim, 2, { right: 1 });
-    assert.ok(sim.rateOfTurn > 0 && sim.rateOfTurn < 40, `the swing builds up: ${sim.rateOfTurn} deg/min`);
+    assert.ok(sim.rateOfTurn > 0 && sim.rateOfTurn < 220, `the swing builds up: ${sim.rateOfTurn} deg/min`);
     const start = { x: sim.x, z: sim.z };
     let maxZ = 0;
     for (let i = 0; i < 2400 && sim.headingDeg < 180; i++) { sim.advance(0.1, { right: 1 }); maxZ = Math.max(maxZ, sim.z - start.z); }
     assert.ok(sim.headingDeg >= 179, 'she comes round');
-    assert.ok(maxZ > 300 && maxZ < 700, `tactical diameter ${maxZ.toFixed(0)} m`);
+    assert.ok(maxZ > 110 && maxZ < 260, `tactical diameter ${maxZ.toFixed(0)} m`);
     assert.ok(sim.knots < TELEGRAPH[START_ORDER].kn - 1, 'she loses speed in the hard turn');
     assert.ok(sim.heel < 0, 'she heels outward (port side down) turning to starboard');
   });
 
-  it('answers the telegraph over half a minute, one step at a time, and stops', () => {
+  it('answers the telegraph in a few seconds, one step at a time, and stops', () => {
     const sim = new HelmSim();
     sim.nextSpawn = Infinity;
     sim.telegraph(+1);

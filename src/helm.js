@@ -6,9 +6,9 @@
 //   ← →     the wheel: hold to put the rudder over (6 degrees a second, 35 at most); let go and the helmsman
 //           eases it back amidships.
 //   ↑ ↓     the engine-room telegraph, one step at a time: slow astern, stop, dead slow, slow, half, full, flank.
-//   The hull answers like a ship, not a car: a first-order (Nomoto) turn that builds up over several seconds,
-//   a tactical diameter of about four ship lengths at full rudder, speed that comes and goes over half a
-//   minute, a little speed lost in a hard turn, and an outward heel while she turns.
+//   The hull answers like a ship, not a car, but a quick one: a first-order (Nomoto) turn that builds up in a couple of
+//   seconds, a tactical diameter of little more than a ship length at full rudder, speed that comes and goes in a few
+//   seconds, a little speed lost in a hard turn, and an outward heel while she turns.
 //
 // The threat
 //   Drones come in one at a time, later two, from random bearings, 5.3 to 5.8 km out. The search radar sees them
@@ -53,13 +53,13 @@ export const TELEGRAPH = [
 ];
 export const START_ORDER = 4; // half ahead
 export const RUDDER_MAX = rad(35);
-const RUDDER_RATE = rad(6); // per second, hold the key
-const TURN_T = 8; // s: how long the swing takes to build up
-const TURN_RADIUS = 230; // m at full rudder (a tactical diameter of about four lengths)
-const SPEED_T = 30; // s: the speed comes and goes on this time constant
-const ACCEL_MAX = 0.2; // m/s²
-const TURN_LOSS = 0.3; // fraction of the ordered speed lost at full rudder
-const HEEL = 0.16; // rad of heel per (rad/s of turn × m/s of speed)
+const RUDDER_RATE = rad(15); // per second, hold the key (full rudder in about two seconds)
+const TURN_T = 2.5; // s: how long the swing takes to build up
+const TURN_RADIUS = 70; // m at full rudder (a tactical diameter of about a ship length and a bit: she is very nimble)
+const SPEED_T = 6; // s: the speed comes and goes on this time constant
+const ACCEL_MAX = 1.0; // m/s²
+const TURN_LOSS = 0.15; // fraction of the ordered speed lost at full rudder
+const HEEL = 0.07; // rad of heel per (rad/s of turn × m/s of speed)
 export const HALF_LENGTH = 58; // m, for the drones striking her
 export const HALF_BEAM = 7.5;
 // Where the officer of the watch stands, and the fire-control director (both in the ship's frame).
