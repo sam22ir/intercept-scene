@@ -410,6 +410,10 @@ function setView(v, quiet = false) {
   if (v === 'target' && view !== 'target') viewBefore = view;
   tgtWatch = null;
   view = v;
+  radarKeys.l = radarKeys.r = radarKeys.u = radarKeys.d = 0;
+  sight.manual = false; // the radar's own controls start on automatic every time
+  radarEl.hidden = v !== 'sight';
+  document.body.classList.toggle('helm-radarview', v === 'sight');
   if (v === 'sight') { sight.fresh = true; sight.searchTime = SIGHT_SEARCH; } // the director starts from the bow and finds the target again
   pendingOrbit = false;
   endCine();
@@ -508,6 +512,7 @@ function startSightCine() {
   sight.aim.copy(_a);
   sight.fresh = false;
   sight.id = d.id;
+  sight.manual = false;
   sight.phase = 'slew';
   sight.omega = 0;
   sight.searchTime = SIGHT_SEARCH_SHOT;
@@ -853,7 +858,9 @@ function updateCamera(dt) {
     camera.rotateY(0.0012 * Math.sin(ts * 39 + 5) + 0.0007 * Math.sin(ts * 61 + 2));
     camera.rotateZ(0.0014 * Math.sin(ts * 31 + 3));
     wantFov = 46;
-  } else if (view === 'sight' && sim.target) {
+  } else if (view === 'sight' && (sight.manual || !sim.target)) {
+    wantFov = aimManual(dt);
+  } else if (view === 'sight') {
     wantFov = aimSight(dt, sim.target);
   } else {
     // Behind her (also the fallback for the missile and sight views with nothing to show).
@@ -870,6 +877,7 @@ function updateCamera(dt) {
   }
   fov += (wantFov - fov) * (view === 'sight' ? 1 - Math.exp(-dt / 0.3) : 1);
   setFov(fov);
+  updateRadarUi();
 }
 
 // --- The radar picture ---------------------------------------------------------------------------------------------------
@@ -1022,7 +1030,130 @@ const SIGHT_WIDE = 24; // degrees: the lens while it looks for the target
 const SIGHT_SEARCH = 1.7; // s of hunting about the target before it locks
 const SIGHT_SEARCH_SHOT = 0.55; // s of it in the shot of a launch: the launcher is already on
 const UP = new THREE.Vector3(0, 1, 0);
-const sight = { id: null, phase: 'slew', t0: 0, omega: 0, fresh: true, searchTime: SIGHT_SEARCH, aim: new THREE.Vector3(1, 0, 0) };
+const sight = { manual: false, hover: null, dwell: 0, id: null, phase: 'slew', t0: 0, omega: 0, fresh: true, searchTime: SIGHT_SEARCH, aim: new THREE.Vector3(1, 0, 0) };
+
+// --- The radar view's own controls -----------------------------------------------------------------------------------------
+// In the radar view the steering readouts are hidden and the arrows aim the fire-control sight by hand (a drag does too):
+// anything that comes within the sight's cone is picked out, and held there for a moment it locks by itself; Enter or the
+// LOCK button locks at once, Space or AUTO goes back to the automatic tracking, and every detected drone wears a bracket
+// that can be clicked. The pad's buttons also arm and fire the missile and step through the targets.
+sight.dragYaw = 0;
+sight.dragPitch = 0;
+const radarKeys = { l: 0, r: 0, u: 0, d: 0 };
+const radarEl = document.createElement('div');
+radarEl.className = 'helm-radar';
+radarEl.hidden = true;
+radarEl.innerHTML = '<div class="hr-marks"></div><div class="hr-pad">'
+  + '<div class="hr-acts"><button type="button" data-act="auto">Auto track<kbd>Space</kbd></button><button type="button" data-act="next">Next target<kbd>Tab</kbd></button></div>'
+  + '<div class="hr-mid"><div class="hr-read"><b class="hr-mode">AUTO</b><span class="hr-brg"></span></div>'
+  + '<div class="hr-dpad"><button type="button" data-dir="u" aria-label="Aim up">▲</button><button type="button" data-dir="l" aria-label="Aim left">◀</button>'
+  + '<button type="button" data-act="lock" class="hr-lock">LOCK</button><button type="button" data-dir="r" aria-label="Aim right">▶</button><button type="button" data-dir="d" aria-label="Aim down">▼</button></div></div>'
+  + '<div class="hr-acts"><button type="button" data-act="arm">Arm missile<kbd>M</kbd></button><button type="button" data-act="fire" class="hr-fire">Fire<kbd>F</kbd></button></div></div>';
+document.body.appendChild(radarEl);
+const radarMarks = radarEl.querySelector('.hr-marks');
+const radarMode = radarEl.querySelector('.hr-mode');
+const radarBrg = radarEl.querySelector('.hr-brg');
+const pressKey = (key) => { window.dispatchEvent(new KeyboardEvent('keydown', { key })); window.dispatchEvent(new KeyboardEvent('keyup', { key })); };
+function lockOn(d) {
+  sim.targetId = d.id;
+  sight.manual = false;
+  sight.id = d.id;
+  sight.phase = 'slew';
+  sight.dwell = 0;
+  say(`Target ${d.name}: ${relName(sim.relBearing(d.pos))}, ${kmText(sim.rangeTo(d.pos))}`, '');
+}
+// The detected drone nearest the line of sight, if it is inside the cone (degrees).
+function nearestToAim(cone) {
+  let best = null;
+  let bestA = THREE.MathUtils.degToRad(cone);
+  for (const d of sim.detected) {
+    const a = _d.subVectors(d.pos, camera.position).normalize().angleTo(sight.aim);
+    if (a < bestA) { bestA = a; best = d; }
+  }
+  return best;
+}
+function lockHover() {
+  const d = sight.hover ?? nearestToAim(10) ?? sim.target;
+  if (d) lockOn(d);
+  else say('Nothing in the sight: aim at a drone', 'warn');
+}
+radarEl.addEventListener('pointerdown', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  e.preventDefault();
+  if (b.dataset.dir) {
+    radarKeys[b.dataset.dir] = 1;
+    sight.manual = true;
+    const up = () => { radarKeys[b.dataset.dir] = 0; window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  } else if (b.dataset.act === 'lock') lockHover();
+  else if (b.dataset.act === 'auto') sight.manual = false;
+  else if (b.dataset.act === 'next') { sight.manual = false; pressKey('Tab'); }
+  else if (b.dataset.act === 'arm') pressKey('m');
+  else if (b.dataset.act === 'fire') pressKey('f');
+});
+radarMarks.addEventListener('pointerdown', (e) => {
+  const m = e.target.closest('.hr-mark');
+  const d = m && sim.detected.find((x) => String(x.id) === m.dataset.id);
+  if (d) { e.preventDefault(); lockOn(d); }
+});
+// The sight turned by hand: the arrows (a slow, fine turn when the lens is narrow), a drag, and a hover that locks by dwelling.
+function aimManual(dt) {
+  ship.group.localToWorld(camera.position.copy(DIRECTOR_EYE));
+  if (sight.fresh) {
+    sight.aim.set(Math.cos(sim.psi), 0.06, Math.sin(sim.psi)).normalize();
+    sight.fresh = false;
+  }
+  const rate = THREE.MathUtils.degToRad(50) * THREE.MathUtils.clamp(fov / SIGHT_WIDE, 0.12, 1);
+  let yaw = Math.atan2(sight.aim.z, sight.aim.x) + (radarKeys.r - radarKeys.l) * rate * dt + sight.dragYaw;
+  const pitch = THREE.MathUtils.clamp(Math.asin(THREE.MathUtils.clamp(sight.aim.y, -1, 1)) + (radarKeys.u - radarKeys.d) * rate * dt + sight.dragPitch, -0.25, 1.45);
+  sight.dragYaw = 0;
+  sight.dragPitch = 0;
+  yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+  sight.aim.set(Math.cos(pitch) * Math.cos(yaw), Math.sin(pitch), Math.cos(pitch) * Math.sin(yaw));
+  camera.lookAt(_e.copy(camera.position).add(sight.aim));
+  const d = nearestToAim(Math.max(1.2, fov * 0.14));
+  if (d && d === sight.hover) sight.dwell += dt;
+  else sight.dwell = 0;
+  sight.hover = d;
+  if (d && sight.dwell > 0.9) lockOn(d);
+  sightEl.classList.toggle('lock', !!d);
+  sightEl.classList.toggle('searching', !d);
+  sightTxt.textContent = d ? `${d.name} in the sight · ${relName(sim.relBearing(d.pos))} · ${kmText(sim.rangeTo(d.pos))} · locking…` : 'Manual: aim at a drone';
+  return Math.max(SIGHT_WIDE * sightZoom, 1);
+}
+// Brackets on every detected drone in the picture, and the pad's readout.
+const radarMarkEls = new Map();
+function updateRadarUi() {
+  if (view !== 'sight') return;
+  const manual = sight.manual || !sim.target;
+  radarMode.textContent = sight.manual ? 'MANUAL' : sim.target ? 'AUTO' : 'SCAN';
+  radarMode.classList.toggle('manual', manual);
+  const rel = THREE.MathUtils.radToDeg(Math.atan2(Math.sin(Math.atan2(sight.aim.z, sight.aim.x) - sim.psi), Math.cos(Math.atan2(sight.aim.z, sight.aim.x) - sim.psi)));
+  radarBrg.textContent = `${relName(THREE.MathUtils.degToRad(rel))} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${Math.round(fov)}°`;
+  camera.updateMatrixWorld();
+  const seen = new Set();
+  for (const d of sim.detected) {
+    _a.copy(d.pos).project(camera);
+    if (_a.z > 1 || Math.abs(_a.x) > 1.02 || Math.abs(_a.y) > 1.02) continue;
+    let el = radarMarkEls.get(d.id);
+    if (!el) {
+      el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'hr-mark';
+      el.dataset.id = d.id;
+      radarMarks.appendChild(el);
+      radarMarkEls.set(d.id, el);
+    }
+    seen.add(d.id);
+    el.style.transform = `translate(${((_a.x + 1) / 2 * window.innerWidth).toFixed(1)}px, ${((1 - _a.y) / 2 * window.innerHeight).toFixed(1)}px)`;
+    el.classList.toggle('tgt', sim.target === d);
+    const txt = `${d.name} · ${kmText(sim.rangeTo(d.pos))}`;
+    if (el.textContent !== txt) el.textContent = txt;
+  }
+  for (const [id, el] of radarMarkEls) if (!seen.has(id)) { el.remove(); radarMarkEls.delete(id); }
+}
 
 // Drag on the bridge looks round; drag behind swings round her; the wheel zooms (or narrows the sight). The view turns
 // the way the mouse goes, as in the free orbit: drag left and it turns left, drag up and (on the bridge) it looks up.
@@ -1037,6 +1168,10 @@ window.addEventListener('pointermove', (e) => {
   if (view === 'bridge') {
     lookYaw = ((lookYaw + dx * 0.25 + 540) % 360) - 180; // lookYaw is + to starboard: dragging left (dx < 0) looks to port
     lookPitch = THREE.MathUtils.clamp(lookPitch - dy * 0.004, -0.9, 0.6);
+  } else if (view === 'sight') { // drag aims the radar by hand
+    sight.manual = true;
+    sight.dragYaw += dx * THREE.MathUtils.degToRad(fov) / window.innerHeight;
+    sight.dragPitch -= dy * THREE.MathUtils.degToRad(fov) / window.innerHeight;
   } else if (view === 'behind') behindYaw += dx * 0.3; // the camera swings to starboard, so the view turns to port
 });
 canvas.addEventListener('dblclick', () => { lookYaw = 0; lookPitch = -0.03; behindYaw = 0; behindDist = BEHIND_DIST; aboveH = 520; sightZoom = 1; });
@@ -1302,9 +1437,10 @@ function keysHtml() {
   const k = (key, label, on = false) => (KEY_OF[key] === null ? `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`
     : `<span class="fk fk-btn${on ? ' on' : ''}" data-key="${KEY_OF[key] ?? key.toLowerCase()}"><kbd>${key}</kbd>${label}</span>`);
   if (sim.out) return `${k('R', 'sail again', true)}${k('V', 'camera')}`;
+  const radarKeysHtml = view === 'sight' ? '<span class="fk"><kbd>← ↑ ↓ →</kbd>aim radar</span><span class="fk"><kbd>Enter</kbd>lock</span><span class="fk"><kbd>Space</kbd>auto</span>' : '';
   const t = sim.target;
   const ready = t && !sim.engageable(t) && !sim.shot && sim.cellsLeft > 0;
-  return `${sim.shot?.hold ? `${k('M', 'stand down')}${k('F', 'launch', sim.shot.locked)}` : k('M', 'ready missile', ready)}${k('G', 'guns (hold)', input.gun === 1)}${k('A', 'auto guns', sim.gunsAuto)}`
+  return `${radarKeysHtml}${sim.shot?.hold ? `${k('M', 'stand down')}${k('F', 'launch', sim.shot.locked)}` : k('M', 'ready missile', ready)}${k('G', 'guns (hold)', input.gun === 1)}${k('A', 'auto guns', sim.gunsAuto)}`
     + `${k('E', sim.heli.action === 'takeoff' ? 'heli take off' : sim.heli.action === 'land' ? 'heli land' : 'heli landing', sim.heli.action === null)}${k('D', 'add drone')}${k('Tab', 'target', sim.detected.length > 1)}${k('1–7', 'views')}${k('V', 'next view')}`;
 }
 
@@ -1407,6 +1543,7 @@ viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.v
 
 keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>←</kbd> <kbd>→</kbd>', 'Rudder to port / starboard while held; let go and it comes back amidships'],
+  ['<kbd>← ↑ ↓ →</kbd> in Radar', 'In the radar view the arrows aim the radar by hand (the steering readouts are hidden there); <kbd>Enter</kbd> locks what is in the sight, <kbd>Space</kbd> goes back to automatic tracking, and a drag aims too'],
   ['<kbd>↑</kbd> <kbd>↓</kbd>', 'Engine telegraph, one step: slow astern, stop, dead slow, slow, half, full, flank'],
   ['<kbd>M</kbd>', `Make a missile ready on the target: the launcher turns and locks, then waits (${CELLS} cells; ${kmText(MISSILE_RANGE)} at most; ahead and abeam only). Press M again to stand it down`],
   ['<kbd>F</kbd>', 'Launch the ready missile (with none ready, it readies and launches one)'],
@@ -1444,6 +1581,13 @@ function restart() {
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select')) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (view === 'sight') { // in the radar view the arrows aim the radar, not the ship
+    const dir = { ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd' }[e.key];
+    if (dir) { radarKeys[dir] = 1; sight.manual = true; e.preventDefault(); return; }
+    if (e.key === 'Enter') { lockHover(); e.preventDefault(); return; }
+    if (e.key === ' ') { sight.manual = false; e.preventDefault(); return; }
+    if (e.key === 'Tab') sight.manual = false;
+  }
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
     input[e.key === 'ArrowLeft' ? 'left' : 'right'] = 1;
     e.preventDefault();
@@ -1483,11 +1627,13 @@ window.addEventListener('keydown', (e) => {
   if (key !== 'Escape') e.preventDefault();
 });
 window.addEventListener('keyup', (e) => {
+  const rdir = { ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd' }[e.key];
+  if (rdir) radarKeys[rdir] = 0;
   if (e.key === 'ArrowLeft') input.left = 0;
   if (e.key === 'ArrowRight') input.right = 0;
   if (e.key === 'g' || e.key === 'G') input.gun = 0;
 });
-window.addEventListener('blur', () => { input.left = 0; input.right = 0; input.gun = 0; });
+window.addEventListener('blur', () => { radarKeys.l = radarKeys.r = radarKeys.u = radarKeys.d = 0; input.left = 0; input.right = 0; input.gun = 0; });
 
 // --- Loop ---------------------------------------------------------------------------------------------------------------
 function resize() {
