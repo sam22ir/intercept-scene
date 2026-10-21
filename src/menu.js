@@ -4,19 +4,25 @@
 // real scenario, flight model and key bindings, so a title can never describe something a mission does not do.
 //
 // A mission with `ship: true` lets the player pick the launcher; the others fix it (`fixed` says what is
-// fixed, for the summary line). The list is in two groups (`GROUPS`): the drone missions as rows, and the
-// tactical maneuvers as a row of tiles by the number of ships (`ships`, `tile`, `tileSub`), then Solo Air Defense (id `helm`), a row of its own
-// (a mission with no `tile` is a row).
+// fixed, for the summary line). The screen has three tabs (`GROUPS`, by what the player does): Watch (replays
+// to scrub), Play (take the controls) and Drill (the naval exercises). A tab lists its entries (`entriesOf`):
+// each mission is one, except the three drills, which are one entry ("Tactical maneuvers", `FAMILIES`) whose
+// variants are chosen by the number of ships (`ships`, `tile`, `tileSub`).
 
 export const GROUPS = [
-  { id: 'drone', name: 'Drone & missile' },
-  { id: 'tactical', name: 'Tactical maneuvers' },
+  { id: 'watch', name: 'Watch', hint: 'Replays you can scrub both ways' },
+  { id: 'play', name: 'Play', hint: 'You take the controls' },
+  { id: 'drill', name: 'Drill', hint: 'Naval exercises run on orders' },
+];
+
+export const FAMILIES = [
+  { id: 'drill', group: 'drill', name: 'Tactical maneuvers', blurb: 'Frigates wheel and change station on orders', members: ['maneuvers2', 'maneuvers', 'formations'] },
 ];
 
 export const MISSIONS = [
   {
     id: 'intercept',
-    group: 'drone',
+    group: 'watch',
     name: 'Intercept',
     kind: 'Replay',
     blurb: 'A missile shoots the drone down',
@@ -29,7 +35,7 @@ export const MISSIONS = [
   },
   {
     id: 'chute',
-    group: 'drone',
+    group: 'watch',
     name: 'Recovery',
     kind: 'Replay',
     blurb: 'No missile · lands by parachute',
@@ -42,7 +48,7 @@ export const MISSIONS = [
   },
   {
     id: 'fly',
-    group: 'drone',
+    group: 'play',
     name: 'Fly the drone',
     kind: 'Manual',
     blurb: 'Arrow keys · E engine · L catapult · F missile',
@@ -58,7 +64,7 @@ export const MISSIONS = [
   },
   {
     id: 'maneuvers2',
-    group: 'tactical',
+    group: 'drill',
     ships: 2,
     tile: '2 ships',
     tileSub: 'ALG · RUS',
@@ -77,7 +83,7 @@ export const MISSIONS = [
   },
   {
     id: 'maneuvers',
-    group: 'tactical',
+    group: 'drill',
     ships: 3,
     tile: '3 ships',
     tileSub: 'ALG · RUS · unit',
@@ -96,7 +102,7 @@ export const MISSIONS = [
   },
   {
     id: 'formations',
-    group: 'tactical',
+    group: 'drill',
     ships: 4,
     tile: '4 ships',
     tileSub: 'SHIP1 – SHIP4',
@@ -115,7 +121,7 @@ export const MISSIONS = [
   },
   {
     id: 'helm',
-    group: 'tactical',
+    group: 'play',
     ships: 1,
     name: 'Solo Air Defense',
     kind: 'Manual',
@@ -141,6 +147,19 @@ export const MISSION_IDS = MISSIONS.map((m) => m.id);
 export const FIXED_SHIP = 'fwd'; // what a mission without a choice uses
 const SUFFIX = 'Intercept scene';
 
+// What a tab lists, in order: a mission each, with the family's members folded into one entry.
+// `id` is the entry's first mission; `family` is set on a folded one.
+export function entriesOf(groupId) {
+  const out = [];
+  for (const m of MISSIONS.filter((x) => x.group === groupId)) {
+    const fam = FAMILIES.find((f) => f.members.includes(m.id));
+    if (!fam) out.push({ id: m.id, group: groupId, name: m.name, blurb: m.blurb, kind: m.kind, family: null, members: [m.id] });
+    else if (!out.some((e) => e.family === fam.id)) out.push({ id: m.id, group: groupId, name: fam.name, blurb: fam.blurb, kind: m.kind, family: fam.id, members: fam.members });
+  }
+  return out;
+}
+export const ENTRIES = GROUPS.flatMap((g) => entriesOf(g.id));
+export const groupOf = (id) => missionById(id).group;
 export const missionById = (id) => MISSIONS.find((m) => m.id === id) ?? MISSIONS[0];
 export const shipById = (id) => SHIPS.find((s) => s.id === id) ?? SHIPS[0];
 
