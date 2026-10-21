@@ -470,7 +470,7 @@ function newCine(mid, did, phase) {
 }
 // F has been pressed and the launcher is turning: the camera goes close to it, from the side of the way it will fire.
 function startLauncherCine() {
-  if (!cineOn || cine || view === 'orbit' || sim.out || !sim.shot) return;
+  if (!cineOn || cine || view === 'orbit' || view === 'sight' || sim.out || !sim.shot) return; // the radar view stays on its locked target through the shot
   const aim = sim.shot.aim;
   const px = Math.sin(aim.yaw); // across the line of fire, in the ship's frame (x ahead, z to starboard)
   const pz = Math.cos(aim.yaw);
@@ -501,7 +501,7 @@ function frameLaunchWide(c, k) {
 // The launcher is on: the camera goes through the director's sight to the drone. The director starts where the launcher
 // points, hunts about the target for a moment (a short search) and locks; the sign comes with the lock.
 function startSightCine() {
-  if (!cine && cineOn && view !== 'orbit' && !sim.out && sim.shot) { // the launcher close-up did not start: the lock still goes through the sight
+  if (!cine && cineOn && view !== 'orbit' && view !== 'sight' && !sim.out && sim.shot) { // the launcher close-up did not start: the lock still goes through the sight
     cine = newCine(null, sim.shot.droneId, 'slew');
     cine.camLocal.set(LAUNCHER_PIVOT.x + 22, LAUNCHER_PIVOT.y + 3.5, LAUNCHER_PIVOT.z);
   }
@@ -523,7 +523,7 @@ function startSightCine() {
   document.body.classList.add('helm-sighting');
 }
 function startCine(missileId, droneId = null) {
-  if (!cineOn || cine || view === 'orbit' || sim.out) return;
+  if (!cineOn || cine || view === 'orbit' || (view === 'sight' && missileId !== null) || sim.out) return;
   if (missileId !== null) { // a missile leaves
     const m = sim.missiles.find((x) => x.id === missileId);
     if (!m || !sim.drones.some((d) => d.id === m.targetId && d.alive)) return;
