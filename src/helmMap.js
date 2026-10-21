@@ -82,6 +82,7 @@ export function createHelmMap() {
   let zoom = 0;
   const track = [];
   let lastTrack = -Infinity;
+  let sightView = null; // in the radar view: { yaw (world, radians from north), half (the lens's half-width), locked }
   root.addEventListener('click', () => { zoom = (zoom + 1) % ZOOMS.length; });
   root.title = 'Radar, heading up: click to change the range (M hides it)';
 
@@ -177,15 +178,37 @@ export function createHelmMap() {
       ctx.stroke();
       ctx.setLineDash([]);
     }
-    // The scale: each ring is labelled with its range, and a bar of a round length stands low on the disc.
-    ctx.font = '600 7.5px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    for (let i = 1; i <= 4; i++) {
-      const rr = (R - 6) * (i / 4);
-      ctx.fillText(kmText((scale * i) / 4).replace(' km', 'km'), R + rr * 0.7071, R - rr * 0.7071 - 1);
+    // Where the radar view is looking: a thin line out to the rim, a pointer on the rim and the true bearing (no sector).
+    if (sightView) {
+      const a0 = sightView.yaw - sim.psi - Math.PI / 2;
+      const col = sightView.locked ? '61, 220, 132' : '255, 196, 84';
+      const ux = Math.cos(a0);
+      const uy = Math.sin(a0);
+      ctx.strokeStyle = `rgba(${col}, 0.8)`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(R + ux * 8, R + uy * 8);
+      ctx.lineTo(R + ux * (R - 9), R + uy * (R - 9));
+      ctx.stroke();
+      ctx.fillStyle = `rgb(${col})`;
+      ctx.beginPath();
+      ctx.moveTo(R + ux * (R - 2), R + uy * (R - 2));
+      ctx.lineTo(R + ux * (R - 11) - uy * 4, R + uy * (R - 11) + ux * 4);
+      ctx.lineTo(R + ux * (R - 11) + uy * 4, R + uy * (R - 11) - ux * 4);
+      ctx.closePath();
+      ctx.fill();
+      const brg = ((Math.round((sightView.yaw * 180) / Math.PI) % 360) + 360) % 360;
+      const txt = `${String(brg).padStart(3, '0')}°`;
+      ctx.font = '700 9px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.lineWidth = 3;
+      ctx.strokeText(txt, R + ux * (R - 23), R + uy * (R - 23));
+      ctx.fillText(txt, R + ux * (R - 23), R + uy * (R - 23));
+      ctx.lineWidth = 1;
     }
+    // The scale: a bar of a round length stands low on the disc (no numbers on the rings or the bar; the corner label gives the range).
     const nice = [200, 500, 1000, 2000, 5000, 10000].reduce((best, m) => (Math.abs(m * k - R * 0.5) < Math.abs(best * k - R * 0.5) ? m : best), 1000);
     const bw = nice * k;
     const by = R + R * 0.56;
@@ -195,8 +218,6 @@ export function createHelmMap() {
     ctx.moveTo(R - bw / 2, by - 3); ctx.lineTo(R - bw / 2, by); ctx.lineTo(R + bw / 2, by); ctx.lineTo(R + bw / 2, by - 3);
     ctx.stroke();
     ctx.lineWidth = 1;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-    ctx.fillText(kmText(nice), R, by - 8);
     // The heading line.
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.beginPath();
@@ -312,6 +333,7 @@ export function createHelmMap() {
   return {
     get enabled() { return enabled; },
     setEnabled(on) { enabled = on; root.hidden = !on; },
+    set sight(v) { sightView = v; },
     update(sim) { if (enabled) draw(sim); },
   };
 }

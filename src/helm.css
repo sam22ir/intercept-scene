@@ -358,3 +358,35 @@ body.mission-helm .fly-keys .fk-btn:active { background: rgba(255, 255, 255, 0.2
 .helm-ship .st-kills b { font: 800 26px/1 ui-monospace, Consolas, monospace; color: #ffc454; }
 /* Short windows: the card has to leave room for the contact list, so the strip of speed, closing and altitude steps aside. */
 @media (max-height: 640px) { .hud .tk-cells { display: none; } .hud .tk-dial { width: 76px; height: 76px; } .hud .tg-range { font-size: 26px; } }
+
+/* The radar view: the steering readouts give way to the radar's own pad (the arrows aim the sight), and every detected drone wears a bracket. */
+body.helm-radarview .helm-ship { display: none; }
+.helm-radar { position: fixed; inset: 0; z-index: 5; pointer-events: none; }
+.helm-radar[hidden], body.ui-hidden .helm-radar { display: none; }
+.helm-radar .hr-marks { position: absolute; inset: 0; overflow: hidden; }
+.helm-radar .hr-mark { position: absolute; left: 0; top: 0; margin: 0; padding: 0; width: 0; height: 0; border: 0; background: none; pointer-events: auto; cursor: pointer; font: 600 11px 'Segoe UI', system-ui, sans-serif; color: #bfffd8; white-space: nowrap; text-shadow: 0 0 3px #000, 0 0 3px #000; }
+.helm-radar .hr-mark::before { content: ''; position: absolute; left: -17px; top: -17px; width: 34px; height: 34px; border: 1px solid rgba(120, 255, 170, 0.8); border-radius: 3px; }
+.helm-radar .hr-mark { padding-left: 24px; padding-top: 20px; }
+.helm-radar .hr-mark.tgt { color: #ffd37a; }
+.helm-radar .hr-mark.tgt::before { border-color: #ffc454; border-width: 2px; }
+.helm-radar .hr-pad { position: absolute; left: 50%; bottom: calc(var(--keys-h, 56px) + var(--gap, 14px) + var(--safe-b, 0px)); transform: translateX(-50%); display: flex; gap: 10px; align-items: flex-end; max-width: calc(100vw - 2 * var(--map-d, 150px) - 40px); }
+.helm-radar .hr-mid { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 10px; background: rgba(9, 14, 21, 0.5); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 14px; backdrop-filter: blur(3px); pointer-events: auto; }
+.helm-radar .hr-read { display: flex; gap: 8px; align-items: baseline; color: var(--text); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.helm-radar .hr-mode { padding: 1px 7px; border-radius: 8px; background: #2a8f5c; color: #fff; font-size: 10.5px; letter-spacing: 0.08em; }
+.helm-radar .hr-mode.manual { background: #c98a1a; }
+.helm-radar .hr-dpad { display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 34px); grid-template-areas: '. u .' 'l k r' '. d .'; gap: 4px; }
+.helm-radar .hr-dpad [data-dir='u'] { grid-area: u; } .helm-radar .hr-dpad [data-dir='l'] { grid-area: l; } .helm-radar .hr-dpad [data-dir='r'] { grid-area: r; } .helm-radar .hr-dpad [data-dir='d'] { grid-area: d; } .helm-radar .hr-dpad .hr-lock { grid-area: k; }
+.helm-radar button { font: 600 12px 'Segoe UI', system-ui, sans-serif; color: var(--text); background: rgba(255, 255, 255, 0.09); border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 9px; cursor: pointer; touch-action: none; user-select: none; }
+.helm-radar .hr-pad button:hover { background: rgba(255, 255, 255, 0.18); }
+.helm-radar .hr-pad button:active { background: rgba(255, 255, 255, 0.3); }
+.helm-radar .hr-lock { background: rgba(61, 220, 132, 0.25); border-color: rgba(61, 220, 132, 0.7); font-size: 11px; letter-spacing: 0.06em; }
+.helm-radar .hr-acts { display: flex; flex-direction: column; gap: 4px; pointer-events: auto; }
+.helm-radar .hr-acts button { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-width: 128px; padding: 7px 10px; background: rgba(9, 14, 21, 0.55); backdrop-filter: blur(3px); }
+.helm-radar .hr-acts kbd { font-size: 10px; opacity: 0.7; }
+.helm-radar .hr-fire { background: rgba(255, 93, 97, 0.28); border-color: rgba(255, 93, 97, 0.7); }
+@media (max-width: 760px) { .helm-radar .hr-acts { display: none; } }
+.helm-radar .hr-mid { min-width: 236px; }
+@media (max-height: 600px) { .helm-radar .hr-dpad { grid-template-columns: repeat(3, 36px); grid-template-rows: repeat(3, 26px); } .helm-radar .hr-mid { padding: 5px 8px; gap: 4px; } }
+.helm-radar.locked .hr-mode { background: #1f9d57; box-shadow: 0 0 10px rgba(61, 220, 132, 0.7); }
+.helm-radar.locked .hr-dpad [data-dir] { opacity: 0.35; }
+.helm-radar.locked .hr-lock { background: rgba(61, 220, 132, 0.55); }

@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { mulberry32 } from './rng.js';
-import { Kit } from './models/kit.js';
 
 const SUN_ELEVATION = 24; // degrees
 const SUN_AZIMUTH = 215;
@@ -491,52 +490,186 @@ export function ridgeAngle(dx, dz) {
 
 const SUN = [-0.5, 0.62, 0.55]; // toward the sun, in the scene's x (north), y (up), z (east)
 const HAZE = [0.6, 0.76, 0.93]; // the sky at the horizon, as it shows (sRGB)
-// The towns: a coastal town on the flattened plain by the shore (a grid of lots with streets between, flats in the middle) that climbs the
-// slope behind it in terraces, narrower houses laid along the contours and thinning with height, and two villages high on the
-// mountainsides. White, cream and ochre walls, red-tile roofs; lit by the scene's sun like the ships (Lambert), their colours already
-// veiled with a little haze. The layout is computed once (townLayout): the town mesh and the radar map's marks both come from it.
+// The towns: a coastal town on the flattened plain by the shore, built on a street grid with a slow bend (tree-lined avenues, blocks of
+// flats in the middle with a few towers in the core, small houses with red-tile roofs thinning out toward the hills, a ground that
+// is paved and grey under it: see townGround), a harbour with a quay, sheds, containers, gantry cranes and a breakwater, a pier and a
+// lighthouse; the same houses climb the slope behind in terraces, laid along the contours, and two villages stand high on the
+// mountainsides. The walls are plaster in muted creams, sands and ochres with rows of windows (a small canvas texture), the roofs
+// tile or tar, the trees dark green bicones. All of it is lit like the mountains (baked per vertex from the same sun, darker at the
+// foot of each wall, the same haze with distance) so it sits in the landscape instead of glowing against it. The layout is computed
+// once (townLayout): the town mesh and the radar map's marks both come from it.
+const LOT = 46; // m: one cell of the town's grid (a building and its share of the street)
+const AVE_U = 5; // every fifth column of cells is an avenue
+const AVE_V = 6; // and every sixth row
+const CA = Math.cos(CITY.a);
+const SA = Math.sin(CITY.a);
+const townAt = (u, v) => { // u along the shore, v inland, bent a little so the streets are not ruled lines
+  const wu = u + 24 * (vnoise2(v * 0.0045 + 7, u * 0.0045) - 0.5);
+  const wv = v + 24 * (vnoise2(u * 0.0045, v * 0.0045 + 13) - 0.5);
+  return [CITY.x + wu * -SA + wv * CA, CITY.z + wu * CA + wv * SA];
+};
+const coreD = (u, v) => Math.hypot(u, (v - 300) * 1.1) / 1500; // 1 at the edge of the built-up plain
+// How built up the ground is at (x, z) (0 to 1) and how close it lies to an avenue (0 to 1), for the terrain's colours.
+function townGround(x, z) {
+  const dx = x - CITY.x;
+  const dz = z - CITY.z;
+  const u = -dx * SA + dz * CA;
+  const v = dx * CA + dz * SA;
+  const built = Math.min(1, (1 - sstep(0.65, 1.2, coreD(u, v))) * (0.75 + 0.5 * vnoise2(x * 0.012, z * 0.012)));
+  if (built <= 0) return [0, 0];
+  const du = Math.abs(u - LOT * AVE_U * Math.round(u / (LOT * AVE_U)));
+  const dv = Math.abs(v - LOT * AVE_V * Math.round(v / (LOT * AVE_V)));
+  return [built, built * (1 - sstep(5, 20, Math.min(du, dv)))];
+}
+const WALLS = [[0.92, 0.89, 0.82], [0.88, 0.8, 0.66], [0.82, 0.68, 0.5], [0.88, 0.72, 0.64], [0.8, 0.82, 0.82], [0.94, 0.93, 0.9], [0.72, 0.76, 0.8], [0.84, 0.76, 0.58]];
+const TILES = [[0.66, 0.31, 0.21], [0.58, 0.27, 0.19], [0.72, 0.39, 0.27], [0.62, 0.34, 0.24]];
+const FLATS = [[0.52, 0.52, 0.5], [0.4, 0.4, 0.42], [0.68, 0.66, 0.6], [0.46, 0.44, 0.42]];
+const GLASS = [[0.45, 0.58, 0.7], [0.58, 0.65, 0.7], [0.36, 0.45, 0.55], [0.7, 0.75, 0.78]];
+const LEAF = [[0.17, 0.3, 0.14], [0.2, 0.33, 0.15], [0.14, 0.25, 0.13], [0.24, 0.34, 0.16]];
+const BOXES = [[0.7, 0.2, 0.15], [0.15, 0.35, 0.6], [0.85, 0.65, 0.15], [0.2, 0.5, 0.3], [0.78, 0.78, 0.76], [0.55, 0.2, 0.2]];
 let townMemo = null;
 function townLayout() {
   if (townMemo) return townMemo;
   const rng = mulberry32(77);
-  const out = [];
-  const ca = Math.cos(CITY.a);
-  const sa = Math.sin(CITY.a);
-  const at = (u, v) => [CITY.x + u * -sa + v * ca, CITY.z + u * ca + v * sa]; // u along the shore, v inland
+  const pick = (a) => a[Math.floor(rng() * a.length)];
+  const tint = (c, k = 0.06) => { const f = 1 + (rng() - 0.5) * 2 * k; return [c[0] * f, c[1] * f, c[2] * f]; };
+  const buildings = []; // the textured ones (and the sheds), also the radar map's marks
+  const props = []; // plain boxes: quay, containers, cranes, breakwater, the lighthouse
+  const trees = [];
+  const rotY = -(CITY.a + Math.PI / 2);
   const hXZ = (x, z) => terrainH(Math.atan2(z, x), Math.hypot(x, z));
   const grad = (x, z) => [(hXZ(x + 30, z) - hXZ(x - 30, z)) / 60, (hXZ(x, z + 30) - hXZ(x, z - 30)) / 60];
-  const rotY = -(CITY.a + Math.PI / 2);
-  const place = (x, z, g, w, dp, hh, tall, roofed, slope, gx, gz) => {
-    let yaw = rotY;
-    if (slope > 0.12) yaw = Math.atan2(-gx, -gz); // laid along the contour: the box's long side across the fall line
-    out.push({ x, z, g, w, dp, hh, tall, roofed, yaw, slope });
+  const shoreV = (u) => { let v = -900; while (v < 0 && hXZ(...townAt(u, v)) < 3) v += 10; return v; }; // where the land begins, going inland
+  const addTree = (x, z, big = 1) => {
+    const g = hXZ(x, z);
+    if (g < 3) return;
+    const cyp = rng() < 0.12;
+    trees.push({ x, z, g, h: (cyp ? 11 : 6.5) * big + rng() * 5, r: (cyp ? 1.5 : 2.8 + rng() * 2.2) * big, c: tint(pick(LEAF), 0.12) });
   };
-  const lot = 84;
+  const addHouse = (x, z, g, w, dp, hh, yaw, slope, roof) => {
+    const sink = Math.min(1.5 + slope * Math.max(w, dp) * 0.5, hh * 0.4);
+    buildings.push({ kind: 'house', x, z, y0: g - sink, w, dp, hh, yaw, c: tint(pick(WALLS)), rc: tint(pick(roof === 'flat' ? FLATS : TILES)), roof });
+  };
+  const PORT_U0 = 440;
+  const PORT_U1 = 1000;
+  const portSV = shoreV((PORT_U0 + PORT_U1) / 2);
+  const inPort = (u, v) => u > PORT_U0 - 40 && u < PORT_U1 + 40 && v < portSV + 270;
   // The town proper: the plain and the slope behind it.
-  for (let iu = -16; iu <= 16; iu++) {
-    for (let iv = -6; iv <= 40; iv++) {
-      if (iu % 4 === 0 || iv % 5 === 0) continue; // the streets
-      const u = iu * lot + (rng() - 0.5) * 12;
-      const v = iv * lot + (rng() - 0.5) * 12;
-      const [x, z] = at(u, v);
+  for (let iu = -30; iu <= 30; iu++) {
+    for (let iv = -10; iv <= 80; iv++) {
+      const u0 = iu * LOT;
+      const v0 = iv * LOT;
+      const dCore = coreD(u0, v0);
+      if (iu % AVE_U === 0 || iv % AVE_V === 0) { // an avenue: a line of trees down each side
+        if (dCore < 1.05) {
+          for (const s of [-1, 1]) {
+            for (const q of [-0.25, 0.25]) {
+              if (rng() < 0.85) addTree(...townAt(iu % AVE_U === 0 ? u0 + s * 14 : u0 + q * LOT, iu % AVE_U === 0 ? v0 + q * LOT : v0 + s * 14), 0.9);
+            }
+          }
+        }
+        continue;
+      }
+      if (inPort(u0, v0)) continue;
+      const dist = Math.hypot(u0, v0 - 300);
+      const [x, z] = townAt(u0 + (rng() - 0.5) * 6, v0 + (rng() - 0.5) * 6);
       const g = hXZ(x, z);
-      if (g < 5) continue;
+      if (g < 3.2) continue;
+      const hill = 0.5 * (1 - sstep(40, 650, g)) * (1 - sstep(1200, 3600, dist));
+      const dens = Math.max(dCore < 1 ? 0.97 * (1 - 0.72 * Math.min(1, dCore)) : 0, hill);
+      if (rng() > dens) { // an empty lot: a garden, a few trees
+        if (dCore < 0.95 && rng() < 0.55) addTree(...townAt(u0 + (rng() - 0.5) * 20, v0 + (rng() - 0.5) * 20));
+        continue;
+      }
       const [gx, gz] = grad(x, z);
       const slope = Math.hypot(gx, gz);
-      if (slope > 0.5) continue; // too steep to build on
-      const dCore = Math.hypot(u, (v - 250) * 1.25) / 1250;
-      const dist = Math.hypot(u, v - 250);
-      const core = 0.92 * (1 - 0.85 * Math.min(1, dCore));
-      const hill = 0.6 * (1 - sstep(40, 650, g)) * (1 - sstep(1200, 3600, dist)) * (1 - 0.6 * sstep(0.2, 0.5, slope));
-      if (rng() > Math.max(dCore < 1 ? core : 0, hill)) continue;
-      const tall = dCore < 0.28 && slope < 0.1 && rng() < 0.3;
+      if (slope > 0.5 || rng() < 0.6 * sstep(0.2, 0.5, slope)) continue; // too steep to build on
       const onHill = slope > 0.1;
-      const w = (onHill ? 30 : 38) + rng() * (onHill ? 20 : 34);
-      const dp = (onHill ? 30 : 38) + rng() * (onHill ? 20 : 34);
-      const hh = tall ? 55 + rng() * 55 : 16 + rng() * 14 * (1.2 - Math.min(1, dCore));
-      place(x, z, g, w, dp, hh, tall, rng() < (onHill ? 0.75 : 0.5), slope, gx, gz);
+      const yaw = onHill ? Math.atan2(-gx, -gz) : rotY; // on a slope the box's long side lies across the fall line
+      const sink = Math.min(1.5 + slope * 20, 12);
+      if (onHill) { // terraces of small houses along the contour
+        const n = 1 + (rng() < 0.45 ? 1 : 0);
+        for (let i = 0; i < n; i++) {
+          const hx = x + (rng() - 0.5) * 30;
+          const hz = z + (rng() - 0.5) * 30;
+          const hg = hXZ(hx, hz);
+          if (hg < 3.2) continue;
+          addHouse(hx, hz, hg, 11 + rng() * 8, 10 + rng() * 6, 6 + rng() * 3, yaw, slope, 'gable');
+          if (rng() < 0.4) addTree(hx + (rng() - 0.5) * 24, hz + (rng() - 0.5) * 24);
+        }
+        continue;
+      }
+      const zone = dCore < 0.3 ? 0 : dCore < 0.7 ? 1 : 2;
+      if (zone === 0 && rng() < 0.22) { // a tower in the core
+        const w = 24 + rng() * 10;
+        const dp = 22 + rng() * 10;
+        const hh = 42 + rng() * 58 * Math.max(0.3, 1 - dCore * 2.5);
+        buildings.push({ kind: 'tower', x, z, y0: g - sink, w, dp, hh, yaw, c: tint(pick(GLASS)), rc: tint(pick(FLATS)), roof: 'flat' });
+      } else if (zone < 2 && rng() < 0.78) { // a block of flats
+        const w = 26 + rng() * 14;
+        const dp = 22 + rng() * 15;
+        const floors = (zone === 0 ? 5 : 3) + Math.floor(rng() * (zone === 0 ? 5 : 4));
+        buildings.push({ kind: 'block', x, z, y0: g - sink, w, dp, hh: floors * 3.1, yaw, c: tint(pick(WALLS)), rc: tint(pick(FLATS)), roof: rng() < 0.2 ? 'gable' : 'flat' });
+      } else if (zone === 2 && rng() < 0.2) { // low block at the edge
+        const w = 22 + rng() * 12;
+        const dp = 18 + rng() * 12;
+        buildings.push({ kind: 'block', x, z, y0: g - sink, w, dp, hh: (2 + Math.floor(rng() * 3)) * 3.1, yaw, c: tint(pick(WALLS)), rc: tint(pick(TILES)), roof: 'gable' });
+      } else { // up to four houses in the lot
+        for (const [su, sv] of [[-0.25, -0.25], [0.25, -0.25], [-0.25, 0.25], [0.25, 0.25]]) {
+          if (rng() > (zone === 2 ? 0.78 : 0.55)) continue;
+          const [hx, hz] = townAt(u0 + su * LOT + (rng() - 0.5) * 3, v0 + sv * LOT + (rng() - 0.5) * 3);
+          const hg = hXZ(hx, hz);
+          if (hg < 3.2) continue;
+          addHouse(hx, hz, hg, 11 + rng() * 6, 10 + rng() * 5, 6 + rng() * 3.5, yaw, slope, rng() < 0.82 ? 'gable' : 'flat');
+          if (rng() < 0.3) addTree(hx + (rng() - 0.5) * 18, hz + (rng() - 0.5) * 18);
+        }
+      }
     }
   }
+  // The harbour: a quay along the shore with sheds behind it, rows of containers, three gantry cranes and a breakwater.
+  const QUAY = 4.8;
+  const slab = (u, v, w, d, y0, h, c) => { const [x, z] = townAt(u, v); props.push({ x, z, y0, w, d, h, yaw: rotY, c }); };
+  for (let u = PORT_U0; u < PORT_U1; u += 40) {
+    const sv = shoreV(u + 20);
+    slab(u + 20, sv + 17, 41, 46, -20, QUAY + 20, [0.6, 0.58, 0.54]);
+    for (let r = 0; r < 5; r++) { // the container stacks (a few lots left empty for the lorries)
+      if (rng() < 0.3) continue;
+      const stack = 1 + Math.floor(rng() * 3);
+      const c = tint(pick(BOXES), 0.1);
+      for (let k = 0; k < stack; k++) slab(u + 20 + (rng() - 0.5) * 3, sv + 18 + r * 3.3, 12.2, 2.6, QUAY + k * 2.6, 2.6, c);
+    }
+    if ((u - PORT_U0) % 80 === 0) {
+      for (const row of [66, 112]) {
+        const [x, z] = townAt(u + 20, shoreV(u + 20) + row);
+        const g = hXZ(x, z);
+        buildings.push({ kind: 'shed', x, z, y0: g - 1.5, w: 62, dp: 28, hh: 9 + rng() * 3, yaw: rotY, c: tint(rng() < 0.5 ? [0.78, 0.8, 0.82] : [0.84, 0.82, 0.74]), rc: tint([0.45, 0.5, 0.55]), roof: 'gable', plain: true });
+      }
+    }
+  }
+  for (const cu of [520, 680, 840]) { // the gantry cranes: four legs, a boom out over the water and a house on it
+    const sv = shoreV(cu);
+    const red = [0.78, 0.3, 0.2];
+    for (const du of [-8, 8]) {
+      for (const dv of [4, 18]) slab(cu + du, sv + dv, 1.8, 1.8, QUAY, 28, red);
+      slab(cu + du, sv - 8, 1.6, 66, QUAY + 28, 2.4, red); // the boom over the ship
+    }
+    for (const dv of [4, 18]) slab(cu, sv + dv, 18, 1.8, QUAY + 28, 1.8, red);
+    slab(cu, sv + 11, 7, 6, QUAY + 30.4, 5, [0.85, 0.85, 0.82]);
+    slab(cu, sv - 20, 3, 3, QUAY + 25.4, 2.4, [0.3, 0.3, 0.32]);
+  }
+  const bu = PORT_U1 + 60; // the breakwater: out to sea, then along the harbour
+  const bsv = shoreV(bu);
+  slab(bu, bsv - 140, 14, 330, -20, 25, [0.5, 0.49, 0.47]);
+  slab(bu - 140, bsv - 296, 300, 14, -20, 25, [0.5, 0.49, 0.47]);
+  // The pier out from the shore at u = 320, straight out to sea; and the lighthouse on the point at the town's end.
+  const psv = shoreV(320);
+  slab(320, psv - 150, 16, 420, 1, 4, [0.4, 0.4, 0.42]);
+  const lsv = shoreV(-1150) + 40;
+  const [lx, lz] = townAt(-1150, lsv);
+  const lg = hXZ(lx, lz);
+  props.push({ shape: 'cone', x: lx, z: lz, y0: lg - 2, h: 56, r0: 9, r1: 6, c: [0.95, 0.94, 0.9] });
+  props.push({ shape: 'cone', x: lx, z: lz, y0: lg + 54, h: 6, r0: 7, r1: 7, c: [0.35, 0.35, 0.38] });
+  props.push({ shape: 'cone', x: lx, z: lz, y0: lg + 60, h: 4, r0: 7, r1: 0.5, c: [0.55, 0.2, 0.18] });
   // Two villages high on the slopes: the flattest ground between 150 and 450 m up, 1.5 to 6 km behind the shore.
   for (const va of [1.55, 2.55]) {
     let best = null;
@@ -552,7 +685,7 @@ function townLayout() {
       }
     }
     if (!best) continue;
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0; i < 110; i++) {
       const ang = rng() * Math.PI * 2;
       const rr = Math.sqrt(rng()) * 520;
       const x = best.x + Math.cos(ang) * rr;
@@ -561,49 +694,163 @@ function townLayout() {
       const [gx, gz] = grad(x, z);
       const slope = Math.hypot(gx, gz);
       if (g < 100 || slope > 0.45) continue;
-      place(x, z, g, 30 + rng() * 22, 30 + rng() * 22, 14 + rng() * 12, false, rng() < 0.8, slope, gx, gz);
+      addHouse(x, z, g, 12 + rng() * 9, 11 + rng() * 7, 6 + rng() * 4, slope > 0.12 ? Math.atan2(-gx, -gz) : rng() * Math.PI, slope, 'gable');
+      if (rng() < 0.35) addTree(x + (rng() - 0.5) * 26, z + (rng() - 0.5) * 26);
     }
   }
-  townMemo = out;
-  return out;
+  townMemo = { buildings, props, trees };
+  return townMemo;
 }
 // Where the buildings are, metres from the ship (x north, z east) with their size, for the radar map.
 export function townSpots() {
-  return townLayout().map((b) => [b.x, b.z, Math.max(b.w, b.dp)]);
+  return townLayout().buildings.map((b) => [b.x, b.z, Math.max(b.w, b.dp)]);
+}
+// A tile of one floor of plain wall with a window, repeated up and across the walls (the vertex colours tint it).
+function windowTexture() {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, 64, 64);
+  g.fillStyle = '#e6e6e6'; // a shade of lintel above and sill below
+  g.fillRect(16, 8, 32, 4);
+  g.fillRect(16, 48, 32, 3);
+  const glass = g.createLinearGradient(0, 12, 0, 48);
+  glass.addColorStop(0, '#61778e');
+  glass.addColorStop(1, '#2e3a48');
+  g.fillStyle = glass;
+  g.fillRect(20, 12, 24, 36);
+  g.fillStyle = '#c8c8c8'; // the frame's middle bar
+  g.fillRect(31, 12, 2, 36);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
 }
 function createCity() {
-  const hz = 0.16;
-  const veil = (hex) => new THREE.Color(hex).lerp(new THREE.Color(0xa0c4ee), hz);
-  const walls = [0xe8e2d6, 0xdcc9a3, 0xc9a46a, 0xd9b5a0, 0xb9c9d6, 0xe3d9c4].map((c) => new THREE.MeshLambertMaterial({ color: veil(c) }));
-  const roofM = new THREE.MeshLambertMaterial({ color: veil(0xa5503a) });
-  const flatM = new THREE.MeshLambertMaterial({ color: veil(0x8d8f90) });
-  const pierM = new THREE.MeshLambertMaterial({ color: veil(0x55575a) });
-  const whiteM = new THREE.MeshLambertMaterial({ color: veil(0xf4f1ea) });
-  const rng = mulberry32(78);
-  const k = new Kit();
-  for (const b of townLayout()) {
-    const sink = Math.min(1 + b.slope * Math.max(b.w, b.dp) * 0.5, b.hh * 0.4); // set into the slope: the uphill side buried
-    const y = b.g - sink + b.hh / 2;
-    k.add(new THREE.BoxGeometry(b.w, b.hh, b.dp), walls[Math.floor(rng() * walls.length)], { pos: [b.x, y, b.z], rot: [0, b.yaw, 0] });
-    if (b.roofed) k.add(new THREE.BoxGeometry(b.w * 1.06, 5, b.dp * 1.06), roofM, { pos: [b.x, y + b.hh / 2 + 2, b.z], rot: [0, b.yaw, 0] });
-    else k.add(new THREE.BoxGeometry(b.w * 0.96, 1.4, b.dp * 0.96), flatM, { pos: [b.x, y + b.hh / 2 + 0.6, b.z], rot: [0, b.yaw, 0] });
+  const { buildings, props, trees } = townLayout();
+  const sl = Math.hypot(...SUN);
+  const mix = (a, b, t) => a + (b - a) * t;
+  const walls = { pos: [], col: [], uv: [], idx: [], tex: true }; // wall quads carry the window texture
+  const solid = { pos: [], col: [], uv: [], idx: [], tex: false }; // everything else is one flat colour a face
+  // One vertex: lit by the mountains' sun, darkened by `ao`, veiled with the same haze by distance, in linear light.
+  const vert = (m, p, c, n, ao, u, v) => {
+    const dif = Math.max(0, (n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]) / sl);
+    const shade = (0.4 + 0.82 * dif) * ao;
+    const haze = Math.min(1, (1 - Math.exp(-((Math.hypot(p[0], p[2]) / 21000) ** 1.2))) * (1 - 0.32 * sstep(0, 1400, p[1])));
+    for (let k = 0; k < 3; k++) m.col.push(Math.min(1, mix(Math.min(1, c[k] * shade), HAZE[k], haze)) ** 2.2);
+    m.pos.push(p[0], p[1], p[2]);
+    m.uv.push(u, v);
+  };
+  const face = (m, pts, c, n, aos, uvs) => { // a convex polygon, `n` its outward normal
+    const i0 = m.pos.length / 3;
+    for (let i = 0; i < pts.length; i++) vert(m, pts[i], c, n, aos ? aos[i] : 1, uvs ? uvs[i][0] : 0, uvs ? uvs[i][1] : 0);
+    for (let i = 1; i < pts.length - 1; i++) m.idx.push(i0, i0 + i, i0 + i + 1);
+  };
+  const unit = (v) => { const l = Math.hypot(...v) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+  // A box: walls, a flat roof (unless `roof` is 'gable', then a pitched one over the longer side) and, for gables, the end triangles.
+  const box = (m, b, c, rc, roof, floor = 3.1) => {
+    const cy = Math.cos(b.yaw);
+    const sy = Math.sin(b.yaw);
+    const P = (lx, y, lz) => [b.x + lx * cy + lz * sy, y, b.z - lx * sy + lz * cy];
+    const N = (lx, ly, lz) => unit([lx * cy + lz * sy, ly, -lx * sy + lz * cy]);
+    const y0 = b.y0;
+    const y1 = y0 + b.hh;
+    const hw = b.w / 2;
+    const hd = b.dp / 2;
+    const yAo = y0 + Math.min(8, b.hh * 0.5); // the dark foot of each wall
+    const rows = [[y0, 0.62], [yAo, 1], [y1, 1]];
+    const sides = [[[hw, -hd], [hw, hd], [1, 0], b.dp], [[-hw, hd], [-hw, -hd], [-1, 0], b.dp], [[hw, hd], [-hw, hd], [0, 1], b.w], [[-hw, -hd], [hw, -hd], [0, -1], b.w]];
+    for (const [A, B, n, wd] of sides) {
+      for (let r = 0; r < 2; r++) {
+        const [ya, aa] = rows[r];
+        const [yb, ab] = rows[r + 1];
+        if (yb - ya < 0.01) continue;
+        face(m, [P(A[0], ya, A[1]), P(B[0], ya, B[1]), P(B[0], yb, B[1]), P(A[0], yb, A[1])], c, N(n[0], 0, n[1]), [aa, aa, ab, ab],
+          [[0, (ya - y0) / floor], [wd / 3.6, (ya - y0) / floor], [wd / 3.6, (yb - y0) / floor], [0, (yb - y0) / floor]]);
+      }
+    }
+    if (roof === 'gable') {
+      const ov = 0.7;
+      const rh = Math.min(b.w, b.dp) * 0.3 + 0.8;
+      const along = b.w >= b.dp; // the ridge runs along the longer side
+      const [L, S] = along ? [hw + ov, hd + ov] : [hd + ov, hw + ov];
+      const at = (a, h, s) => (along ? P(a, y1 + h, s) : P(s, y1 + h, a)); // a along the ridge, s across it
+      const nr = (s) => (along ? N(0, S, s * rh) : N(s * rh, S, 0));
+      for (const s of [-1, 1]) {
+        face(solid, [at(-L, 0, s * S), at(L, 0, s * S), at(L, rh, 0), at(-L, rh, 0)], rc, nr(s));
+      }
+      for (const e of [-1, 1]) {
+        const E = along ? hw : hd;
+        const Sh = along ? hd : hw;
+        face(solid, [at(e * E, 0, -Sh), at(e * E, 0, Sh), at(e * E, rh * 0.85, 0)], c, along ? N(e, 0, 0) : N(0, 0, e), [0.9, 0.9, 1]);
+      }
+    } else {
+      face(solid, [P(-hw, y1, -hd), P(hw, y1, -hd), P(hw, y1, hd), P(-hw, y1, hd)], rc, [0, 1, 0]);
+    }
+  };
+  const plain = (b) => { // a solid-coloured box, the same shape of walls and roof
+    box(solid, { x: b.x, z: b.z, y0: b.y0, hh: b.h, w: b.w, dp: b.d, yaw: b.yaw }, b.c, b.c, 'flat');
+  };
+  const cone = (b) => { // a round tower: n sides, a radius at the foot and at the top
+    const n = 10;
+    const y1 = b.y0 + b.h;
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * Math.PI * 2;
+      const a1 = ((i + 1) / n) * Math.PI * 2;
+      const am = (a0 + a1) / 2;
+      const q = (a, r, y) => [b.x + Math.cos(a) * r, y, b.z + Math.sin(a) * r];
+      face(solid, [q(a0, b.r0, b.y0), q(a1, b.r0, b.y0), q(a1, b.r1, y1), q(a0, b.r1, y1)], b.c, unit([Math.cos(am), 0.1, Math.sin(am)]), [0.7, 0.7, 1, 1]);
+    }
+    if (b.r1 > 1) face(solid, Array.from({ length: n }, (_, i) => [b.x + Math.cos((i / n) * Math.PI * 2) * b.r1, y1, b.z + Math.sin((i / n) * Math.PI * 2) * b.r1]), b.c, [0, 1, 0]);
+  };
+  for (const b of buildings) {
+    if (b.kind === 'tower') {
+      box(walls, b, b.c, b.rc, 'flat', 3.6);
+      const top = b.y0 + b.hh; // a smaller crown and an aerial
+      plain({ x: b.x, z: b.z, y0: top, h: 6, w: b.w * 0.55, d: b.dp * 0.55, yaw: b.yaw, c: [b.rc[0] * 0.9, b.rc[1] * 0.9, b.rc[2] * 0.9] });
+      plain({ x: b.x, z: b.z, y0: top + 6, h: 14, w: 0.8, d: 0.8, yaw: b.yaw, c: [0.5, 0.5, 0.52] });
+    } else if (b.plain) {
+      box(solid, b, b.c, b.rc, b.roof);
+    } else {
+      box(walls, b, b.c, b.rc, b.roof, b.kind === 'house' ? 3 : 3.1);
+      if (b.kind === 'block' && b.roof === 'flat') { // the stair head and the air handling
+        const top = b.y0 + b.hh;
+        plain({ x: b.x + b.w * 0.15, z: b.z, y0: top, h: 2.6, w: 5, d: 5, yaw: b.yaw, c: [b.rc[0] * 1.15, b.rc[1] * 1.15, b.rc[2] * 1.15] });
+      }
+    }
   }
-  // The pier: out from the shore at u = 320, straight out to sea; and the lighthouse on the point at the town's end.
-  const ca = Math.cos(CITY.a);
-  const sa = Math.sin(CITY.a);
-  const at = (u, v) => [CITY.x + u * -sa + v * ca, CITY.z + u * ca + v * sa];
-  const hAt = (u, v) => { const [x, z] = at(u, v); return terrainH(Math.atan2(z, x), Math.hypot(x, z)); };
-  const rotY = -(CITY.a + Math.PI / 2);
-  let vs = -900;
-  while (vs < 0 && hAt(320, vs) < 3) vs += 10;
-  const [px, pz] = at(320, vs - 150);
-  k.add(new THREE.BoxGeometry(16, 4, 420), pierM, { pos: [px, 3, pz], rot: [0, rotY + Math.PI, 0] });
-  let ve = -900;
-  while (ve < 0 && hAt(-1150, ve) < 3) ve += 10;
-  const [lx, lz] = at(-1150, ve + 40);
-  k.add(new THREE.CylinderGeometry(6, 9, 55, 12), whiteM, { pos: [lx, hAt(-1150, ve + 40) + 26, lz] });
-  k.add(new THREE.CylinderGeometry(7, 7, 6, 12), pierM, { pos: [lx, hAt(-1150, ve + 40) + 58, lz] });
-  const city = k.build({ name: 'city', castShadow: false, receiveShadow: false });
+  for (const p of props) (p.shape === 'cone' ? cone : plain)(p);
+  for (const t of trees) { // a bicone: the foliage widest low down, the trunk hidden beneath
+    const n = 5;
+    const rot = (t.x * 7.3 + t.z * 3.1) % 6.28;
+    const eq = Array.from({ length: n }, (_, i) => [t.x + Math.cos(rot + (i / n) * Math.PI * 2) * t.r, t.g + t.h * 0.42, t.z + Math.sin(rot + (i / n) * Math.PI * 2) * t.r]);
+    const lo = [t.x, t.g + t.h * 0.12, t.z];
+    const hi = [t.x, t.g + t.h, t.z];
+    const mid = [t.x, t.g + t.h * 0.5, t.z];
+    for (let i = 0; i < n; i++) {
+      const a = eq[i];
+      const b = eq[(i + 1) % n];
+      for (const [apex, ao] of [[lo, 0.55], [hi, 1]]) {
+        const nn = unit([(a[0] + b[0]) / 2 - mid[0], apex === hi ? 0.8 : -0.5, (a[2] + b[2]) / 2 - mid[2]]);
+        face(solid, [a, b, apex], t.c, nn, [0.85, 0.85, ao]);
+      }
+    }
+  }
+  const mesh = (m, map) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(m.pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(m.col, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(m.uv, 2));
+    g.setIndex(m.idx);
+    return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, map, fog: false, toneMapped: false, side: THREE.DoubleSide }));
+  };
+  const city = new THREE.Group();
+  city.name = 'city';
+  city.add(mesh(walls, windowTexture()), mesh(solid, null));
   city.traverse((o) => { o.frustumCulled = false; o.renderOrder = -1; });
   return city;
 }
@@ -643,6 +890,9 @@ function createTallMountains() {
   const GREEN = [0.2, 0.29, 0.15];
   const DRY = [0.45, 0.38, 0.27];
   const ROCK = [0.5, 0.47, 0.44];
+  const URBAN = [0.5, 0.47, 0.42]; // the ground under the town: paving, yards and bare earth
+  const ASPHALT = [0.34, 0.34, 0.35];
+  const SAND = [0.8, 0.72, 0.54]; // the beach along every shore
   for (let k = 0; k < n; k++) {
     const h = pos[k * 3 + 1];
     const ny = nor[k * 3 + 1];
@@ -654,8 +904,14 @@ function createTallMountains() {
     const dif = Math.max(0, (nor[k * 3] * SUN[0] + nor[k * 3 + 1] * SUN[1] + nor[k * 3 + 2] * SUN[2]) / sl);
     const shade = (0.3 + 0.92 * dif) * (0.86 + 0.24 * ny);
     const haze = Math.min(1, (1 - Math.exp(-((d / 21000) ** 1.2))) * (1 - 0.32 * sstep(0, 1400, h)));
+    const sand = sstep(-6, 0.5, h) * (1 - sstep(1.5, 4.2, h));
+    const [built, street] = townGround(pos[k * 3], pos[k * 3 + 2]);
     for (let c = 0; c < 3; c++) {
-      let v = mix(mix(DRY[c], GREEN[c], veg), ROCK[c], rock) * grain * shade;
+      let v = mix(mix(DRY[c], GREEN[c], veg), ROCK[c], rock);
+      v = mix(v, SAND[c], sand);
+      v = mix(v, URBAN[c], 0.85 * built);
+      v = mix(v, ASPHALT[c], 0.8 * street);
+      v *= grain * shade;
       v = mix(v, HAZE[c], haze);
       col[k * 3 + c] = Math.min(1, v) ** 2.2; // sRGB to the linear values the renderer expects
     }
