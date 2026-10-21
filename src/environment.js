@@ -13,7 +13,7 @@ const CALM_ZENITH = new THREE.Color(0, 0.16, 1.4);
 
 // `calm` is the drill's look: a deeper, quieter sea and a bluer sky, so ships and readouts stand out (flatter
 // distant waves with no moire stripes, less sky reflection and glitter).
-export function createEnvironment(renderer, scene, { calm = false } = {}) {
+export function createEnvironment(renderer, scene, { calm = false, tallMountains = false } = {}) {
   const horizon = calm ? CALM_HORIZON : HORIZON;
   const sunDir = new THREE.Vector3().setFromSphericalCoords(
     1, THREE.MathUtils.degToRad(90 - SUN_ELEVATION), THREE.MathUtils.degToRad(SUN_AZIMUTH),
@@ -82,7 +82,7 @@ export function createEnvironment(renderer, scene, { calm = false } = {}) {
   const ocean = createOcean(sunDir, calm, horizon);
   scene.add(ocean);
   const clouds = createClouds(calm);
-  const mountains = calm ? createMountains() : null;
+  const mountains = calm ? (tallMountains ? createTallMountains() : createMountains()) : null;
   if (mountains) scene.add(mountains);
   scene.add(clouds);
   const CLOUD_PERIOD = 26000; // the cloud field repeats this often, so it never runs out under a far-flying camera
@@ -359,7 +359,7 @@ function createClouds(calm = false) {
   return group;
 }
 
-// Distant mountains for the drill: three ranges on the horizon in an arc, each one mesh of flat-coloured triangles (no textures, no
+// Solo Air Defense only (`tallMountains`): three ranges on the horizon in an arc, each one mesh of flat-coloured triangles (no textures, no
 // lighting): jagged ridged-noise peaks, lit a little on the side that faces the sun, with soft spurs running down their slopes, and bluer and hazier toward the sea and the
 // farther away they are. Static, far enough that moving the camera barely shifts them.
 const MOUNT_ARC = [-0.3, 3.4]; // radians: an arc of about 210 degrees
@@ -415,7 +415,7 @@ export function ridgeAngle(dx, dz, eyeY = 0) {
 
 const ROW_F = [0, 0.28, 0.58, 0.82, 1]; // the rows of vertices between the foot (just under the sea) and the crest, as fractions of the height
 const HAZE = [0.45, 0.62, 0.9]; // the colour the air turns the foot of a range to
-function createMountains() {
+function createTallMountains() {
   const A0 = MOUNT_ARC[0];
   const A1 = MOUNT_ARC[1];
   const pos = [];
@@ -452,6 +452,50 @@ function createMountains() {
         const q = p + R;
         idx.push(p, q, p + 1, p + 1, q, q + 1);
       }
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setIndex(idx);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide }));
+  mesh.name = 'mountains';
+  mesh.frustumCulled = false;
+  mesh.renderOrder = -1; // behind the sea and the ships
+  return mesh;
+}
+
+// Distant mountains for the drill and the formations: three ridge lines on the horizon in an arc, each a strip of flat-coloured
+// triangles (about 1,500 in all, one mesh, no textures, no lighting), paler the farther away so the air seems to thicken.
+function createMountains() {
+  const rng = mulberry32(31);
+  const layers = [
+    { r: 13000, h: 620, col: [0.5, 0.6, 0.72], n: 260 },
+    { r: 10600, h: 470, col: [0.34, 0.45, 0.58], n: 260 },
+    { r: 8800, h: 330, col: [0.2, 0.3, 0.42], n: 260 },
+  ];
+  const A0 = -0.3;
+  const A1 = 3.4; // radians: an arc of about 210 degrees
+  const pos = [];
+  const col = [];
+  const idx = [];
+  for (const L of layers) {
+    const p = [rng() * 6.28, rng() * 6.28, rng() * 6.28];
+    const base = pos.length / 3;
+    for (let i = 0; i <= L.n; i++) {
+      const t = i / L.n;
+      const a = A0 + (A1 - A0) * t;
+      const n = 0.5 * Math.sin(a * 7 + p[0]) + 0.3 * Math.sin(a * 17 + p[1]) + 0.2 * Math.sin(a * 41 + p[2]);
+      const env = Math.sin(Math.PI * t) ** 0.6; // the range tapers into the sea at both ends
+      const top = L.h * (0.3 + 0.7 * (0.5 + 0.5 * n)) * env;
+      const x = Math.cos(a) * L.r;
+      const z = Math.sin(a) * L.r;
+      pos.push(x, -40, z, x, top, z);
+      col.push(L.col[0] * 0.8, L.col[1] * 0.8, L.col[2] * 0.85, L.col[0] * 1.1, L.col[1] * 1.1, L.col[2] * 1.08);
+    }
+    for (let i = 0; i < L.n; i++) {
+      const k = base + i * 2;
+      idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3);
     }
   }
   const geo = new THREE.BufferGeometry();

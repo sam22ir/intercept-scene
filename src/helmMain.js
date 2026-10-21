@@ -46,7 +46,7 @@ controls.maxPolarAngle = Math.PI * 0.495;
 controls.enabled = false;
 const rig = new CameraRig(camera, controls);
 
-const env = createEnvironment(renderer, scene, { calm: true });
+const env = createEnvironment(renderer, scene, { calm: true, tallMountains: true });
 env.setShadowSize(1024);
 env.ocean.material.uniforms.uShipX.value = 1e7; // the shader's straight-line wake: this ship turns, she has her own
 const ship = createShip({ catapult: false, helicopter: true });
