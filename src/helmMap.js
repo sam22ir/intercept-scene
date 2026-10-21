@@ -177,15 +177,7 @@ export function createHelmMap() {
       ctx.stroke();
       ctx.setLineDash([]);
     }
-    // The scale: each ring is labelled with its range, and a bar of a round length stands low on the disc.
-    ctx.font = '600 7.5px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    for (let i = 1; i <= 4; i++) {
-      const rr = (R - 6) * (i / 4);
-      ctx.fillText(kmText((scale * i) / 4).replace(' km', 'km'), R + rr * 0.7071, R - rr * 0.7071 - 1);
-    }
+    // The scale: a bar of a round length stands low on the disc (no numbers on the rings or the bar; the corner label gives the range).
     const nice = [200, 500, 1000, 2000, 5000, 10000].reduce((best, m) => (Math.abs(m * k - R * 0.5) < Math.abs(best * k - R * 0.5) ? m : best), 1000);
     const bw = nice * k;
     const by = R + R * 0.56;
@@ -195,8 +187,6 @@ export function createHelmMap() {
     ctx.moveTo(R - bw / 2, by - 3); ctx.lineTo(R - bw / 2, by); ctx.lineTo(R + bw / 2, by); ctx.lineTo(R + bw / 2, by - 3);
     ctx.stroke();
     ctx.lineWidth = 1;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-    ctx.fillText(kmText(nice), R, by - 8);
     // The heading line.
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.beginPath();
