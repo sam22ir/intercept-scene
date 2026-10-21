@@ -71,17 +71,13 @@ function tag(kind) {
 }
 
 // --- The ship's wake, as a real one: four ribbons laid along the track she has sailed over the last minute ----------------
-//  core   the propeller wash right behind the stern: narrow, dense white foam, streaky along the track, thinning out
+//  core   the propeller wash right behind the stern: dense white foam, streaky along the track, thinning out
 //  slick  the wide turbulent water round it: faint and pale, lasting longer
-//  arms   the two diverging arms of the bow wave (the wedge a hull throws off, ARM_SLOPE either side of the track), each a
-//         thin line of foam that starts at the bow and widens and fades with distance
 // The foam is a generated texture laid still on the water (its length runs along the track), so it stays where she left it:
 // the patches do not travel with her. They curve with her turns, because they follow the track.
 const WAKE_N = 90;
 const WAKE_DT = 0.6;
 const WAKE_SPAN = WAKE_N * WAKE_DT; // s of track kept
-const SHIP_LEN = 112; // m, stern to bow
-const ARM_SLOPE = 0.2; // lateral growth of the bow-wave arms per metre behind the bow
 const wakeHist = [];
 let wakeLast = -Infinity;
 let pathLen = 0; // m sailed since the start: the texture's coordinate along the track
@@ -140,8 +136,6 @@ function makeRibbon(sections, order) {
 }
 const wakeCore = makeRibbon(WAKE_N, 2);
 const wakeSlick = makeRibbon(WAKE_N, 1);
-const wakeArmL = makeRibbon(WAKE_N + 1, 3);
-const wakeArmR = makeRibbon(WAKE_N + 1, 3);
 // Writes cross-section k of a ribbon: centre (cx, cz), across-track direction (px, pz), half width, alpha, rgb, texture coordinates.
 function ribbonSection(r, k, cx, cz, px, pz, half, alpha, rgb, v, vScale, y) {
   r.pos.set([cx + px * half, y, cz + pz * half, cx, y, cz, cx - px * half, y, cz - pz * half], k * 9);
@@ -167,7 +161,7 @@ function updateWake() {
   }
   for (let i = 0; i < WAKE_N; i++) {
     const h = wakeHist[i];
-    if (!h) { hideSection(wakeCore, i); hideSection(wakeSlick, i); hideSection(wakeArmL, i + 1); hideSection(wakeArmR, i + 1); continue; }
+    if (!h) { hideSection(wakeCore, i); hideSection(wakeSlick, i); continue; }
     const age = sim.t - h.t;
     const u = Math.min(age / WAKE_SPAN, 1);
     const psi = i === 0 ? sim.psi : h.psi; // the newest section is at the stern, wherever she is now
@@ -176,29 +170,13 @@ function updateWake() {
     const bx = i === 0 ? sx : h.x;
     const bz = i === 0 ? sz : h.z;
     const s = i === 0 ? pathLen : h.s;
-    const behind = pathLen - s; // m behind the stern
     const sf = Math.min(h.u / 7, 1); // no wash to speak of at a crawl
     // The wash: narrow and dense, the foam thinning out over the minute; wider and stronger in a hard turn.
     ribbonSection(wakeCore, i, bx, bz, px, pz, (4.5 + 6.5 * Math.sqrt(u)) * (1 + 0.5 * h.turn), Math.min(1.0 * (1 - u) ** 1.2 * sf * (1 + 0.3 * h.turn), 1), CORE_RGB, s, 40, 0.45);
     // The slick: the turbulent water round it.
     ribbonSection(wakeSlick, i, bx, bz, px, pz, 4 + 17 * Math.pow(u, 0.55), 0.34 * (1 - u) ** 1.2 * sf, SLICK_RGB, s, 90, 0.4);
-    // The arms of the bow wave: from the bow, a thin line of foam either side of the track, spreading at ARM_SLOPE.
-    const fromBow = behind + SHIP_LEN;
-    const off = 7 + fromBow * ARM_SLOPE;
-    const armHalf = 0.9 + 0.012 * fromBow;
-    const armA = Math.min(0.62 * (1 - u) ** 1.5 * sf, 0.8);
-    ribbonSection(wakeArmL, i + 1, bx + px * off, bz + pz * off, px, pz, armHalf, armA, CORE_RGB, s, 40, 0.5);
-    ribbonSection(wakeArmR, i + 1, bx - px * off, bz - pz * off, px, pz, armHalf, armA, CORE_RGB, s, 40, 0.5);
   }
-  // Section 0 of the arms is the bow itself: the two arms start where the hull parts the water.
-  const bowx = sim.x + cs * 58;
-  const bowz = sim.z + sn * 58;
-  const bpx = -sn;
-  const bpz = cs;
-  const sfNow = Math.min(Math.max(sim.u, 0) / 7, 1);
-  ribbonSection(wakeArmL, 0, bowx + bpx * 6, bowz + bpz * 6, bpx, bpz, 1.6, 0.8 * sfNow, CORE_RGB, pathLen + SHIP_LEN, 40, 0.5);
-  ribbonSection(wakeArmR, 0, bowx - bpx * 6, bowz - bpz * 6, bpx, bpz, 1.6, 0.8 * sfNow, CORE_RGB, pathLen + SHIP_LEN, 40, 0.5);
-  for (const r of [wakeCore, wakeSlick, wakeArmL, wakeArmR]) {
+  for (const r of [wakeCore, wakeSlick]) {
     r.geo.attributes.position.needsUpdate = true;
     r.geo.attributes.color.needsUpdate = true;
     r.geo.attributes.uv.needsUpdate = true;
