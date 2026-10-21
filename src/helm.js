@@ -74,6 +74,9 @@ export const DIRECTOR_EYE = new THREE.Vector3(14.4, 15.6, 0);
 
 // --- The drones -------------------------------------------------------------------------------------------
 export const RADAR_RANGE = 5000; // m
+const MAX_SUMMONED = 8; // drones in the air at once, for the summon button
+const MASK_RANGE = 3000; // m: closer than this a drone is never behind the mountains
+const SKY_EYE = 15; // m: the radar's height above the sea, for the ridge line
 const SPAWN_RANGE = [5300, 5800]; // just beyond the radar: it picks them up a few seconds later
 const DRONE_SPEED = 46; // m/s cruising
 const ATTACK_SPEED = 56; // m/s on the final dive
@@ -104,7 +107,7 @@ for (const y of [0.3, -0.3]) for (let c = 0; c < 4; c++) CELL_MOUTHS.push(new TH
 // Two 30 mm seven-barrel rotary guns on the aft deckhouse roof, one each side (the pivots in the ship's frame).
 export const GUN_MOUNTS = [new THREE.Vector3(-33.6, 13.3, -4.2), new THREE.Vector3(-33.6, 13.3, 4.2)];
 export const GUN_RANGE = 2600; // m
-export const GUN_ROUNDS = 900; // per gun
+export const GUN_ROUNDS = 2500; // per gun
 export const GUN_BLOCK = rad(40); // each gun's own dead zone reaches this far past the bow on its own side ...
 // ... and, across the roof, the superstructure (radome, funnel, mast) hides the far side up to 110 degrees from the bow, so each gun
 // has its own dead zone, and each fires alone: yaw is + toward port, so the port gun is blind from 110 degrees to starboard to
@@ -154,6 +157,7 @@ function mulberry32(seed) {
 export class HelmSim {
   constructor({ seed = 7 } = {}) {
     this.seed = seed;
+    this.skyline = null; // (dx, dz, eyeY) -> angle of the ridge line in that direction; set by the scene
     this.reset();
   }
 
@@ -228,9 +232,9 @@ export class HelmSim {
 
   // --- targets ----------------------------------------------------------------------------------------------
   get live() { return this.drones.filter((d) => d.alive); }
-  get detected() { return this.drones.filter((d) => d.alive && d.detected); }
+  get detected() { return this.drones.filter((d) => d.alive && d.detected && !d.hidden); }
   get target() {
-    const d = this.drones.find((x) => x.id === this.targetId && x.alive && x.detected);
+    const d = this.drones.find((x) => x.id === this.targetId && x.alive && x.detected && !x.hidden);
     return d ?? null;
   }
   nearest() {
@@ -256,7 +260,47 @@ export class HelmSim {
     return null;
   }
 
-  fire() {
+  // Where the launcher must point for a drone: where it will be when the round is on its way (the slew, plus a moment),
+  // in the ship's frame (the launcher turns with her).
+  aimAt(d) {
+    const lead = SLEW_TIME + ACQUIRE_TIME + LOCK_HOLD + 1.2;
+    _a.copy(d.pos).addScaledVector(d.vel, lead).sub(this.shipVel(_b).multiplyScalar(lead));
+    const rel = this.toLocal(_a, _c).sub(LAUNCHER_PIVOT);
+    return { yaw: Math.atan2(-rel.z, rel.x), pitch: clamp(Math.atan2(rel.y, Math.hypot(rel.x, rel.z)), rad(20), rad(70)) };
+  }
+
+  // M: make a missile ready (the launcher turns onto the target and locks, then holds); pressed again it stands down.
+  arm() {
+    if (this.out) return;
+    if (this.shot?.hold) {
+      this.shot = null;
+      this.cellsUsed -= 1;
+      this.lastFire = this.t - 3; // the launcher goes back to the stow
+      this.lastAim = { ...this.launcher };
+      this.say('Missile stood down', '');
+      return;
+    }
+    this.fire(true);
+  }
+
+  // F: launch the ready missile; with none ready it makes one ready and launches it as soon as it is locked.
+  launchReady() {
+    if (this.shot) {
+      if (this.shot.hold) { this.shot.hold = false; this.say('Launching', 'warn'); }
+      return;
+    }
+    this.fire();
+  }
+
+  // How a drone stands to the box's fire zone: the range from the launcher, by how much it is outside the range limit
+  // (toGo: m still to close, negative inside) and outside the arc (turn: degrees of the ship's turn that bring it in, 0 inside).
+  zone(d) {
+    const range = _a.copy(d.pos).sub(this.toWorld(LAUNCHER_PIVOT, _b)).length();
+    const off = Math.abs(this.relBearing(d.pos));
+    return { range, toGo: range - MISSILE_RANGE, tooClose: range < MIN_RANGE, turn: Math.max(0, Math.round((off - ARC) * 180 / Math.PI)), off: Math.round(off * 180 / Math.PI) };
+  }
+
+  fire(hold = false) {
     if (this.out) return;
     if (this.cellsLeft <= 0) { this.say('No missiles left', 'warn'); return; }
     if (this.shot) { this.say('The launcher is still turning', 'warn'); return; }
@@ -266,17 +310,10 @@ export class HelmSim {
     this.targetId = d.id;
     const why = this.engageable(d);
     if (why) { this.say(why, 'warn'); return; }
-    // Aim where the drone will be when the round is on its way (the slew, plus a moment), in the ship's frame
-    // (the launcher turns with her).
-    const lead = SLEW_TIME + ACQUIRE_TIME + LOCK_HOLD + 1.2;
-    _a.copy(d.pos).addScaledVector(d.vel, lead).sub(this.shipVel(_b).multiplyScalar(lead));
-    const rel = this.toLocal(_a, _c).sub(LAUNCHER_PIVOT);
-    const yaw = Math.atan2(-rel.z, rel.x);
-    const pitch = clamp(Math.atan2(rel.y, Math.hypot(rel.x, rel.z)), rad(20), rad(70));
-    this.shot = { cell: this.cellsUsed, tPress: this.t, from: { ...this.launcher }, aim: { yaw, pitch }, droneId: d.id };
+    this.shot = { cell: this.cellsUsed, tPress: this.t, from: { ...this.launcher }, aim: this.aimAt(d), droneId: d.id, hold };
     this.cellsUsed += 1;
     this.events.push({ type: 'slew' });
-    this.say(`Engaging ${d.name}: launcher turning`, 'warn');
+    this.say(hold ? `Missile on ${d.name}: launcher turning` : `Engaging ${d.name}: launcher turning`, 'warn');
   }
 
   // --- stepping -----------------------------------------------------------------------------------------------
@@ -327,6 +364,15 @@ export class HelmSim {
     this.spawn();
     this.wave += 1;
     this.nextSpawn = this.t + Math.max(45, 80 - this.wave * 6);
+  }
+
+  // A drone sent in on demand, from a random direction (the button in the weapons card, key D).
+  summon() {
+    if (this.out) return null;
+    if (this.live.length >= MAX_SUMMONED) { this.say(`${MAX_SUMMONED} drones already in the air`, 'warn'); return null; }
+    const d = this.spawn();
+    this.say(`Drone ${d.name} launched: ${relName(this.relBearing(d.pos))}, ${kmText(this.rangeTo(d.pos))}`, '');
+    return d;
   }
 
   spawn(at = null) {
@@ -416,8 +462,12 @@ export class HelmSim {
   stepDrone(d, dt) {
     if (!d.alive) return;
     const range = this.rangeTo(d.pos);
+    // Behind the mountains: a far drone that sits lower than the ridge line in its direction is lost to the radar and the scope
+    // until it comes out above it (a near one is in front of the ridges, whatever the angle).
+    d.hidden = !!this.skyline && range > MASK_RANGE
+      && Math.atan2(d.pos.y - SKY_EYE, Math.hypot(d.pos.x - this.x, d.pos.z - this.z)) < this.skyline(d.pos.x - this.x, d.pos.z - this.z, SKY_EYE);
     // Radar contact, and the calls.
-    if (!d.detected && range < RADAR_RANGE) {
+    if (!d.detected && !d.hidden && range < RADAR_RANGE) {
       d.detected = true;
       if (this.targetId === null || !this.target) this.targetId = d.id;
       this.events.push({ type: 'alarm', level: 1, id: d.id });
@@ -593,7 +643,24 @@ export class HelmSim {
       if (age >= SLEW_TIME + ACQUIRE_TIME && !s.locked) { // found it: locked
         s.locked = true;
         this.events.push({ type: 'lock', id: s.droneId });
-        this.say(`${this.drones.find((x) => x.id === s.droneId)?.name ?? 'Target'} locked`, 'ok');
+        this.say(`${this.drones.find((x) => x.id === s.droneId)?.name ?? 'Target'} locked${s.hold ? ': missile ready, F launches' : ''}`, 'ok');
+      }
+      if (s.hold) { // ready: the launcher keeps laying on the target until the launch is ordered
+        const d = this.drones.find((x) => x.id === s.droneId && x.alive);
+        if (!d || this.engageable(d)) { // lost, or out of the box's reach: stand the round down
+          this.shot = null;
+          this.cellsUsed -= 1;
+          this.lastFire = this.t - 3;
+          this.lastAim = { ...this.launcher };
+          this.say(d ? 'Target out of reach: missile stood down' : 'Target gone: missile stood down', 'warn');
+          return;
+        }
+        if (age >= SLEW_TIME) {
+          s.aim = this.aimAt(d);
+          this.launcher.yaw = s.aim.yaw;
+          this.launcher.pitch = s.aim.pitch;
+        }
+        return;
       }
       if (age >= SLEW_TIME + ACQUIRE_TIME + LOCK_HOLD) this.launch(s);
       return;

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { createEnvironment } from './environment.js';
+import { createEnvironment, ridgeAngle } from './environment.js';
 import { createShip } from './models/ship.js';
 import { createPlane } from './models/plane.js';
 import { createMissile } from './models/missile.js';
@@ -15,7 +15,7 @@ import { createHelmMap } from './helmMap.js';
 import { createHelmAudio } from './helmAudio.js';
 import { menuText } from './menu.js';
 import {
-  HelmSim, SLEW_TIME, TELEGRAPH, RUDDER_MAX, CELLS, MISSILE_RANGE, BRIDGE_EYE, DIRECTOR_EYE, GUN_MOUNTS, GUN_ROUNDS, DRONE_HP, relName, kmText,
+  HelmSim, SLEW_TIME, TELEGRAPH, RUDDER_MAX, CELLS, MISSILE_RANGE, MIN_RANGE, GUN_RANGE, GUN_BLOCK, RADAR_RANGE, ARC, BRIDGE_EYE, DIRECTOR_EYE, GUN_MOUNTS, GUN_ROUNDS, DRONE_HP, relName, kmText,
 } from './helm.js';
 import './helm.css';
 
@@ -46,7 +46,7 @@ controls.maxPolarAngle = Math.PI * 0.495;
 controls.enabled = false;
 const rig = new CameraRig(camera, controls);
 
-const env = createEnvironment(renderer, scene);
+const env = createEnvironment(renderer, scene, { calm: true });
 env.setShadowSize(1024);
 env.ocean.material.uniforms.uShipX.value = 1e7; // the shader's straight-line wake: this ship turns, she has her own
 const ship = createShip();
@@ -139,6 +139,8 @@ function updateGuns(dt) {
 }
 const audio = createHelmAudio();
 const sim = new HelmSim({ seed: (Date.now() % 100000) | 0 });
+sim.skyline = ridgeAngle;
+sim.gunsAuto = true; // the guns start on automatic (A switches it off)
 
 // Tags (drones, missiles): an HTML layer like the other missions'.
 const labels = new CSS2DRenderer();
@@ -383,7 +385,7 @@ function applyState(dt) {
       v.plane.group.position.copy(d.pos);
     }
     // Its tag: name, range and height while it flies.
-    const show = d.alive && d.detected && tagsOn;
+    const show = d.alive && d.detected && !d.hidden && tagsOn;
     v.tag.obj.visible = show;
     if (show) {
       v.tag.obj.position.copy(d.pos).y += 3;
@@ -507,7 +509,11 @@ function setFov(f) {
 }
 
 const shipTarget = (out) => out.set(sim.x, 10, sim.z);
+let viewBefore = 'behind'; // the view the target view was left from: the camera goes back to it once the drone has splashed
+let tgtWatch = null; // the drone the target view was last on
 function setView(v, quiet = false) {
+  if (v === 'target' && view !== 'target') viewBefore = view;
+  tgtWatch = null;
   view = v;
   if (v === 'sight') { sight.fresh = true; sight.searchTime = SIGHT_SEARCH; } // the director starts from the bow and finds the target again
   pendingOrbit = false;
@@ -860,6 +866,34 @@ function aimSight(dt, d) {
   return wantFov;
 }
 
+const _wp = new THREE.Vector3();
+const _wc = new THREE.Vector3();
+// Target view after the hit: stays on the drone it was watching (the camera eases back to a point behind and above its
+// wreck, looking at it) until it has splashed, then returns to the view it came from. false when there is no wreck to follow.
+function wreckShot(dt) {
+  const w = tgtWatch === null ? null : sim.drones.find((x) => x.id === tgtWatch);
+  if (!w || w.alive || !w.wreck) return false;
+  const v = vis.get(w.id);
+  const tEnd = v?.debris ? w.wreck.t + Math.max(...v.debris.pieces.map((q) => q.tauWater)) : w.wreck.t + 8;
+  if (sim.t >= tEnd) { setView(viewBefore, true); return false; }
+  if (v?.debris) {
+    const tau = sim.t - w.wreck.t;
+    _wp.set(0, 0, 0);
+    for (const q of v.debris.pieces) _wp.add(v.debris.piecePos(q, tau, _wc));
+    _wp.multiplyScalar(1 / v.debris.pieces.length);
+  } else _wp.copy(w.wreck.pos);
+  _a.copy(w.wreck.vel).setY(0);
+  if (_a.lengthSq() < 1e-6) _a.set(Math.cos(sim.psi), 0, Math.sin(sim.psi));
+  _a.normalize();
+  _wc.copy(_wp).addScaledVector(_a, -45);
+  _wc.y = Math.max(_wp.y + 8, 6);
+  if (snap) camera.position.copy(_wc);
+  else camera.position.lerp(_wc, 1 - Math.exp(-dt / 0.35));
+  snap = false;
+  camera.lookAt(_wp);
+  return true;
+}
+
 function updateCamera(dt) {
   if (!cine && cineOn && view !== 'orbit' && !sim.out) { // a drone on its attack run really closing in: its own short shot
     const a = sim.drones.find((x) => x.alive && x.phase === 'attack' && Math.hypot(x.pos.x - sim.x, x.pos.z - sim.z) < DRONE_CAM_RANGE);
@@ -899,7 +933,11 @@ function updateCamera(dt) {
     if (tgt && tgt.alive) lookAt.lerp(tgt.pos, 0.35);
     camera.lookAt(lookAt);
     snap = true;
+  } else if (view === 'target' && wreckShot(dt)) {
+    // The drone is down: the camera holds on its falling wreck until the last piece is in the sea.
+    wantFov = 46;
   } else if (view === 'target' && sim.target && sim.target.alive) {
+    tgtWatch = sim.target.id;
     // Close behind the target drone, a little above, looking along its flight; the camera shakes like a hand-held lens.
     const d = sim.target;
     _a.copy(d.vel).normalize();
@@ -942,6 +980,22 @@ pipEl.className = 'helm-pip';
 pipEl.innerHTML = '<i class="hp-h"></i><i class="hp-v"></i><i class="hp-box"></i><b class="hp-txt"></b><em>SCOPE</em>';
 document.body.appendChild(pipEl);
 const pipTxt = pipEl.querySelector('.hp-txt');
+// Which the scope follows: the target (and its wreck once it is down), or the latest missile.
+let pipMode = 'target';
+const pipSw = document.createElement('div');
+pipSw.className = 'hp-sw';
+pipSw.innerHTML = '<button data-m="target">Target</button><button data-m="missile">Missile</button>';
+pipSw.firstChild.classList.add('on');
+pipEl.appendChild(pipSw);
+function setPipMode(m) {
+  pipMode = m;
+  for (const b of pipSw.children) b.classList.toggle('on', b.dataset.m === m);
+  pipSt.phase = 'slew';
+}
+pipSw.addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (b) { setPipMode(b.dataset.m); b.blur(); }
+});
 const pipCam = new THREE.PerspectiveCamera(24, 1, 0.3, 30000);
 const pipSt = { id: null, phase: 'slew', t0: 0, omega: 0, aim: new THREE.Vector3(1, 0.06, 0), fresh: true };
 let pipFov = 24;
@@ -951,7 +1005,7 @@ const pipV3 = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), ne
 const pipFocus = { key: null, pos: new THREE.Vector3(), size: 4.5, name: '', kind: 'drone' };
 const pipWatch = { did: null };
 function pipPick() {
-  const m = sim.missiles[sim.missiles.length - 1];
+  const m = pipMode === 'target' ? null : sim.missiles[sim.missiles.length - 1];
   if (m) {
     pipWatch.did = m.targetId;
     pipFocus.key = `m${m.id}`; pipFocus.pos.copy(m.pos); pipFocus.size = 6; pipFocus.name = 'MISSILE'; pipFocus.kind = 'missile';
@@ -980,6 +1034,10 @@ function updatePip(dt) {
   ship.group.localToWorld(pipCam.position.copy(DIRECTOR_EYE));
   const d = sim.target && sim.target.alive ? sim.target : null;
   if (pipSt.fresh) { pipSt.aim.set(Math.cos(sim.psi), 0.06, Math.sin(sim.psi)).normalize(); pipSt.fresh = false; }
+  if (pipFocus.kind === 'drone' && pipFocus.key !== null) { // the drone being watched went down (missile or guns): stay on its wreck until the last piece splashes
+    const was = sim.drones.find((x) => x.id === pipFocus.key);
+    if (was && !was.alive) pipWatch.did = was.id;
+  }
   if (!pipPick()) {
     if (d) { pipFocus.key = d.id; pipFocus.pos.copy(d.pos); pipFocus.size = 4.5; pipFocus.name = d.name; pipFocus.kind = 'drone'; }
     else pipFocus.key = null;
@@ -1144,48 +1202,177 @@ function domeSvg() {
     + `<line x1="${p0[0]}" y1="${(Number(p0[1]) - 5).toFixed(1)}" x2="${p0[0]}" y2="${(Number(p0[1]) + 5).toFixed(1)}" class="rm"/>`
     + `<text x="${cx}" y="94" class="sp">${f(sim.knots, 1)}<tspan> kn</tspan></text></svg>`;
 }
+const MSL_SVG = '<svg viewBox="0 0 10 24"><path d="M5 0C7 3 7.5 6 7.5 9V17L10 21V24H7L6.4 22H3.6L3 24H0V21L2.5 17V9C2.5 6 3 3 5 0Z"/></svg>';
+// The weapons card: one row per weapon (the missile cells as little missiles, the guns' ammunition as a bar), and empty slots
+// kept for the weapons still to come.
+function weaponsHtml() {
+  let mState = sim.cellsLeft > 0 ? 'READY' : 'EMPTY';
+  if (sim.shot) mState = sim.shot.locked ? 'LOCKED' : sim.shot.acquiring ? 'ACQUIRING' : 'TURNING';
+  else if (sim.missiles.length) mState = `${sim.missiles.length} AWAY`;
+  const cls = sim.shot ? (sim.shot.locked ? 'arm lock' : 'arm') : sim.cellsLeft > 0 ? 'on' : '';
+  const cells = `<i class="${cls}">${MSL_SVG}</i><span class="hw-n">×${sim.cellsLeft}</span>`;
+  const firing = sim.guns.some((g) => g.firing);
+  const gState = firing ? 'FIRING' : sim.gunRounds <= 0 ? 'EMPTY' : sim.gunsAuto ? 'AUTO' : 'HOLD G';
+  const gMax = GUN_ROUNDS * sim.guns.length;
+  const gPct = Math.max(0, Math.min(100, sim.gunRounds / gMax * 100)).toFixed(1);
+  return `<div class="hs-wpn">`
+    + `<div class="hw-row hw-msl${sim.shot?.locked ? ' lock' : ''}"><b>MISSILES</b><div class="hw-cells">${cells}</div><em>${mState}</em></div>`
+    + `<div class="hw-row hw-gun${firing ? ' fire' : sim.gunsAuto ? ' auto' : ''}"><b>GUNS</b><div class="hw-bar"><i style="width:${gPct}%"></i></div><em>${sim.gunRounds} · ${gState}</em></div>`
+    + '</div>';
+}
 function shipHtml() {
-  let wTxt = `${sim.cellsLeft} of ${CELLS} ready`;
-  if (sim.shot) wTxt = sim.shot.locked ? 'target locked' : sim.shot.acquiring ? 'acquiring' : 'launcher turning';
-  else if (sim.missiles.length) wTxt = `${sim.missiles.length} in flight`;
-  const pips = Array.from({ length: CELLS }, (_, i) => `<i class="${i < sim.cellsLeft ? 'on' : ''}"></i>`).join('');
   const hits = Array.from({ length: 3 }, (_, i) => `<i class="${i < sim.strikes ? 'hit' : ''}"></i>`).join('');
   const dmg = sim.out ? 'out of action' : sim.strikes ? `${sim.strikes} of 3 hits` : 'no damage';
-  return `<div class="hs-rect hs-dmg${sim.strikes ? ' hurt' : ''}"><span>Damage · ${dmg}</span><div class="hs-pips hs-hits">${hits}</div></div>`
+  const hull = Array.from({ length: 3 }, (_, i) => `<i class="${i < sim.strikes ? 'hit' : ''}"></i>`).join('');
+  return `<div class="hs-stat${sim.strikes ? ' hurt' : ''}"><div class="st-hull"><span>HULL</span><div class="st-segs">${hull}</div><em>${sim.out ? 'OUT OF ACTION' : sim.strikes ? `${sim.strikes} OF 3 HITS` : 'INTACT'}</em></div>`
+    + `<div class="st-kills"><span>KILLS</span><b>${sim.kills}</b></div></div>`
     + `<div class="hs-dome">${domeSvg()}</div>`
-    + `<div class="hs-rect hs-ammo"><span>Missiles · ${wTxt}</span><div class="hs-pips">${pips}</div>`
-    + `<span class="hs-guns${sim.guns.some((g) => g.firing) ? ' on' : ''}">Guns · ${sim.guns.some((g) => g.firing) ? `FIRING ${sim.guns.map((g, i) => (g.firing ? ['port', 'stbd'][i] : '')).filter(Boolean).join(' + ')}` : sim.gunsAuto ? 'AUTO' : 'hold G'} · ${sim.gunRounds}</span></div>`;
+    + weaponsHtml();
 }
+
+// The fire-zone gauges: for each weapon a range bar (0 to ZONE_SCALE) with the band it can engage in lit and a marker for the
+// target, plus one short word: READY, or what is still missing (km to close, degrees to turn, blocked).
+const ZONE_SCALE = 9000;
+function weaponRow(name, band0, band1, range, bad) {
+  const pct = (m) => Math.min(m, ZONE_SCALE) / ZONE_SCALE * 100;
+  const ready = !bad;
+  return `<div class="wz ${ready ? 'ok' : 'no'}"><b>${name}</b><div class="tz-bar"><i class="tz-band" style="left:${pct(band0).toFixed(1)}%;width:${(pct(band1) - pct(band0)).toFixed(1)}%"></i>`
+    + `<i class="tz-dot" style="left:${pct(range).toFixed(1)}%"></i></div><em>${ready ? 'READY' : bad}</em></div>`;
+}
+function zoneHtml(t) {
+  const z = sim.zone(t);
+  let m = null;
+  if (z.tooClose) m = 'TOO CLOSE';
+  else if (z.toGo > 0) m = `+${kmText(z.toGo)}`;
+  else if (z.turn > 0) m = `TURN ${z.turn}°`;
+  let g = null;
+  if (z.range > GUN_RANGE) g = `+${kmText(z.range - GUN_RANGE)}`;
+  else if (!sim.gunsBearing(t).length) g = 'BLOCKED';
+  return `<div class="tg-zone">${weaponRow('MSL', MIN_RANGE, MISSILE_RANGE, z.range, m)}${weaponRow('GUN', 0, GUN_RANGE, z.range, g)}</div>`;
+}
+
+// How fast the drone closes on the ship, m/s (negative while it opens).
+const _cs = new THREE.Vector3();
+function closingSpeed(t, r) {
+  _cs.copy(t.vel).sub(sim.shipVel(_b));
+  _a.copy(t.pos).sub(_b.set(sim.x, 0, sim.z));
+  return -_a.dot(_cs) / (r || 1);
+}
+
+// The track dial: the ship at the centre, bow up, the missile arc and the guns' blind sector drawn on it, a sweep going round, every
+// contact a blip (fading after the sweep passes it, the target always lit) and, on the target, a tail of where it has been and a
+// vector of where it is going.
+const DIAL_K = 44 / 6000; // dial units per metre (the rim is 6 km)
+const SWEEP_T = 3; // s per turn
+const trk = new Map(); // drone id -> its recent world positions [t, x, z]
+function trackNote(d) {
+  let a = trk.get(d.id);
+  if (!a) { a = []; trk.set(d.id, a); }
+  if (a.length && sim.t < a[a.length - 1][0]) a.length = 0; // the sim was restarted
+  const last = a[a.length - 1];
+  if (!last || sim.t - last[0] >= 0.5) { a.push([sim.t, d.pos.x, d.pos.z]); if (a.length > 16) a.shift(); }
+  return a;
+}
+function dialPt(x, z) { // a world point in the ship's frame, bow up (clamped to the rim)
+  const dx = x - sim.x;
+  const dz = z - sim.z;
+  const c = Math.cos(sim.psi);
+  const s = Math.sin(sim.psi);
+  const fw = dx * c + dz * s;
+  const sb = -dx * s + dz * c;
+  const m = Math.hypot(fw, sb);
+  const k = m > 6000 ? 6000 / m : 1;
+  return [50 + sb * k * DIAL_K, 50 - fw * k * DIAL_K];
+}
+const arcPt = (r, a) => `${(50 + r * Math.sin(a)).toFixed(1)},${(50 - r * Math.cos(a)).toFixed(1)}`; // a: clockwise from the bow
+const wedge = (r, a0, a1) => `M50,50L${arcPt(r, a0)}A${r},${r} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${arcPt(r, a1)}Z`;
+function dialSvg(sel) {
+  const th = ((sim.t / SWEEP_T) % 1) * Math.PI * 2;
+  let sweep = '';
+  for (let i = 0; i < 9; i += 1) sweep += `<path d="${wedge(44, th - (i + 1) * 0.08, th - i * 0.08)}" style="opacity:${(0.3 * (1 - i / 9) ** 1.6).toFixed(3)}"/>`;
+  let blips = '';
+  for (const d of sim.detected) {
+    if (d === sel) continue;
+    const [x, y] = dialPt(d.pos.x, d.pos.z);
+    const lag = ((th - Math.atan2(x - 50, 50 - y)) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+    blips += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.3" class="dl-dot ${d.phase}" style="opacity:${(0.3 + 0.7 * Math.exp(-lag / 1.5)).toFixed(2)}"/>`;
+  }
+  let lock = '';
+  if (sel) {
+    const [x, y] = dialPt(sel.pos.x, sel.pos.z);
+    const tail = trackNote(sel).map((p) => dialPt(p[1], p[2]).map((v) => v.toFixed(1)).join(',')).join(' ');
+    _a.copy(sel.vel).sub(sim.shipVel(_b)); // its motion over the water, in the ship's frame
+    const fw = _a.x * Math.cos(sim.psi) + _a.z * Math.sin(sim.psi);
+    const sb = -_a.x * Math.sin(sim.psi) + _a.z * Math.cos(sim.psi);
+    const vm = Math.hypot(fw, sb) || 1;
+    const vx = x + (sb / vm) * 11;
+    const vy = y - (fw / vm) * 11;
+    lock = `<polyline points="${tail}" class="dl-tail"/><line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${vx.toFixed(1)}" y2="${vy.toFixed(1)}" class="dl-vec"/>`
+      + `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" class="dl-halo ${sel.phase}"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8" class="dl-dot sel ${sel.phase}"/>`;
+  }
+  const gun = GUN_RANGE * DIAL_K;
+  return `<svg viewBox="0 0 100 100" class="tk-dial" aria-hidden="true"><circle cx="50" cy="50" r="46" class="dl-bg"/>`
+    + `<path d="${wedge(MISSILE_RANGE * DIAL_K, -ARC, ARC)}" class="dl-arc"/>`
+    + `<path d="${wedge(gun, -GUN_BLOCK, GUN_BLOCK)}" class="dl-blk"/><circle cx="50" cy="50" r="${gun.toFixed(1)}" class="dl-gun"/>`
+    + `<circle cx="50" cy="50" r="22" class="dl-ring"/><circle cx="50" cy="50" r="44" class="dl-ring"/>`
+    + `<path d="M50 6V94M6 50H94" class="dl-ax"/><g class="dl-sw">${sweep}</g>`
+    + `<path d="M50,50L${arcPt(44, th)}" class="dl-sl"/>${blips}${lock}`
+    + `<path d="M50 44l3.6 8.5h-7.2z" class="dl-ship"/></svg>`;
+}
+// A contact's own little bearing dial for the list: the bow up, a dot where it lies.
+function miniDial(d) {
+  const b = sim.relBearing(d.pos);
+  const x = (12 + Math.sin(b) * 8.2).toFixed(1);
+  const y = (12 - Math.cos(b) * 8.2).toFixed(1);
+  return `<svg viewBox="0 0 24 24" class="cd" aria-hidden="true"><circle cx="12" cy="12" r="10.5" class="cd-r"/><path d="M12 1.5v3" class="cd-b"/>`
+    + `<line x1="12" y1="12" x2="${x}" y2="${y}" class="cd-l"/><circle cx="${x}" cy="${y}" r="2.4" class="cd-p"/></svg>`;
+}
+const rangeParts = (m) => (m >= 1000 ? [(m / 1000).toFixed(1), 'km'] : [String(Math.round(m)), 'm']);
+const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+const chevs = (closing) => `<span class="tk-chev${closing > 5 ? ' in' : ''}" style="--spd:${Math.max(0.25, 1.6 - closing / 120).toFixed(2)}s">›››</span>`;
+const tkCell = (label, value, unit, extra = '') => `<div class="tk-cell"><span>${label}</span><b>${value}<small>${unit}</small></b>${extra}</div>`;
 
 function hudHtml() {
   const out = [];
-  // The drone data: one compact card for the target, then the radar contacts.
+  // The drone data: one track block for the target, then the radar contacts.
   const t = sim.target;
   const phaseWord = { inbound: 'inbound', pass: 'low pass', extend: 'opening', attack: 'ATTACK' };
   if (t) {
     const r = sim.rangeTo(t.pos);
-    const why = sim.engageable(t);
     const tone = r < 1500 ? 'high' : r < 3000 ? 'mid' : 'low';
     const taken = Math.max(0, DRONE_HP - t.hp);
-    const fire = why ? why.replace(/: turn the ship$/, '').replace(/^Target astern, outside the launcher's arc$/, 'Out of arc') : 'Ready to fire';
-    out.push(`<div class="hud-sec tg tg-${tone}"><div class="tg-line"><b>${t.name}</b><strong>${kmText(r)}</strong><em class="${t.phase}">${phaseWord[t.phase] ?? t.phase}</em></div>`
-      + `<div class="tg-sub">${relName(sim.relBearing(t.pos))} · ${f(t.pos.y)} m</div>`
+    const closing = closingSpeed(t, r);
+    const eta = closing > 5 ? (r / closing) : null;
+    const rel = THREE.MathUtils.radToDeg(sim.relBearing(t.pos));
+    const brg = (((sim.headingDeg + rel) % 360) + 360) % 360;
+    const [rv, ru] = rangeParts(r);
+    out.push(`<div class="hud-sec tg tg-${tone}"><div class="tk-top"><span class="tk-id">TRK<b>${t.name}</b></span><em class="${t.phase}">${phaseWord[t.phase] ?? t.phase}</em>`
+      + `<span class="tk-eta${eta !== null && eta < 30 ? ' soon' : ''}">${eta === null ? 'OPENING' : `IMPACT ${mmss(eta)}`}</span></div>`
+      + `<div class="tk-main">${dialSvg(t)}<div class="tk-read"><strong class="tg-range">${rv}<small>${ru}</small></strong>`
+      + `<span class="tk-brg ${rel < 0 ? 'port' : 'stbd'}">${relName(sim.relBearing(t.pos)).toUpperCase()}</span><span class="tk-true">TRUE ${String(Math.round(brg) % 360).padStart(3, '0')}°</span></div></div>`
+      + `<div class="tk-cells">${tkCell('SPEED', Math.round(t.vel.length() * 3.6), 'km/h')}`
+      + `<div class="tk-cell${closing > 5 ? ' in' : ''}"><span>CLOSING</span><b>${closing < 0 ? '−' : ''}${Math.round(Math.abs(closing) * 3.6)}<small>km/h</small></b>${chevs(closing)}</div>`
+      + `${tkCell('ALT', f(t.pos.y), 'm', `<i class="tk-alt" style="--p:${Math.min(1, t.pos.y / 400).toFixed(2)}"></i>`)}</div>`
       + `<div class="tg-dmg${taken ? ' hurt' : ''}"><span>Damage</span><div class="hs-pips">${Array.from({ length: DRONE_HP }, (_, i) => `<i class="${i < taken ? 'hit' : ''}"></i>`).join('')}</div><em>${taken ? `${taken} of ${DRONE_HP} hits` : 'none'}</em></div>`
-      + `<div class="tg-fire ${why ? 'no' : 'ok'}"><i></i>${fire}</div></div>`);
+      + `${zoneHtml(t)}</div>`);
   } else {
-    out.push('<div class="hud-sec tg tg-none"><div class="tg-line"><b>No target</b><em>Tab selects</em></div></div>');
+    out.push(`<div class="hud-sec tg tg-none"><div class="tk-top"><span class="tk-id">TRK<b>—</b></span><em>scanning</em><span class="tk-eta">Tab selects</span></div>`
+      + `<div class="tk-main">${dialSvg(null)}<div class="tk-read"><strong class="tg-range tg-idle">NO<small>CONTACT</small></strong><span class="tk-true">RADAR ${kmText(RADAR_RANGE)}</span></div></div></div>`);
   }
 
-  // The radar picture: every contact on one line.
+  // The radar picture: every contact on one line, each with its own little bearing dial.
   const contacts = sim.detected.sort((a, b) => sim.rangeTo(a.pos) - sim.rangeTo(b.pos));
   const word = { inbound: 'inbound', pass: 'low pass', extend: 'opening', attack: 'ATTACK RUN' };
-  const rows = contacts.map((d) => `<div class="helm-contact ${d.phase}${d.id === sim.targetId ? ' sel' : ''}"><b>${d.name}</b>`
-    + `<span>${relName(sim.relBearing(d.pos))}</span><span>${kmText(sim.rangeTo(d.pos))}</span><em>${word[d.phase] ?? d.phase}</em></div>`).join('');
+  const rows = contacts.map((d) => {
+    const r = sim.rangeTo(d.pos);
+    const [rv, ru] = rangeParts(r);
+    return `<div class="ct ${d.phase}${d.id === sim.targetId ? ' sel' : ''}">${miniDial(d)}<div class="ct-id"><b>${d.name}</b><em>${word[d.phase] ?? d.phase}</em></div>`
+      + `<div class="ct-rg"><strong>${rv}<small>${ru}</small></strong>${chevs(closingSpeed(d, r))}</div></div>`;
+  }).join('');
   const thr = ['Clear', 'Contact', 'Threat close', 'Under attack'][sim.threat];
-  const score = `<div class="helm-score">Drones down <b>${sim.kills}</b> · hits taken <b>${sim.strikes}</b> of 3</div>`;
   if (contacts.length > 1) { // the list is only worth its room when there is more than the target to see
-    out.push(`<div class="hud-sec">${head('Radar', thr, ['ok', 'warn', 'bad', 'bad'][sim.threat])}${rows}${score}</div>`);
-  } else out.push(`<div class="hud-sec helm-foot">${score}</div>`);
+    out.push(`<div class="hud-sec">${head(`Radar · ${contacts.length}`, thr, ['ok', 'warn', 'bad', 'bad'][sim.threat])}${rows}</div>`);
+  }
   return out.join('');
 }
 
@@ -1195,14 +1382,29 @@ keysEl.id = 'fly-keys';
 keysEl.className = 'fly-keys';
 document.body.appendChild(keysEl);
 let lastKeys = '';
+// The key bar is also clickable: a click does what the key does (G is held while the button is held).
+function keyFromBar(e) { return e.target instanceof Element ? e.target.closest('.fk-btn')?.dataset.key : null; }
+keysEl.addEventListener('pointerdown', (e) => {
+  const key = keyFromBar(e);
+  if (!key) return;
+  e.preventDefault();
+  window.dispatchEvent(new KeyboardEvent('keydown', { key }));
+  if (key === 'g') {
+    const up = () => { window.dispatchEvent(new KeyboardEvent('keyup', { key })); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  } else window.dispatchEvent(new KeyboardEvent('keyup', { key }));
+});
 let lastKeysH = 0;
 function keysHtml() {
-  const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`;
+  const KEY_OF = { 'Tab': 'Tab', '1–7': null };
+  const k = (key, label, on = false) => (KEY_OF[key] === null ? `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`
+    : `<span class="fk fk-btn${on ? ' on' : ''}" data-key="${KEY_OF[key] ?? key.toLowerCase()}"><kbd>${key}</kbd>${label}</span>`);
   if (sim.out) return `${k('R', 'sail again', true)}${k('V', 'camera')}`;
   const t = sim.target;
   const ready = t && !sim.engageable(t) && !sim.shot && sim.cellsLeft > 0;
-  return `${k('←', '')}${k('→', 'rudder')}${k('↑', '')}${k('↓', 'telegraph')}${k('M', 'missile', ready)}${k('G', 'guns (hold)', input.gun === 1)}${k('A', 'auto guns', sim.gunsAuto)}`
-    + `${k('Tab', 'target', sim.detected.length > 1)}${k('1–7', 'views')}${k('V', 'next view')}`;
+  return `${sim.shot?.hold ? `${k('M', 'stand down')}${k('F', 'launch', sim.shot.locked)}` : k('M', 'ready missile', ready)}${k('G', 'guns (hold)', input.gun === 1)}${k('A', 'auto guns', sim.gunsAuto)}`
+    + `${k('D', 'add drone')}${k('Tab', 'target', sim.detected.length > 1)}${k('1–7', 'views')}${k('V', 'next view')}`;
 }
 
 // --- Interface: the top bar, menu, keys sheet, sound, map ---------------------------------------------------------------
@@ -1305,7 +1507,8 @@ viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.v
 keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>←</kbd> <kbd>→</kbd>', 'Rudder to port / starboard while held; let go and it comes back amidships'],
   ['<kbd>↑</kbd> <kbd>↓</kbd>', 'Engine telegraph, one step: slow astern, stop, dead slow, slow, half, full, flank'],
-  ['<kbd>F</kbd>', `Fire a missile at the target (${CELLS} cells; ${kmText(MISSILE_RANGE)} at most; ahead and abeam only)`],
+  ['<kbd>M</kbd>', `Make a missile ready on the target: the launcher turns and locks, then waits (${CELLS} cells; ${kmText(MISSILE_RANGE)} at most; ahead and abeam only). Press M again to stand it down`],
+  ['<kbd>F</kbd>', 'Launch the ready missile (with none ready, it readies and launches one)'],
   ['<kbd>Tab</kbd>', 'Next target'],
   ['<kbd>1</kbd> to <kbd>6</kbd>', 'Bridge, behind, above, missile, radar, orbit'],
   ['<kbd>V</kbd>', 'Next view · drag looks round, the wheel zooms, double click resets'],
@@ -1322,6 +1525,7 @@ const input = { left: 0, right: 0, gun: 0 }; // gun: G held
 function restart() {
   sim.seed = (Date.now() % 100000) | 0;
   sim.reset();
+  sim.gunsAuto = true;
   for (const id of [...vis.keys()]) dropVis(id);
   for (const [, v] of mvis) scene.remove(v.model.group);
   mvis.clear();
@@ -1350,8 +1554,10 @@ window.addEventListener('keydown', (e) => {
   switch (key) {
     case 'ArrowUp': sim.telegraph(+1); break;
     case 'ArrowDown': sim.telegraph(-1); break;
-    case 'f': case 'm': sim.fire(); break; // the missile
+    case 'm': sim.arm(); break; // make a missile ready (again: stand it down)
+    case 'f': sim.launchReady(); break; // launch the ready missile
     case 'a': sim.toggleAutoGuns(); break;
+    case 'd': sim.summon(); break; // send in a drone
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
     case '1': case '2': case '3': case '4': case '5': case '6': case '7': setView(VIEWS[Number(key) - 1]); break;

@@ -65,13 +65,6 @@ body.helm-threat-3 .helm-alarm { animation: helm-pulse 0.55s ease-in-out infinit
   background: var(--accent);
 }
 .tile.helm-ok b { color: #3ddc84; }
-.helm-contact { display: grid; grid-template-columns: 34px 1fr 64px 84px; gap: 6px; align-items: baseline; padding: 3px 0; font-size: 12px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
-.helm-contact b { color: #ffb340; }
-.helm-contact em { font-style: normal; color: var(--muted); text-align: right; }
-.helm-contact.pass em, .helm-contact.attack em { color: #ff5d61; font-weight: 700; }
-.helm-contact.attack b, .helm-contact.pass b { color: #ff5d61; }
-.helm-contact.sel b::before { content: '▸ '; color: #fff; }
-.helm-contact.none { display: block; color: var(--muted); }
 .helm-score { margin-top: 6px; font-size: 11.5px; color: var(--muted); }
 .helm-score b { color: var(--text); }
 
@@ -88,6 +81,10 @@ body.helm-threat-3 .helm-alarm { animation: helm-pulse 0.55s ease-in-out infinit
 .helm-pip.searching .hp-box { display: none; } /* no blinking box while it searches */
 @keyframes hp-search { from { opacity: 0.45; transform: translate(-50%, -50%) scale(1.35); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
 .helm-pip .hp-txt { position: absolute; left: 6px; right: 6px; bottom: 4px; font: 700 10px/1.2 ui-monospace, Consolas, monospace; letter-spacing: 0.06em; color: #9dffc0; text-shadow: 0 1px 2px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.helm-pip .hp-txt { left: 62px; right: 6px; top: 4px; bottom: auto; text-align: right; }
+.helm-pip .hp-sw { position: absolute; left: 4px; right: 4px; bottom: 4px; display: flex; gap: 3px; pointer-events: auto; }
+.helm-pip .hp-sw button { flex: 1; padding: 3px 0; font: 700 9px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.04em; color: #9dffc0; background: rgba(8, 24, 48, 0.75); border: 1px solid rgba(120, 255, 170, 0.45); border-radius: 3px; cursor: pointer; }
+.helm-pip .hp-sw button.on { background: #3ddc84; color: #04200f; }
 .helm-pip em { position: absolute; left: 6px; top: 4px; font: 800 9px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.2em; font-style: normal; color: #9dffc0; text-shadow: 0 1px 2px #000; }
 body.mission-helm .hud { max-height: calc(100vh - var(--map-d, 150px) - 64px); overflow: hidden; }
 body:not(.mission-helm) .helm-pip, body.ui-hidden .helm-pip { display: none; }
@@ -172,8 +169,18 @@ body.mission-helm .hud { background: rgba(9, 14, 21, 0.38); backdrop-filter: blu
 .hud .tg-fire.ok i { background: #3ddc84; }
 .hud .tg-fire.no { color: #ffc454; }
 .hud .tg-fire.no i { background: #ffc454; }
+.hud .tg-zone { margin-top: 8px; display: grid; gap: 6px; }
+.hud .wz { display: grid; grid-template-columns: 26px 1fr 62px; align-items: center; gap: 7px; font-size: 9.5px; }
+.hud .wz b { letter-spacing: 0.08em; color: rgba(255, 255, 255, 0.78); font-weight: 700; }
+.hud .wz em { font-style: normal; font-weight: 800; letter-spacing: 0.04em; text-align: right; color: #ffc454; white-space: nowrap; }
+.hud .wz.ok em { color: #3ddc84; text-shadow: 0 0 8px rgba(61, 220, 132, 0.8); }
+.hud .tz-bar { position: relative; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.14); }
+.hud .tz-band { position: absolute; top: 0; bottom: 0; border-radius: 4px; background: rgba(61, 220, 132, 0.5); }
+.hud .wz.ok .tz-band { background: rgba(61, 220, 132, 0.85); box-shadow: 0 0 8px rgba(61, 220, 132, 0.7); }
+.hud .tz-dot { position: absolute; top: -3px; width: 5px; height: 14px; margin-left: -2.5px; border-radius: 3px; background: #ffc454; box-shadow: 0 0 4px rgba(0, 0, 0, 0.7); }
+.hud .wz.ok .tz-dot { background: #fff; }
 .hud .tg-none .tg-line b { font-size: 13px; color: rgba(255, 255, 255, 0.7); }
-body.mission-helm .hud { width: 200px; padding: 8px 11px 9px; }
+body.mission-helm .hud { width: 236px; padding: 9px 11px 10px; }
 /* Readable labels on the see-through target card. */
 .hud .tg-range span, .hud .tg-grid span, .hud .tg-top em { color: rgba(255, 255, 255, 0.78); text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85); }
 .hud .tg-grid small { color: rgba(255, 255, 255, 0.7); }
@@ -192,3 +199,162 @@ body.mission-helm .hud { width: 200px; padding: 8px 11px 9px; }
 .hud .tg-dmg em { font-style: normal; margin-left: auto; font-weight: 650; }
 .hud .tg-dmg.hurt em { color: #ff8a8d; }
 .tag .tag-hits { color: #ff7478; letter-spacing: 0.02em; }
+
+body.mission-helm .fly-keys { pointer-events: none; }
+body.mission-helm .fly-keys .fk-btn { pointer-events: auto; cursor: pointer; padding: 2px 4px; border-radius: 6px; }
+body.mission-helm .fly-keys .fk-btn:hover { background: rgba(255, 255, 255, 0.12); }
+body.mission-helm .fly-keys .fk-btn:active { background: rgba(255, 255, 255, 0.22); }
+
+/* The weapons card: missiles as little missiles, the guns' ammunition as a bar, empty slots for what comes next. */
+.helm-ship .hs-wpn { flex: 1 1 0; min-width: 210px; max-width: 290px; padding: 7px 12px 8px; border-radius: 14px 14px 0 0; background: linear-gradient(180deg, rgba(14, 24, 38, 0.62), rgba(9, 14, 21, 0.5)); border: 1px solid rgba(255, 255, 255, 0.12); border-bottom: 0; color: var(--text); backdrop-filter: blur(3px); display: grid; gap: 6px; font-variant-numeric: tabular-nums; }
+.helm-ship .hw-head span { font: 800 9px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.22em; color: rgba(255, 255, 255, 0.5); }
+.helm-ship .hw-row { display: grid; grid-template-columns: 58px 1fr auto; align-items: center; gap: 8px; }
+.helm-ship .hw-row b { font: 700 9px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.1em; color: rgba(255, 255, 255, 0.8); }
+.helm-ship .hw-row em { font: 700 9.5px/1 ui-monospace, Consolas, monospace; font-style: normal; letter-spacing: 0.04em; color: #ffc454; white-space: nowrap; text-align: right; }
+.helm-ship .hw-msl.lock em, .helm-ship .hw-gun.auto em { color: #3ddc84; }
+.helm-ship .hw-gun.fire em { color: #ff7a59; text-shadow: 0 0 8px rgba(255, 122, 89, 0.8); }
+.helm-ship .hw-cells { display: flex; align-items: center; gap: 6px; }
+.helm-ship .hw-n { font: 800 15px/1 ui-monospace, Consolas, monospace; color: var(--text); }
+.helm-ship .hw-cells i { display: block; width: 11px; height: 24px; }
+.helm-ship .hw-cells svg { width: 100%; height: 100%; display: block; fill: rgba(255, 255, 255, 0.1); stroke: rgba(255, 255, 255, 0.2); stroke-width: 0.6; }
+.helm-ship .hw-cells i.on svg { fill: #ffc454; stroke: #ffe3a0; filter: drop-shadow(0 0 3px rgba(255, 196, 84, 0.65)); }
+.helm-ship .hw-cells i.arm svg { fill: #ff9f43; stroke: #fff; animation: hw-blink 0.5s steps(2) infinite; }
+.helm-ship .hw-cells i.arm.lock svg { fill: #3ddc84; animation: none; filter: drop-shadow(0 0 5px rgba(61, 220, 132, 0.9)); }
+@keyframes hw-blink { 50% { opacity: 0.35; } }
+.helm-ship .hw-bar { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.helm-ship .hw-bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #ffc454, #ffe08a); }
+.helm-ship .hw-gun.fire .hw-bar i { background: linear-gradient(90deg, #ff5d3b, #ffb35a); }
+.helm-ship .hw-slots { display: flex; gap: 6px; }
+.helm-ship .hw-slots span { flex: 1; text-align: center; padding: 4px 0; border: 1px dashed rgba(255, 255, 255, 0.22); border-radius: 6px; font: 700 8.5px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.12em; color: rgba(255, 255, 255, 0.3); text-transform: uppercase; }
+@media (max-width: 1100px) { .helm-ship .hs-wpn { min-width: 170px; } .helm-ship .hw-row { grid-template-columns: 1fr auto; } .helm-ship .hw-row b { display: none; } }
+
+/* The radar map and the scope are 75% of the drill's size. */
+@media (min-width: 641px) and (min-height: 501px) { body.mission-helm { --map-d: 180px; } }
+
+.helm-ship .hw-slots .hw-drone { flex: 1; pointer-events: auto; cursor: pointer; padding: 5px 0; border: 1px solid rgba(255, 196, 84, 0.6); border-radius: 6px; background: rgba(255, 196, 84, 0.14); color: #ffc454; font: 800 9.5px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.1em; text-transform: uppercase; }
+.helm-ship .hw-slots .hw-drone:hover { background: rgba(255, 196, 84, 0.3); }
+.helm-ship .hw-slots .hw-drone:active { background: rgba(255, 196, 84, 0.5); }
+.helm-ship .hw-drone kbd { font: inherit; opacity: 0.7; margin-left: 4px; }
+
+/* The target card header: the reticle dial, then the name, the range, the bearing and the altitude. */
+.hud .tg-head { display: flex; gap: 12px; align-items: center; }
+.hud .tg-ret { flex: none; width: 72px; height: 72px; filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.4)); }
+.hud .rt-bg { fill: rgba(5, 14, 24, 0.6); stroke: rgba(255, 255, 255, 0.35); stroke-width: 1; }
+.hud .rt-arc { fill: rgba(61, 220, 132, 0.2); stroke: rgba(61, 220, 132, 0.7); stroke-width: 0.8; }
+.hud .rt-ring { fill: none; stroke: rgba(255, 255, 255, 0.18); stroke-width: 0.6; }
+.hud .rt-bow { stroke: rgba(255, 255, 255, 0.4); stroke-width: 0.6; fill: none; }
+.hud .rt-tip { fill: #fff; }
+.hud .rt-line { stroke: rgba(255, 196, 84, 0.5); stroke-width: 0.8; }
+.hud .rt-dot { fill: #ffc454; }
+.hud .rt-halo { fill: none; stroke: #ffc454; stroke-width: 1; opacity: 0.8; }
+.hud .tg-ret.ready .rt-dot { fill: #3ddc84; }
+.hud .tg-ret.ready .rt-halo { stroke: #3ddc84; animation: rt-pulse 1s ease-out infinite; transform-origin: center; transform-box: fill-box; }
+@keyframes rt-pulse { from { transform: scale(0.8); opacity: 1; } to { transform: scale(2.2); opacity: 0; } }
+.hud .tg-info { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.hud .tg-top { display: flex; align-items: center; gap: 8px; }
+.hud .tg-top b { font-size: 15px; font-weight: 800; letter-spacing: 0.02em; }
+.hud .tg-top em { margin-left: auto; font: 800 9px/1 ui-monospace, Consolas, monospace; font-style: normal; letter-spacing: 0.1em; text-transform: uppercase; padding: 3px 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.14); color: #fff; }
+.hud .tg-top em.pass, .hud .tg-top em.attack { background: #ff5d61; animation: rt-blink 0.8s steps(2) infinite; }
+@keyframes rt-blink { 50% { opacity: 0.55; } }
+.hud .tg-range { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; }
+.hud .tg-high .tg-range { color: #ff5d61; }
+.hud .tg-mid .tg-range { color: #ffc454; }
+.hud .tg-meta { display: flex; align-items: center; gap: 8px; }
+.hud .tg-brg { font: 800 9px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.08em; padding: 3px 6px; border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.3); }
+.hud .tg-alt { flex: 1; display: flex; align-items: center; gap: 5px; font: 700 9px/1 ui-monospace, Consolas, monospace; color: rgba(255, 255, 255, 0.7); }
+.hud .tg-alt b { color: #fff; font-weight: 800; }
+.hud .tg-altbar { flex: 1; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.15); overflow: hidden; }
+.hud .tg-altbar i { display: block; height: 100%; background: linear-gradient(90deg, #35c8ff, #fff); }
+.hud .tg-alt b, .hud .tg-brg { white-space: nowrap; }
+
+/* The target card, version 3: a track block. A coloured edge (cool, amber, red with the range), the track and its phase and impact time,
+   a dial (ship in the middle, bow up, the missile arc, the guns' blind sector, a sweep, the blips, the target's tail and vector),
+   the range big beside it with the bearing as the navy says it, a strip of speed / closing / altitude, then damage and the weapon zones. */
+.hud .tg { position: relative; }
+.hud .tg::before { content: ''; position: absolute; left: -11px; top: 0; bottom: 0; width: 3px; border-radius: 0 3px 3px 0; background: #35c8ff; box-shadow: 0 0 10px rgba(53, 200, 255, 0.7); }
+.hud .tg-mid::before { background: #ffc454; box-shadow: 0 0 10px rgba(255, 196, 84, 0.7); }
+.hud .tg-high::before { background: #ff5d61; box-shadow: 0 0 12px rgba(255, 93, 97, 0.85); animation: rt-blink 0.8s steps(2) infinite; }
+.hud .tg-none::before { background: rgba(255, 255, 255, 0.25); box-shadow: none; }
+.hud .tk-top { display: flex; align-items: center; gap: 7px; }
+.hud .tk-id { font: 800 9px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.2em; color: rgba(255, 255, 255, 0.5); }
+.hud .tk-id b { margin-left: 6px; font: 800 16px/1 'Segoe UI', system-ui, sans-serif; letter-spacing: 0.02em; color: #fff; }
+.hud .tk-top em { font: 800 8.5px/1 ui-monospace, Consolas, monospace; font-style: normal; letter-spacing: 0.1em; text-transform: uppercase; padding: 3px 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.14); color: #fff; }
+.hud .tk-top em.pass, .hud .tk-top em.attack { background: #ff5d61; animation: rt-blink 0.8s steps(2) infinite; }
+.hud .tk-eta { margin-left: auto; font: 800 9.5px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.08em; color: #ffc454; white-space: nowrap; }
+.hud .tk-eta.soon { color: #ff5d61; animation: rt-blink 0.8s steps(2) infinite; }
+.hud .tk-main { display: flex; align-items: center; gap: 10px; margin-top: 7px; }
+.hud .tk-dial { flex: none; width: 92px; height: 92px; filter: drop-shadow(0 0 7px rgba(0, 0, 0, 0.45)); }
+.hud .dl-bg { fill: rgba(4, 14, 22, 0.62); stroke: rgba(255, 255, 255, 0.35); stroke-width: 1; }
+.hud .dl-ring { fill: none; stroke: rgba(255, 255, 255, 0.12); stroke-width: 0.6; }
+.hud .dl-ax { stroke: rgba(255, 255, 255, 0.12); stroke-width: 0.5; fill: none; }
+.hud .dl-arc { fill: rgba(61, 220, 132, 0.1); stroke: rgba(61, 220, 132, 0.55); stroke-width: 0.8; }
+.hud .dl-gun { fill: none; stroke: rgba(255, 179, 64, 0.55); stroke-width: 0.7; stroke-dasharray: 2 2.4; }
+.hud .dl-blk { fill: rgba(255, 93, 97, 0.22); stroke: none; }
+.hud .dl-sw path { fill: #3ddc84; stroke: none; }
+.hud .dl-sl { stroke: rgba(120, 255, 170, 0.85); stroke-width: 0.9; }
+.hud .dl-ship { fill: #fff; stroke: rgba(0, 0, 0, 0.5); stroke-width: 0.6; stroke-linejoin: round; }
+.hud .dl-dot { fill: #ffc454; stroke: rgba(0, 0, 0, 0.55); stroke-width: 0.6; }
+.hud .dl-dot.attack, .hud .dl-dot.pass { fill: #ff5d61; }
+.hud .dl-dot.sel { stroke: #fff; stroke-width: 1; }
+.hud .dl-halo { fill: none; stroke: #ffc454; stroke-width: 0.9; opacity: 0.85; transform-box: fill-box; transform-origin: center; animation: dl-ping 1.4s ease-out infinite; }
+.hud .dl-halo.attack, .hud .dl-halo.pass { stroke: #ff5d61; animation-duration: 0.6s; }
+@keyframes dl-ping { from { transform: scale(0.6); opacity: 1; } to { transform: scale(1.7); opacity: 0; } }
+.hud .dl-tail { fill: none; stroke: rgba(255, 196, 84, 0.6); stroke-width: 1; stroke-dasharray: 1.5 1.8; stroke-linecap: round; }
+.hud .dl-vec { stroke: #fff; stroke-width: 1.1; stroke-linecap: round; opacity: 0.85; }
+.hud .tk-read { flex: 1; min-width: 0; display: grid; gap: 5px; justify-items: start; }
+.hud .tg-range { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; line-height: 0.95; }
+.hud .tg-range small { margin-left: 3px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: rgba(255, 255, 255, 0.6); }
+.hud .tg-high .tg-range { color: #ff5d61; text-shadow: 0 0 14px rgba(255, 93, 97, 0.5); }
+.hud .tg-mid .tg-range { color: #ffc454; }
+.hud .tg-low .tg-range { color: #fff; }
+.hud .tg-idle { font-size: 22px; color: rgba(255, 255, 255, 0.7); display: grid; }
+.hud .tg-idle small { margin: 3px 0 0; letter-spacing: 0.2em; }
+.hud .tk-brg { font: 800 10px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.1em; padding: 4px 8px; border-radius: 5px; border: 1px solid currentColor; }
+.hud .tk-brg.port { color: #ff8a8d; background: rgba(255, 93, 97, 0.14); }
+.hud .tk-brg.stbd { color: #5ff0a0; background: rgba(61, 220, 132, 0.14); }
+.hud .tk-true { font: 700 9px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.12em; color: rgba(255, 255, 255, 0.55); }
+.hud .tk-cells { display: grid; grid-template-columns: 1fr 1fr 0.8fr; margin-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+.hud .tk-cell { padding: 5px 0 5px 8px; display: grid; gap: 2px; align-content: start; border-left: 1px solid rgba(255, 255, 255, 0.1); }
+.hud .tk-cell:first-child { border-left: 0; padding-left: 0; }
+.hud .tk-cell span { font: 800 8px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.16em; color: rgba(255, 255, 255, 0.5); }
+.hud .tk-cell b { font: 800 14px/1.1 ui-monospace, Consolas, monospace; color: #fff; white-space: nowrap; }
+.hud .tk-cell b small { margin-left: 2px; font-size: 8px; font-weight: 700; color: rgba(255, 255, 255, 0.55); }
+.hud .tk-cell.in b { color: #ff9a9c; }
+.hud .tk-chev { color: rgba(255, 255, 255, 0.35); letter-spacing: -0.1em; font-size: 11px; line-height: 0.8; font-weight: 800; }
+.hud .tk-chev.in { color: #ff8a8d; animation: rt-blink var(--spd, 1s) steps(2) infinite; }
+.hud .tk-alt { display: block; height: 3px; border-radius: 2px; margin-top: 1px; background: linear-gradient(90deg, #35c8ff calc(var(--p) * 100%), rgba(255, 255, 255, 0.15) 0); }
+
+/* The radar's contact list: each contact has its own little bearing dial, its name and what it is doing, its range and its closing chevrons. */
+.hud .ct { position: relative; display: grid; grid-template-columns: 24px 1fr auto; gap: 8px; align-items: center; margin: 0 -6px; padding: 4px 6px; border-radius: 7px; }
+.hud .ct + .ct { margin-top: 1px; }
+.hud .ct.sel { background: rgba(255, 255, 255, 0.1); box-shadow: inset 2px 0 0 #fff; }
+.hud .ct .cd { width: 24px; height: 24px; }
+.hud .ct .cd-r { fill: rgba(4, 14, 22, 0.55); stroke: rgba(255, 255, 255, 0.3); stroke-width: 1; }
+.hud .ct .cd-b { stroke: rgba(255, 255, 255, 0.55); stroke-width: 1.2; }
+.hud .ct .cd-l { stroke: rgba(255, 196, 84, 0.5); stroke-width: 1; }
+.hud .ct .cd-p { fill: #ffc454; }
+.hud .ct.attack .cd-p, .hud .ct.pass .cd-p { fill: #ff5d61; }
+.hud .ct.attack .cd-l, .hud .ct.pass .cd-l { stroke: rgba(255, 93, 97, 0.6); }
+.hud .ct-id { display: grid; gap: 2px; min-width: 0; }
+.hud .ct-id b { font-size: 13px; font-weight: 800; line-height: 1; }
+.hud .ct-id em { font: 700 8px/1 ui-monospace, Consolas, monospace; font-style: normal; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255, 255, 255, 0.6); white-space: nowrap; }
+.hud .ct.attack .ct-id b, .hud .ct.pass .ct-id b { color: #ff5d61; }
+.hud .ct.attack .ct-id em, .hud .ct.pass .ct-id em { color: #ff8a8d; font-weight: 800; }
+.hud .ct-rg { display: grid; gap: 2px; justify-items: end; }
+.hud .ct-rg strong { font: 800 13px/1 ui-monospace, Consolas, monospace; }
+.hud .ct-rg strong small { margin-left: 2px; font-size: 8px; font-weight: 700; color: rgba(255, 255, 255, 0.55); }
+
+/* The ship's status card: hull damage and the drones shot down. */
+.helm-ship .hs-stat { display: flex; align-items: stretch; gap: 14px; min-width: 190px; padding: 8px 14px 9px; border-radius: 14px 14px 0 0; background: linear-gradient(180deg, rgba(14, 24, 38, 0.62), rgba(9, 14, 21, 0.5)); border: 1px solid rgba(255, 255, 255, 0.12); border-bottom: 0; color: var(--text); backdrop-filter: blur(3px); font-variant-numeric: tabular-nums; }
+.helm-ship .hs-stat.hurt { border-color: rgba(255, 93, 97, 0.6); }
+.helm-ship .st-hull { display: grid; gap: 5px; align-content: center; flex: 1; }
+.helm-ship .st-hull span, .helm-ship .st-kills span { font: 800 9px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.18em; color: rgba(255, 255, 255, 0.55); }
+.helm-ship .st-segs { display: flex; gap: 4px; }
+.helm-ship .st-segs i { flex: 1; height: 10px; border-radius: 3px; background: #3ddc84; box-shadow: 0 0 6px rgba(61, 220, 132, 0.5); }
+.helm-ship .st-segs i.hit { background: #ff5d61; box-shadow: 0 0 6px rgba(255, 93, 97, 0.6); }
+.helm-ship .st-hull em { font: 700 9.5px/1 ui-monospace, Consolas, monospace; font-style: normal; letter-spacing: 0.06em; color: #3ddc84; }
+.helm-ship .hs-stat.hurt .st-hull em { color: #ff8a8d; }
+.helm-ship .st-kills { display: grid; justify-items: center; align-content: center; gap: 2px; padding-left: 14px; border-left: 1px solid rgba(255, 255, 255, 0.15); }
+.helm-ship .st-kills b { font: 800 26px/1 ui-monospace, Consolas, monospace; color: #ffc454; }
+/* Short windows: the card has to leave room for the contact list, so the strip of speed, closing and altitude steps aside. */
+@media (max-height: 640px) { .hud .tk-cells { display: none; } .hud .tk-dial { width: 76px; height: 76px; } .hud .tg-range { font-size: 26px; } }

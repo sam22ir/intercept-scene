@@ -1,4 +1,4 @@
-import { RADAR_RANGE, ARC, relName, kmText } from './helm.js';
+import { RADAR_RANGE, ARC, MIN_RANGE, MISSILE_RANGE, GUN_RANGE, gunBlind, kmText } from './helm.js';
 
 // The Solo Air Defense mission's radar: the same round translucent disc as the other maps, but a ship's radar display:
 // centred on the ship and heading-up (her bow is screen up), with range rings, a rotating sweep, the north mark
@@ -49,7 +49,7 @@ export function createHelmMap() {
     let scale = ZOOMS[zoom];
     if (scale === 'auto') {
       const far = live.reduce((m, d) => Math.max(m, sim.rangeTo(d.pos)), 0);
-      scale = SCALES.find((s) => s >= far * 1.12) ?? SCALES[SCALES.length - 1];
+      scale = SCALES.find((s) => s >= Math.max(far * 1.12, GUN_RANGE * 1.1)) ?? SCALES[SCALES.length - 1];
     }
     const k = (R - 6) / scale;
     // World point -> screen, heading up.
@@ -72,13 +72,38 @@ export function createHelmMap() {
     ctx.fillStyle = 'rgba(6, 22, 18, 0.72)';
     ctx.fillRect(0, 0, SIZE, SIZE);
 
-    // The launcher's arc: a faint wedge either side of the bow.
-    ctx.fillStyle = 'rgba(61, 220, 132, 0.07)';
+    // The fire zones, clear on the disc. Missiles (green): the launcher's arc either side of the bow, between the minimum and
+    // the maximum range. Guns (amber): out to the gun range wherever a gun can bear (the superstructure blocks the sector ahead).
+    const aOf = (th) => -Math.PI / 2 + th; // bearing off the bow (+ to starboard) -> canvas angle
+    const rIn = MIN_RANGE * k;
+    const rOut = MISSILE_RANGE * k;
     ctx.beginPath();
-    ctx.moveTo(R, R);
-    ctx.arc(R, R, R, -Math.PI / 2 - ARC, -Math.PI / 2 + ARC);
+    ctx.arc(R, R, rOut, aOf(-ARC), aOf(ARC));
+    ctx.arc(R, R, rIn, aOf(ARC), aOf(-ARC), true);
     ctx.closePath();
+    ctx.fillStyle = 'rgba(61, 220, 132, 0.05)';
     ctx.fill();
+    ctx.strokeStyle = 'rgba(61, 220, 132, 0.55)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    const rg = GUN_RANGE * k;
+    const covered = (th) => !gunBlind(0, -th) || !gunBlind(1, -th);
+    const STEP = Math.PI / 90;
+    ctx.fillStyle = 'rgba(255, 179, 64, 0.05)';
+    ctx.strokeStyle = 'rgba(255, 179, 64, 0.55)';
+    ctx.lineWidth = 1;
+    for (let th = -Math.PI; th < Math.PI; th += STEP) {
+      if (!covered(th + STEP / 2) || (covered(th - STEP / 2) && th > -Math.PI)) continue; // start of a covered run
+      let end = th;
+      while (end < Math.PI && covered(end + STEP / 2)) end += STEP;
+      ctx.beginPath();
+      ctx.moveTo(R, R);
+      ctx.arc(R, R, rg, aOf(th), aOf(end));
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.lineWidth = 1;
 
     // Range rings, every quarter of the scale; the radar's own reach dashed.
     ctx.strokeStyle = 'rgba(61, 220, 132, 0.22)';
@@ -168,8 +193,6 @@ export function createHelmMap() {
         ctx.strokeStyle = '#fff';
         ctx.strokeRect(x - 7, y - 7, 14, 14);
       }
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-      ctx.fillText(d.name, x + 8, y - 6);
     }
 
     // The ship at the centre.
@@ -191,8 +214,7 @@ export function createHelmMap() {
     ctx.textAlign = 'center';
     ctx.fillText('N', R + Math.cos(nb) * (R - 9), R + Math.sin(nb) * (R - 9));
 
-    const tgt = sim.target;
-    label.textContent = `${zoom === 0 ? 'AUTO · ' : ''}${kmText(scale)}${tgt ? ` · ${tgt.name} ${relName(sim.relBearing(tgt.pos))}` : ''}`;
+    label.textContent = `${zoom === 0 ? 'AUTO · ' : ''}${kmText(scale)}`;
   }
 
   return {

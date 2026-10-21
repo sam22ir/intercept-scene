@@ -359,38 +359,99 @@ function createClouds(calm = false) {
   return group;
 }
 
-// Distant mountains for the drill: three ridge lines on the horizon in an arc, each a strip of flat-coloured
-// triangles (about 1,500 in all, one mesh, no textures, no lighting), paler the farther away so the air seems to
-// thicken. Static, far enough that moving the camera barely shifts them.
-function createMountains() {
+// Distant mountains for the drill: three ranges on the horizon in an arc, each one mesh of flat-coloured triangles (no textures, no
+// lighting): jagged ridged-noise peaks, lit a little on the side that faces the sun, with soft spurs running down their slopes, and bluer and hazier toward the sea and the
+// farther away they are. Static, far enough that moving the camera barely shifts them.
+const MOUNT_ARC = [-0.3, 3.4]; // radians: an arc of about 210 degrees
+const MOUNT_LAYERS = (() => {
   const rng = mulberry32(31);
-  const layers = [
-    { r: 13000, h: 620, col: [0.5, 0.6, 0.72], n: 260 },
-    { r: 10600, h: 470, col: [0.34, 0.45, 0.58], n: 260 },
-    { r: 8800, h: 330, col: [0.2, 0.3, 0.42], n: 260 },
-  ];
-  const A0 = -0.3;
-  const A1 = 3.4; // radians: an arc of about 210 degrees
+  return [
+    { r: 13000, h: 1150, col: [0.36, 0.5, 0.74], haze: 0.22, n: 900 },
+    { r: 10600, h: 850, col: [0.2, 0.32, 0.54], haze: 0.12, n: 900 },
+    { r: 8800, h: 580, col: [0.1, 0.2, 0.34], haze: 0.04, n: 900 },
+  ].map((L) => ({ ...L, p: [rng() * 100, rng() * 100, rng() * 100] }));
+})();
+const hash1 = (i) => { const s = Math.sin(i * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+function vnoise(x) { // smooth value noise in 0..1
+  const i = Math.floor(x);
+  const f = x - i;
+  const u = f * f * (3 - 2 * f);
+  return hash1(i) * (1 - u) + hash1(i + 1) * u;
+}
+function ridged(x, seed) { // sharp-crested peaks: 1 - |noise| squared, four octaves
+  let s = 0;
+  let amp = 0.5;
+  let fr = 1;
+  let norm = 0;
+  for (let o = 0; o < 3; o++) {
+    const n = 1 - Math.abs(2 * vnoise(x * fr + seed + o * 5.1) - 1);
+    s += amp * n * n;
+    norm += amp;
+    amp *= 0.5;
+    fr *= 2.15;
+  }
+  return s / norm;
+}
+// The height of a ridge line at its fraction t (0 to 1) along the arc.
+function ridgeTop(L, t) {
+  const a = MOUNT_ARC[0] + (MOUNT_ARC[1] - MOUNT_ARC[0]) * t;
+  const massif = 0.3 + 0.7 * vnoise(a * 2.6 + L.p[0]); // which stretches stand high
+  const peaks = 0.28 + 0.72 * ridged(a * 8 + L.p[1], L.p[1]);
+  const env = Math.sin(Math.PI * t) ** 0.5; // the range tapers into the sea at both ends
+  return L.h * Math.min(1, massif * peaks * 1.85) * env;
+}
+
+// The highest ridge in a direction seen from a point eyeY up (radians above the horizontal; -Infinity where there is none):
+// (dx, dz) is the direction on the sea, x north and z east as in the scene. Used to hide what lies behind the mountains.
+export function ridgeAngle(dx, dz, eyeY = 0) {
+  let a = Math.atan2(dz, dx);
+  if (a < MOUNT_ARC[0]) a += 2 * Math.PI;
+  if (a > MOUNT_ARC[1]) return -Infinity;
+  const t = (a - MOUNT_ARC[0]) / (MOUNT_ARC[1] - MOUNT_ARC[0]);
+  let best = -Infinity;
+  for (const L of MOUNT_LAYERS) best = Math.max(best, Math.atan2(ridgeTop(L, t) - eyeY, L.r));
+  return best;
+}
+
+const ROW_F = [0, 0.28, 0.58, 0.82, 1]; // the rows of vertices between the foot (just under the sea) and the crest, as fractions of the height
+const HAZE = [0.45, 0.62, 0.9]; // the colour the air turns the foot of a range to
+function createMountains() {
+  const A0 = MOUNT_ARC[0];
+  const A1 = MOUNT_ARC[1];
   const pos = [];
   const col = [];
   const idx = [];
-  for (const L of layers) {
-    const p = [rng() * 6.28, rng() * 6.28, rng() * 6.28];
+  const R = ROW_F.length;
+  for (const L of MOUNT_LAYERS) {
     const base = pos.length / 3;
     for (let i = 0; i <= L.n; i++) {
       const t = i / L.n;
       const a = A0 + (A1 - A0) * t;
-      const n = 0.5 * Math.sin(a * 7 + p[0]) + 0.3 * Math.sin(a * 17 + p[1]) + 0.2 * Math.sin(a * 41 + p[2]);
-      const env = Math.sin(Math.PI * t) ** 0.6; // the range tapers into the sea at both ends
-      const top = L.h * (0.3 + 0.7 * (0.5 + 0.5 * n)) * env;
+      const top = ridgeTop(L, t);
+      // The slope of the crest here: the side facing the sun (toward smaller angles) is lit, the other in shade.
+      const dt = 1 / L.n;
+      const slope = (ridgeTop(L, Math.min(1, t + dt)) - ridgeTop(L, Math.max(0, t - dt))) / (2 * dt * (A1 - A0) * L.r);
+      const lit = 0.88 + 0.24 * Math.min(1, Math.max(0, 0.5 + slope * 1.6));
       const x = Math.cos(a) * L.r;
       const z = Math.sin(a) * L.r;
-      pos.push(x, -40, z, x, top, z);
-      col.push(L.col[0] * 0.8, L.col[1] * 0.8, L.col[2] * 0.85, L.col[0] * 1.1, L.col[1] * 1.1, L.col[2] * 1.08);
+      for (let k = 0; k < R; k++) {
+        const f = ROW_F[k];
+        pos.push(x, -40 + (top + 40) * f, z);
+        const spur = 0.9 + 0.2 * vnoise(a * 55 + f * 7 + L.p[2]); // soft spurs running down the slopes
+        const hz = Math.min(1, L.haze + 0.6 * (1 - f) ** 2.2);
+        for (let c = 0; c < 3; c++) {
+          let v = L.col[c] * lit * spur;
+          v += (HAZE[c] - v) * hz;
+          col.push(v);
+        }
+      }
     }
     for (let i = 0; i < L.n; i++) {
-      const k = base + i * 2;
-      idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3);
+      for (let k = 0; k < R - 1; k++) {
+        const p = base + i * R + k;
+        const q = p + R;
+        idx.push(p, q, p + 1, p + 1, q, q + 1);
+      }
     }
   }
   const geo = new THREE.BufferGeometry();

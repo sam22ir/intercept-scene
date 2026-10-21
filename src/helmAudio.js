@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SOUNDS } from './audioAssets.js';
+import { HIT } from './helmHit.js';
 import { GUN_MOUNTS, GUN_SPIN } from './helm.js';
 
 // Sound for the Solo Air Defense mission, driven live from the simulation (helm.js) like the manual flight's: the
@@ -17,7 +18,7 @@ const att = (d, ref) => ref / (ref + d);
 const doppler = (vr) => clamp(SOUND_SPEED / (SOUND_SPEED + vr), 0.5, 2);
 
 const LOOPS = { hum: 'hum', surf: 'surf', wind: 'wind', drone0: 'engine', drone1: 'engine', motor0: 'motor', motor1: 'motor' };
-const SHOTS = { launch: { level: 1.0, ref: 110 }, boom: { level: 1.6, ref: 160 }, splash: { level: 0.7, ref: 80 } };
+const SHOTS = { launch: { level: 1.0, ref: 110 }, hit: { level: 1.4, ref: 160 }, boom: { level: 1.0, ref: 160 }, splash: { level: 0.7, ref: 80 } };
 
 export function createHelmAudio() {
   const AudioCtx = globalThis.AudioContext ?? globalThis.webkitAudioContext;
@@ -200,6 +201,7 @@ export function createHelmAudio() {
     }
   }
   function loadBuffers() {
+    try { ctx.decodeAudioData(bytes(HIT), (buf) => { buffers.hit = buf; }, () => {})?.catch?.(() => {}); } catch { /* the burst stays silent */ }
     for (const name of Object.keys(SOUNDS)) {
       if (name === 'motor') continue; // the missile's motor is synthesised (startRocket), not this recording
       const done = (buf) => { buffers[name] = buf; startLoop(name); };
@@ -248,7 +250,9 @@ export function createHelmAudio() {
     const d = to.length();
     v.g.gain.cancelScheduledValues(ctx.currentTime);
     v.g.gain.value = SHOTS[name].level * att(d, SHOTS[name].ref);
-    if (v.lp) v.lp.frequency.value = clamp(14000 / (1 + d / 140), 400, 14000);
+    // The burst is rounded off: a deeper pitch and no harsh highs (the raw recording is brittle and clips).
+    if (v.lp) v.lp.frequency.value = Math.min(clamp(14000 / (1 + d / 140), 400, 14000), name === 'boom' ? 2800 : 14000);
+    if (name === 'boom') node.playbackRate.value = 0.82;
     if (v.p) v.p.pan.value = d > 0.5 ? clamp(to.dot(right) / d, -1, 1) * 0.8 : 0;
     node.connect(v.in);
     node.start();
@@ -295,7 +299,8 @@ export function createHelmAudio() {
   function event(e) {
     switch (e.type) {
       case 'fire': shot('launch', e.pos); break;
-      case 'explosion': case 'struck': shot('boom', e.pos); break;
+      case 'explosion': shot('hit', e.pos); break; // the missile bursting on the drone
+      case 'struck': shot('boom', e.pos); break;
       case 'splash': shot('splash', e.pos); break;
       case 'missile-lost': if (e.pos.y < 8) shot('splash', e.pos); break;
       case 'telegraph': bell(); break;
