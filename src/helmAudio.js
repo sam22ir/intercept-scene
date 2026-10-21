@@ -538,14 +538,14 @@ export function createHelmAudio() {
       const dop = doppler(radial(heliP, heliV));
       const p = v.heli.parts;
       set(p.rotor.playbackRate, Math.max(0.05, rpm) * dop);
-      set(p.rotorG.gain, (p.sample ? 1.35 : 1.0) * rpm ** 1.1);
+      set(p.rotorG.gain, (p.sample ? 0.8 : 0.6) * rpm ** 1.1);
       set(p.whine.frequency, (420 + 700 * rpm) * dop);
       set(p.whine2.frequency, (840 + 1400 * rpm) * dop);
       set(p.whineG.gain, (p.sample ? 0.008 : 0.035) * rpm * rpm);
       set(p.rumbleG.gain, (p.sample ? 0.12 : 0.5) * (0.15 + 0.85 * rpm) * (rpm > 0.01 ? 1 : 0));
       set(p.tail.frequency, (30 + 75 * rpm) * dop);
       set(p.tailG.gain, (p.sample ? 0.012 : 0.05) * rpm * rpm);
-      place(v.heli, heliP, 1.5, 110);
+      place(v.heli, heliP, 0.55, 70); // a background sound: it must not compete with the guns, missiles and alarms
     }
     // The klaxon while a drone is on its attack run.
     if (sim.threat >= 3 && sim.t >= klaxonNext) {
