@@ -12,8 +12,10 @@ import { menuText } from './menu.js';
 import { compass, relName, kmText, RUDDER_MAX } from './hull.js';
 import {
   DuelSim, TELEGRAPH, COMPARTMENTS, COMP_IDS, HULL_HP, LEVELS, DUEL_LEVELS, MAIN_ARC, MAIN_RANGE, GUN_MOUNT_LOCAL, GUN_RANGE, sinkState,
+  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, AMMO_TYPES, SWITCH_TIME, CREWS,
 } from './duel.js';
 import { createDuelAudio } from './duelAudio.js';
+import { createDuelMap } from './duelMap.js';
 import './duel.css';
 
 // Entry point of "Ship duel", mission id `duel` (see duel.js for the model): you sail a frigate against another and
@@ -136,7 +138,7 @@ function poseShip(i, dt) {
   v.group.updateMatrixWorld(true);
   v.mainGun.pose(s.gun.yaw, s.gun.pitch);
   v.gats.forEach((g, k) => g.pose(s.gats[k].yaw, s.gats[k].pitch, s.gats[k].spin, s.gats[k].firing, sim.t));
-  v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0 }); // the radar turns; the missile box stays stowed
+  v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0 }); // the radar turns; the launcher box stays stowed
   v.wake.update({ t: sim.t, x: s.x, z: s.z, psi: s.psi, r: s.r, u: s.u });
   // Smoke and fire: a hurt compartment smokes, one that is out burns; a sinking ship pours it out.
   v.smokeT += dt;
@@ -147,6 +149,11 @@ function poseShip(i, dt) {
       if (frac > 0.55 || (sink && sink.gone)) continue;
       _a.set(ZONE_X[id] + (Math.random() - 0.5) * 6, 8, (Math.random() - 0.5) * 5);
       fx.fireSmoke(v.group.localToWorld(_a), sim.t, frac <= 0 ? 1.4 : 0.8);
+    }
+    for (const id of COMP_IDS) {
+      if (s.fire[id] < 0.05 || (sink && sink.gone)) continue;
+      _a.set(ZONE_X[id] + (Math.random() - 0.5) * 6, 8, (Math.random() - 0.5) * 5);
+      fx.fireSmoke(v.group.localToWorld(_a), sim.t, 0.7 + 1.6 * s.fire[id]);
     }
     if (sink && sink.smoke > 0.2) {
       _a.set((Math.random() - 0.5) * 60, 9, (Math.random() - 0.5) * 6);
@@ -246,6 +253,10 @@ function handleEvents() {
       say(`${who(e.ship)} ${COMPARTMENTS[e.comp].name.toLowerCase()} is out`, e.ship === 0 ? 'bad' : 'ok', 3000);
     } else if (e.type === 'sunk') {
       for (let k = 0; k < 3; k++) fx.explosion(_c.set(e.pos[0] + (k - 1) * 14, e.pos[1], e.pos[2]), sim.t + k * 0.35);
+    } else if (e.type === 'ammo') {
+      if (e.ship === 0) say(`${AMMO_TYPES[e.kind].name} loaded`, '', 1400);
+    } else if (e.type === 'fire') {
+      if (e.ship === 0) say(`Fire in the ${COMPARTMENTS[e.comp].name.toLowerCase()}: send a crew`, 'warn', 2400);
     } else if (e.type === 'over') {
       say(e.winner === 0 ? 'The enemy frigate is going down: you win' : 'Your ship is sinking: you lose', e.winner === 0 ? 'ok' : 'bad', 60000);
     }
@@ -315,11 +326,14 @@ root.classList.add('duel-root');
 root.innerHTML = '<div class="duel-hud"></div>';
 const hud = root.querySelector('.duel-hud');
 const bar = (frac, cls = '') => `<i class="${cls}" style="width:${Math.round(clamp(frac, 0, 1) * 100)}%"></i>`;
+let selComp = 0; // the compartment Z has picked for X to send a crew to
 function cardHtml(i) {
   const s = sim.ships[i];
   const comps = COMP_IDS.map((id) => {
     const f = s.comp[id] / COMPARTMENTS[id].hp;
-    return `<div class="dh-row ${f <= 0 ? 'out' : f < 0.5 ? 'bad' : f < 0.99 ? 'hurt' : ''}"><span>${COMPARTMENTS[id].name}</span><b>${bar(f)}</b><em>${f <= 0 ? 'OUT' : `${Math.round(f * 100)}`}</em></div>`;
+    const crew = s.crews.filter((c) => c.to === id);
+    const tags = `${s.fire[id] > 0 ? `<u class="fire" title="fire">${'▲'.repeat(Math.ceil(s.fire[id] * 3))}</u>` : ''}${s.leak[id] > 0.005 ? '<u class="leak" title="flooding">≈</u>' : ''}${crew.map((c) => `<u class="crew${c.eta > 0 ? ' going' : ''}" title="repair crew">⛑</u>`).join('')}`;
+    return `<div class="dh-row ${f <= 0 ? 'out' : f < 0.5 ? 'bad' : f < 0.99 ? 'hurt' : ''}${i === 0 && COMP_IDS[selComp] === id ? ' sel' : ''}"><span>${COMPARTMENTS[id].name}</span><b>${bar(f)}</b><em>${f <= 0 ? 'OUT' : `${Math.round(f * 100)}`}</em>${tags ? `<div class="dh-tags">${tags}</div>` : ''}</div>`;
   }).join('');
   const hp = s.hp / HULL_HP;
   return `<section class="dh-ship ${i ? 'foe' : 'you'}${s.tSunk !== null ? ' sunk' : ''}"><h3>${i ? 'ENEMY' : 'YOUR SHIP'}<small>${i ? LEVELS[sim.level].name : ''}${s.tSunk !== null ? 'SINKING' : ''}</small></h3>`
@@ -334,6 +348,7 @@ function gunStatus(s) {
   if (sim.range() > MAIN_RANGE) return `OUT OF RANGE (${kmText(MAIN_RANGE)})`;
   if (sol > MAIN_ARC) return 'OUT OF ARC: turn her';
   if (g.cool > 0) return `LOADING ${g.cool.toFixed(1)} s`;
+  if (s.manual) return g.engaged ? (g.onTarget ? 'ON YOUR AIM' : 'TRAINING') : 'point at her';
   return g.onTarget ? 'ON TARGET' : 'TRAINING';
 }
 function statusHtml() {
@@ -346,7 +361,10 @@ function statusHtml() {
     + `<div><span>RUDDER</span><b>${rud === 0 ? '0' : `${Math.abs(rud)}° ${rud > 0 ? 'stbd' : 'port'}`}</b></div>`
     + `<div><span>ENEMY</span><b>${kmText(dist)}</b><small>${relName(rel)}</small></div></div>`
     + `<div class="dh-weapons"><div><span>76 mm</span><b>${p.gun.ammo} rd</b><small>${gunStatus(p)}</small></div>`
-    + `<div><span>30 mm</span><b>${p.auto ? 'AUTO' : 'MANUAL'}</b><small>${p.gats.map((g) => (g.ammo > 0 ? '' : 'dry')).join('') || (sim.range() > GUN_RANGE ? 'out of range' : 'ready')}</small></div></div>`;
+    + `<div><span>30 mm</span><b>${p.auto ? 'AUTO' : 'MANUAL'}</b><small>${p.gats.map((g) => (g.ammo > 0 ? '' : 'dry')).join('') || (sim.range() > GUN_RANGE ? 'out of range' : 'ready')}</small></div>`
+    + `<div><span>AMMO · Q</span><b>${AMMO_TYPES[p.gun.type].name}</b><small>HE ${p.gun.stock.he} · AP ${p.gun.stock.ap}${p.gun.cool > 0 && p.gun.cool > MAIN_RELOAD ? ' · changing' : ''}</small></div>`
+    + `<div><span>AIM · T</span><b>${p.manual ? 'MANUAL' : 'AUTO'}</b><small>${p.manual ? 'mouse, you lead' : 'fire control leads'}</small></div>`
+    + `<div class="wide"><span>CREWS · Z X</span><b>${p.crews.filter((c) => c.to).length} of ${CREWS} out</b><small>${COMPARTMENTS[COMP_IDS[selComp]].name} selected</small></div></div>`;
 }
 function endHtml() {
   if (sim.winner === null) return '';
@@ -362,41 +380,8 @@ function updateHud() {
   if (html !== lastHtml) { hud.innerHTML = html; lastHtml = html; }
 }
 
-// A small map: you at the centre, bow up, the enemy where she is (range rings every 2 km, the 76 mm's arc shaded).
-const map = document.createElement('canvas');
-map.className = 'duel-map';
-map.width = map.height = 300;
-document.body.appendChild(map);
-let mapOn = true;
-function drawMap() {
-  const c = map.getContext('2d');
-  const R = 150;
-  c.clearRect(0, 0, 300, 300);
-  c.save();
-  c.translate(R, R);
-  c.fillStyle = 'rgba(8, 13, 20, 0.62)';
-  c.beginPath(); c.arc(0, 0, R - 1, 0, Math.PI * 2); c.fill();
-  const scale = (R - 14) / Math.max(3000, Math.min(9000, sim.range() * 1.25));
-  c.strokeStyle = 'rgba(255,255,255,0.16)';
-  c.lineWidth = 1;
-  for (let n = 1; n <= 4; n++) { c.beginPath(); c.arc(0, 0, n * 2000 * scale, 0, Math.PI * 2); c.stroke(); }
-  c.fillStyle = 'rgba(255, 122, 26, 0.10)';
-  c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, Math.min(MAIN_RANGE * scale, R - 2), -Math.PI / 2 - MAIN_ARC, -Math.PI / 2 + MAIN_ARC); c.closePath(); c.fill();
-  const draw = (s, col) => { // up is the player's bow
-    const dx = s.x - sim.player.x, dz = s.z - sim.player.z;
-    const fwd = dx * Math.cos(sim.player.psi) + dz * Math.sin(sim.player.psi);
-    const side = -dx * Math.sin(sim.player.psi) + dz * Math.cos(sim.player.psi);
-    c.save();
-    c.translate(clamp(side * scale, -R + 8, R - 8), clamp(-fwd * scale, -R + 8, R - 8));
-    c.rotate(s.psi - sim.player.psi + Math.PI / 2);
-    c.fillStyle = col;
-    c.beginPath(); c.moveTo(0, -9); c.lineTo(-5, 7); c.lineTo(5, 7); c.closePath(); c.fill();
-    c.restore();
-  };
-  if (ships[1].group.visible) draw(sim.enemy, '#ff5d61');
-  draw(sim.player, '#3ddc84');
-  c.restore();
-}
+const map = createDuelMap();
+const drawMap = () => map.update(sim);
 
 // --- Interface: the top bar, menu, keys sheet ---------------------------------------------------------------------------------
 const FOLD_KEY = 'intercept.uiHidden';
@@ -440,9 +425,10 @@ document.querySelector('#btn-home')?.addEventListener('click', () => document.qu
 }
 
 const mapButton = document.querySelector('#btn-map');
+let mapOn = true;
 function setMap(on) {
   mapOn = on;
-  map.hidden = !on;
+  map.setEnabled(on);
   mapButton.classList.toggle('active', on);
   mapButton.setAttribute('aria-pressed', String(on));
   try { localStorage.setItem('intercept.map', on ? '1' : '0'); } catch { /* storage unavailable */ }
@@ -481,6 +467,9 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>F</kbd>', `Fire the 76 mm (hold): the gun trains on the enemy by itself within ${Math.round((MAIN_ARC * 180) / Math.PI)}° of the bow and ${kmText(MAIN_RANGE)}, and fires once it is on the aim and loaded`],
   ['<kbd>G</kbd>', `Fire the two 30 mm guns aft (hold): ${kmText(GUN_RANGE)}, astern and abeam only`],
   ['<kbd>A</kbd>', 'The 30 mm guns on automatic'],
+  ['<kbd>Q</kbd>', `Change the 76 mm round, HE or AP: HE starts fires and floods, AP hits one compartment harder; changing costs a ${SWITCH_TIME} s reload`],
+  ['<kbd>T</kbd>', 'Aim the 76 mm by hand with the mouse (smaller scatter than the fire control, but you judge the lead); T again gives it back'],
+  ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
   ['<kbd>1</kbd> to <kbd>6</kbd>', 'Behind, bridge, sight, above, shell, orbit'],
   ['<kbd>V</kbd>', 'Next view · drag looks round in the orbit view, the wheel zooms'],
   ['<kbd>R</kbd>', 'Fight again'],
@@ -488,7 +477,7 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>S</kbd>', 'Sound on / off'],
   ['<kbd>H</kbd> <kbd>C</kbd>', 'Readouts, hide the interface'],
 ].map(([k, d]) => `<dt>${k}</dt><dd>${d}</dd>`).join('');
-keysSheet.querySelector('.keys-note').textContent = 'The guns aim themselves: you win by where you point the ship · turning spoils your own aim · a shell takes seconds to arrive';
+keysSheet.querySelector('.keys-note').textContent = 'The 76 mm aims itself unless you press T · a shell takes seconds to arrive and turning spoils your aim';
 
 const audio = createDuelAudio();
 eventHooks.push((e) => audio.event(e));
@@ -512,10 +501,11 @@ const keysEl = document.createElement('div');
 keysEl.id = 'fly-keys';
 keysEl.className = 'fly-keys';
 document.body.appendChild(keysEl);
-const input = { left: 0, right: 0, fire: 0, gat: 0 };
+const input = { left: 0, right: 0, fire: 0, gat: 0, aim: null };
 const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`;
 function keysHtml() {
   return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', 'speed')}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}`
+    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('T', 'aim by hand', sim.player.manual)}${k('Z X', 'crews')}`
     + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–6', 'views')}${k('R', 'again')}`;
 }
 let lastKeys = '';
@@ -549,6 +539,9 @@ function restart() {
   lastShell = null;
   banner.hidden = true;
   alarmEl.classList.remove('hit');
+  input.aim = null;
+  selComp = 0;
+  setManual(false);
   startBanner();
 }
 function startBanner() {
@@ -571,6 +564,10 @@ window.addEventListener('keydown', (e) => {
     case 'ArrowUp': sim.telegraph(0, +1); break;
     case 'ArrowDown': sim.telegraph(0, -1); break;
     case 'a': sim.toggleAuto(0); break;
+    case 'q': sim.switchAmmo(0); break;
+    case 't': setManual(!sim.player.manual); break;
+    case 'z': selComp = (selComp + 1) % COMP_IDS.length; break;
+    case 'x': sim.assignCrew(0, COMP_IDS[selComp]); break;
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
     case '1': case '2': case '3': case '4': case '5': case '6': setView(VIEWS[Number(key) - 1]); break;
@@ -594,6 +591,57 @@ window.addEventListener('keyup', (e) => {
 });
 window.addEventListener('blur', () => { input.left = 0; input.right = 0; input.fire = 0; input.gat = 0; });
 
+// --- Aiming by hand ----------------------------------------------------------------------------------------------------------
+// The pointer's ray meets the vertical plane through the enemy, square to the line from the gun to her: the fire control still
+// supplies the range (as a rangefinder would) and your own motion and the drop, and you judge the lead and the deflection.
+const reticle = document.createElement('div');
+reticle.className = 'duel-reticle';
+reticle.hidden = true;
+reticle.innerHTML = '<i class="cross"></i><i class="enemy"></i><i class="head"></i>';
+document.body.appendChild(reticle);
+const pointer = { x: 0, y: 0, in: false };
+const ray = new THREE.Raycaster();
+const aimPlane = new THREE.Plane();
+function setManual(on) {
+  if (!sim.setManual(0, on)) return;
+  if (!on) input.aim = null;
+  reticle.hidden = !on;
+  document.body.classList.toggle('duel-manual', on);
+  say(on ? 'Gun by hand: aim with the mouse, hold F' : 'Fire control has the gun', '', 1600);
+}
+window.addEventListener('pointermove', (e) => { pointer.x = (e.clientX / window.innerWidth) * 2 - 1; pointer.y = -(e.clientY / window.innerHeight) * 2 + 1; pointer.in = true; reticle.style.setProperty('--x', `${e.clientX}px`); reticle.style.setProperty('--y', `${e.clientY}px`); }, { passive: true });
+function updateAim() {
+  const p = sim.player;
+  if (!p.manual || !pointer.in || p.tSunk !== null) { input.aim = null; return; }
+  const M = sim.toWorld(p, MAIN_MOUNT);
+  _a.set(sim.enemy.x - M[0], 0, sim.enemy.z - M[2]);
+  const r = _a.length() || 1;
+  aimPlane.setFromNormalAndCoplanarPoint(_a.divideScalar(r), _b.set(sim.enemy.x, 0, sim.enemy.z));
+  ray.setFromCamera({ x: pointer.x, y: pointer.y }, camera);
+  const hit = ray.ray.intersectPlane(aimPlane, _c);
+  if (!hit) { input.aim = null; return; }
+  const sol = sim.solve(p, MAIN_MOUNT, MUZZLE_V, true, {}, { p: [_c.x, Math.max(0, _c.y), _c.z], v: [0, 0, 0] });
+  input.aim = { yaw: sol.yaw, pitch: sol.pitch };
+}
+// Her present position (a ring) and her heading (a short line): where she goes in a shell's time is for you to judge.
+function updateReticle() {
+  if (reticle.hidden) return;
+  const e = sim.enemy;
+  _a.set(e.x, 8, e.z).project(camera);
+  const on = _a.z < 1 && Math.abs(_a.x) < 1.2 && Math.abs(_a.y) < 1.2 && e.tSunk === null;
+  const ring = reticle.querySelector('.enemy');
+  ring.style.display = reticle.querySelector('.head').style.display = on ? '' : 'none';
+  if (!on) return;
+  const px = (_a.x * 0.5 + 0.5) * window.innerWidth, py = (-_a.y * 0.5 + 0.5) * window.innerHeight;
+  ring.style.transform = `translate(${px}px, ${py}px)`;
+  const v = sim.velOf(e);
+  _b.set(e.x + v[0] * 40, 8, e.z + v[2] * 40).project(camera);
+  const dx = (_b.x - _a.x) * 0.5 * window.innerWidth, dy = -(_b.y - _a.y) * 0.5 * window.innerHeight;
+  const len = Math.min(70, Math.hypot(dx, dy));
+  reticle.querySelector('.head').style.transform = `translate(${px}px, ${py}px) rotate(${Math.atan2(dy, dx)}rad)`;
+  reticle.querySelector('.head').style.width = `${len}px`;
+}
+
 // --- Loop --------------------------------------------------------------------------------------------------------------------
 function resize() {
   const w = window.innerWidth;
@@ -614,6 +662,7 @@ let frames = 0;
 renderer.setAnimationLoop((now) => {
   const dt = Math.max(0, Math.min((now - last) / 1000, 0.1));
   last = now;
+  updateAim();
   sim.advance(dt, input);
   handleEvents();
   env.ocean.material.uniforms.uTime.value = sim.t;
@@ -628,6 +677,7 @@ renderer.setAnimationLoop((now) => {
   if (hudOn) updateHud();
   if (mapOn) drawMap();
   updateTag();
+  updateReticle();
   const keys = keysHtml();
   if (keys !== lastKeys) { keysEl.innerHTML = keys; lastKeys = keys; }
   document.documentElement.style.setProperty('--keys-h', `${keysEl.offsetHeight}px`);
