@@ -63,17 +63,50 @@ body.mission-duel .hud { max-height: calc(100vh - 2 * var(--gap) - var(--keys-h,
 .dh-tags .leak { color: #35c8ff; }
 .dh-tags .crew { color: #f2c94c; }
 .dh-tags .crew.going { opacity: 0.5; }
-.duel-reticle { position: fixed; inset: 0; z-index: 4; pointer-events: none; }
-.duel-reticle[hidden] { display: none; }
-.duel-reticle .cross { position: absolute; left: var(--x, 50%); top: var(--y, 50%); width: 34px; height: 34px; margin: -17px 0 0 -17px; border: 1px solid rgba(255, 220, 120, 0.9); border-radius: 50%; }
-.duel-reticle .cross::before, .duel-reticle .cross::after { content: ''; position: absolute; background: rgba(255, 220, 120, 0.9); }
-.duel-reticle .cross::before { left: 50%; top: -9px; bottom: -9px; width: 1px; }
-.duel-reticle .cross::after { top: 50%; left: -9px; right: -9px; height: 1px; }
-.duel-reticle .enemy { position: absolute; left: 0; top: 0; width: 22px; height: 22px; margin: -11px 0 0 -11px; border: 1.5px dashed #ff5d61; border-radius: 50%; }
-.duel-reticle .head { position: absolute; left: 0; top: 0; height: 0; border-top: 2px solid rgba(255, 93, 97, 0.8); transform-origin: 0 0; }
-body.duel-manual { cursor: crosshair; }
+
 body.mission-duel .hud { overflow-y: auto; scrollbar-width: thin; }
 .dh-row { line-height: 1.3; }
 .duel-hud { gap: 5px; }
 .dh-status, .dh-weapons { gap: 3px 10px; padding: 4px 0; }
 .dh-status b, .dh-weapons b { font-size: 13px; }
+
+/* The radar view (as Solo Air Defense's): the fire-control sight, its crosshair and the pad; the helm is locked. */
+body.duel-radarview canvas#scene { filter: saturate(0.6) contrast(1.12); }
+.duel-sight { position: fixed; inset: 0; z-index: 4; pointer-events: none; }
+.duel-sight[hidden] { display: none; }
+.duel-sight i { position: absolute; left: 50%; top: 50%; background: rgba(120, 255, 170, 0.75); }
+.duel-sight .hs-h { width: 34vmin; height: 1px; transform: translate(-50%, -50%); background: linear-gradient(90deg, rgba(120, 255, 170, 0.75) 40%, transparent 40% 60%, rgba(120, 255, 170, 0.75) 60%); }
+.duel-sight .hs-v { width: 1px; height: 34vmin; transform: translate(-50%, -50%); background: linear-gradient(180deg, rgba(120, 255, 170, 0.75) 40%, transparent 40% 60%, rgba(120, 255, 170, 0.75) 60%); }
+.duel-sight .hs-box { width: 9vmin; height: 9vmin; transform: translate(-50%, -50%); background: transparent; border: 1px solid rgba(120, 255, 170, 0.5); }
+.duel-sight.lock .hs-box { border: 2px solid #3ddc84; box-shadow: 0 0 12px rgba(61, 220, 132, 0.6); }
+.duel-sight .hs-txt {
+  position: absolute; left: 50%; top: calc(50% - 21vmin); transform: translate(-50%, -100%);
+  font: 700 12px/1.3 ui-monospace, Consolas, monospace; letter-spacing: 0.08em; color: #9dffc0; text-shadow: 0 1px 2px #000; white-space: nowrap;
+}
+.duel-radar { position: fixed; inset: 0; z-index: 5; pointer-events: none; }
+.duel-radar[hidden], body.ui-hidden .duel-radar { display: none; }
+.duel-radar .hr-marks { position: absolute; inset: 0; overflow: hidden; }
+.duel-radar .hr-mark { position: absolute; left: 0; top: 0; margin: 0; padding: 0; width: 0; height: 0; border: 0; background: none; pointer-events: auto; cursor: pointer; font: 600 11px 'Segoe UI', system-ui, sans-serif; color: #bfffd8; white-space: nowrap; text-shadow: 0 0 3px #000, 0 0 3px #000; }
+.duel-radar .hr-pad { position: absolute; left: 50%; bottom: calc(var(--keys-h, 56px) + var(--gap, 14px) + var(--safe-b, 0px)); transform: translateX(-50%); display: flex; gap: 10px; align-items: flex-end; max-width: calc(100vw - 2 * var(--map-d, 150px) - 40px); }
+.duel-radar .hr-mid { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 10px; background: rgba(9, 14, 21, 0.5); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 14px; backdrop-filter: blur(3px); pointer-events: auto; }
+.duel-radar .hr-read { display: flex; gap: 8px; align-items: baseline; color: var(--text); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.duel-radar .hr-mode { padding: 1px 7px; border-radius: 8px; background: #2a8f5c; color: #fff; font-size: 10.5px; letter-spacing: 0.08em; }
+.duel-radar .hr-mode.manual { background: #c98a1a; }
+.duel-radar .hr-dpad { display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 34px); grid-template-areas: '. u .' 'l k r' '. d .'; gap: 4px; }
+.duel-radar .hr-dpad [data-dir='u'] { grid-area: u; } .duel-radar .hr-dpad [data-dir='l'] { grid-area: l; } .duel-radar .hr-dpad [data-dir='r'] { grid-area: r; } .duel-radar .hr-dpad [data-dir='d'] { grid-area: d; } .duel-radar .hr-dpad .hr-hub { grid-area: k; }
+.duel-radar button { font: 600 12px 'Segoe UI', system-ui, sans-serif; color: var(--text); background: rgba(255, 255, 255, 0.09); border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 9px; cursor: pointer; touch-action: none; user-select: none; }
+.duel-radar .hr-pad button:hover { background: rgba(255, 255, 255, 0.18); }
+.duel-radar .hr-pad button:active { background: rgba(255, 255, 255, 0.3); }
+.duel-radar .hr-hub { background: rgba(61, 220, 132, 0.25); border-color: rgba(61, 220, 132, 0.7); font-size: 11px; letter-spacing: 0.06em; }
+.duel-radar .hr-acts { display: flex; flex-direction: column; gap: 4px; pointer-events: auto; }
+.duel-radar .hr-acts button { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-width: 128px; padding: 7px 10px; background: rgba(9, 14, 21, 0.55); backdrop-filter: blur(3px); }
+.duel-radar .hr-acts kbd { font-size: 10px; opacity: 0.7; }
+.duel-radar .hr-fire { background: rgba(255, 93, 97, 0.28); border-color: rgba(255, 93, 97, 0.7); }
+@media (max-width: 760px) { .duel-radar .hr-acts { display: none; } }
+.duel-radar .hr-mid { min-width: 236px; }
+@media (max-height: 600px) { .duel-radar .hr-dpad { grid-template-columns: repeat(3, 36px); grid-template-rows: repeat(3, 26px); } .duel-radar .hr-mid { padding: 5px 8px; gap: 4px; } }
+.duel-radar .hr-dpad .hr-hub { width: 100%; height: 100%; border-radius: 50%; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12); pointer-events: none; }
+.duel-radar[hidden], body:not(.mission-duel) .duel-radar, body:not(.mission-duel) .duel-sight { display: none; }
+.duel-radar .hr-pad { max-width: calc(100vw - 2 * var(--map-d, 150px) - 40px); }
+
+body.duel-radarview .duel-root { display: none; }

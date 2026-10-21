@@ -9,10 +9,10 @@ import { createWake } from './fx/wake.js';
 import { pointScale } from './fx/particles.js';
 import { CameraRig } from './cameraRig.js';
 import { menuText } from './menu.js';
-import { compass, relName, kmText, RUDDER_MAX } from './hull.js';
+import { compass, relName, kmText, RUDDER_MAX, HALF_LENGTH, HALF_BEAM } from './hull.js';
 import {
   DuelSim, TELEGRAPH, COMPARTMENTS, COMP_IDS, HULL_HP, LEVELS, DUEL_LEVELS, MAIN_ARC, MAIN_RANGE, GUN_MOUNT_LOCAL, GUN_RANGE, sinkState,
-  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, AMMO_TYPES, SWITCH_TIME, CREWS,
+  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, zoneAt, AMMO_TYPES, SWITCH_TIME, CREWS,
 } from './duel.js';
 import { createDuelAudio } from './duelAudio.js';
 import { createDuelMap } from './duelMap.js';
@@ -264,9 +264,9 @@ function handleEvents() {
 }
 
 // --- Views --------------------------------------------------------------------------------------------------------------
-const VIEWS = ['behind', 'bridge', 'sight', 'above', 'shell', 'orbit'];
-const VIEW_LABELS = ['Behind', 'Bridge', 'Sight', 'Above', 'Shell', 'Orbit'];
-const VIEW_NAMES = { behind: 'Behind the ship', bridge: 'The bridge', sight: 'The gun sight', above: 'Straight above', shell: 'Riding your shell', orbit: 'Free orbit' };
+const VIEWS = ['behind', 'bridge', 'sight', 'above', 'shell', 'orbit', 'radar'];
+const VIEW_LABELS = ['Behind', 'Bridge', 'Sight', 'Above', 'Shell', 'Orbit', 'Radar'];
+const VIEW_NAMES = { behind: 'Behind the ship', bridge: 'The bridge', sight: 'The gun sight', above: 'Straight above', shell: 'Riding your shell', orbit: 'Free orbit', radar: 'Radar (the fire-control sight: aim it at any part of her hull; the helm is locked)' };
 let view = 'behind';
 function setFov(f) {
   if (Math.abs(camera.fov - f) < 0.01) return;
@@ -275,8 +275,27 @@ function setFov(f) {
   pointScale.value = (window.innerHeight * renderer.getPixelRatio()) / (2 * Math.tan(rad(f / 2)));
 }
 const viewButtons = [];
+let viewBeforeRadar = 'behind';
+let radarPrevManual = false;
 function setView(v) {
+  if (v === 'radar' && view !== 'radar') {
+    viewBeforeRadar = view;
+    radarPrevManual = sim.player.manual;
+    input.left = input.right = 0;
+    setManual(true);
+    say('Radar: arrows, drag or the pad aim the sight, F fires. The helm is locked: Esc goes back', 'warn', 4200);
+  } else if (v !== 'radar' && view === 'radar') {
+    input.fire = 0;
+    setManual(radarPrevManual);
+  }
   view = v;
+  radarKeys.l = radarKeys.r = radarKeys.u = radarKeys.d = 0;
+  sight.manual = false; // the radar's own controls start on automatic every time
+  sight.fresh = true;
+  radarEl.hidden = v !== 'radar';
+  sightEl.hidden = v !== 'radar';
+  document.body.classList.toggle('duel-radarview', v === 'radar');
+  map.sight = null;
   controls.enabled = v === 'orbit';
   if (v === 'orbit') rig.focus('ship', (out) => out.set(sim.player.x, 8, sim.player.z), 230, 25);
   else rig.free();
@@ -284,6 +303,7 @@ function setView(v) {
   viewButtons.forEach((b) => { const on = b.dataset.view === v; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
 }
 const enemyPoint = (out) => out.set(sim.enemy.x, 9, sim.enemy.z);
+let frameDt = 1 / 60;
 function updateCamera() {
   const me = ships[0].group;
   const foe = sim.enemy;
@@ -298,6 +318,8 @@ function updateCamera() {
     if (inView) camera.lookAt(enemyPoint(_b)); else camera.lookAt(me.localToWorld(_b.set(100, 10, 0)));
     const r = sim.range();
     setFov(view === 'sight' ? clamp((Math.atan(70 / r) * 2 * 180) / Math.PI * 2.4, 3.5, 30) : 55);
+  } else if (view === 'radar') {
+    aimSight(frameDt);
   } else if (view === 'above') {
     setFov(50);
     const mx = (sim.player.x + foe.x) / 2, mz = (sim.player.z + foe.z) / 2;
@@ -358,12 +380,12 @@ function statusHtml() {
   const dist = sim.range();
   return `<div class="dh-status"><div><span>HDG</span><b>${String(Math.round(compass(p.psi))).padStart(3, '0')}°</b></div>`
     + `<div><span>SPEED</span><b>${Math.round(sim.knots(p))} kn</b><small>${TELEGRAPH[p.order].name}</small></div>`
-    + `<div><span>RUDDER</span><b>${rud === 0 ? '0' : `${Math.abs(rud)}° ${rud > 0 ? 'stbd' : 'port'}`}</b></div>`
+    + `<div><span>RUDDER</span><b>${view === 'radar' ? 'LOCKED' : rud === 0 ? '0' : `${Math.abs(rud)}° ${rud > 0 ? 'stbd' : 'port'}`}</b></div>`
     + `<div><span>ENEMY</span><b>${kmText(dist)}</b><small>${relName(rel)}</small></div></div>`
     + `<div class="dh-weapons"><div><span>76 mm</span><b>${p.gun.ammo} rd</b><small>${gunStatus(p)}</small></div>`
     + `<div><span>30 mm</span><b>${p.auto ? 'AUTO' : 'MANUAL'}</b><small>${p.gats.map((g) => (g.ammo > 0 ? '' : 'dry')).join('') || (sim.range() > GUN_RANGE ? 'out of range' : 'ready')}</small></div>`
     + `<div><span>AMMO · Q</span><b>${AMMO_TYPES[p.gun.type].name}</b><small>HE ${p.gun.stock.he} · AP ${p.gun.stock.ap}${p.gun.cool > 0 && p.gun.cool > MAIN_RELOAD ? ' · changing' : ''}</small></div>`
-    + `<div><span>AIM · T</span><b>${p.manual ? 'MANUAL' : 'AUTO'}</b><small>${p.manual ? 'mouse, you lead' : 'fire control leads'}</small></div>`
+
     + `<div class="wide"><span>CREWS · Z X</span><b>${p.crews.filter((c) => c.to).length} of ${CREWS} out</b><small>${COMPARTMENTS[COMP_IDS[selComp]].name} selected</small></div></div>`;
 }
 function endHtml() {
@@ -468,16 +490,16 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>G</kbd>', `Fire the two 30 mm guns aft (hold): ${kmText(GUN_RANGE)}, astern and abeam only`],
   ['<kbd>A</kbd>', 'The 30 mm guns on automatic'],
   ['<kbd>Q</kbd>', `Change the 76 mm round, HE or AP: HE starts fires and floods, AP hits one compartment harder; changing costs a ${SWITCH_TIME} s reload`],
-  ['<kbd>T</kbd>', 'Aim the 76 mm by hand with the mouse (smaller scatter than the fire control, but you judge the lead); T again gives it back'],
   ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
-  ['<kbd>1</kbd> to <kbd>6</kbd>', 'Behind, bridge, sight, above, shell, orbit'],
+  ['<kbd>1</kbd> to <kbd>7</kbd>', 'Behind, bridge, sight, above, shell, orbit, radar'],
+  ['<kbd>7</kbd>', 'Radar view, like Solo Air Defense: the fire-control sight on the enemy. Arrows, a drag or the on-screen pad aim it over any part of her hull (the label names the compartment), F fires there, Space returns it to auto. The helm is locked until Esc'],
   ['<kbd>V</kbd>', 'Next view · drag looks round in the orbit view, the wheel zooms'],
   ['<kbd>R</kbd>', 'Fight again'],
   ['<kbd>N</kbd>', 'Map'],
   ['<kbd>S</kbd>', 'Sound on / off'],
   ['<kbd>H</kbd> <kbd>C</kbd>', 'Readouts, hide the interface'],
 ].map(([k, d]) => `<dt>${k}</dt><dd>${d}</dd>`).join('');
-keysSheet.querySelector('.keys-note').textContent = 'The 76 mm aims itself unless you press T · a shell takes seconds to arrive and turning spoils your aim';
+keysSheet.querySelector('.keys-note').textContent = 'The 76 mm aims itself unless you take the radar view (7) · a shell takes seconds to arrive and turning spoils your aim';
 
 const audio = createDuelAudio();
 eventHooks.push((e) => audio.event(e));
@@ -505,8 +527,8 @@ const input = { left: 0, right: 0, fire: 0, gat: 0, aim: null };
 const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`;
 function keysHtml() {
   return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', 'speed')}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}`
-    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('T', 'aim by hand', sim.player.manual)}${k('Z X', 'crews')}`
-    + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–6', 'views')}${k('R', 'again')}`;
+    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}`
+    + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–7', 'views')}${k('R', 'again')}`;
 }
 let lastKeys = '';
 
@@ -539,6 +561,7 @@ function restart() {
   lastShell = null;
   banner.hidden = true;
   alarmEl.classList.remove('hit');
+  if (view === 'radar') setView(viewBeforeRadar);
   input.aim = null;
   selComp = 0;
   setManual(false);
@@ -551,6 +574,13 @@ window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const tag = e.target?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (view === 'radar' && e.key.startsWith('Arrow')) { // the helm is locked: the arrows turn the sight
+    const k = { ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd' }[e.key];
+    radarKeys[k] = 1;
+    sight.manual = true;
+    e.preventDefault();
+    return;
+  }
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
     input[e.key === 'ArrowLeft' ? 'left' : 'right'] = 1;
     e.preventDefault();
@@ -565,25 +595,25 @@ window.addEventListener('keydown', (e) => {
     case 'ArrowDown': sim.telegraph(0, -1); break;
     case 'a': sim.toggleAuto(0); break;
     case 'q': sim.switchAmmo(0); break;
-    case 't': setManual(!sim.player.manual); break;
     case 'z': selComp = (selComp + 1) % COMP_IDS.length; break;
     case 'x': sim.assignCrew(0, COMP_IDS[selComp]); break;
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
-    case '1': case '2': case '3': case '4': case '5': case '6': setView(VIEWS[Number(key) - 1]); break;
+    case '1': case '2': case '3': case '4': case '5': case '6': case '7': setView(VIEWS[Number(key) - 1]); break;
     case 'h': setHud(!hudOn); break;
     case 'n': setMap(!mapOn); break;
     case 'l': tagsOn = !tagsOn; break;
     case 'c': setFolded(!document.body.classList.contains('ui-hidden')); break;
     case '?': setKeys(keysSheet.hidden); break;
-    case 'Escape': closePopovers(); break;
+    case 'Escape': if (!closePopovers() && view === 'radar') setView(viewBeforeRadar); break;
     case 's': setSound(!audio.enabled); break;
-    case ' ': break;
+    case ' ': if (view === 'radar') sight.manual = false; break;
     default: return;
   }
   if (key !== 'Escape') e.preventDefault();
 });
 window.addEventListener('keyup', (e) => {
+  if (e.key.startsWith('Arrow')) radarKeys[{ ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd' }[e.key]] = 0;
   if (e.key === 'ArrowLeft') input.left = 0;
   if (e.key === 'ArrowRight') input.right = 0;
   if (e.key === 'f' || e.key === 'F') input.fire = 0;
@@ -591,55 +621,135 @@ window.addEventListener('keyup', (e) => {
 });
 window.addEventListener('blur', () => { input.left = 0; input.right = 0; input.fire = 0; input.gat = 0; });
 
-// --- Aiming by hand ----------------------------------------------------------------------------------------------------------
-// The pointer's ray meets the vertical plane through the enemy, square to the line from the gun to her: the fire control still
-// supplies the range (as a rangefinder would) and your own motion and the drop, and you judge the lead and the deflection.
-const reticle = document.createElement('div');
-reticle.className = 'duel-reticle';
-reticle.hidden = true;
-reticle.innerHTML = '<i class="cross"></i><i class="enemy"></i><i class="head"></i>';
-document.body.appendChild(reticle);
-const pointer = { x: 0, y: 0, in: false };
-const ray = new THREE.Raycaster();
-const aimPlane = new THREE.Plane();
+// --- The gun by hand: only through the radar view (below) ---------------------------------------------------------------------
+// In the radar view the 76 mm goes where the sight points (input.aim); everywhere else the fire control has it.
 function setManual(on) {
   if (!sim.setManual(0, on)) return;
   if (!on) input.aim = null;
-  reticle.hidden = !on;
-  document.body.classList.toggle('duel-manual', on);
-  say(on ? 'Gun by hand: aim with the mouse, hold F' : 'Fire control has the gun', '', 1600);
 }
-window.addEventListener('pointermove', (e) => { pointer.x = (e.clientX / window.innerWidth) * 2 - 1; pointer.y = -(e.clientY / window.innerHeight) * 2 + 1; pointer.in = true; reticle.style.setProperty('--x', `${e.clientX}px`); reticle.style.setProperty('--y', `${e.clientY}px`); }, { passive: true });
 function updateAim() {
-  const p = sim.player;
-  if (!p.manual || !pointer.in || p.tSunk !== null) { input.aim = null; return; }
-  const M = sim.toWorld(p, MAIN_MOUNT);
-  _a.set(sim.enemy.x - M[0], 0, sim.enemy.z - M[2]);
+  if (view === 'radar') radarAimShell();
+  else input.aim = null;
+}
+
+// --- The radar view (the Solo Air Defense one) ----------------------------------------------------------------------------------
+// The fire-control sight on the bridge roof: a mount that turns at a limited rate. In AUTO it swings onto the enemy and holds her; the
+// arrows, a drag or the pad turn it by hand (MANUAL) over any part of her hull. The shell is aimed at the hull point under the
+// crosshair (the fire control leads that point), F or the Fire button shoots. The helm is locked until you go back.
+const SIGHT_RATE = THREE.MathUtils.degToRad(55);
+const sight = { aim: new THREE.Vector3(1, 0.03, 0), manual: false, fresh: true, omega: 0, dragYaw: 0, dragPitch: 0, zone: null };
+const radarKeys = { l: 0, r: 0, u: 0, d: 0 };
+let sightZoom = 1.5;
+const sightEl = document.createElement('div');
+sightEl.className = 'duel-sight';
+sightEl.hidden = true;
+sightEl.innerHTML = '<i class="hs-h"></i><i class="hs-v"></i><i class="hs-box"></i><b class="hs-txt"></b>';
+document.body.appendChild(sightEl);
+const sightTxt = sightEl.querySelector('.hs-txt');
+const radarEl = document.createElement('div');
+radarEl.className = 'duel-radar';
+radarEl.hidden = true;
+radarEl.innerHTML = '<div class="hr-pad">'
+  + '<div class="hr-acts"><button type="button" data-act="auto">Release / auto<kbd>Space</kbd></button><button type="button" data-act="back">Back to the helm<kbd>Esc</kbd></button></div>'
+  + '<div class="hr-mid"><div class="hr-read"><b class="hr-mode">AUTO</b><span class="hr-brg"></span></div>'
+  + '<div class="hr-dpad"><button type="button" data-dir="u" aria-label="Aim up">▲</button><button type="button" data-dir="l" aria-label="Aim left">◀</button>'
+  + '<i class="hr-hub"></i><button type="button" data-dir="r" aria-label="Aim right">▶</button><button type="button" data-dir="d" aria-label="Aim down">▼</button></div></div>'
+  + '<div class="hr-acts"><button type="button" data-act="fire" class="hr-fire">Fire<kbd>F</kbd></button><button type="button" data-act="ammo">Change round<kbd>Q</kbd></button></div></div>';
+document.body.appendChild(radarEl);
+const radarMode = radarEl.querySelector('.hr-mode');
+const radarBrg = radarEl.querySelector('.hr-brg');
+radarEl.addEventListener('pointerdown', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  e.preventDefault();
+  const release = (fn) => { const up = () => { fn(); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); }; window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up); };
+  if (b.dataset.dir) { radarKeys[b.dataset.dir] = 1; sight.manual = true; release(() => { radarKeys[b.dataset.dir] = 0; }); }
+  else if (b.dataset.act === 'fire') { input.fire = 1; release(() => { input.fire = 0; }); }
+  else if (b.dataset.act === 'auto') sight.manual = false;
+  else if (b.dataset.act === 'ammo') sim.switchAmmo(0);
+  else if (b.dataset.act === 'back') setView(viewBeforeRadar);
+});
+let sightDrag = null;
+canvas.addEventListener('pointerdown', (e) => { if (e.button === 0 && view === 'radar') sightDrag = { x: e.clientX, y: e.clientY }; });
+window.addEventListener('pointerup', () => { sightDrag = null; });
+window.addEventListener('pointermove', (e) => {
+  if (!sightDrag || view !== 'radar') return;
+  const dx = e.clientX - sightDrag.x, dy = e.clientY - sightDrag.y;
+  sightDrag = { x: e.clientX, y: e.clientY };
+  sight.manual = true;
+  sight.dragYaw += dx * THREE.MathUtils.degToRad(camera.fov) / window.innerHeight;
+  sight.dragPitch -= dy * THREE.MathUtils.degToRad(camera.fov) / window.innerHeight;
+});
+canvas.addEventListener('wheel', (e) => { if (view === 'radar') sightZoom = clamp(sightZoom * Math.exp(e.deltaY * 0.001), 0.4, 6); }, { passive: true });
+canvas.addEventListener('dblclick', () => { sightZoom = 1.5; });
+const _sm = new THREE.Matrix4();
+const hullBox = new THREE.Box3(new THREE.Vector3(-HALF_LENGTH, 0, -HALF_BEAM), new THREE.Vector3(HALF_LENGTH, 18, HALF_BEAM));
+const sightRay = new THREE.Ray();
+// The turning of the mount and the lens, every frame in the radar view.
+function aimSight(dt) {
+  const me = ships[0].group;
+  me.localToWorld(camera.position.copy(BRIDGE_EYE));
+  const foe = sim.enemy;
+  _a.set(foe.x, 9, foe.z).sub(camera.position);
   const r = _a.length() || 1;
-  aimPlane.setFromNormalAndCoplanarPoint(_a.divideScalar(r), _b.set(sim.enemy.x, 0, sim.enemy.z));
-  ray.setFromCamera({ x: pointer.x, y: pointer.y }, camera);
-  const hit = ray.ray.intersectPlane(aimPlane, _c);
-  if (!hit) { input.aim = null; return; }
-  const sol = sim.solve(p, MAIN_MOUNT, MUZZLE_V, true, {}, { p: [_c.x, Math.max(0, _c.y), _c.z], v: [0, 0, 0] });
+  _a.divideScalar(r); // the way to the enemy
+  if (sight.fresh) { sight.aim.set(Math.cos(sim.player.psi), 0.03, Math.sin(sim.player.psi)).normalize(); sight.fresh = false; sight.omega = 0; }
+  const lens = clamp((Math.atan(80 / r) * 2 * 180) / Math.PI * sightZoom, 1.2, 30);
+  if (sight.manual) {
+    const rate = THREE.MathUtils.degToRad(50) * clamp(lens / 40, 0.03, 1);
+    let yaw = Math.atan2(sight.aim.z, sight.aim.x) + (radarKeys.r - radarKeys.l) * rate * dt + sight.dragYaw;
+    const pitch = clamp(Math.asin(clamp(sight.aim.y, -1, 1)) + (radarKeys.u - radarKeys.d) * rate * dt + sight.dragPitch, -0.25, 0.6);
+    yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+    sight.aim.set(Math.cos(pitch) * Math.cos(yaw), Math.sin(pitch), Math.cos(pitch) * Math.sin(yaw));
+  } else {
+    const e = sight.aim.angleTo(_a);
+    sight.omega += (Math.min(SIGHT_RATE, e * 9) - sight.omega) * (1 - Math.exp(-dt / 0.12));
+    if (e > 1e-5) sight.aim.lerp(_a, Math.min(sight.omega * dt, e) / e).normalize();
+  }
+  sight.dragYaw = 0;
+  sight.dragPitch = 0;
+  camera.lookAt(_b.copy(camera.position).add(sight.aim));
+  setFov(lens);
+}
+// The shell goes where the crosshair is: the hull point the sight's ray meets (the fire control leads it), else the sea beside her.
+function radarAimShell() {
+  const p = sim.player;
+  sight.zone = null;
+  if (p.tSunk !== null || sim.enemy.tSunk !== null) { input.aim = null; return; }
+  const g = ships[1].group;
+  g.updateMatrixWorld(true);
+  ships[0].group.localToWorld(_c.copy(BRIDGE_EYE));
+  sightRay.origin.copy(_c);
+  sightRay.direction.copy(sight.aim);
+  const local = sightRay.clone().applyMatrix4(_sm.copy(g.matrixWorld).invert());
+  const hit = local.intersectBox(hullBox, _a);
+  let P;
+  if (hit) { sight.zone = zoneAt(_a.x); P = g.localToWorld(_a.clone()); }
+  else { // off her hull: the point on the vertical plane through her, square to the line of sight
+    const d = _b.set(sim.enemy.x - _c.x, 0, sim.enemy.z - _c.z);
+    const dist = d.length() || 1;
+    const n = d.divideScalar(dist);
+    const denom = sight.aim.dot(n);
+    if (denom < 1e-4) { input.aim = null; return; }
+    const tt = (new THREE.Vector3(sim.enemy.x, 0, sim.enemy.z).sub(_c).dot(n)) / denom;
+    P = _c.clone().addScaledVector(sight.aim, tt);
+    P.y = Math.max(0, P.y);
+  }
+  const sol = sim.solve(p, MAIN_MOUNT, MUZZLE_V, true, {}, { p: [P.x, P.y, P.z], v: [p.est[0], 0, p.est[1]] });
   input.aim = { yaw: sol.yaw, pitch: sol.pitch };
 }
-// Her present position (a ring) and her heading (a short line): where she goes in a shell's time is for you to judge.
-function updateReticle() {
-  if (reticle.hidden) return;
-  const e = sim.enemy;
-  _a.set(e.x, 8, e.z).project(camera);
-  const on = _a.z < 1 && Math.abs(_a.x) < 1.2 && Math.abs(_a.y) < 1.2 && e.tSunk === null;
-  const ring = reticle.querySelector('.enemy');
-  ring.style.display = reticle.querySelector('.head').style.display = on ? '' : 'none';
-  if (!on) return;
-  const px = (_a.x * 0.5 + 0.5) * window.innerWidth, py = (-_a.y * 0.5 + 0.5) * window.innerHeight;
-  ring.style.transform = `translate(${px}px, ${py}px)`;
-  const v = sim.velOf(e);
-  _b.set(e.x + v[0] * 40, 8, e.z + v[2] * 40).project(camera);
-  const dx = (_b.x - _a.x) * 0.5 * window.innerWidth, dy = -(_b.y - _a.y) * 0.5 * window.innerHeight;
-  const len = Math.min(70, Math.hypot(dx, dy));
-  reticle.querySelector('.head').style.transform = `translate(${px}px, ${py}px) rotate(${Math.atan2(dy, dx)}rad)`;
-  reticle.querySelector('.head').style.width = `${len}px`;
+function updateRadarUi() {
+  if (view !== 'radar') return;
+  radarMode.textContent = sight.manual ? 'MANUAL' : 'AUTO';
+  radarMode.classList.toggle('manual', sight.manual);
+  const yaw = Math.atan2(sight.aim.z, sight.aim.x);
+  const rel = Math.atan2(Math.sin(yaw - sim.player.psi), Math.cos(yaw - sim.player.psi));
+  radarBrg.textContent = `${relName(rel)} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${camera.fov.toFixed(1)}°`;
+  const g = sim.player.gun;
+  sightEl.classList.toggle('lock', !!sight.zone);
+  sightEl.classList.toggle('searching', !sight.zone);
+  sightTxt.textContent = `${sight.zone ? `AIM: ${COMPARTMENTS[sight.zone].name.toUpperCase()}` : 'Off her hull'} · ${kmText(sim.range())} · ${AMMO_TYPES[g.type].name} ${g.stock[g.type]} · ${gunStatus(sim.player)}`;
+  map.sight = { yaw, locked: !!sight.zone };
 }
 
 // --- Loop --------------------------------------------------------------------------------------------------------------------
@@ -662,6 +772,7 @@ let frames = 0;
 renderer.setAnimationLoop((now) => {
   const dt = Math.max(0, Math.min((now - last) / 1000, 0.1));
   last = now;
+  frameDt = dt;
   updateAim();
   sim.advance(dt, input);
   handleEvents();
@@ -677,7 +788,7 @@ renderer.setAnimationLoop((now) => {
   if (hudOn) updateHud();
   if (mapOn) drawMap();
   updateTag();
-  updateReticle();
+  updateRadarUi();
   const keys = keysHtml();
   if (keys !== lastKeys) { keysEl.innerHTML = keys; lastKeys = keys; }
   document.documentElement.style.setProperty('--keys-h', `${keysEl.offsetHeight}px`);
