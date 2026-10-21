@@ -12,7 +12,7 @@ import { menuText } from './menu.js';
 import { compass, relName, kmText, RUDDER_MAX } from './hull.js';
 import {
   DuelSim, TELEGRAPH, COMPARTMENTS, COMP_IDS, HULL_HP, LEVELS, DUEL_LEVELS, MAIN_ARC, MAIN_RANGE, GUN_MOUNT_LOCAL, GUN_RANGE, sinkState,
-  MAIN_MOUNT, MUZZLE_V, AMMO_TYPES, SWITCH_TIME, MSL_STOCK, MSL_LOCK, MSL_RELOAD, CREWS,
+  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, AMMO_TYPES, SWITCH_TIME, MSL_STOCK, MSL_LOCK, MSL_RELOAD, CREWS,
 } from './duel.js';
 import { createDuelAudio } from './duelAudio.js';
 import { createDuelMap } from './duelMap.js';
@@ -388,9 +388,9 @@ function gunStatus(s) {
   if (sim.range() > MAIN_RANGE) return `OUT OF RANGE (${kmText(MAIN_RANGE)})`;
   if (sol > MAIN_ARC) return 'OUT OF ARC: turn her';
   if (g.cool > 0) return `LOADING ${g.cool.toFixed(1)} s`;
+  if (s.manual) return g.engaged ? (g.onTarget ? 'ON YOUR AIM' : 'TRAINING') : 'point at her';
   return g.onTarget ? 'ON TARGET' : 'TRAINING';
 }
-const MAIN_RELOAD_SHOWN = 2.5;
 function mslStatus(s) {
   const l = s.msl;
   if (s.tSunk !== null) return '';
@@ -402,7 +402,7 @@ function mslStatus(s) {
 }
 function threatHtml() {
   const list = sim.threats(0);
-  const locked = sim.enemy.msl.ready && sim.enemy.msl.lock > 0;
+  const locked = sim.enemy.msl.ready && sim.locked(sim.enemy);
   if (!list.length && !locked) return '';
   const rows = list.map((m) => `<div class="dh-threat"><b>MISSILE ${relName(m.bearing).toUpperCase()}</b><span>${kmText(m.range)} · ${Math.max(0, m.tti).toFixed(0)} s</span></div>`).join('');
   return `<div class="dh-alert">${locked && !list.length ? '<div class="dh-threat lock"><b>LOCKED ON</b><span>she is locking your ship</span></div>' : ''}${rows}</div>`;
@@ -418,7 +418,7 @@ function statusHtml() {
     + `<div><span>ENEMY</span><b>${kmText(dist)}</b><small>${relName(rel)}</small></div></div>`
     + `<div class="dh-weapons"><div><span>76 mm</span><b>${p.gun.ammo} rd</b><small>${gunStatus(p)}</small></div>`
     + `<div><span>30 mm</span><b>${p.auto ? 'AUTO' : 'MANUAL'}</b><small>${p.gats.map((g) => (g.ammo > 0 ? '' : 'dry')).join('') || (sim.range() > GUN_RANGE ? 'out of range' : 'ready')}</small></div>`
-    + `<div><span>AMMO · Q</span><b>${AMMO_TYPES[p.gun.type].name}</b><small>HE ${p.gun.stock.he} · AP ${p.gun.stock.ap}${p.gun.cool > 0 && p.gun.cool > MAIN_RELOAD_SHOWN ? ' · changing' : ''}</small></div>`
+    + `<div><span>AMMO · Q</span><b>${AMMO_TYPES[p.gun.type].name}</b><small>HE ${p.gun.stock.he} · AP ${p.gun.stock.ap}${p.gun.cool > 0 && p.gun.cool > MAIN_RELOAD ? ' · changing' : ''}</small></div>`
     + `<div><span>AIM · T</span><b>${p.manual ? 'MANUAL' : 'AUTO'}</b><small>${p.manual ? 'mouse, you lead' : 'fire control leads'}</small></div>`
     + `<div class="wide"><span>MISSILE · M</span><b>${p.msl.stock} of ${MSL_STOCK}</b><small>${mslStatus(p)}</small></div>`
     + `<div class="wide"><span>CREWS · Z X</span><b>${p.crews.filter((c) => c.to).length} of ${CREWS} out</b><small>${COMPARTMENTS[COMP_IDS[selComp]].name} selected</small></div></div>${threatHtml()}`;

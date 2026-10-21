@@ -437,6 +437,12 @@ describe('damage control: fires, flooding and crews', () => {
 });
 
 describe('manual aim of the 76 mm', () => {
+  it('by hand with nothing pointed at, the gun holds and never fires', () => {
+    const sim = new DuelSim({ seed: 4 });
+    sim.setManual(0, true);
+    for (let i = 0; i < 300; i++) sim.advance(0.1, { fire: 1, aim: null });
+    assert.equal(sim.player.stats.shells, 0);
+  });
   const still = (sim) => { sim.enemy.ai = null; sim.enemy.cmd = { want: 0, fire: false, gat: false }; };
   it('is for the player only, and a ship in manual mode scatters less than auto at the same turn rate', () => {
     const sim = new DuelSim({ seed: 1 });

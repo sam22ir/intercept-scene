@@ -263,7 +263,7 @@ describe('the words are true of the ship duel', () => {
     assert.match(m.facts[0], new RegExp(`${D.MSL_STOCK} missiles`));
     assert.deepEqual(Object.keys(D.AMMO_TYPES), ['he', 'ap']);
     assert.equal(sim.ships[0].gats.length, 2, 'the two 30 mm guns');
-    assert.match(m.facts[1], /aft guns shoot down missiles/);
+    assert.match(m.facts[1], /aft guns shoot missiles down/);
     assert.ok(D.GUN_MSL_RANGE > 0, 'the 30 mm guns can engage missiles');
     assert.ok(D.MAIN_ARC > 0 && D.MAIN_MOUNT[0] > 0, 'the 76 mm is on the bow');
     assert.equal(D.COMP_IDS.length, 5);

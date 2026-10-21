@@ -403,6 +403,9 @@ export class DuelSim {
       wantYaw = clamp(aim.yaw, -MAIN_ARC, MAIN_ARC);
       wantPitch = clamp(aim.pitch, MAIN_PITCH[0], MAIN_PITCH[1]);
       g.engaged = this.solve(s, MAIN_MOUNT, MUZZLE_V, true).range <= MAIN_RANGE;
+    } else if (alive && s.manual && !s.ai) {
+      // by hand but nothing pointed at yet: the gun holds where it is and cannot fire (never the fire control at the manual scatter)
+      wantYaw = g.yaw; wantPitch = g.pitch;
     } else if (alive) {
       const sol = this.solve(s, MAIN_MOUNT, MUZZLE_V, true);
       if (Math.abs(sol.yaw) <= MAIN_ARC && sol.range <= MAIN_RANGE) {
