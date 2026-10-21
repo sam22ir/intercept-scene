@@ -70,16 +70,59 @@ function tag(kind) {
   return { obj, el, title: el.querySelector('.tag-title'), body: el.querySelector('.tag-body') };
 }
 
-// --- The ship's wake: a ribbon behind her stern over the last minute ---------------------------------------
+// --- The ship's wake, as a real one: four ribbons laid along the track she has sailed over the last minute ----------------
+//  core   the propeller wash right behind the stern: narrow, dense white foam, streaky along the track, thinning out
+//  slick  the wide turbulent water round it: faint and pale, lasting longer
+//  arms   the two diverging arms of the bow wave (the wedge a hull throws off, ARM_SLOPE either side of the track), each a
+//         thin line of foam that starts at the bow and widens and fades with distance
+// The foam is a generated texture laid still on the water (its length runs along the track), so it stays where she left it:
+// the patches do not travel with her. They curve with her turns, because they follow the track.
 const WAKE_N = 90;
 const WAKE_DT = 0.6;
+const WAKE_SPAN = WAKE_N * WAKE_DT; // s of track kept
+const SHIP_LEN = 112; // m, stern to bow
+const ARM_SLOPE = 0.2; // lateral growth of the bow-wave arms per metre behind the bow
 const wakeHist = [];
 let wakeLast = -Infinity;
-const wake = (() => {
-  const pos = new Float32Array(WAKE_N * 9);
-  const col = new Float32Array(WAKE_N * 12);
+let pathLen = 0; // m sailed since the start: the texture's coordinate along the track
+let lastX = null;
+let lastZ = null;
+function foamTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(255, 255, 255, 0.38)';
+  g.fillRect(0, 0, 256, 256);
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 1500; i++) {
+    const x = rnd() * 256;
+    const y = rnd() * 256;
+    const r = 1.5 + rnd() * rnd() * 14;
+    const a = 0.12 + rnd() * 0.7;
+    for (const [dx, dy] of [[0, 0], [256, 0], [-256, 0], [0, 256], [0, -256]]) { // wrapped, so it tiles
+      const grd = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+      grd.addColorStop(0, `rgba(255, 255, 255, ${a})`);
+      grd.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      g.fillStyle = grd;
+      g.fillRect(x + dx - r, y + dy - r, 2 * r, 2 * r);
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const foam = foamTexture();
+// A ribbon of `sections` cross-sections of three vertices (left edge, centre, right edge): edges transparent, so it has soft sides.
+function makeRibbon(sections, order) {
+  const pos = new Float32Array(sections * 9);
+  const col = new Float32Array(sections * 12);
+  const uv = new Float32Array(sections * 6);
   const index = [];
-  for (let i = 0; i < WAKE_N - 1; i++) {
+  for (let i = 0; i < sections - 1; i++) {
     const a = i * 3;
     const b = a + 3;
     index.push(a, a + 1, b, a + 1, b + 1, b, a + 1, a + 2, b + 1, a + 2, b + 2, b + 1);
@@ -87,39 +130,79 @@ const wake = (() => {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 4));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geo.setIndex(index);
-  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: foam, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
   mesh.frustumCulled = false;
-  mesh.renderOrder = 2;
+  mesh.renderOrder = order;
   scene.add(mesh);
-  return { pos, col, geo };
-})();
+  return { pos, col, uv, geo, sections };
+}
+const wakeCore = makeRibbon(WAKE_N, 2);
+const wakeSlick = makeRibbon(WAKE_N, 1);
+const wakeArmL = makeRibbon(WAKE_N + 1, 3);
+const wakeArmR = makeRibbon(WAKE_N + 1, 3);
+// Writes cross-section k of a ribbon: centre (cx, cz), across-track direction (px, pz), half width, alpha, rgb, texture coordinates.
+function ribbonSection(r, k, cx, cz, px, pz, half, alpha, rgb, v, vScale, y) {
+  r.pos.set([cx + px * half, y, cz + pz * half, cx, y, cz, cx - px * half, y, cz - pz * half], k * 9);
+  r.col.set([rgb[0], rgb[1], rgb[2], 0, rgb[0], rgb[1], rgb[2], alpha, rgb[0], rgb[1], rgb[2], 0], k * 12);
+  r.uv.set([0, v / vScale, 0.5, v / vScale, 1, v / vScale], k * 6);
+}
+function hideSection(r, k) { r.col.fill(0, k * 12, k * 12 + 12); }
+const CORE_RGB = [1, 1, 1];
+const SLICK_RGB = [0.8, 0.92, 0.98];
 function updateWake() {
-  if (sim.t < wakeLast) { wakeHist.length = 0; wakeLast = -Infinity; }
+  if (sim.t < wakeLast) { wakeHist.length = 0; wakeLast = -Infinity; pathLen = 0; lastX = null; }
+  if (lastX !== null) pathLen += Math.hypot(sim.x - lastX, sim.z - lastZ);
+  lastX = sim.x;
+  lastZ = sim.z;
+  const cs = Math.cos(sim.psi);
+  const sn = Math.sin(sim.psi);
+  const sx = sim.x - cs * 56; // the stern
+  const sz = sim.z - sn * 56;
   if (sim.t - wakeLast >= WAKE_DT) {
-    const sx = sim.x - Math.cos(sim.psi) * 56; // from the stern
-    const sz = sim.z - Math.sin(sim.psi) * 56;
-    wakeHist.unshift({ x: sx, z: sz, psi: sim.psi, t: sim.t, turn: Math.min(Math.abs(sim.r) / 0.04, 1.4), u: Math.max(sim.u, 0) });
+    wakeHist.unshift({ x: sx, z: sz, psi: sim.psi, t: sim.t, s: pathLen, turn: Math.min(Math.abs(sim.r) / 0.09, 1.4), u: Math.max(sim.u, 0) });
     if (wakeHist.length > WAKE_N) wakeHist.pop();
     wakeLast = sim.t;
   }
   for (let i = 0; i < WAKE_N; i++) {
     const h = wakeHist[i];
-    if (!h) { wake.col.fill(0, i * 12, i * 12 + 12); continue; }
+    if (!h) { hideSection(wakeCore, i); hideSection(wakeSlick, i); hideSection(wakeArmL, i + 1); hideSection(wakeArmR, i + 1); continue; }
     const age = sim.t - h.t;
-    const u = age / (WAKE_N * WAKE_DT);
-    const half = (3 + 12 * Math.sqrt(u)) * (1 + 0.6 * h.turn);
-    const px = -Math.sin(h.psi);
-    const pz = Math.cos(h.psi);
-    // The newest point sits right at the stern, wherever she is now.
-    const bx = i === 0 ? sim.x - Math.cos(sim.psi) * 56 : h.x;
-    const bz = i === 0 ? sim.z - Math.sin(sim.psi) * 56 : h.z;
-    wake.pos.set([bx + px * half, 0.45, bz + pz * half, bx, 0.45, bz, bx - px * half, 0.45, bz - pz * half], i * 9);
-    const a = Math.min(0.55 * (1 - u) ** 2 * (0.3 + 0.7 * Math.min(h.u / 8, 1)) * (1 + 0.4 * h.turn), 0.85);
-    wake.col.set([0.95, 0.98, 1, 0, 0.95, 0.98, 1, a, 0.95, 0.98, 1, 0], i * 12);
+    const u = Math.min(age / WAKE_SPAN, 1);
+    const psi = i === 0 ? sim.psi : h.psi; // the newest section is at the stern, wherever she is now
+    const px = -Math.sin(psi);
+    const pz = Math.cos(psi);
+    const bx = i === 0 ? sx : h.x;
+    const bz = i === 0 ? sz : h.z;
+    const s = i === 0 ? pathLen : h.s;
+    const behind = pathLen - s; // m behind the stern
+    const sf = Math.min(h.u / 7, 1); // no wash to speak of at a crawl
+    // The wash: narrow and dense, the foam thinning out over the minute; wider and stronger in a hard turn.
+    ribbonSection(wakeCore, i, bx, bz, px, pz, (4.5 + 6.5 * Math.sqrt(u)) * (1 + 0.5 * h.turn), Math.min(1.0 * (1 - u) ** 1.2 * sf * (1 + 0.3 * h.turn), 1), CORE_RGB, s, 40, 0.45);
+    // The slick: the turbulent water round it.
+    ribbonSection(wakeSlick, i, bx, bz, px, pz, 4 + 17 * Math.pow(u, 0.55), 0.34 * (1 - u) ** 1.2 * sf, SLICK_RGB, s, 90, 0.4);
+    // The arms of the bow wave: from the bow, a thin line of foam either side of the track, spreading at ARM_SLOPE.
+    const fromBow = behind + SHIP_LEN;
+    const off = 7 + fromBow * ARM_SLOPE;
+    const armHalf = 0.9 + 0.012 * fromBow;
+    const armA = Math.min(0.62 * (1 - u) ** 1.5 * sf, 0.8);
+    ribbonSection(wakeArmL, i + 1, bx + px * off, bz + pz * off, px, pz, armHalf, armA, CORE_RGB, s, 40, 0.5);
+    ribbonSection(wakeArmR, i + 1, bx - px * off, bz - pz * off, px, pz, armHalf, armA, CORE_RGB, s, 40, 0.5);
   }
-  wake.geo.attributes.position.needsUpdate = true;
-  wake.geo.attributes.color.needsUpdate = true;
+  // Section 0 of the arms is the bow itself: the two arms start where the hull parts the water.
+  const bowx = sim.x + cs * 58;
+  const bowz = sim.z + sn * 58;
+  const bpx = -sn;
+  const bpz = cs;
+  const sfNow = Math.min(Math.max(sim.u, 0) / 7, 1);
+  ribbonSection(wakeArmL, 0, bowx + bpx * 6, bowz + bpz * 6, bpx, bpz, 1.6, 0.8 * sfNow, CORE_RGB, pathLen + SHIP_LEN, 40, 0.5);
+  ribbonSection(wakeArmR, 0, bowx - bpx * 6, bowz - bpz * 6, bpx, bpz, 1.6, 0.8 * sfNow, CORE_RGB, pathLen + SHIP_LEN, 40, 0.5);
+  for (const r of [wakeCore, wakeSlick, wakeArmL, wakeArmR]) {
+    r.geo.attributes.position.needsUpdate = true;
+    r.geo.attributes.color.needsUpdate = true;
+    r.geo.attributes.uv.needsUpdate = true;
+  }
 }
 
 // --- Drones and missiles on screen ------------------------------------------------------------------------------------

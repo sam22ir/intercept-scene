@@ -82,15 +82,68 @@ export function createHelmAudio() {
       voices[voice].src = s;
     }
   }
+  // The missile's motor: a rocket's roar, not a whine. Pink noise with a deep rumble under it, the burn flickering
+  // a little, and sparse crackles, looped; softened by a low-pass and given some body round 300 Hz. The listener's
+  // Doppler shifts its pitch as it passes, and distance darkens it like everything else.
+  function rocketBuffer() {
+    const sr = ctx.sampleRate;
+    const n = Math.floor(sr * 3);
+    const buf = ctx.createBuffer(1, n, sr);
+    const d = buf.getChannelData(0);
+    let b0 = 0; let b1 = 0; let b2 = 0; let brown = 0;
+    for (let i = 0; i < n; i++) {
+      const w = Math.random() * 2 - 1;
+      b0 = 0.99765 * b0 + w * 0.099046;
+      b1 = 0.963 * b1 + w * 0.2965164;
+      b2 = 0.57 * b2 + w * 1.0526913;
+      const pink = (b0 + b1 + b2 + w * 0.1848) * 0.2;
+      brown = (brown + 0.02 * w) / 1.02;
+      const t = i / sr;
+      const flicker = 1 + 0.16 * Math.sin(2 * Math.PI * 9 * t) * Math.sin(2 * Math.PI * 0.8 * t) + 0.08 * Math.sin(2 * Math.PI * 23 * t + 1);
+      const crackle = Math.random() < 0.0008 ? (Math.random() * 2 - 1) * 1.4 : 0;
+      d[i] = (pink * 0.75 + brown * 4.5 + crackle) * flicker;
+    }
+    const f = Math.floor(sr * 0.1); // a seamless loop: the end is blended into the start
+    for (let i = 0; i < f; i++) { const a = i / f; d[i] = d[i] * a + d[n - f + i] * (1 - a); }
+    let peak = 0;
+    for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(d[i]));
+    for (let i = 0; i < n; i++) d[i] = (d[i] / (peak || 1)) * 0.9;
+    return { buf, loopEnd: (n - f) / sr };
+  }
+  function startRocket() {
+    const { buf, loopEnd } = rocketBuffer();
+    for (const name of ['motor0', 'motor1']) {
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      src.loopStart = 0;
+      src.loopEnd = loopEnd;
+      const body = ctx.createBiquadFilter();
+      body.type = 'peaking';
+      body.frequency.value = 300;
+      body.gain.value = 5;
+      body.Q.value = 0.8;
+      const soft = ctx.createBiquadFilter();
+      soft.type = 'lowpass';
+      soft.frequency.value = 2400;
+      soft.Q.value = 0.4;
+      src.connect(body);
+      body.connect(soft);
+      soft.connect(voices[name].in);
+      src.start(0, Math.random() * 1.5);
+      voices[name].src = src;
+    }
+  }
   function loadBuffers() {
     for (const name of Object.keys(SOUNDS)) {
+      if (name === 'motor') continue; // the missile's motor is synthesised (startRocket), not this recording
       const done = (buf) => { buffers[name] = buf; startLoop(name); };
       try { ctx.decodeAudioData(bytes(SOUNDS[name]), done, () => {})?.catch?.(() => {}); } catch { /* stays silent */ }
     }
   }
   function ensure() {
     if (ctx || failed) return;
-    try { ctx = new AudioCtx(); build(); loadBuffers(); } catch { failed = true; ctx = null; }
+    try { ctx = new AudioCtx(); build(); loadBuffers(); startRocket(); } catch { failed = true; ctx = null; }
   }
   const wake = (fromGesture = true) => {
     if (!enabled) return;
@@ -228,8 +281,8 @@ export function createHelmAudio() {
       const voice = v[`motor${i}`];
       if (!m) { set(voice.g.gain, 0); continue; }
       const age = Math.max(0, sim.t - m.tFire);
-      loopRate(voice, doppler(radial(m.pos, m.vel)));
-      place(voice, m.pos, (1 - Math.exp(-age / 0.03)) * (0.6 + 0.4 * Math.exp(-age / 1.5)), 110);
+      loopRate(voice, clamp(doppler(radial(m.pos, m.vel)), 0.8, 1.25)); // the roar's pitch shifts only a little as it passes
+      place(voice, m.pos, 0.6 * (1 - Math.exp(-age / 0.08)) * (0.65 + 0.35 * Math.exp(-age / 1.2)), 110);
     }
     // The klaxon while a drone is on its attack run.
     if (sim.threat >= 3 && sim.t >= klaxonNext) {
