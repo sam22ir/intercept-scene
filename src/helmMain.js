@@ -847,7 +847,7 @@ function updateCamera(dt) {
 // whatever the main camera is doing. It is drawn as a second pass of the scene into that square.
 const pipEl = document.createElement('div');
 pipEl.className = 'helm-pip';
-pipEl.innerHTML = '<i class="hp-h"></i><i class="hp-v"></i><i class="hp-box"></i><b class="hp-txt"></b><em>RADAR</em>';
+pipEl.innerHTML = '<i class="hp-h"></i><i class="hp-v"></i><i class="hp-box"></i><b class="hp-txt"></b><em>SCOPE</em>';
 document.body.appendChild(pipEl);
 const pipTxt = pipEl.querySelector('.hp-txt');
 const pipCam = new THREE.PerspectiveCamera(24, 1, 0.3, 30000);
