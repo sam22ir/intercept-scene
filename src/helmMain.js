@@ -1049,7 +1049,7 @@ const radarEl = document.createElement('div');
 radarEl.className = 'helm-radar';
 radarEl.hidden = true;
 radarEl.innerHTML = '<div class="hr-marks"></div><div class="hr-pad">'
-  + '<div class="hr-acts"><button type="button" data-act="auto">Release / auto<kbd>Space</kbd></button><button type="button" data-act="next">Next target<kbd>Tab</kbd></button></div>'
+  + '<div class="hr-acts"><button type="button" data-act="auto">Release / auto<kbd>Space</kbd></button><button type="button" data-act="next">Next target<kbd>Tab</kbd></button><button type="button" data-act="pick" class="hr-pick">Lock nearest to<kbd></kbd></button></div>'
   + '<div class="hr-mid"><div class="hr-read"><b class="hr-mode">AUTO</b><span class="hr-brg"></span></div>'
   + '<div class="hr-dpad"><button type="button" data-dir="u" aria-label="Aim up">▲</button><button type="button" data-dir="l" aria-label="Aim left">◀</button>'
   + '<button type="button" data-act="lock" class="hr-lock">LOCK</button><button type="button" data-dir="r" aria-label="Aim right">▶</button><button type="button" data-dir="d" aria-label="Aim down">▼</button></div></div>'
@@ -1058,6 +1058,7 @@ document.body.appendChild(radarEl);
 const radarMarks = radarEl.querySelector('.hr-marks');
 const radarMode = radarEl.querySelector('.hr-mode');
 const radarBrg = radarEl.querySelector('.hr-brg');
+const radarPickKbd = radarEl.querySelector('.hr-pick kbd');
 const pressKey = (key) => { window.dispatchEvent(new KeyboardEvent('keydown', { key })); window.dispatchEvent(new KeyboardEvent('keyup', { key })); };
 function lockOn(d) {
   sim.targetId = d.id;
@@ -1078,8 +1079,11 @@ function nearestToAim(cone) {
   }
   return best;
 }
+// What LOCK / Enter catches: the drone nearest the line of sight (the view) or the one nearest the ship, as chosen on the pad.
+let pickMode = 'view';
+try { pickMode = localStorage.getItem('intercept.radarpick') === 'ship' ? 'ship' : 'view'; } catch { /* storage unavailable */ }
 function lockHover() {
-  const d = sight.hover ?? nearestToAim(10) ?? sim.target ?? sim.nearest();
+  const d = pickMode === 'ship' ? sim.nearest() : sight.hover ?? nearestToAim(180) ?? sim.nearest();
   if (d) lockOn(d);
   else say('Nothing on the radar to lock', 'warn');
 }
@@ -1095,6 +1099,11 @@ radarEl.addEventListener('pointerdown', (e) => {
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
   } else if (b.dataset.act === 'lock') lockHover();
+  else if (b.dataset.act === 'pick') {
+    pickMode = pickMode === 'ship' ? 'view' : 'ship';
+    try { localStorage.setItem('intercept.radarpick', pickMode); } catch { /* storage unavailable */ }
+    say(pickMode === 'ship' ? 'LOCK catches the drone nearest the ship' : 'LOCK catches the drone nearest the view', '');
+  }
   else if (b.dataset.act === 'auto') { sight.manual = false; sight.locked = false; }
   else if (b.dataset.act === 'next') { sight.manual = false; pressKey('Tab'); }
   else if (b.dataset.act === 'arm') pressKey('m');
@@ -1138,6 +1147,7 @@ function updateRadarUi() {
   const manual = sight.manual || !sim.target;
   radarMode.textContent = sight.locked ? (sight.phase === 'lock' ? 'LOCKED' : 'LOCKING') : sight.manual ? 'MANUAL' : sim.target ? 'AUTO' : 'SCAN';
   radarMode.classList.toggle('manual', manual);
+  radarPickKbd.textContent = pickMode === 'ship' ? 'SHIP' : 'VIEW';
   radarEl.classList.toggle('locked', sight.locked);
   const rel = THREE.MathUtils.radToDeg(Math.atan2(Math.sin(Math.atan2(sight.aim.z, sight.aim.x) - sim.psi), Math.cos(Math.atan2(sight.aim.z, sight.aim.x) - sim.psi)));
   radarBrg.textContent = `${relName(THREE.MathUtils.degToRad(rel))} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${Math.round(fov)}°`;
