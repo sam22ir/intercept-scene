@@ -350,8 +350,8 @@ function raft(kit, white, metal, x, y, z) {
 }
 
 // `ensign` picks the stern flag and hull tint: 'alg' (the default) or 'rus' (the second ship of the
-// maneuvers mission).
-export function createShip({ ensign = 'alg' } = {}) {
+// maneuvers mission); `crew: false` leaves the deck crew out (the ship duel, where they stand in the gun's way).
+export function createShip({ ensign = 'alg', crew = true } = {}) {
   const group = new THREE.Group();
   group.name = 'ship';
 
@@ -427,7 +427,7 @@ export function createShip({ ensign = 'alg' } = {}) {
   // 76 mm gun (stealth faceted turret) ----------------------------------------
   const gunX = 32;
   const gy = dk(gunX);
-  k.add(new THREE.CylinderGeometry(1.7, 1.9, 0.5, 24), M.greyDark, { pos: [gunX, gy + 0.25, 0] });
+  k.add(new THREE.CylinderGeometry(2.4, 2.6, 0.5, 28), M.greyDark, { pos: [gunX, gy + 0.25, 0] }); // the turret ring
   // (The turret and barrel are their own parts, below: they train and elevate in the ship duel.)
 
   // Forward deckhouse carrying the missile launcher ---------------------------
@@ -588,7 +588,7 @@ export function createShip({ ensign = 'alg' } = {}) {
     }
   }
   crewPos.push([-57, 5.6, 3.5, 0.6], [-56, 5.6, 4.6, 0.3], [-48, 5.6, 4.5, -0.4], [-40, 5.6, -5.5, 2.4]);
-  for (const [x, y, z, ry] of crewPos) {
+  for (const [x, y, z, ry] of crew ? crewPos : []) {
     const place = (geo, material, dy, sx = 1) => k.add(geo, material, toMatrix({ pos: [x, y + dy, z], rot: [0, ry, 0], scale: [sx, 1, 1] }));
     place(new THREE.CylinderGeometry(0.13, 0.15, 0.85, 8), M.navy, 0.43);
     place(new THREE.CylinderGeometry(0.21, 0.17, 0.7, 10), M.orange, 1.2);
@@ -599,29 +599,39 @@ export function createShip({ ensign = 'alg' } = {}) {
   group.add(k.build({ name: 'superstructure' }));
 
   // 76 mm gun: the turret yaws on its base (+ toward port, as the 30 mm guns) and the barrel elevates on its trunnions.
-  // At rest (yaw 0, pitch MAIN_GUN_REST) it is the picture the ship always had.
+  // At rest (yaw 0, pitch MAIN_GUN_REST) it lies trained along the bow, as the other missions show it.
   const mainGun = new THREE.Group();
   mainGun.position.set(gunX, gy + 0.5, 0);
   const mainYaw = new THREE.Group();
   const mainPitch = new THREE.Group();
-  mainPitch.position.set(0.9, 0.9, 0); // the trunnions, inside the turret's front
+  mainPitch.position.set(0.7, 1.1, 0); // the trunnions, inside the turret's sloped front
+  // The turret as on the real ship (photographs): a wide faceted shell, the front sloping steeply in, a dark recess where the
+  // barrel comes out, a raised roof and a door and a panel on each side.
   const tk = new Kit();
-  const turret = { x0: -2.4, x1: 1.2, tx0: -2.1, tx1: -0.2, y0: 0, y1: 1.7, w: 1.55, tw: 1.0 };
+  const turret = { x0: -2.7, x1: 1.9, tx0: -2.3, tx1: 0.6, y0: 0, y1: 2.3, w: 2.0, tw: 1.35 };
   tk.add(slab(turret), M.grey);
-  tk.add(slab({ x0: -2.1, x1: -0.2, y0: 1.7, y1: 1.95, w: 1.0, tw: 0.75 }), M.grey);
-  tk.add(facePanel(turret, 'fore', 0.35, 0.65, 0.2, 0.75, 0.02), M.greyDark);
+  tk.add(slab({ x0: -2.2, x1: 0.1, y0: 2.3, y1: 2.62, w: 1.3, tw: 0.95 }), M.grey);
+  tk.add(facePanel(turret, 'fore', 0.28, 0.72, 0.12, 0.78, 0.06), M.greyDark);
+  for (const face of ['port', 'stbd']) {
+    tk.add(facePanel(turret, face, 0.18, 0.4, 0.08, 0.72, 0.03), M.greyDark); // the door
+    tk.add(facePanel(turret, face, 0.5, 0.78, 0.18, 0.62, 0.02), M.greyLight); // the panel
+  }
   mainYaw.add(tk.build({ name: 'main_gun_turret' }));
+  // The barrel: a long tube in a thick cooling jacket that tapers toward the muzzle, a bulge (the bore evacuator) and a dark ring at the tip.
   const bk = new Kit();
-  bk.add(new THREE.CylinderGeometry(0.11, 0.13, 4.6, 12), M.grey, { pos: [2.3, 0, 0], rot: [0, 0, -Math.PI / 2] });
-  bk.add(new THREE.CylinderGeometry(0.22, 0.25, 0.9, 14), M.grey, { pos: [0.55, -0.05, 0], rot: [0, 0, -Math.PI / 2] });
-  bk.add(new THREE.CylinderGeometry(0.15, 0.15, 0.5, 12), M.greyDark, { pos: [4.5, 0, 0], rot: [0, 0, -Math.PI / 2] });
+  const gunAxis = [0, 0, -Math.PI / 2];
+  bk.add(new THREE.CylinderGeometry(0.12, 0.13, 6.2, 14), M.grey, { pos: [3.1, 0, 0], rot: gunAxis });
+  bk.add(new THREE.CylinderGeometry(0.21, 0.3, 2.7, 16), M.grey, { pos: [1.75, 0, 0], rot: gunAxis });
+  bk.add(new THREE.CylinderGeometry(0.18, 0.18, 0.9, 14), M.greyLight, { pos: [4.0, 0, 0], rot: gunAxis });
+  bk.add(new THREE.CylinderGeometry(0.17, 0.17, 0.4, 14), M.greyDark, { pos: [6.0, 0, 0], rot: gunAxis });
   mainPitch.add(bk.build({ name: 'main_gun_barrel' }));
   const mainMuzzle = new THREE.Object3D();
-  mainMuzzle.position.set(4.8, 0, 0); // the muzzle, in the barrel's frame
+  mainMuzzle.position.set(6.25, 0, 0); // the muzzle, in the barrel's frame
   mainPitch.add(mainMuzzle);
   mainYaw.add(mainPitch);
   mainGun.add(mainYaw);
   group.add(mainGun);
+  mainYaw.scale.setScalar(1.12); // the real turret is big: about four and a half metres across
   const MAIN_GUN_REST = 0.06;
   mainYaw.rotation.y = 0;
   mainPitch.rotation.z = MAIN_GUN_REST;

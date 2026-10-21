@@ -1,0 +1,640 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { createEnvironment } from './environment.js';
+import { createShip } from './models/ship.js';
+import { createGatling } from './models/gatling.js';
+import { createLiveFx } from './fx/liveFx.js';
+import { createWake } from './fx/wake.js';
+import { pointScale } from './fx/particles.js';
+import { CameraRig } from './cameraRig.js';
+import { menuText } from './menu.js';
+import { compass, relName, kmText, RUDDER_MAX } from './hull.js';
+import {
+  DuelSim, TELEGRAPH, COMPARTMENTS, COMP_IDS, HULL_HP, LEVELS, DUEL_LEVELS, MAIN_ARC, MAIN_RANGE, GUN_MOUNT_LOCAL, GUN_RANGE, sinkState,
+} from './duel.js';
+import { createDuelAudio } from './duelAudio.js';
+import './duel.css';
+
+// Entry point of "Ship duel", mission id `duel` (see duel.js for the model): you sail a frigate against another and
+// they fight with the 76 mm gun on the bow and the 30 mm guns aft until one sinks. Like Solo Air Defense nothing here
+// is a function of a clock: the keys drive a real-time simulation and this file draws it. start.js imports it when
+// that mission is picked, with the enemy's level in globalThis.__DUEL_LEVEL.
+//
+// Views (1 to 6, V cycles): behind the ship, the bridge (looking at the enemy), the gun sight (a long lens on her),
+// straight above (both ships in frame), riding your last shell, and a free orbit round the ship.
+
+const canvas = document.querySelector('#scene');
+const loadingEl = document.querySelector('#loading');
+document.body.classList.add('mission-fly', 'mission-duel'); // the manual flight's interface, and this one's own
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.75;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, 1, 0.3, 40000);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxDistance = 4000;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.enabled = false;
+const rig = new CameraRig(camera, controls);
+
+const env = createEnvironment(renderer, scene, { calm: true });
+env.setShadowSize(1024);
+env.ocean.material.uniforms.uShipX.value = 1e7; // the shader's straight-line wake: these ships turn, each has her own
+const fx = createLiveFx(scene);
+
+const BRIDGE_EYE = new THREE.Vector3(16.9, 11.4, 0); // where the officer of the watch stands, in the ship's frame
+const _a = new THREE.Vector3();
+const _b = new THREE.Vector3();
+const _c = new THREE.Vector3();
+const _q = new THREE.Quaternion();
+const rad = THREE.MathUtils.degToRad;
+const clamp = THREE.MathUtils.clamp;
+
+let level = 'normal';
+try { level = globalThis.__DUEL_LEVEL ?? new URLSearchParams(location.search).get('level') ?? 'normal'; } catch { /* no address */ }
+if (!DUEL_LEVELS.includes(level)) level = 'normal';
+const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level });
+
+// --- The two ships --------------------------------------------------------------------------------------------------
+// Both with the deck crew left out (it stands in the gun's way). The enemy has her own ensign and a bluer hull.
+const ships = [createShip({ crew: false }), createShip({ ensign: 'rus', crew: false })].map((m, i) => {
+  m.group.rotation.order = 'YXZ'; // heading, then heel, then trim
+  scene.add(m.group);
+  const gats = GUN_MOUNT_LOCAL.map(([x, y, z]) => {
+    const g = createGatling();
+    g.group.position.set(x, y - 1.3, z); // the mount's pivot is the gun's centre; its base stands on the roof
+    m.group.add(g.group);
+    return g;
+  });
+  return { ...m, gats, wake: createWake(scene), smokeT: 0, flash: 0 };
+});
+
+// --- Shells and tracers ---------------------------------------------------------------------------------------------
+const glowTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,250,225,1)');
+  g.addColorStop(0.3, 'rgba(255,190,90,0.7)');
+  g.addColorStop(1, 'rgba(255,120,30,0)');
+  x.fillStyle = g;
+  x.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+function streaks(n, size, color, len) {
+  const lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 6), 3));
+  const lines = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const headGeo = new THREE.BufferGeometry();
+  headGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  const heads = new THREE.Points(headGeo, new THREE.PointsMaterial({ map: glowTex, size, sizeAttenuation: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xffffff }));
+  lines.frustumCulled = false;
+  heads.frustumCulled = false;
+  scene.add(lines, heads);
+  return {
+    n, len,
+    set(k, p, v) { // streak k: from p back along -v
+      if (!p) { lineGeo.attributes.position.setXYZ(k * 2, 0, -9999, 0); lineGeo.attributes.position.setXYZ(k * 2 + 1, 0, -9999, 0); headGeo.attributes.position.setXYZ(k, 0, -9999, 0); return; }
+      _b.set(v[0], v[1], v[2]).normalize().multiplyScalar(-len);
+      lineGeo.attributes.position.setXYZ(k * 2, p[0], p[1], p[2]);
+      lineGeo.attributes.position.setXYZ(k * 2 + 1, p[0] + _b.x, p[1] + _b.y, p[2] + _b.z);
+      headGeo.attributes.position.setXYZ(k, p[0], p[1], p[2]);
+    },
+    done() { lineGeo.attributes.position.needsUpdate = true; headGeo.attributes.position.needsUpdate = true; },
+  };
+}
+const shellVis = streaks(48, 3.2, 0xffd9a0, 22); // the 76 mm shells: a bright streak with a glowing head
+const tracerVis = streaks(260, 1.1, 0xff6a1f, 34); // the 30 mm tracers
+const tracers = Array.from({ length: 260 }, () => ({ on: false, p: new THREE.Vector3(), v: new THREE.Vector3(), t0: 0 }));
+let tracerNext = 0;
+const flashSprites = ships.map(() => {
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false }));
+  sp.scale.setScalar(11);
+  sp.visible = false;
+  scene.add(sp);
+  return sp;
+});
+
+// --- The sea picture: each ship's pose from the simulation -------------------------------------------------------------
+const ZONE_X = { gun: 32, bridge: 14, engine: -9, guns: -33, steering: -50 }; // where each compartment's fire burns
+function poseShip(i, dt) {
+  const s = sim.ships[i];
+  const v = ships[i];
+  const sink = s.tSunk !== null ? sinkState(sim.t - s.tSunk, s.listSide) : null;
+  const list = s.listSide * rad(9) * (1 - s.hp / HULL_HP) ** 2; // the hurt ship settles to the side she was hit on
+  v.group.visible = !sink?.gone;
+  v.group.position.set(s.x, sink ? sink.depth : 0, s.z);
+  v.group.rotation.set(s.heel + list + (sink?.roll ?? 0), -s.psi, sink?.trim ?? 0);
+  v.group.updateMatrixWorld(true);
+  v.mainGun.pose(s.gun.yaw, s.gun.pitch);
+  v.gats.forEach((g, k) => g.pose(s.gats[k].yaw, s.gats[k].pitch, s.gats[k].spin, s.gats[k].firing, sim.t));
+  v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0 }); // the radar turns; the missile box stays stowed
+  v.wake.update({ t: sim.t, x: s.x, z: s.z, psi: s.psi, r: s.r, u: s.u });
+  // Smoke and fire: a hurt compartment smokes, one that is out burns; a sinking ship pours it out.
+  v.smokeT += dt;
+  while (v.smokeT >= 0.14) {
+    v.smokeT -= 0.14;
+    for (const id of COMP_IDS) {
+      const frac = s.comp[id] / COMPARTMENTS[id].hp;
+      if (frac > 0.55 || (sink && sink.gone)) continue;
+      _a.set(ZONE_X[id] + (Math.random() - 0.5) * 6, 8, (Math.random() - 0.5) * 5);
+      fx.fireSmoke(v.group.localToWorld(_a), sim.t, frac <= 0 ? 1.4 : 0.8);
+    }
+    if (sink && sink.smoke > 0.2) {
+      _a.set((Math.random() - 0.5) * 60, 9, (Math.random() - 0.5) * 6);
+      fx.fireSmoke(v.group.localToWorld(_a), sim.t, 2 * sink.smoke);
+    }
+  }
+  if (v.flash > 0) { v.flash -= dt; flashSprites[i].visible = v.flash > 0; }
+}
+
+function updateWeapons(dt) {
+  // The 76 mm shells in the air, straight from the simulation.
+  for (let k = 0; k < shellVis.n; k++) { const sh = sim.shells[k]; shellVis.set(k, sh?.p, sh?.v); }
+  shellVis.done();
+  // The 30 mm tracers: a tracer every third round, flying on their own from the muzzle.
+  ships.forEach((v, i) => {
+    const s = sim.ships[i];
+    s.gats.forEach((g, k) => {
+      if (!g.firing) return;
+      v.gunClock = (v.gunClock ?? [0, 0]);
+      v.gunClock[k] += dt;
+      v.gats[k].muzzle.getWorldQuaternion(_q);
+      _a.set(1, 0, 0).applyQuaternion(_q);
+      while (v.gunClock[k] >= 0.036) {
+        v.gunClock[k] -= 0.036;
+        const tr = tracers[tracerNext++ % tracers.length];
+        v.gats[k].muzzle.getWorldPosition(tr.p);
+        const sv = sim.velOf(s);
+        tr.v.copy(_a).multiplyScalar(1050).add(_b.set(sv[0], 0, sv[2]));
+        tr.v.x += (Math.random() - 0.5) * 9; tr.v.y += (Math.random() - 0.5) * 9; tr.v.z += (Math.random() - 0.5) * 9;
+        tr.t0 = sim.t - Math.random() * 0.012;
+        tr.on = true;
+      }
+    });
+  });
+  const pt = [0, 0, 0], vel = [0, 0, 0];
+  for (let k = 0; k < tracers.length; k++) {
+    const tr = tracers[k];
+    let live = false;
+    if (tr.on) {
+      const age = sim.t - tr.t0;
+      if (age > 2.2 || age < 0 || tr.p.y + tr.v.y * age < -1) tr.on = false;
+      else {
+        pt[0] = tr.p.x + tr.v.x * age; pt[1] = tr.p.y + tr.v.y * age; pt[2] = tr.p.z + tr.v.z * age;
+        vel[0] = tr.v.x; vel[1] = tr.v.y; vel[2] = tr.v.z;
+        tracerVis.set(k, age > 0.022 ? pt : [0, -9999, 0], vel);
+        live = true;
+      }
+    }
+    if (!live) tracerVis.set(k, null);
+  }
+  tracerVis.done();
+}
+
+// --- The banner and the events -----------------------------------------------------------------------------------------
+const banner = document.querySelector('#shot-caption');
+banner.classList.add('call');
+let bannerUntil = 0;
+function say(text, tone = '', ms = 3200) {
+  banner.textContent = text;
+  banner.hidden = false;
+  banner.classList.remove('standby', 'execute', 'station', 'danger');
+  const cls = { ok: 'execute', warn: 'standby', bad: 'danger' }[tone];
+  if (cls) banner.classList.add(cls);
+  bannerUntil = performance.now() + ms;
+}
+const alarmEl = document.createElement('div');
+alarmEl.className = 'duel-alarm';
+alarmEl.setAttribute('aria-hidden', 'true');
+document.body.appendChild(alarmEl);
+const who = (i) => (i === 0 ? 'Your' : 'Enemy');
+let lastShell = null; // the player's latest shell, for the gun camera
+let shellHold = 0;
+const eventHooks = []; // the audio listens here
+function handleEvents() {
+  for (const e of sim.takeEvents()) {
+    for (const h of eventHooks) h(e);
+    if (e.type === 'shot') {
+      const v = ships[e.owner];
+      v.mainGun.muzzle.getWorldPosition(_c);
+      flashSprites[e.owner].position.copy(_c);
+      flashSprites[e.owner].visible = true;
+      v.flash = 0.09;
+      for (let k = 0; k < 7; k++) fx.gunSmoke(_c, _b.set(e.dir[0] * 9, e.dir[1] * 9, e.dir[2] * 9), sim.t);
+      if (e.owner === 0) { lastShell = sim.shells[sim.shells.length - 1]?.id ?? null; shellHold = 0; }
+    } else if (e.type === 'hit') {
+      fx.shellBurst(_c.set(...e.pos), sim.t);
+      if (e.ship === 0) {
+        alarmEl.classList.remove('hit'); void alarmEl.offsetWidth; alarmEl.classList.add('hit');
+        say(`Hit: ${COMPARTMENTS[e.comp].name}${e.out ? ' out' : ''}`, 'bad', 2200);
+      } else say(`Hit on her ${COMPARTMENTS[e.comp].name.toLowerCase()}${e.out ? ': out' : ''}`, 'ok', 2200);
+    } else if (e.type === 'gunhit') {
+      if (e.ship === 0) { alarmEl.classList.remove('hit'); void alarmEl.offsetWidth; alarmEl.classList.add('hit'); }
+    } else if (e.type === 'splash') {
+      fx.splashAt(_c.set(e.pos[0], 0, e.pos[2]), sim.t, 1.5);
+      if (e.miss < 60) say(e.owner === 0 ? 'Near miss' : 'Their shell falls close', e.owner === 0 ? '' : 'warn', 1400);
+    } else if (e.type === 'out') {
+      say(`${who(e.ship)} ${COMPARTMENTS[e.comp].name.toLowerCase()} is out`, e.ship === 0 ? 'bad' : 'ok', 3000);
+    } else if (e.type === 'sunk') {
+      for (let k = 0; k < 3; k++) fx.explosion(_c.set(e.pos[0] + (k - 1) * 14, e.pos[1], e.pos[2]), sim.t + k * 0.35);
+    } else if (e.type === 'over') {
+      say(e.winner === 0 ? 'The enemy frigate is going down: you win' : 'Your ship is sinking: you lose', e.winner === 0 ? 'ok' : 'bad', 60000);
+    }
+  }
+}
+
+// --- Views --------------------------------------------------------------------------------------------------------------
+const VIEWS = ['behind', 'bridge', 'sight', 'above', 'shell', 'orbit'];
+const VIEW_LABELS = ['Behind', 'Bridge', 'Sight', 'Above', 'Shell', 'Orbit'];
+const VIEW_NAMES = { behind: 'Behind the ship', bridge: 'The bridge', sight: 'The gun sight', above: 'Straight above', shell: 'Riding your shell', orbit: 'Free orbit' };
+let view = 'behind';
+function setFov(f) {
+  if (Math.abs(camera.fov - f) < 0.01) return;
+  camera.fov = f;
+  camera.updateProjectionMatrix();
+  pointScale.value = (window.innerHeight * renderer.getPixelRatio()) / (2 * Math.tan(rad(f / 2)));
+}
+const viewButtons = [];
+function setView(v) {
+  view = v;
+  controls.enabled = v === 'orbit';
+  if (v === 'orbit') rig.focus('ship', (out) => out.set(sim.player.x, 8, sim.player.z), 230, 25);
+  else rig.free();
+  camera.up.set(0, 1, 0);
+  viewButtons.forEach((b) => { const on = b.dataset.view === v; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
+}
+const enemyPoint = (out) => out.set(sim.enemy.x, 9, sim.enemy.z);
+function updateCamera() {
+  const me = ships[0].group;
+  const foe = sim.enemy;
+  if (view === 'orbit') { setFov(50); rig.update(); controls.update(); return; }
+  if (view === 'behind') {
+    setFov(55);
+    camera.position.copy(me.localToWorld(_a.set(-110, 34, 0)));
+    camera.lookAt(me.localToWorld(_b.set(45, 6, 0)));
+  } else if (view === 'bridge' || view === 'sight') {
+    me.localToWorld(camera.position.copy(BRIDGE_EYE));
+    const inView = Math.abs(sim.relBearing(sim.player)) < rad(110);
+    if (inView) camera.lookAt(enemyPoint(_b)); else camera.lookAt(me.localToWorld(_b.set(100, 10, 0)));
+    const r = sim.range();
+    setFov(view === 'sight' ? clamp((Math.atan(70 / r) * 2 * 180) / Math.PI * 2.4, 3.5, 30) : 55);
+  } else if (view === 'above') {
+    setFov(50);
+    const mx = (sim.player.x + foe.x) / 2, mz = (sim.player.z + foe.z) / 2;
+    const h = Math.max(380, sim.range() * 1.05);
+    camera.up.set(Math.cos(sim.player.psi), 0, Math.sin(sim.player.psi));
+    camera.position.set(mx, h, mz);
+    camera.lookAt(mx, 0, mz);
+  } else { // shell: ride the player's last shell, then hold where it landed; with none, a chase view
+    setFov(55);
+    const sh = sim.shells.find((x) => x.id === lastShell);
+    if (sh) {
+      shellHold = 1.6;
+      _b.set(sh.v[0], sh.v[1], sh.v[2]).normalize();
+      camera.position.set(sh.p[0] - _b.x * 26, sh.p[1] - _b.y * 26 + 5, sh.p[2] - _b.z * 26);
+      camera.lookAt(sh.p[0] + _b.x * 60, sh.p[1] + _b.y * 60, sh.p[2] + _b.z * 60);
+    } else if (shellHold > 0) { shellHold -= 1 / 60; } else {
+      camera.position.copy(me.localToWorld(_a.set(-110, 34, 0)));
+      camera.lookAt(me.localToWorld(_b.set(45, 6, 0)));
+    }
+  }
+}
+
+// --- Readouts -------------------------------------------------------------------------------------------------------------
+const root = document.querySelector('#hud');
+root.classList.add('duel-root');
+root.innerHTML = '<div class="duel-hud"></div>';
+const hud = root.querySelector('.duel-hud');
+const bar = (frac, cls = '') => `<i class="${cls}" style="width:${Math.round(clamp(frac, 0, 1) * 100)}%"></i>`;
+function cardHtml(i) {
+  const s = sim.ships[i];
+  const comps = COMP_IDS.map((id) => {
+    const f = s.comp[id] / COMPARTMENTS[id].hp;
+    return `<div class="dh-row ${f <= 0 ? 'out' : f < 0.5 ? 'bad' : f < 0.99 ? 'hurt' : ''}"><span>${COMPARTMENTS[id].name}</span><b>${bar(f)}</b><em>${f <= 0 ? 'OUT' : `${Math.round(f * 100)}`}</em></div>`;
+  }).join('');
+  const hp = s.hp / HULL_HP;
+  return `<section class="dh-ship ${i ? 'foe' : 'you'}${s.tSunk !== null ? ' sunk' : ''}"><h3>${i ? 'ENEMY' : 'YOUR SHIP'}<small>${i ? LEVELS[sim.level].name : ''}${s.tSunk !== null ? 'SINKING' : ''}</small></h3>`
+    + `<div class="dh-row hull"><span>Hull</span><b>${bar(hp, hp < 0.3 ? 'bad' : '')}</b><em>${Math.round(s.hp)}</em></div>${comps}</section>`;
+}
+function gunStatus(s) {
+  const g = s.gun;
+  if (s.tSunk !== null) return '';
+  if (s.comp.gun <= 0) return 'OUT';
+  if (g.ammo <= 0) return 'NO AMMUNITION';
+  const sol = Math.abs(sim.relBearing(s));
+  if (sim.range() > MAIN_RANGE) return `OUT OF RANGE (${kmText(MAIN_RANGE)})`;
+  if (sol > MAIN_ARC) return 'OUT OF ARC: turn her';
+  if (g.cool > 0) return `LOADING ${g.cool.toFixed(1)} s`;
+  return g.onTarget ? 'ON TARGET' : 'TRAINING';
+}
+function statusHtml() {
+  const p = sim.player;
+  const rel = sim.relBearing(p);
+  const rud = Math.round((p.rudder / RUDDER_MAX) * 35);
+  const dist = sim.range();
+  return `<div class="dh-status"><div><span>HDG</span><b>${String(Math.round(compass(p.psi))).padStart(3, '0')}°</b></div>`
+    + `<div><span>SPEED</span><b>${Math.round(sim.knots(p))} kn</b><small>${TELEGRAPH[p.order].name}</small></div>`
+    + `<div><span>RUDDER</span><b>${rud === 0 ? '0' : `${Math.abs(rud)}° ${rud > 0 ? 'stbd' : 'port'}`}</b></div>`
+    + `<div><span>ENEMY</span><b>${kmText(dist)}</b><small>${relName(rel)}</small></div></div>`
+    + `<div class="dh-weapons"><div><span>76 mm</span><b>${p.gun.ammo} rd</b><small>${gunStatus(p)}</small></div>`
+    + `<div><span>30 mm</span><b>${p.auto ? 'AUTO' : 'MANUAL'}</b><small>${p.gats.map((g) => (g.ammo > 0 ? '' : 'dry')).join('') || (sim.range() > GUN_RANGE ? 'out of range' : 'ready')}</small></div></div>`;
+}
+function endHtml() {
+  if (sim.winner === null) return '';
+  const w = sim.winner === 0;
+  const st = sim.player.stats, es = sim.enemy.stats;
+  return `<section class="dh-end ${w ? 'won' : 'lost'}"><h2>${w ? 'You win' : 'You lose'}</h2>`
+    + `<p>${Math.round(sim.t)} s · your 76 mm: ${st.hits} of ${st.shells} hit · hers: ${es.hits} of ${es.shells}</p><p><kbd>R</kbd> to fight again</p></section>`;
+}
+let lastHtml = '';
+let hudOn = true;
+function updateHud() {
+  const html = cardHtml(1) + statusHtml() + cardHtml(0) + endHtml();
+  if (html !== lastHtml) { hud.innerHTML = html; lastHtml = html; }
+}
+
+// A small map: you at the centre, bow up, the enemy where she is (range rings every 2 km, the 76 mm's arc shaded).
+const map = document.createElement('canvas');
+map.className = 'duel-map';
+map.width = map.height = 300;
+document.body.appendChild(map);
+let mapOn = true;
+function drawMap() {
+  const c = map.getContext('2d');
+  const R = 150;
+  c.clearRect(0, 0, 300, 300);
+  c.save();
+  c.translate(R, R);
+  c.fillStyle = 'rgba(8, 13, 20, 0.62)';
+  c.beginPath(); c.arc(0, 0, R - 1, 0, Math.PI * 2); c.fill();
+  const scale = (R - 14) / Math.max(3000, Math.min(9000, sim.range() * 1.25));
+  c.strokeStyle = 'rgba(255,255,255,0.16)';
+  c.lineWidth = 1;
+  for (let n = 1; n <= 4; n++) { c.beginPath(); c.arc(0, 0, n * 2000 * scale, 0, Math.PI * 2); c.stroke(); }
+  c.fillStyle = 'rgba(255, 122, 26, 0.10)';
+  c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, Math.min(MAIN_RANGE * scale, R - 2), -Math.PI / 2 - MAIN_ARC, -Math.PI / 2 + MAIN_ARC); c.closePath(); c.fill();
+  const draw = (s, col) => { // up is the player's bow
+    const dx = s.x - sim.player.x, dz = s.z - sim.player.z;
+    const fwd = dx * Math.cos(sim.player.psi) + dz * Math.sin(sim.player.psi);
+    const side = -dx * Math.sin(sim.player.psi) + dz * Math.cos(sim.player.psi);
+    c.save();
+    c.translate(clamp(side * scale, -R + 8, R - 8), clamp(-fwd * scale, -R + 8, R - 8));
+    c.rotate(s.psi - sim.player.psi + Math.PI / 2);
+    c.fillStyle = col;
+    c.beginPath(); c.moveTo(0, -9); c.lineTo(-5, 7); c.lineTo(5, 7); c.closePath(); c.fill();
+    c.restore();
+  };
+  if (ships[1].group.visible) draw(sim.enemy, '#ff5d61');
+  draw(sim.player, '#3ddc84');
+  c.restore();
+}
+
+// --- Interface: the top bar, menu, keys sheet ---------------------------------------------------------------------------------
+const FOLD_KEY = 'intercept.uiHidden';
+const foldButton = document.querySelector('#btn-fold');
+const unfoldButton = document.querySelector('#btn-unfold');
+const menuButton = document.querySelector('#btn-menu');
+const menuEl = document.querySelector('#menu');
+const keysSheet = document.querySelector('#keys');
+function setMenu(open) { menuEl.hidden = !open; menuButton.setAttribute('aria-expanded', String(open)); }
+function setKeys(open) { keysSheet.hidden = !open; }
+function closePopovers() { const was = !menuEl.hidden || !keysSheet.hidden; setMenu(false); setKeys(false); return was; }
+function setFolded(on, save = true) {
+  if (on) closePopovers();
+  document.body.classList.toggle('ui-hidden', on);
+  unfoldButton.hidden = !on;
+  foldButton.setAttribute('aria-expanded', String(!on));
+  if (save) try { localStorage.setItem(FOLD_KEY, on ? '1' : '0'); } catch { /* storage unavailable */ }
+}
+foldButton.addEventListener('click', () => setFolded(true));
+unfoldButton.addEventListener('click', () => setFolded(false));
+menuButton.addEventListener('click', () => setMenu(menuEl.hidden));
+menuEl.addEventListener('click', (e) => { if (e.target.closest('button, a')) setMenu(false); });
+document.querySelector('#btn-keys').addEventListener('click', () => setKeys(true));
+document.querySelector('#keys-close').addEventListener('click', () => setKeys(false));
+window.addEventListener('pointerdown', (e) => {
+  if (!menuEl.hidden && !e.target.closest('#menu, #btn-menu')) setMenu(false);
+  if (!keysSheet.hidden && !e.target.closest('#keys, #btn-keys')) setKeys(false);
+}, true);
+let folded = false;
+try { folded = localStorage.getItem(FOLD_KEY) === '1'; } catch { /* storage unavailable */ }
+setFolded(folded, false);
+document.querySelector('#btn-ship').addEventListener('click', () => {
+  try { sessionStorage.setItem('intercept.chooser', '1'); location.reload(); } catch { location.search = ''; }
+});
+document.querySelector('#btn-home')?.addEventListener('click', () => document.querySelector('#btn-ship')?.click());
+{
+  const t = menuText('duel');
+  document.querySelector('.brand b').textContent = t.brand;
+  const sub = document.querySelector('#mission-sub');
+  if (sub) sub.textContent = `${t.sub} · ${LEVELS[level].name}`;
+}
+
+const mapButton = document.querySelector('#btn-map');
+function setMap(on) {
+  mapOn = on;
+  map.hidden = !on;
+  mapButton.classList.toggle('active', on);
+  mapButton.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem('intercept.map', on ? '1' : '0'); } catch { /* storage unavailable */ }
+}
+try { mapOn = localStorage.getItem('intercept.map') !== '0'; } catch { /* storage unavailable */ }
+setMap(mapOn);
+mapButton.addEventListener('click', () => setMap(!mapOn));
+
+const hudButton = document.querySelector('#btn-hud');
+function setHud(on) {
+  hudOn = on;
+  root.hidden = !on;
+  hudButton.classList.toggle('active', on);
+  hudButton.setAttribute('aria-pressed', String(on));
+}
+hudButton.addEventListener('click', () => setHud(!hudOn));
+setHud(true);
+
+const restartButton = document.createElement('button');
+restartButton.id = 'btn-restart';
+restartButton.setAttribute('role', 'menuitem');
+restartButton.innerHTML = 'Fight again<kbd>R</kbd>';
+menuEl.insertBefore(restartButton, menuEl.firstChild);
+restartButton.addEventListener('click', () => restart());
+
+const strip = document.createElement('div');
+strip.className = 'duel-views';
+strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (${i + 1})">${VIEW_LABELS[i]}</button>`).join('');
+document.body.appendChild(strip);
+viewButtons.push(...strip.querySelectorAll('button'));
+viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+
+keysSheet.querySelector('dl').innerHTML = [
+  ['<kbd>←</kbd> <kbd>→</kbd>', 'Rudder to port / starboard while held; let go and it comes back amidships'],
+  ['<kbd>↑</kbd> <kbd>↓</kbd>', 'Engine telegraph, one step: slow astern, stop, dead slow, slow, half, full, flank'],
+  ['<kbd>F</kbd>', `Fire the 76 mm (hold): the gun trains on the enemy by itself within ${Math.round((MAIN_ARC * 180) / Math.PI)}° of the bow and ${kmText(MAIN_RANGE)}, and fires once it is on the aim and loaded`],
+  ['<kbd>G</kbd>', `Fire the two 30 mm guns aft (hold): ${kmText(GUN_RANGE)}, astern and abeam only`],
+  ['<kbd>A</kbd>', 'The 30 mm guns on automatic'],
+  ['<kbd>1</kbd> to <kbd>6</kbd>', 'Behind, bridge, sight, above, shell, orbit'],
+  ['<kbd>V</kbd>', 'Next view · drag looks round in the orbit view, the wheel zooms'],
+  ['<kbd>R</kbd>', 'Fight again'],
+  ['<kbd>N</kbd>', 'Map'],
+  ['<kbd>S</kbd>', 'Sound on / off'],
+  ['<kbd>H</kbd> <kbd>C</kbd>', 'Readouts, hide the interface'],
+].map(([k, d]) => `<dt>${k}</dt><dd>${d}</dd>`).join('');
+keysSheet.querySelector('.keys-note').textContent = 'The guns aim themselves: you win by where you point the ship · turning spoils your own aim · a shell takes seconds to arrive';
+
+const audio = createDuelAudio();
+eventHooks.push((e) => audio.event(e));
+const soundButton = document.querySelector('#btn-sound');
+function setSound(on) {
+  audio.setEnabled(on);
+  soundButton.classList.toggle('active', on);
+  soundButton.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem('intercept.sound', on ? '1' : '0'); } catch { /* storage unavailable */ }
+}
+let soundPref = true;
+try { soundPref = localStorage.getItem('intercept.sound') !== '0'; } catch { /* storage unavailable */ }
+audio.setEnabled(soundPref);
+soundButton.classList.toggle('active', soundPref);
+soundButton.setAttribute('aria-pressed', String(soundPref));
+soundButton.title = 'Sound: the guns, the hits, the sea and the engines (S)';
+if (!audio.supported) { soundButton.disabled = true; soundButton.title = 'Sound is not available in this browser'; }
+soundButton.addEventListener('click', () => setSound(!audio.enabled));
+
+const keysEl = document.createElement('div');
+keysEl.id = 'fly-keys';
+keysEl.className = 'fly-keys';
+document.body.appendChild(keysEl);
+const input = { left: 0, right: 0, fire: 0, gat: 0 };
+const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`;
+function keysHtml() {
+  return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', 'speed')}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}`
+    + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–6', 'views')}${k('R', 'again')}`;
+}
+let lastKeys = '';
+
+// --- Tags --------------------------------------------------------------------------------------------------------------------
+const labels = new CSS2DRenderer();
+labels.domElement.className = 'labels-layer duel-labels';
+document.body.appendChild(labels.domElement);
+const tagEl = document.createElement('div');
+tagEl.className = 'tag tag-ship';
+tagEl.style.pointerEvents = 'none';
+tagEl.innerHTML = '<div class="tag-title"></div><div class="tag-body"></div>';
+const tagObj = new CSS2DObject(tagEl);
+tagObj.center.set(0.5, 1);
+scene.add(tagObj);
+let tagsOn = true;
+function updateTag() {
+  tagObj.visible = tagsOn && ships[1].group.visible;
+  tagObj.position.set(sim.enemy.x, 36, sim.enemy.z);
+  tagEl.querySelector('.tag-title').textContent = 'ENEMY';
+  tagEl.querySelector('.tag-body').textContent = `${kmText(sim.range())} · ${relName(sim.relBearing(sim.player))}`;
+}
+
+// --- Keys --------------------------------------------------------------------------------------------------------------------
+function restart() {
+  sim.seed = (Date.now() % 100000) | 0;
+  sim.reset();
+  fx.clear();
+  for (const v of ships) v.wake.clear();
+  tracers.forEach((t) => { t.on = false; });
+  lastShell = null;
+  banner.hidden = true;
+  alarmEl.classList.remove('hit');
+  startBanner();
+}
+function startBanner() {
+  say(`Enemy ${relName(sim.relBearing(sim.player))}, ${kmText(sim.range())}: close, turn to bring your gun to bear, and keep her off your stern`, '', 5200);
+}
+window.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = e.target?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    input[e.key === 'ArrowLeft' ? 'left' : 'right'] = 1;
+    e.preventDefault();
+    return;
+  }
+  if (e.key === 'f' || e.key === 'F') { input.fire = 1; e.preventDefault(); return; }
+  if (e.key === 'g' || e.key === 'G') { input.gat = 1; e.preventDefault(); return; }
+  if (e.repeat) { if (e.key.startsWith('Arrow')) e.preventDefault(); return; }
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  switch (key) {
+    case 'ArrowUp': sim.telegraph(0, +1); break;
+    case 'ArrowDown': sim.telegraph(0, -1); break;
+    case 'a': sim.toggleAuto(0); break;
+    case 'r': restart(); break;
+    case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
+    case '1': case '2': case '3': case '4': case '5': case '6': setView(VIEWS[Number(key) - 1]); break;
+    case 'h': setHud(!hudOn); break;
+    case 'n': setMap(!mapOn); break;
+    case 'l': tagsOn = !tagsOn; break;
+    case 'c': setFolded(!document.body.classList.contains('ui-hidden')); break;
+    case '?': setKeys(keysSheet.hidden); break;
+    case 'Escape': closePopovers(); break;
+    case 's': setSound(!audio.enabled); break;
+    case ' ': break;
+    default: return;
+  }
+  if (key !== 'Escape') e.preventDefault();
+});
+window.addEventListener('keyup', (e) => {
+  if (e.key === 'ArrowLeft') input.left = 0;
+  if (e.key === 'ArrowRight') input.right = 0;
+  if (e.key === 'f' || e.key === 'F') input.fire = 0;
+  if (e.key === 'g' || e.key === 'G') input.gat = 0;
+});
+window.addEventListener('blur', () => { input.left = 0; input.right = 0; input.fire = 0; input.gat = 0; });
+
+// --- Loop --------------------------------------------------------------------------------------------------------------------
+function resize() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  labels.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  pointScale.value = (h * renderer.getPixelRatio()) / (2 * Math.tan(rad(camera.fov / 2)));
+}
+window.addEventListener('resize', resize);
+resize();
+setView('behind');
+startBanner();
+
+let last = performance.now();
+let frames = 0;
+renderer.setAnimationLoop((now) => {
+  const dt = Math.max(0, Math.min((now - last) / 1000, 0.1));
+  last = now;
+  sim.advance(dt, input);
+  handleEvents();
+  env.ocean.material.uniforms.uTime.value = sim.t;
+  poseShip(0, dt);
+  poseShip(1, dt);
+  updateWeapons(dt);
+  updateCamera();
+  env.follow(camera.position);
+  env.setShadowFocus(_b.set((sim.player.x + sim.enemy.x) / 2, 0, (sim.player.z + sim.enemy.z) / 2), clamp(sim.range() * 0.5, 120, 600));
+  fx.update(sim.t);
+  audio.update(sim, camera);
+  if (hudOn) updateHud();
+  if (mapOn) drawMap();
+  updateTag();
+  const keys = keysHtml();
+  if (keys !== lastKeys) { keysEl.innerHTML = keys; lastKeys = keys; }
+  document.documentElement.style.setProperty('--keys-h', `${keysEl.offsetHeight}px`);
+  if (!banner.hidden && performance.now() > bannerUntil) banner.hidden = true;
+  renderer.render(scene, camera);
+  labels.render(scene, camera);
+  if (frames++ === 0) loadingEl?.remove();
+});
+
+window.__duel = { sim, camera, controls, scene, renderer, ships, setView, restart, fx, hooks: eventHooks, input };

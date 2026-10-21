@@ -36,7 +36,7 @@
 import * as THREE from 'three';
 import { G, LAUNCHER_PIVOT, TUBE_MOUTH, launcherQuat } from './scenario.js';
 import { attitude } from './fly.js';
-import { TELEGRAPH, START_ORDER, RUDDER_MAX, KT, HALF_LENGTH, HALF_BEAM, GUN_MOUNT_LOCAL, GUN_BLOCK, GUN_DEAD, gunBlind, stepHull } from './hull.js';
+import { TELEGRAPH, START_ORDER, RUDDER_MAX, KT, HALF_LENGTH, HALF_BEAM, GUN_MOUNT_LOCAL, GUN_BLOCK, GUN_DEAD, gunBlind, stepHull, compass, relName, kmText } from './hull.js';
 
 const rad = THREE.MathUtils.degToRad;
 const deg = THREE.MathUtils.radToDeg;
@@ -108,16 +108,8 @@ const _q = new THREE.Quaternion();
 const _d = new THREE.Vector3();
 const _e = new THREE.Vector3();
 
-// Compass helpers: a bearing from north (deg 0..360), and a relative one as the navy says it: green to
-// starboard, red to port ("green 045").
-export const compass = (r) => ((deg(r) % 360) + 360) % 360;
-export function relName(relRad) {
-  const d = Math.round(deg(wrapPi(relRad)));
-  if (Math.abs(d) <= 2) return 'right ahead';
-  if (Math.abs(d) >= 178) return 'right astern';
-  return `${d > 0 ? 'green' : 'red'} ${String(Math.abs(d)).padStart(3, '0')}`;
-}
-export const kmText = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`);
+// Compass helpers (a bearing, "green 045", "2.4 km") are in hull.js, shared with the ship duel.
+export { compass, relName, kmText };
 
 // A seeded random source, so a run (and a test) can be repeated.
 function mulberry32(seed) {

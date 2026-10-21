@@ -56,7 +56,7 @@ const MAIN_YAW_RATE = rad(45);
 const MAIN_PITCH_RATE = rad(30);
 const MAIN_PITCH = [rad(-5), rad(45)];
 export const AIM_OK = rad(1.2); // the gun fires once it is this close to the solution
-const BARREL = 4; // m from the pivot to the muzzle
+const BARREL = 8; // m from the pivot to the muzzle
 const SHELL_LIFE = 30; // s
 
 // Scatter (one standard deviation, in radians): a steady floor, more while the firing ship turns, more as the

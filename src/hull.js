@@ -67,3 +67,14 @@ export function stepHull(s, dt, { want = 0, orderKn = 0, rudderLimit = RUDDER_MA
   // Heel outward in the turn (port side down turning to starboard), on a short lag.
   s.heel += ((-HEEL * s.r * s.u - s.heel) / 3) * dt;
 }
+
+// A bearing from north (deg 0..360), and a relative one as the navy says it: green to starboard, red to port ("green 045").
+const deg = (r) => (r * 180) / Math.PI;
+export const compass = (r) => ((deg(r) % 360) + 360) % 360;
+export function relName(relRad) {
+  const d = Math.round(deg(wrapPi(relRad)));
+  if (Math.abs(d) <= 2) return 'right ahead';
+  if (Math.abs(d) >= 178) return 'right astern';
+  return `${d > 0 ? 'green' : 'red'} ${String(Math.abs(d)).padStart(3, '0')}`;
+}
+export const kmText = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`);
