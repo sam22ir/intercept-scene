@@ -65,7 +65,7 @@ export function createLiveFx(scene) {
   // about a quarter of a minute) with a short hot flame right behind the motor.
   const rocket = new LiveField(9000, { mode: MODE.SMOKE, drag: 0.5, rise: 0.35, size: [1.6, 15], wind: WIND });
   const flame = new LiveField(900, { mode: MODE.FIRE, drag: 3, rise: 0, size: [0.9, 2.0], wind: [0, 0, 0] });
-  const gunsmoke = new LiveField(900, { mode: MODE.SMOKE, drag: 1.8, rise: 0.5, size: [0.35, 3.2], wind: WIND });
+  const gunsmoke = new LiveField(900, { mode: MODE.SMOKE, drag: 2.2, rise: 0.4, size: [0.15, 1.6], wind: WIND });
   const fire = new LiveField(700, { mode: MODE.FIRE, drag: 2.4, rise: 2.5, size: [1.6, 9], wind: [1.5, 0, 0.8] });
   const burning = new LiveField(2600, { mode: MODE.BURNING, drag: 1.5, rise: 1.5, size: [0.8, 6], wind: WIND });
   const splash = new LiveField(1400, { mode: MODE.SPLASH, drag: 0.3, gravity: G, size: [1.2, 4] });
@@ -161,7 +161,7 @@ export function createLiveFx(scene) {
     // A wisp of powder smoke at a gun's muzzle: it leaves moving with the ship and the round's blast, and hangs behind.
     gunSmoke(pos, vel, t) {
       randomUnit(rng, _v).multiplyScalar(range(rng, 0.2, 1.4)).add(vel);
-      gunsmoke.push(pos, _v, t, range(rng, 1.1, 2.4), rng());
+      gunsmoke.push(pos, _v, t, range(rng, 0.8, 1.6), rng());
     },
     // Backblast and boil-up round the tube mouth on the moving deck.
     launchBillow(pos, dir, t) {

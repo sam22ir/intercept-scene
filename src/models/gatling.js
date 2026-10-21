@@ -67,14 +67,14 @@ export function createGatling() {
   muzzle.position.x = GATLING_MUZZLE_X;
   pitchGroup.add(muzzle);
   const flash = new THREE.Mesh(
-    new THREE.ConeGeometry(0.2, 1.7, 10),
-    new THREE.MeshBasicMaterial({ color: 0xffc46a, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
+    new THREE.ConeGeometry(0.11, 1.1, 8),
+    new THREE.MeshBasicMaterial({ color: 0xff9a3a, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }),
   );
   flash.rotation.z = -Math.PI / 2;
-  flash.position.x = 0.85;
+  flash.position.x = 0.6;
   flash.visible = false;
   muzzle.add(flash);
-  const light = new THREE.PointLight(0xffa850, 0, 38, 1.6);
+  const light = new THREE.PointLight(0xffa850, 0, 24, 1.8);
   light.position.x = 1.2;
   muzzle.add(light);
 
@@ -97,10 +97,10 @@ export function createGatling() {
       const on = firing && Math.sin(t * 410) + Math.sin(t * 173 + 2) > -1.1;
       flash.visible = on;
       if (on) {
-        flash.scale.set(0.7 + 0.9 * Math.abs(Math.sin(t * 97 + 1)) + 0.4 * Math.abs(Math.sin(t * 331)), 0.8 + 0.5 * Math.abs(Math.sin(t * 131)), 0.8 + 0.5 * Math.abs(Math.sin(t * 211)));
+        flash.scale.set(0.6 + 0.6 * Math.abs(Math.sin(t * 97 + 1)) + 0.3 * Math.abs(Math.sin(t * 331)), 0.8 + 0.3 * Math.abs(Math.sin(t * 131)), 0.8 + 0.3 * Math.abs(Math.sin(t * 211)));
         flash.rotation.x = t * 40;
       }
-      light.intensity = on ? 4 + 3 * Math.abs(Math.sin(t * 150)) : 0;
+      light.intensity = on ? 1.5 + 1.5 * Math.abs(Math.sin(t * 150)) : 0;
     },
   };
 }

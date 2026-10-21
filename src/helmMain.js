@@ -83,7 +83,7 @@ const glowTex = (() => {
 })();
 const headGeo = new THREE.BufferGeometry();
 headGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRACERS * 3), 3));
-const tracerHeads = new THREE.Points(headGeo, new THREE.PointsMaterial({ map: glowTex, size: 3.2, sizeAttenuation: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xffffff }));
+const tracerHeads = new THREE.Points(headGeo, new THREE.PointsMaterial({ map: glowTex, size: 1.1, sizeAttenuation: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xffffff }));
 tracerHeads.frustumCulled = false;
 scene.add(tracerHeads);
 let tracerNext = 0;
@@ -99,8 +99,8 @@ function updateGuns(dt) {
     smokeClock[i] += dt;
     gatlings[i].muzzle.getWorldQuaternion(_q);
     _a.set(1, 0, 0).applyQuaternion(_q);
-    while (smokeClock[i] >= 0.04) { // powder smoke, a wisp at the muzzle every few rounds
-      smokeClock[i] -= 0.04;
+    while (smokeClock[i] >= 0.09) { // powder smoke, a wisp at the muzzle every few rounds
+      smokeClock[i] -= 0.09;
       gatlings[i].muzzle.getWorldPosition(_c);
       fx.gunSmoke(_c, _b.copy(_a).multiplyScalar(5).add(sim.shipVel(_d)), t);
     }
@@ -127,7 +127,8 @@ function updateGuns(dt) {
         _b.copy(tr.v).normalize().multiplyScalar(-34);
         pos.setXYZ(k * 2, _a.x, _a.y, _a.z);
         pos.setXYZ(k * 2 + 1, _a.x + _b.x, _a.y + _b.y, _a.z + _b.z);
-        hp.setXYZ(k, _a.x, _a.y, _a.z);
+        if (age > 0.022) hp.setXYZ(k, _a.x, _a.y, _a.z); // no glowing head right at the muzzle, where it would swamp the gun
+        else hp.setXYZ(k, 0, -9999, 0);
         live = true;
       }
     }
