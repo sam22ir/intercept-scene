@@ -40,7 +40,7 @@ describe('the deck helicopter', () => {
     while (h.phase === 'circuit') {
       h.step(0.05, true);
       const s = h.state;
-      if (early && h.u < 0.12) assert.ok(s.x >= prevX - 1e-9, 'the first part of the flight is forward, never sideways or back');
+      if (early && h.u < 0.12) assert.ok(s.x >= prevX - 0.2, 'the first part of the flight is forward, never sideways or back');
       else early = false;
       prevX = s.x;
       maxX = Math.max(maxX, s.x - PAD.x);
@@ -71,8 +71,12 @@ describe('the deck helicopter', () => {
     h.steadyFor = 0;
     run(h, 90, false);
     assert.equal(h.phase, 'hold');
-    assert.ok(Math.abs(h.state.y - PAD.y - HOLD_ALT) < 0.5, 'waiting low, close above the pad');
-    assert.ok(Math.abs(h.state.x - PAD.x) < 1.5 && Math.abs(h.state.z - PAD.z) < 1.5, 'over the pad, drifting only a little');
+    assert.ok(Math.abs(h.state.y - PAD.y - HOLD_ALT) < 0.8, 'waiting at its height above the pad');
+    let yawMin = Infinity;
+    let yawMax = -Infinity;
+    for (let i = 0; i < 400; i++) { h.step(0.05, false); yawMin = Math.min(yawMin, h.state.yaw); yawMax = Math.max(yawMax, h.state.yaw); }
+    assert.ok(yawMax - yawMin > 0.08, 'its heading wanders: a hover is never rigid');
+    assert.ok(Math.abs(h.state.x - PAD.x) < 3.5 && Math.abs(h.state.z - PAD.z) < 3.5, 'over the pad, drifting a little');
     run(h, LAND_STEADY + 0.5, true);
     assert.equal(h.phase, 'descend');
     run(h, 30, true);
@@ -87,7 +91,7 @@ describe('the deck helicopter', () => {
     assert.equal(h.phase, 'waveoff');
     run(h, 6, false);
     assert.equal(h.phase, 'hold');
-    assert.ok(h.state.y - PAD.y > HOLD_ALT - 0.5, 'back at the waiting height');
+    assert.ok(h.state.y - PAD.y > HOLD_ALT - 0.8, 'back at the waiting height');
   });
   it('is driven by the sim: it lifts off only when the rudder is amidships', () => {
     const sim = new HelmSim();

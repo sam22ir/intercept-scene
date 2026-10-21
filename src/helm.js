@@ -300,7 +300,7 @@ export class HelmSim {
   step(dt, input) {
     this.t += dt;
     this.stepShip(dt, input);
-    this.heli.step(dt, !this.out && Math.abs(this.r) < rad(0.4) && Math.abs(this.rudder) < rad(2)); // a fixed course: no rudder, no turn
+    this.heli.step(dt, !this.out && Math.abs(this.r) < rad(0.4) && Math.abs(this.rudder) < rad(2), this.r); // a fixed course: no rudder, no turn
     this.stepSpawn();
     for (const d of this.drones) this.stepDrone(d, dt);
     this.stepLauncher();
