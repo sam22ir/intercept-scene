@@ -61,10 +61,14 @@ export function createLiveFx(scene) {
   const puff = new LiveField(1100, { mode: MODE.SMOKE, drag: 1.1, rise: 0.7, size: [0.5, 9], wind: WIND });
   const blast = new LiveField(320, { mode: MODE.SMOKE, drag: 1.4, rise: 1.0, size: [1.2, 7.5], wind: WIND });
   const exhaust = new LiveField(1600, { mode: MODE.SMOKE, drag: 1.0, rise: 0.2, size: [0.08, 0.7], wind: WIND });
+  // The flying missile's own smoke: a dense white column (a puff every metre or so, spreading slowly and thinning over
+  // about a quarter of a minute) with a short hot flame right behind the motor.
+  const rocket = new LiveField(9000, { mode: MODE.SMOKE, drag: 0.5, rise: 0.35, size: [1.6, 15], wind: WIND });
+  const flame = new LiveField(900, { mode: MODE.FIRE, drag: 3, rise: 0, size: [0.9, 2.0], wind: [0, 0, 0] });
   const fire = new LiveField(700, { mode: MODE.FIRE, drag: 2.4, rise: 2.5, size: [1.6, 9], wind: [1.5, 0, 0.8] });
   const burning = new LiveField(2600, { mode: MODE.BURNING, drag: 1.5, rise: 1.5, size: [0.8, 6], wind: WIND });
   const splash = new LiveField(1400, { mode: MODE.SPLASH, drag: 0.3, gravity: G, size: [1.2, 4] });
-  const fields = [trail, launch, puff, blast, exhaust, fire, burning, splash];
+  const fields = [trail, rocket, flame, launch, puff, blast, exhaust, fire, burning, splash];
   for (const f of fields) group.add(f);
 
   // Foam rings on the water, a few at a time.
@@ -144,6 +148,14 @@ export function createLiveFx(scene) {
     // The missile's smoke trail: one puff per call.
     missileTrail(pos, t) {
       trail.push(pos, randomUnit(rng, _v).multiplyScalar(1.2), t, range(rng, 8, 12), rng());
+    },
+    // The flying missile: one section of smoke column and a flame puff at the motor, per call. `dir` is the flight direction.
+    missileSmoke(pos, dir, t) {
+      randomUnit(rng, _v).multiplyScalar(range(rng, 0.3, 1.6)).addScaledVector(dir, -range(rng, 2, 6));
+      rocket.push(pos, _v, t, range(rng, 13, 19), rng());
+      _o.copy(pos).addScaledVector(dir, -0.8);
+      randomUnit(rng, _v).multiplyScalar(0.8).addScaledVector(dir, -range(rng, 10, 24));
+      flame.push(_o, _v, t, range(rng, 0.08, 0.18), rng());
     },
     // Backblast and boil-up round the tube mouth on the moving deck.
     launchBillow(pos, dir, t) {

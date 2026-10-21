@@ -325,8 +325,8 @@ function applyState(dt) {
     v.model.group.quaternion.copy(_q.setFromUnitVectors(ZAXIS, m.dir));
     v.model.setExhaust(t);
     const gap = v.trailLast.distanceTo(m.pos);
-    const n = Math.min(60, Math.floor(gap / 2.5));
-    for (let i = 1; i <= n; i++) fx.missileTrail(_c.lerpVectors(v.trailLast, m.pos, i / n), t);
+    const n = Math.min(160, Math.floor(gap / 1.1));
+    for (let i = 1; i <= n; i++) fx.missileSmoke(_c.lerpVectors(v.trailLast, m.pos, i / n), m.dir, t);
     if (n > 0) v.trailLast.copy(m.pos);
   }
   for (const [id, v] of mvis) {
