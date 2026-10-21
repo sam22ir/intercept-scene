@@ -82,6 +82,7 @@ export function createHelmMap() {
   let zoom = 0;
   const track = [];
   let lastTrack = -Infinity;
+  let sightView = null; // in the radar view: { yaw (world, radians from north), half (the lens's half-width), locked }
   root.addEventListener('click', () => { zoom = (zoom + 1) % ZOOMS.length; });
   root.title = 'Radar, heading up: click to change the range (M hides it)';
 
@@ -176,6 +177,40 @@ export function createHelmMap() {
       ctx.arc(R, R, RADAR_RANGE * k, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
+    }
+    // Where the radar view is looking: a wedge as wide as the lens out to the rim, a bright centre line, and the true bearing at the rim.
+    if (sightView) {
+      const rel = sightView.yaw - sim.psi;
+      const col = sightView.locked ? '61, 220, 132' : '255, 196, 84';
+      const a0 = rel - Math.PI / 2;
+      const half = Math.max(sightView.half, 0.035);
+      ctx.fillStyle = `rgba(${col}, 0.2)`;
+      ctx.strokeStyle = `rgba(${col}, 0.95)`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(R, R);
+      ctx.arc(R, R, R - 2, a0 - half, a0 + half);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(R, R);
+      ctx.lineTo(R + Math.cos(a0) * (R - 2), R + Math.sin(a0) * (R - 2));
+      ctx.stroke();
+      ctx.lineWidth = 1;
+      const brg = ((Math.round((sightView.yaw * 180) / Math.PI) % 360) + 360) % 360;
+      ctx.font = '700 9px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const tx = R + Math.cos(a0) * (R - 17);
+      const ty = R + Math.sin(a0) * (R - 17);
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.lineWidth = 3;
+      ctx.strokeText(`${String(brg).padStart(3, '0')}°`, tx, ty);
+      ctx.fillStyle = `rgb(${col})`;
+      ctx.fillText(`${String(brg).padStart(3, '0')}°`, tx, ty);
+      ctx.lineWidth = 1;
     }
     // The scale: a bar of a round length stands low on the disc (no numbers on the rings or the bar; the corner label gives the range).
     const nice = [200, 500, 1000, 2000, 5000, 10000].reduce((best, m) => (Math.abs(m * k - R * 0.5) < Math.abs(best * k - R * 0.5) ? m : best), 1000);
@@ -302,6 +337,7 @@ export function createHelmMap() {
   return {
     get enabled() { return enabled; },
     setEnabled(on) { enabled = on; root.hidden = !on; },
+    set sight(v) { sightView = v; },
     update(sim) { if (enabled) draw(sim); },
   };
 }

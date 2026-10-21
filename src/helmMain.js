@@ -1677,6 +1677,7 @@ renderer.setAnimationLoop((now) => {
   env.follow(camera.position);
   env.setShadowFocus(_b.set(sim.x, 0, sim.z), 90);
   fx.update(sim.t);
+  map.sight = view === 'sight' ? { yaw: Math.atan2(sight.aim.z, sight.aim.x), half: Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect), locked: sight.locked } : null;
   map.update(sim);
   const threat = sim.threat;
   if (threat !== lastThreat) {
