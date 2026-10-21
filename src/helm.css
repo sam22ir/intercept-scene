@@ -142,3 +142,19 @@ body.mission-helm .hud { background: rgba(9, 14, 21, 0.38); backdrop-filter: blu
   body.mission-helm .shot-caption { top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 96px); bottom: auto; }
   body.mission-helm .fly-keys { bottom: auto; top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 56px); padding: 4px 12px; gap: 4px 12px; font-size: 11px; background: rgba(9, 14, 21, 0.35); backdrop-filter: none; border-color: rgba(255, 255, 255, 0.08); }
 }
+.helm-ship .hs-dome { flex: none; }
+.helm-ship .hs-rect { flex: 1 1 0; min-width: 0; }
+.helm-ship .hs-rect { min-width: 118px; }
+@media (max-width: 1100px) { .helm-ship { max-width: none; } }
+/* More compact: a smaller half circle and slimmer boxes, to leave the view clear. */
+.helm-ship { gap: 6px; }
+.helm-ship .hs-dome { width: 196px; height: 102px; border-radius: 98px 98px 0 0; }
+.helm-ship .dome-svg { width: 196px; height: 102px; }
+.dome-svg .dl { font-size: 12.5px; }
+.dome-svg .hd { font-size: 18px; }
+.helm-ship .hs-rect { height: 34px; gap: 3px; padding: 0 10px; min-width: 104px; border-radius: 10px 10px 0 0; }
+.helm-ship .hs-rect > span { font-size: 9.5px; }
+.helm-ship .hs-pips { gap: 3px; }
+.helm-ship .hs-pips i { width: 8px; height: 9px; }
+.helm-ship .hs-hits i { width: 13px; height: 9px; }
+.helm-ship .hr-bar { height: 6px; }
