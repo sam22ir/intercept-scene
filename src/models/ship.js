@@ -894,11 +894,8 @@ export function createShip({ ensign = 'alg', catapult = true, helicopter = false
   cradle.rotation.z = PITCH;
   rail.add(cradle);
   if (catapult) group.add(rail);
-  if (helicopter) {
-    const heli = createHelicopter();
-    heli.position.set(-45.8, 5.5, 0.5); // the wheels on the pad's ring, the nose to the bow, the rotor clear of the hangar
-    group.add(heli);
-  }
+  const heli = helicopter ? createHelicopter() : null; // on the pad's ring; every so often it flies a circuit (update)
+  if (heli) group.add(heli);
 
   // Ensign on the stern staff, waving as a function of t.
   const flagGeo = new THREE.PlaneGeometry(2.2, 1.4, 16, 6);
@@ -980,6 +977,7 @@ export function createShip({ ensign = 'alg', catapult = true, helicopter = false
     // (The third argument, a second round's launch time, is accepted and unused: only one cell has a cap that blows off.)
     update(t, tLaunch, _tLaunch2 = Infinity, opts = null) {
       radar.rotation.y = t * 2.1;
+      heli?.userData.update(t);
       const { yaw, pitch } = opts?.aim ?? launcherAim(t);
       yawGroup.rotation.y = yaw;
       pitchGroup.rotation.z = pitch;
