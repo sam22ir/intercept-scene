@@ -65,11 +65,30 @@ const TRACERS = 220;
 const tracers = Array.from({ length: TRACERS }, () => ({ on: false, p: new THREE.Vector3(), v: new THREE.Vector3(), t0: 0 }));
 const tracerGeo = new THREE.BufferGeometry();
 tracerGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRACERS * 6), 3));
-const tracerLines = new THREE.LineSegments(tracerGeo, new THREE.LineBasicMaterial({ color: 0xffcf70, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }));
+// A tracer is a hot orange streak behind a bright white-yellow head that glows.
+const tracerLines = new THREE.LineSegments(tracerGeo, new THREE.LineBasicMaterial({ color: 0xff6a1f, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
 tracerLines.frustumCulled = false;
 scene.add(tracerLines);
+const glowTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,250,225,1)');
+  g.addColorStop(0.3, 'rgba(255,190,90,0.7)');
+  g.addColorStop(1, 'rgba(255,120,30,0)');
+  x.fillStyle = g;
+  x.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const headGeo = new THREE.BufferGeometry();
+headGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRACERS * 3), 3));
+const tracerHeads = new THREE.Points(headGeo, new THREE.PointsMaterial({ map: glowTex, size: 3.2, sizeAttenuation: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xffffff }));
+tracerHeads.frustumCulled = false;
+scene.add(tracerHeads);
 let tracerNext = 0;
 const gunClock = [0, 0];
+const smokeClock = [0, 0];
 function updateGuns(dt) {
   const t = sim.t;
   for (let i = 0; i < gatlings.length; i++) {
@@ -77,19 +96,26 @@ function updateGuns(dt) {
     gatlings[i].pose(g.yaw, g.pitch, g.spin, g.firing, t);
     if (!g.firing) continue;
     gunClock[i] += dt;
-    while (gunClock[i] >= 0.05) { // a tracer every fourth round
-      gunClock[i] -= 0.05;
+    smokeClock[i] += dt;
+    gatlings[i].muzzle.getWorldQuaternion(_q);
+    _a.set(1, 0, 0).applyQuaternion(_q);
+    while (smokeClock[i] >= 0.04) { // powder smoke, a wisp at the muzzle every few rounds
+      smokeClock[i] -= 0.04;
+      gatlings[i].muzzle.getWorldPosition(_c);
+      fx.gunSmoke(_c, _b.copy(_a).multiplyScalar(5).add(sim.shipVel(_d)), t);
+    }
+    while (gunClock[i] >= 0.036) { // a tracer every third round
+      gunClock[i] -= 0.036;
       const tr = tracers[tracerNext++ % TRACERS];
       gatlings[i].muzzle.getWorldPosition(tr.p);
-      gatlings[i].muzzle.getWorldQuaternion(_q);
-      _a.set(1, 0, 0).applyQuaternion(_q);
       tr.v.copy(_a).multiplyScalar(1050).add(sim.shipVel(_b));
-      tr.v.x += (Math.random() - 0.5) * 6; tr.v.y += (Math.random() - 0.5) * 6; tr.v.z += (Math.random() - 0.5) * 6;
-      tr.t0 = t;
+      tr.v.x += (Math.random() - 0.5) * 9; tr.v.y += (Math.random() - 0.5) * 9; tr.v.z += (Math.random() - 0.5) * 9;
+      tr.t0 = t - Math.random() * 0.012; // spread over the frame, not all at the muzzle at once
       tr.on = true;
     }
   }
   const pos = tracerGeo.attributes.position;
+  const hp = headGeo.attributes.position;
   for (let k = 0; k < TRACERS; k++) {
     const tr = tracers[k];
     let live = false;
@@ -98,15 +124,17 @@ function updateGuns(dt) {
       if (age > 2.2 || age < 0 || tr.p.y + tr.v.y * age < -1) tr.on = false;
       else {
         _a.copy(tr.p).addScaledVector(tr.v, age);
-        _b.copy(tr.v).normalize().multiplyScalar(-26);
+        _b.copy(tr.v).normalize().multiplyScalar(-34);
         pos.setXYZ(k * 2, _a.x, _a.y, _a.z);
         pos.setXYZ(k * 2 + 1, _a.x + _b.x, _a.y + _b.y, _a.z + _b.z);
+        hp.setXYZ(k, _a.x, _a.y, _a.z);
         live = true;
       }
     }
-    if (!live) { pos.setXYZ(k * 2, 0, -9999, 0); pos.setXYZ(k * 2 + 1, 0, -9999, 0); }
+    if (!live) { pos.setXYZ(k * 2, 0, -9999, 0); pos.setXYZ(k * 2 + 1, 0, -9999, 0); hp.setXYZ(k, 0, -9999, 0); }
   }
   pos.needsUpdate = true;
+  hp.needsUpdate = true;
 }
 const audio = createHelmAudio();
 const sim = new HelmSim({ seed: (Date.now() % 100000) | 0 });

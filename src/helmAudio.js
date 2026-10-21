@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SOUNDS } from './audioAssets.js';
+import { GUN_MOUNTS, GUN_SPIN } from './helm.js';
 
 // Sound for the Solo Air Defense mission, driven live from the simulation (helm.js) like the manual flight's: the
 // samples are the bundle's ElevenLabs effects (audio.js); the listener is the camera, so loudness falls with
@@ -36,7 +37,6 @@ export function createHelmAudio() {
   const tmp = new THREE.Vector3();
   let haveCam = false;
   let klaxonNext = 0;
-  let gunNext = 0;
 
   function bytes(b64) {
     const bin = atob(b64);
@@ -69,6 +69,7 @@ export function createHelmAudio() {
     comp.connect(ctx.destination);
     voices = {};
     for (const name of [...Object.keys(LOOPS), ...Object.keys(SHOTS)]) voices[name] = chain(name !== 'wind');
+    for (const name of ['gun0', 'gun1', 'spin0', 'spin1']) voices[name] = chain(true);
     voices.signal = chain(false); // the ship's alarms sound on the bridge, where the listener is
   }
   function startLoop(sample) {
@@ -135,6 +136,69 @@ export function createHelmAudio() {
       voices[name].src = src;
     }
   }
+  // The rotary guns: about 83 rounds a second, so each round is a sharp crack (a burst of noise that dies in a couple of
+  // milliseconds, with the thump of the discharge under it) and together they make the ripping buzz of a rotary cannon.
+  // One second of it, looped exactly (a whole number of rounds), every round a little different; the two guns play it at
+  // slightly different speeds so they beat against each other. The barrels' spin-up and spin-down is a whining tone.
+  function gunBuffer() {
+    const sr = ctx.sampleRate;
+    const rate = 83;
+    const n = sr;
+    const buf = ctx.createBuffer(1, n, sr);
+    const d = buf.getChannelData(0);
+    const len = Math.floor(sr * 0.03);
+    for (let k = 0; k < rate; k++) {
+      const at = Math.floor((k * sr) / rate);
+      const amp = 0.8 + Math.random() * 0.4;
+      let lp = 0;
+      for (let i = 0; i < len; i++) {
+        const t = i / sr;
+        const w = Math.random() * 2 - 1;
+        lp += (w - lp) * 0.5; // a little dulled
+        const crack = (w * 0.55 + lp * 0.7) * Math.exp(-t / 0.0022);
+        const thump = Math.sin(2 * Math.PI * (95 - 2200 * t) * t) * Math.exp(-t / 0.011) * 0.9;
+        d[(at + i) % n] += (crack + thump) * amp;
+      }
+    }
+    let peak = 0;
+    for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(d[i]));
+    for (let i = 0; i < n; i++) d[i] = (d[i] / (peak || 1)) * 0.95;
+    return buf;
+  }
+  function startGuns() {
+    const buf = gunBuffer();
+    for (const [i, name] of ['gun0', 'gun1'].entries()) {
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      src.playbackRate.value = i ? 0.965 : 1.0;
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 70;
+      const presence = ctx.createBiquadFilter();
+      presence.type = 'peaking';
+      presence.frequency.value = 1800;
+      presence.gain.value = 5;
+      presence.Q.value = 0.7;
+      src.connect(hp);
+      hp.connect(presence);
+      presence.connect(voices[name].in);
+      src.start(0, i * 0.31);
+      voices[name].src = src;
+    }
+    for (const name of ['spin0', 'spin1']) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = 120;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 900;
+      o.connect(lp);
+      lp.connect(voices[name].in);
+      o.start();
+      voices[name].osc = o;
+    }
+  }
   function loadBuffers() {
     for (const name of Object.keys(SOUNDS)) {
       if (name === 'motor') continue; // the missile's motor is synthesised (startRocket), not this recording
@@ -144,7 +208,7 @@ export function createHelmAudio() {
   }
   function ensure() {
     if (ctx || failed) return;
-    try { ctx = new AudioCtx(); build(); loadBuffers(); startRocket(); } catch { failed = true; ctx = null; }
+    try { ctx = new AudioCtx(); build(); loadBuffers(); startRocket(); startGuns(); } catch { failed = true; ctx = null; }
   }
   const wake = (fromGesture = true) => {
     if (!enabled) return;
@@ -285,10 +349,17 @@ export function createHelmAudio() {
       loopRate(voice, clamp(doppler(radial(m.pos, m.vel)), 0.8, 1.25)); // the roar's pitch shifts only a little as it passes
       place(voice, m.pos, 0.6 * (1 - Math.exp(-age / 0.08)) * (0.65 + 0.35 * Math.exp(-age / 1.2)), 110);
     }
-    // The guns: a ripping buzz while either one fires.
-    if (sim.guns && sim.guns.some((g) => g.firing) && sim.t >= gunNext) {
-      tones([[110, 0, 0.1], [220, 0, 0.07]], 'sawtooth', 0.09);
-      gunNext = sim.t + 0.085;
+    // The guns: the crack-train while a gun fires, heard from where it stands (the other gun is a little different), and the
+    // whine of its barrels spinning up and down.
+    if (sim.guns) {
+      for (let i = 0; i < 2; i++) {
+        const g = sim.guns[i];
+        const pos = sim.toWorld(GUN_MOUNTS[i], tmp);
+        place(voices[`gun${i}`], pos, g.firing ? 1.15 : 0, 170);
+        const sp = clamp(g.spinRate / GUN_SPIN, 0, 1);
+        place(voices[`spin${i}`], pos, 0.07 * sp * sp, 90);
+        if (voices[`spin${i}`].osc) set(voices[`spin${i}`].osc.frequency, 90 + 520 * sp);
+      }
     }
     // The klaxon while a drone is on its attack run.
     if (sim.threat >= 3 && sim.t >= klaxonNext) {
@@ -300,7 +371,7 @@ export function createHelmAudio() {
   return {
     update,
     event,
-    reset() { klaxonNext = 0; gunNext = 0; },
+    reset() { klaxonNext = 0; },
     get enabled() { return enabled; },
     setEnabled(on) { enabled = on; if (on) wake(false); },
     get state() { return ctx?.state ?? (failed ? 'unavailable' : 'idle'); },

@@ -118,6 +118,7 @@ const GUN_YAW_RATE = rad(150);
 const GUN_PITCH_RATE = rad(90);
 const GUN_AIM_OK = rad(3);
 const GUN_MUZZLE_V = 1050; // m/s
+export const GUN_SPIN = 70; // rad/s: the barrel block's turn at speed (about 11 turns a second)
 export const DRONE_HP = 6; // bursts that hit, to bring a drone down
 
 const _a = new THREE.Vector3();
@@ -184,7 +185,7 @@ export class HelmSim {
     this.launcher = { yaw: 0, pitch: 0 };
     this.lastFire = -Infinity;
     this.gunsOn = false;
-    this.guns = GUN_MOUNTS.map(() => ({ yaw: GUN_STOW.yaw, pitch: GUN_STOW.pitch, ammo: GUN_ROUNDS, firing: false, rounds: 0, spin: 0, spinRate: 0 }));
+    this.guns = GUN_MOUNTS.map(() => ({ yaw: GUN_STOW.yaw, pitch: GUN_STOW.pitch, ammo: GUN_ROUNDS, firing: false, rounds: 0, spin: 0, spinRate: 0, burst: 0, cool: 0 }));
     this.events = [];
   }
 
@@ -542,11 +543,19 @@ export class HelmSim {
       g.pitch += clamp(wantPitch - g.pitch, -GUN_PITCH_RATE * dt, GUN_PITCH_RATE * dt);
       const cur = _a.set(Math.cos(g.pitch) * Math.cos(g.yaw), Math.sin(g.pitch), -Math.cos(g.pitch) * Math.sin(g.yaw));
       const want = _b.set(Math.cos(wantPitch) * Math.cos(wantYaw), Math.sin(wantPitch), -Math.cos(wantPitch) * Math.sin(wantYaw));
-      g.firing = engage && cur.angleTo(want) < GUN_AIM_OK;
-      g.spinRate += (((g.firing ? 70 : 0) - g.spinRate) / 0.5) * dt;
+      const on = engage && cur.angleTo(want) < GUN_AIM_OK;
+      // The barrels spin up as soon as the gun is given a target and only then does it fire, in bursts of about a second
+      // with a short pause between (it does not hold the trigger down).
+      g.spinRate += (((engage ? GUN_SPIN : 0) - g.spinRate) / 0.5) * dt;
       g.spin += g.spinRate * dt;
+      g.cool = Math.max(0, g.cool - dt);
+      if (!on) g.burst = 0;
+      else if (g.burst <= 0 && g.cool <= 0 && g.spinRate > 0.78 * GUN_SPIN) g.burst = 70 + this.rng() * 40;
+      g.firing = on && g.burst > 0;
       if (!g.firing) continue;
-      const n = GUN_RATE * dt;
+      const n = Math.min(GUN_RATE * dt, g.burst);
+      g.burst -= n;
+      if (g.burst <= 0) { g.burst = 0; g.cool = 0.5 + this.rng() * 0.4; }
       g.ammo = Math.max(0, g.ammo - n);
       g.rounds += n;
       while (g.rounds >= GUN_BURST && d.alive) {

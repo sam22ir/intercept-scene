@@ -67,26 +67,40 @@ export function createGatling() {
   muzzle.position.x = GATLING_MUZZLE_X;
   pitchGroup.add(muzzle);
   const flash = new THREE.Mesh(
-    new THREE.ConeGeometry(0.22, 1.1, 10),
+    new THREE.ConeGeometry(0.2, 1.7, 10),
     new THREE.MeshBasicMaterial({ color: 0xffc46a, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
   );
   flash.rotation.z = -Math.PI / 2;
-  flash.position.x = 0.55;
+  flash.position.x = 0.85;
   flash.visible = false;
   muzzle.add(flash);
+  const light = new THREE.PointLight(0xffa850, 0, 38, 1.6);
+  light.position.x = 1.2;
+  muzzle.add(light);
 
   for (const o of [base, stalk, housing, dome, ammoBox, body]) { o.castShadow = true; o.receiveShadow = true; }
   for (const o of spin.children) o.castShadow = true;
 
   return {
-    group, yawGroup, pitchGroup, spin, muzzle, flash,
+    group, yawGroup, pitchGroup, spin, muzzle, flash, light,
     // yaw, pitch: the gun's aim in the ship's frame; spinAngle: the barrel block's turn; firing: show the flash.
     pose(yaw, pitch, spinAngle, firing, t = 0) {
       yawGroup.rotation.y = yaw;
       pitchGroup.rotation.z = pitch;
       spin.rotation.x = spinAngle;
-      flash.visible = firing && Math.sin(t * 190) > -0.35;
-      flash.scale.set(0.8 + 0.5 * Math.abs(Math.sin(t * 71)), 1, 1);
+      // Recoil: the whole gun shudders back and forth about once a round, the housing shaking with it.
+      const k = firing ? 1 : 0;
+      pitchGroup.position.x = 0.45 - k * (0.035 + 0.03 * Math.abs(Math.sin(t * 260)));
+      yawGroup.position.y = 1.12 + k * 0.012 * Math.sin(t * 310);
+      yawGroup.position.z = k * 0.01 * Math.sin(t * 280 + 1);
+      // The flash: a ragged bright cone, on most of the time with quick gaps, longer and shorter at random.
+      const on = firing && Math.sin(t * 410) + Math.sin(t * 173 + 2) > -1.1;
+      flash.visible = on;
+      if (on) {
+        flash.scale.set(0.7 + 0.9 * Math.abs(Math.sin(t * 97 + 1)) + 0.4 * Math.abs(Math.sin(t * 331)), 0.8 + 0.5 * Math.abs(Math.sin(t * 131)), 0.8 + 0.5 * Math.abs(Math.sin(t * 211)));
+        flash.rotation.x = t * 40;
+      }
+      light.intensity = on ? 4 + 3 * Math.abs(Math.sin(t * 150)) : 0;
     },
   };
 }
