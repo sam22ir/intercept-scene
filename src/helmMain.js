@@ -854,12 +854,45 @@ const pipCam = new THREE.PerspectiveCamera(24, 1, 0.3, 30000);
 const pipSt = { id: null, phase: 'slew', t0: 0, omega: 0, aim: new THREE.Vector3(1, 0.06, 0), fresh: true };
 let pipFov = 24;
 const pipV3 = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+// What the scope watches. By default the target drone; once a missile leaves, the missile until it reaches the drone, then
+// the falling wreck of that drone until the last piece is in the sea.
+const pipFocus = { key: null, pos: new THREE.Vector3(), size: 4.5, name: '', kind: 'drone' };
+const pipWatch = { did: null };
+function pipPick() {
+  const m = sim.missiles[sim.missiles.length - 1];
+  if (m) {
+    pipWatch.did = m.targetId;
+    pipFocus.key = `m${m.id}`; pipFocus.pos.copy(m.pos); pipFocus.size = 6; pipFocus.name = 'MISSILE'; pipFocus.kind = 'missile';
+    return true;
+  }
+  const w = pipWatch.did === null ? null : sim.drones.find((x) => x.id === pipWatch.did);
+  if (w && !w.alive && w.wreck) {
+    const v = vis.get(w.id);
+    const tEnd = v?.debris ? w.wreck.t + Math.max(...v.debris.pieces.map((q) => q.tauWater)) : w.wreck.t + 8;
+    if (sim.t < tEnd) {
+      if (v?.debris) {
+        const tau = sim.t - w.wreck.t;
+        pipFocus.pos.set(0, 0, 0);
+        for (const q of v.debris.pieces) pipFocus.pos.add(v.debris.piecePos(q, tau, pipV3[3]));
+        pipFocus.pos.multiplyScalar(1 / v.debris.pieces.length);
+      } else pipFocus.pos.copy(w.wreck.pos);
+      pipFocus.key = `w${w.id}`; pipFocus.size = 16; pipFocus.name = `${w.name} DOWN`; pipFocus.kind = 'wreck';
+      return true;
+    }
+    pipWatch.did = null;
+  }
+  return false;
+}
 function updatePip(dt) {
   const [pa, pb, pc, pd] = pipV3;
   ship.group.localToWorld(pipCam.position.copy(DIRECTOR_EYE));
   const d = sim.target && sim.target.alive ? sim.target : null;
   if (pipSt.fresh) { pipSt.aim.set(Math.cos(sim.psi), 0.06, Math.sin(sim.psi)).normalize(); pipSt.fresh = false; }
-  if (!d) { // nothing to look at: the mount rests along the bow
+  if (!pipPick()) {
+    if (d) { pipFocus.key = d.id; pipFocus.pos.copy(d.pos); pipFocus.size = 4.5; pipFocus.name = d.name; pipFocus.kind = 'drone'; }
+    else pipFocus.key = null;
+  }
+  if (pipFocus.key === null) { // nothing to look at: the mount rests along the bow
     pipSt.id = null;
     pipSt.phase = 'slew';
     pipSt.aim.lerp(pa.set(Math.cos(sim.psi), 0.06, Math.sin(sim.psi)).normalize(), 1 - Math.exp(-dt / 0.4)).normalize();
@@ -870,11 +903,11 @@ function updatePip(dt) {
     pipTxt.textContent = 'no target';
     return;
   }
-  pa.subVectors(d.pos, pipCam.position);
+  pa.subVectors(pipFocus.pos, pipCam.position);
   const r = pa.length();
   pa.divideScalar(r || 1);
-  if (pipSt.id !== d.id) { pipSt.id = d.id; pipSt.phase = 'slew'; }
-  const fovTrack = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(4.5 / r)), 0.15, 30); // the lens closes until the drone fills the square
+  if (pipSt.id !== pipFocus.key) { pipSt.id = pipFocus.key; pipSt.phase = 'slew'; }
+  const fovTrack = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(pipFocus.size / r)), 0.15, 30); // the lens closes until it fills the square
   let cmd = pa;
   let fovWant = SIGHT_WIDE;
   if (pipSt.phase === 'search') {
@@ -891,17 +924,19 @@ function updatePip(dt) {
   }
   if (pipSt.phase === 'lock') { fovWant = fovTrack; pipSt.aim.copy(pa); } // locked: held exactly on it
   const e = pipSt.aim.angleTo(cmd);
-  pipSt.omega += (Math.min(SIGHT_RATE, e * 9) - pipSt.omega) * (1 - Math.exp(-dt / 0.12));
+  pipSt.omega += (Math.min(SIGHT_RATE * (pipFocus.kind === 'drone' ? 1 : 3), e * 9) - pipSt.omega) * (1 - Math.exp(-dt / 0.12));
   if (e > 1e-5) pipSt.aim.lerp(cmd, Math.min(pipSt.omega * dt, e) / e).normalize();
   const off = pipSt.aim.angleTo(pa);
-  if (pipSt.phase === 'slew' && off < THREE.MathUtils.degToRad(1.5)) { pipSt.phase = 'search'; pipSt.t0 = sim.t; }
-  else if (pipSt.phase === 'lock' && off > THREE.MathUtils.degToRad(3.5)) pipSt.phase = 'slew';
+  if (pipSt.phase === 'slew' && off < THREE.MathUtils.degToRad(1.5)) { // on it: the drone is hunted for, the missile and the wreck are held at once
+    pipSt.phase = pipFocus.kind === 'drone' ? 'search' : 'lock';
+    pipSt.t0 = sim.t;
+  } else if (pipSt.phase === 'lock' && off > THREE.MathUtils.degToRad(3.5)) pipSt.phase = 'slew';
   pipCam.lookAt(pb.copy(pipCam.position).add(pipSt.aim));
-  pipFov += (fovWant - pipFov) * (1 - Math.exp(-dt / 0.15));
+  pipFov += (fovWant - pipFov) * (1 - Math.exp(-dt / (pipFocus.kind === 'drone' ? 0.15 : 0.08)));
   const found = pipSt.phase === 'lock';
   pipEl.classList.toggle('lock', found);
   pipEl.classList.toggle('searching', !found);
-  pipTxt.textContent = found ? `${d.name} · ${kmText(r)}` : `${d.name} · searching…`;
+  pipTxt.textContent = found ? `${pipFocus.name} · ${kmText(r)}` : `${pipFocus.name} · searching…`;
 }
 const pipRect = { x: 0, y: 0, w: 0, h: 0 };
 function renderPip() {
@@ -998,17 +1033,24 @@ function domeSvg() {
       labels += `<text x="${x}" y="${y}" class="dl">${String(((d % 360) + 360) % 360).padStart(3, '0')}</text>`;
     }
   }
-  const ra = (sim.rudder / RUDDER_MAX) * THREE.MathUtils.degToRad(62); // the needle: up is midships
-  const py = 78;
-  const nx = cx + 50 * Math.sin(ra);
-  const ny = py - 50 * Math.cos(ra);
+  // The rudder: an arc just inside the scale, from the top (midships) filling left in red (port) or right in green (starboard).
+  const RR = 60;
+  const span = THREE.MathUtils.degToRad(62);
+  const fr = THREE.MathUtils.clamp(sim.rudder / RUDDER_MAX, -1, 1);
+  const th = fr * span;
+  const p0 = pt(RR, Math.PI / 2).split(',');
+  const p1 = pt(RR, Math.PI / 2 - th).split(',');
+  const pl = pt(RR, Math.PI / 2 + span).split(',');
+  const pr = pt(RR, Math.PI / 2 - span).split(',');
+  const fill = Math.abs(th) > 0.01
+    ? `<path d="M${p0[0]},${p0[1]} A${RR},${RR} 0 0 ${th > 0 ? 1 : 0} ${p1[0]},${p1[1]}" class="rf ${th > 0 ? 'stbd' : 'port'}"/>` : '';
   return `<svg viewBox="0 0 200 104" class="dome-svg" aria-hidden="true">`
     + `<path d="M6,100 A${DOME_R},${DOME_R} 0 0 1 194,100" class="rim"/>${ticks}${labels}`
     + `<path d="M${cx - 4},${cy - DOME_R - 1} L${cx + 4},${cy - DOME_R - 1} L${cx},${cy - DOME_R + 6} Z" class="lub"/>`
     + `<text x="${cx}" y="${cy - DOME_R + 21}" class="hd">${f(((h % 360) + 360) % 360).padStart(3, '0')}°</text>`
-    + `<line x1="${cx}" y1="${py}" x2="${cx}" y2="${py - 46}" class="mid"/>`
-    + `<line x1="${cx}" y1="${py}" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" class="ndl"/><circle cx="${cx}" cy="${py}" r="3.5" class="piv"/>`
-    + `<text x="${cx}" y="97" class="sp">${f(sim.knots, 1)}<tspan> kn</tspan></text></svg>`;
+    + `<path d="M${pl[0]},${pl[1]} A${RR},${RR} 0 0 1 ${pr[0]},${pr[1]}" class="rt"/>${fill}`
+    + `<line x1="${p0[0]}" y1="${(Number(p0[1]) - 5).toFixed(1)}" x2="${p0[0]}" y2="${(Number(p0[1]) + 5).toFixed(1)}" class="rm"/>`
+    + `<text x="${cx}" y="94" class="sp">${f(sim.knots, 1)}<tspan> kn</tspan></text></svg>`;
 }
 function shipHtml() {
   let wTxt = `${sim.cellsLeft} of ${CELLS} ready`;
