@@ -14,7 +14,7 @@ import { createHelmMap } from './helmMap.js';
 import { createHelmAudio } from './helmAudio.js';
 import { menuText } from './menu.js';
 import {
-  HelmSim, SLEW_TIME, LOCK_TIME, TELEGRAPH, RUDDER_MAX, CELLS, MISSILE_RANGE, BRIDGE_EYE, DIRECTOR_EYE, relName, kmText,
+  HelmSim, SLEW_TIME, TELEGRAPH, RUDDER_MAX, CELLS, MISSILE_RANGE, BRIDGE_EYE, DIRECTOR_EYE, relName, kmText,
 } from './helm.js';
 import './helm.css';
 
@@ -161,13 +161,13 @@ function handleEvents() {
     switch (e.type) {
       case 'say': say(e.text, e.tone); break;
       case 'slew': startLauncherCine(); break; // F pressed: the launcher is turning onto the target
-      case 'lock': // it has caught the target: the sign, and the camera's slight move in
-        showLock(e.id);
-        if (cine && cine.phase === 'slew') cine.tLock = sim.t;
-        break;
+      case 'acquire': startSightCine(); break; // the launcher is on: through the director's sight, to the target
+      case 'lock': showLock(e.id); break; // it has found the target: the sign, through the sight
       case 'fire':
         fx.launchBillow(e.pos, e.dir, sim.t);
-        if (cine && cine.phase === 'slew') {
+        if (cine && (cine.phase === 'slew' || cine.phase === 'sight')) {
+          sightEl.hidden = true; // back to the launcher for the firing
+          document.body.classList.remove('helm-sighting');
           const m = sim.missiles.find((x) => x.id === e.id);
           cine.mid = e.id;
           if (m) cine.did = m.targetId;
@@ -308,7 +308,7 @@ function flash(kind) {
 const VIEWS = ['bridge', 'behind', 'above', 'missile', 'sight', 'orbit'];
 const VIEW_NAMES = {
   bridge: 'Bridge (drag to look round)', behind: 'Behind the ship', above: 'Above the ship, heading up',
-  missile: 'Riding the missile', sight: 'Fire-control sight', orbit: 'Orbit (drag and wheel)',
+  missile: 'Riding the missile', sight: 'Radar (the fire-control sight on the target)', orbit: 'Orbit (drag and wheel)',
 };
 let view = 'behind';
 let lookYaw = 0; // bridge: degrees off the bow, + to starboard
@@ -355,7 +355,7 @@ function setFov(f) {
 const shipTarget = (out) => out.set(sim.x, 10, sim.z);
 function setView(v, quiet = false) {
   view = v;
-  if (v === 'sight') sight.fresh = true; // the director starts from the bow and finds the target again
+  if (v === 'sight') { sight.fresh = true; sight.searchTime = SIGHT_SEARCH; } // the director starts from the bow and finds the target again
   pendingOrbit = false;
   endCine();
   camera.up.set(0, 1, 0);
@@ -376,8 +376,9 @@ function setView(v, quiet = false) {
 
 // --- The intercept camera ------------------------------------------------------------------------------------------------
 // The shot is cut automatically and goes back to the view that was on when it is over:
-//  - F is pressed: the camera cuts close to the launcher, from the side, to watch it turn (fast) onto the target, catch it
-//    (a tone, the TARGET LOCKED sign, the view easing slightly closer) and then fire;
+//  - F is pressed: the camera cuts close to the launcher, from the side, to watch it turn (fast) onto the target; then
+//    through the director's sight, on the drone, where it finds the target and locks on (the brackets, the TARGET LOCKED sign
+//    and a tone) before the round leaves; and back to the launcher to see it fire;
 //    it then rides close behind the missile (its flame in the frame, the lens closing in on the drone), and for the last
 //    metres goes to the side of the two, in slow motion, until the hit (the only slow motion); it stays on the wreck until
 //    the last piece is in the sea, waits CINE_TAIL seconds more, and goes back;
@@ -402,7 +403,7 @@ let pendingOrbit = false; // the ship is out of action: the orbit view comes onc
 function newCine(mid, did, phase) {
   sightEl.hidden = true;
   document.body.classList.remove('helm-sighting');
-  return { mid, did, phase, t0: sim.t, side: 0, pos: new THREE.Vector3(), look: new THREE.Vector3(), hold: new THREE.Vector3(), tSplash: null, fresh: true, local: new THREE.Vector3(), tImpact: 0, camLocal: new THREE.Vector3(), tLaunch: 0, tBlend: 0, chaseT: 0, tLock: 0 };
+  return { mid, did, phase, t0: sim.t, side: 0, pos: new THREE.Vector3(), look: new THREE.Vector3(), hold: new THREE.Vector3(), tSplash: null, fresh: true, local: new THREE.Vector3(), tImpact: 0, camLocal: new THREE.Vector3(), tLaunch: 0, tBlend: 0, chaseT: 0 };
 }
 // F has been pressed and the launcher is turning: the camera goes close to it, from the side of the way it will fire.
 function startLauncherCine() {
@@ -414,14 +415,28 @@ function startLauncherCine() {
   cine = newCine(null, sim.shot.droneId, 'slew');
   cine.camLocal.set(LAUNCHER_PIVOT.x + sign * px * 22, LAUNCHER_PIVOT.y + 3.5, LAUNCHER_PIVOT.z + sign * pz * 22);
 }
-function frameLauncher(c, progress, lock = 0) {
-  // On the target: the view eases slightly closer and the lens tightens a little, the camera's way of marking the catch.
-  const k = THREE.MathUtils.smoothstep(lock, 0, 1);
-  _d.copy(c.camLocal).lerp(_e.copy(LAUNCHER_PIVOT), 0.14 * k);
-  _d.y += 0.8 * k;
-  ship.group.localToWorld(camera.position.copy(_d));
+function frameLauncher(c, progress) {
+  ship.group.localToWorld(camera.position.copy(c.camLocal));
   camera.lookAt(ship.group.localToWorld(_c.copy(LAUNCHER_PIVOT).setY(LAUNCHER_PIVOT.y + 1.2)));
-  return THREE.MathUtils.lerp(42, 28, THREE.MathUtils.smoothstep(progress, 0, 1)) - 5 * k; // the zoom in on it
+  return THREE.MathUtils.lerp(42, 28, THREE.MathUtils.smoothstep(progress, 0, 1)); // the zoom in on it
+}
+// The launcher is on: the camera goes through the director's sight to the drone. The director starts where the launcher
+// points, hunts about the target for a moment (a short search) and locks; the sign comes with the lock.
+function startSightCine() {
+  if (!cine || cine.phase !== 'slew') return;
+  const d = sim.drones.find((x) => x.id === cine.did);
+  if (!d || !sim.shot) return;
+  const aim = sim.shot.aim;
+  _a.set(Math.cos(aim.yaw) * Math.cos(aim.pitch), Math.sin(aim.pitch), -Math.sin(aim.yaw) * Math.cos(aim.pitch)).transformDirection(ship.group.matrixWorld);
+  sight.aim.copy(_a);
+  sight.fresh = false;
+  sight.id = d.id;
+  sight.phase = 'slew';
+  sight.omega = 0;
+  sight.searchTime = SIGHT_SEARCH_SHOT;
+  cine.phase = 'sight';
+  sightEl.hidden = false;
+  document.body.classList.add('helm-sighting');
 }
 function startCine(missileId, droneId = null) {
   if (!cineOn || cine || view === 'orbit' || sim.out) return;
@@ -450,6 +465,7 @@ function cineStruck(e) {
 }
 function endCine() {
   timeTarget = 1;
+  sight.searchTime = SIGHT_SEARCH;
   if (!cine) return;
   cine = null;
   snap = true; // the view that was on takes the camera back from where it is now
@@ -523,10 +539,16 @@ function updateCine(dt) {
   if (c.phase === 'slew') { // the launcher turns, fast: close on it
     if (!sim.shot) { endCine(); return null; } // cancelled
     timeTarget = SLOW.slew;
-    return frameLauncher(c, (sim.t - c.t0) / SLEW_TIME, c.tLock ? THREE.MathUtils.clamp((sim.t - c.tLock) / LOCK_TIME, 0, 1) : 0);
+    return frameLauncher(c, (sim.t - c.t0) / SLEW_TIME);
+  }
+  if (c.phase === 'sight') { // through the director's sight: it finds the drone and locks on
+    const dd = sim.drones.find((x) => x.id === c.did);
+    if (!sim.shot || !dd || !dd.alive) { endCine(); return null; }
+    timeTarget = 1;
+    return aimSight(dt, dd);
   }
   if (c.phase === 'launch') { // the round leaves its cell: still on the launcher
-    if (sim.t - c.tLaunch < LAUNCH_HOLD) { timeTarget = SLOW.launch; return frameLauncher(c, 1, 1); }
+    if (sim.t - c.tLaunch < LAUNCH_HOLD) { timeTarget = SLOW.launch; return frameLauncher(c, 1); }
     c.phase = 'approach'; // then the camera leaves the ship to follow it
     c.tBlend = sim.t;
     c.chaseT = 0;
@@ -575,6 +597,58 @@ function updateCine(dt) {
   return 34;
 }
 
+function aimSight(dt, d) {
+  // The fire-control director on the bridge roof. It is a real mount, not a camera glued to the drone: it turns at a
+  // limited rate, so on entering the view, or when the target changes, it swings round to it with the lens wide, hunts
+  // about the target for a moment (a wandering that dies away) while the lens closes in, and then locks on and tracks.
+  ship.group.localToWorld(camera.position.copy(DIRECTOR_EYE));
+  _a.subVectors(d.pos, camera.position);
+  const r = _a.length();
+  _a.divideScalar(r || 1); // the way to the target
+  if (sight.fresh) { // from the bow, nearly level
+    sight.aim.set(Math.cos(sim.psi), 0.06, Math.sin(sim.psi)).normalize();
+    sight.fresh = false;
+    sight.id = d.id;
+    sight.phase = 'slew';
+    sight.omega = 0;
+  } else if (sight.id !== d.id) { // another target: the mount turns to it
+    sight.id = d.id;
+    sight.phase = 'slew';
+  }
+  const fovTrack = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(22 / r)), 1.2, 30);
+  let cmd = _a;
+  let fovWant = SIGHT_WIDE;
+  if (sight.phase === 'search') {
+    const el = sim.t - sight.t0;
+    const s = Math.min(el / sight.searchTime, 1);
+    if (s >= 1) sight.phase = 'lock';
+    else { // hunts about the target, the sweeps shrinking, while the lens closes in
+      const A = THREE.MathUtils.degToRad(3.4) * (1 - s) * (1 - s);
+      _b.crossVectors(_a, UP).normalize(); // to the right of the line of sight
+      _c.crossVectors(_b, _a); // above it
+      cmd = _d.copy(_a).addScaledVector(_b, A * Math.sin(el * 5.2 + 0.7)).addScaledVector(_c, A * 0.6 * Math.sin(el * 7.9 + 1.9)).normalize();
+      fovWant = THREE.MathUtils.lerp(SIGHT_WIDE, fovTrack, s * s * (3 - 2 * s));
+    }
+  }
+  if (sight.phase === 'lock') fovWant = fovTrack;
+  // Turn toward the command at a limited rate, easing in and out of the movement.
+  const e = sight.aim.angleTo(cmd);
+  sight.omega += (Math.min(SIGHT_RATE, e * 9) - sight.omega) * (1 - Math.exp(-dt / 0.12));
+  if (e > 1e-5) sight.aim.lerp(cmd, Math.min(sight.omega * dt, e) / e).normalize();
+  const off = sight.aim.angleTo(_a);
+  if (sight.phase === 'slew' && off < THREE.MathUtils.degToRad(1.5)) { sight.phase = 'search'; sight.t0 = sim.t; }
+  else if (sight.phase === 'lock' && off > THREE.MathUtils.degToRad(3.5)) sight.phase = 'slew'; // lost it: swing back onto it
+  camera.lookAt(_e.copy(camera.position).add(sight.aim));
+  const wantFov = Math.max(fovWant * sightZoom, 1);
+  const found = sight.phase === 'lock';
+  sightTxt.textContent = found
+    ? `${d.name} · ${relName(sim.relBearing(d.pos))} · ${kmText(sim.rangeTo(d.pos))} · ${Math.round(d.pos.y)} m${sim.engageable(d) ? '' : ' · IN ARC'}`
+    : `${d.name} · searching…`;
+  sightEl.classList.toggle('lock', found && !sim.engageable(d));
+  sightEl.classList.toggle('searching', !found);
+  return wantFov;
+}
+
 function updateCamera(dt) {
   if (cine) {
     const f = updateCine(dt);
@@ -611,55 +685,7 @@ function updateCamera(dt) {
     camera.lookAt(lookAt);
     snap = true;
   } else if (view === 'sight' && sim.target) {
-    // The fire-control director on the bridge roof. It is a real mount, not a camera glued to the drone: it turns at a
-    // limited rate, so on entering the view, or when the target changes, it swings round to it with the lens wide, hunts
-    // about the target for a moment (a wandering that dies away) while the lens closes in, and then locks on and tracks.
-    const d = sim.target;
-    ship.group.localToWorld(camera.position.copy(DIRECTOR_EYE));
-    _a.subVectors(d.pos, camera.position);
-    const r = _a.length();
-    _a.divideScalar(r || 1); // the way to the target
-    if (sight.fresh) { // from the bow, nearly level
-      sight.aim.set(Math.cos(sim.psi), 0.06, Math.sin(sim.psi)).normalize();
-      sight.fresh = false;
-      sight.id = d.id;
-      sight.phase = 'slew';
-      sight.omega = 0;
-    } else if (sight.id !== d.id) { // another target: the mount turns to it
-      sight.id = d.id;
-      sight.phase = 'slew';
-    }
-    const fovTrack = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(22 / r)), 1.2, 30);
-    let cmd = _a;
-    let fovWant = SIGHT_WIDE;
-    if (sight.phase === 'search') {
-      const el = sim.t - sight.t0;
-      const s = Math.min(el / SIGHT_SEARCH, 1);
-      if (s >= 1) sight.phase = 'lock';
-      else { // hunts about the target, the sweeps shrinking, while the lens closes in
-        const A = THREE.MathUtils.degToRad(3.4) * (1 - s) * (1 - s);
-        _b.crossVectors(_a, UP).normalize(); // to the right of the line of sight
-        _c.crossVectors(_b, _a); // above it
-        cmd = _d.copy(_a).addScaledVector(_b, A * Math.sin(el * 5.2 + 0.7)).addScaledVector(_c, A * 0.6 * Math.sin(el * 7.9 + 1.9)).normalize();
-        fovWant = THREE.MathUtils.lerp(SIGHT_WIDE, fovTrack, s * s * (3 - 2 * s));
-      }
-    }
-    if (sight.phase === 'lock') fovWant = fovTrack;
-    // Turn toward the command at a limited rate, easing in and out of the movement.
-    const e = sight.aim.angleTo(cmd);
-    sight.omega += (Math.min(SIGHT_RATE, e * 9) - sight.omega) * (1 - Math.exp(-dt / 0.12));
-    if (e > 1e-5) sight.aim.lerp(cmd, Math.min(sight.omega * dt, e) / e).normalize();
-    const off = sight.aim.angleTo(_a);
-    if (sight.phase === 'slew' && off < THREE.MathUtils.degToRad(1.5)) { sight.phase = 'search'; sight.t0 = sim.t; }
-    else if (sight.phase === 'lock' && off > THREE.MathUtils.degToRad(3.5)) sight.phase = 'slew'; // lost it: swing back onto it
-    camera.lookAt(_e.copy(camera.position).add(sight.aim));
-    wantFov = Math.max(fovWant * sightZoom, 1);
-    const found = sight.phase === 'lock';
-    sightTxt.textContent = found
-      ? `${d.name} · ${relName(sim.relBearing(d.pos))} · ${kmText(sim.rangeTo(d.pos))} · ${Math.round(d.pos.y)} m${sim.engageable(d) ? '' : ' · IN ARC'}`
-      : `${d.name} · searching…`;
-    sightEl.classList.toggle('lock', found && !sim.engageable(d));
-    sightEl.classList.toggle('searching', !found);
+    wantFov = aimSight(dt, sim.target);
   } else {
     // Behind her (also the fallback for the missile and sight views with nothing to show).
     if (snap) camYaw = sim.psi;
@@ -680,8 +706,9 @@ let sightZoom = 1;
 const SIGHT_RATE = THREE.MathUtils.degToRad(55); // the fastest it turns, per second
 const SIGHT_WIDE = 24; // degrees: the lens while it looks for the target
 const SIGHT_SEARCH = 1.7; // s of hunting about the target before it locks
+const SIGHT_SEARCH_SHOT = 0.55; // s of it in the shot of a launch: the launcher is already on
 const UP = new THREE.Vector3(0, 1, 0);
-const sight = { id: null, phase: 'slew', t0: 0, omega: 0, fresh: true, aim: new THREE.Vector3(1, 0, 0) };
+const sight = { id: null, phase: 'slew', t0: 0, omega: 0, fresh: true, searchTime: SIGHT_SEARCH, aim: new THREE.Vector3(1, 0, 0) };
 
 // Drag on the bridge looks round; drag behind swings round her; the wheel zooms (or narrows the sight). The view turns
 // the way the mouse goes, as in the free orbit: drag left and it turns left, drag up and (on the bridge) it looks up.
@@ -736,7 +763,7 @@ function hudHtml() {
   // Weapons: rounds, the launcher, the target.
   const t = sim.target;
   let wChip = [`${sim.cellsLeft} of ${CELLS} ready`, sim.cellsLeft ? '' : 'bad'];
-  if (sim.shot) wChip = sim.shot.locked ? ['Target locked', 'live'] : ['Launcher turning', 'warn'];
+  if (sim.shot) wChip = sim.shot.locked ? ['Target locked', 'live'] : sim.shot.acquiring ? ['Acquiring', 'warn'] : ['Launcher turning', 'warn'];
   else if (sim.missiles.length) wChip = [`${sim.missiles.length} in flight`, 'warn'];
   let tTiles = tile('Target', 'none', '', 'wide');
   if (t) {
@@ -866,7 +893,7 @@ let tagsOn = true;
 // The view buttons: a strip at the top centre.
 const strip = document.createElement('div');
 strip.className = 'helm-views';
-strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (${i + 1})">${['Bridge', 'Behind', 'Above', 'Missile', 'Sight', 'Orbit'][i]}</button>`).join('');
+strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (${i + 1})">${['Bridge', 'Behind', 'Above', 'Missile', 'Radar', 'Orbit'][i]}</button>`).join('');
 document.body.appendChild(strip);
 const viewButtons = [...strip.querySelectorAll('button')];
 viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
@@ -876,7 +903,7 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>↑</kbd> <kbd>↓</kbd>', 'Engine telegraph, one step: slow astern, stop, dead slow, slow, half, full, flank'],
   ['<kbd>F</kbd>', `Fire a missile at the target (${CELLS} cells; ${kmText(MISSILE_RANGE)} at most; ahead and abeam only)`],
   ['<kbd>Tab</kbd>', 'Next target'],
-  ['<kbd>1</kbd> to <kbd>6</kbd>', 'Bridge, behind, above, missile, fire-control sight, orbit'],
+  ['<kbd>1</kbd> to <kbd>6</kbd>', 'Bridge, behind, above, missile, radar, orbit'],
   ['<kbd>V</kbd>', 'Next view · drag looks round, the wheel zooms, double click resets'],
   ['<kbd>R</kbd>', 'Sail again'],
   ['<kbd>M</kbd>', 'Radar (click it to change the range)'],

@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {
-  HelmSim, SLEW_TIME, LOCK_TIME, TELEGRAPH, START_ORDER, KT, RUDDER_MAX, RADAR_RANGE, CELLS, ARC, relName, compass,
+  HelmSim, SLEW_TIME, ACQUIRE_TIME, LOCK_HOLD, TELEGRAPH, START_ORDER, KT, RUDDER_MAX, RADAR_RANGE, CELLS, ARC, relName, compass,
 } from '../src/helm.js';
 
 const run = (sim, seconds, input = {}) => { for (let i = 0; i < seconds * 10; i++) sim.advance(0.1, input); };
@@ -127,7 +127,7 @@ describe('the missile', () => {
     assert.ok(d.wreck && d.wreck.burstDist < 4.5, 'fuzed close to the drone');
   });
 
-  it('turns the launcher fast, catches the target (a lock event), holds on it, and only then fires', () => {
+  it('turns the launcher fast, finds the target through the sight, locks on, holds the lock, and only then fires', () => {
     const sim = new HelmSim();
     sim.nextSpawn = Infinity;
     const d = sim.spawn({ bearing: 0.3, range: 3000, alt: 150 });
@@ -136,18 +136,21 @@ describe('the missile', () => {
     sim.fire();
     const t0 = sim.t;
     assert.ok(events(sim).some((e) => e.type === 'slew'));
+    let tAcq = null;
     let tLock = null;
     let tFire = null;
-    for (let i = 0; i < 400 && tFire === null; i++) {
+    for (let i = 0; i < 500 && tFire === null; i++) {
       sim.advance(0.01, {});
       for (const e of events(sim)) {
+        if (e.type === 'acquire') tAcq = sim.t;
         if (e.type === 'lock') { tLock = sim.t; assert.equal(e.id, d.id); assert.equal(sim.shot.locked, true); }
         if (e.type === 'fire') tFire = sim.t;
       }
     }
     assert.ok(SLEW_TIME <= 0.8, 'the traverse is quick');
-    assert.ok(Math.abs(tLock - t0 - SLEW_TIME) < 0.03, `locked ${(tLock - t0).toFixed(2)} s after F`);
-    assert.ok(Math.abs(tFire - tLock - LOCK_TIME) < 0.03, `fired ${(tFire - tLock).toFixed(2)} s after the lock`);
+    assert.ok(Math.abs(tAcq - t0 - SLEW_TIME) < 0.03, `the director looks for it ${(tAcq - t0).toFixed(2)} s after F`);
+    assert.ok(Math.abs(tLock - tAcq - ACQUIRE_TIME) < 0.03, `locked ${(tLock - tAcq).toFixed(2)} s after that`);
+    assert.ok(Math.abs(tFire - tLock - LOCK_HOLD) < 0.03, `fired ${(tFire - tLock).toFixed(2)} s after the lock`);
   });
 
   it('will not engage a drone astern, too close, or out of range', () => {

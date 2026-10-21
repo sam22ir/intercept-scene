@@ -80,7 +80,8 @@ const STRIKES_TO_LOSE = 3;
 // --- The missile ------------------------------------------------------------------------------------------
 export const CELLS = 8;
 export const SLEW_TIME = 0.7; // s for the launcher to turn onto the target (a quick traverse)
-export const LOCK_TIME = 0.8; // s it then holds on the target, caught (a tone, a sign), before the round leaves
+export const ACQUIRE_TIME = 0.95; // s the director then takes to find the target, through its sight, once the launcher is on
+export const LOCK_HOLD = 0.5; // s it holds the lock (a tone, the sign) before the round leaves
 export const MISSILE_RANGE = 4500; // m
 export const MIN_RANGE = 150; // m
 export const ARC = rad(120); // the box engages within this of the bow, either side
@@ -236,7 +237,7 @@ export class HelmSim {
     if (why) { this.say(why, 'warn'); return; }
     // Aim where the drone will be when the round is on its way (the slew, plus a moment), in the ship's frame
     // (the launcher turns with her).
-    const lead = SLEW_TIME + LOCK_TIME + 1.2;
+    const lead = SLEW_TIME + ACQUIRE_TIME + LOCK_HOLD + 1.2;
     _a.copy(d.pos).addScaledVector(d.vel, lead).sub(this.shipVel(_b).multiplyScalar(lead));
     const rel = this.toLocal(_a, _c).sub(LAUNCHER_PIVOT);
     const yaw = Math.atan2(-rel.z, rel.x);
@@ -470,12 +471,16 @@ export class HelmSim {
       const w = sm(age, 0, SLEW_TIME);
       this.launcher.yaw = lerp(s.from.yaw, s.aim.yaw, w);
       this.launcher.pitch = lerp(s.from.pitch, s.aim.pitch, w);
-      if (age >= SLEW_TIME && !s.locked) { // on the target: caught
+      if (age >= SLEW_TIME && !s.acquiring) { // the launcher is on: the director looks for the target
+        s.acquiring = true;
+        this.events.push({ type: 'acquire', id: s.droneId });
+      }
+      if (age >= SLEW_TIME + ACQUIRE_TIME && !s.locked) { // found it: locked
         s.locked = true;
         this.events.push({ type: 'lock', id: s.droneId });
         this.say(`${this.drones.find((x) => x.id === s.droneId)?.name ?? 'Target'} locked`, 'ok');
       }
-      if (age >= SLEW_TIME + LOCK_TIME) this.launch(s);
+      if (age >= SLEW_TIME + ACQUIRE_TIME + LOCK_HOLD) this.launch(s);
       return;
     }
     // Back to the stow a few seconds after the last round.
