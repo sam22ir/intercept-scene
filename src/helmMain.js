@@ -791,6 +791,10 @@ function wreckShot(dt) {
 
 function updateCamera(dt) {
   bridge.group.visible = view === 'bridge';
+  // Looking straight down from high up nothing is near the camera, so the near plane moves out with the height: the depth buffer then
+  // keeps its precision across the 10 km to the land (otherwise the shore flickers where the land dips under the sea).
+  const wantNear = view === 'above' ? Math.min(Math.max(aboveH * 0.2, 0.3), 400) : 0.3;
+  if (camera.near !== wantNear) { camera.near = wantNear; camera.updateProjectionMatrix(); }
   if (!cine && cineOn && view !== 'orbit' && !sim.out) { // a drone on its attack run really closing in: its own short shot
     const a = sim.drones.find((x) => x.alive && x.phase === 'attack' && Math.hypot(x.pos.x - sim.x, x.pos.z - sim.z) < DRONE_CAM_RANGE);
     if (a) startCine(null, a.id);
@@ -1038,7 +1042,7 @@ window.addEventListener('pointermove', (e) => {
 canvas.addEventListener('dblclick', () => { lookYaw = 0; lookPitch = -0.03; behindYaw = 0; behindDist = BEHIND_DIST; aboveH = 520; sightZoom = 1; });
 canvas.addEventListener('wheel', (e) => {
   if (view === 'behind') behindDist = THREE.MathUtils.clamp(behindDist * Math.exp(e.deltaY * 0.001), 60, 1200);
-  else if (view === 'above') aboveH = THREE.MathUtils.clamp(aboveH * Math.exp(e.deltaY * 0.001), 150, 4000);
+  else if (view === 'above') aboveH = THREE.MathUtils.clamp(aboveH * Math.exp(e.deltaY * 0.001), 150, 24000); // high enough to see the land, 5 km and more away
   else if (view === 'sight') sightZoom = THREE.MathUtils.clamp(sightZoom * Math.exp(e.deltaY * 0.001), 0.3, 4);
 }, { passive: true });
 

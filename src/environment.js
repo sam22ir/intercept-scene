@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { mulberry32 } from './rng.js';
+import { Kit } from './models/kit.js';
 
 const SUN_ELEVATION = 24; // degrees
 const SUN_AZIMUTH = 215;
@@ -422,7 +423,9 @@ function ridges(x, z, oct) { // sharp-crested ridges: 1 - |2n - 1|, squared, wit
 const sstep = (a, b, x) => { const u = Math.min(1, Math.max(0, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
 // The shore's distance from the ship at angle a, and the height of the land at (a, r) (below zero under the sea).
 const endTaper = (a) => sstep(MOUNT_ARC[0], MOUNT_ARC[0] + 0.8, a) * sstep(MOUNT_ARC[1], MOUNT_ARC[1] - 0.8, a); // 0 at the ends of the arc, 1 along most of it
+const CITY_A = 0.52; // the town's bearing (radians from north toward east): ahead and to starboard of a ship heading north
 const coastR = (a) => T_R0 + 1500 * fbm(a * 3.2 + 4, 7.7, 3) + 700 * vnoise2(a * 11, 3.1) + 5500 * (1 - endTaper(a)) ** 1.5; // the shore draws back toward the ends
+const CITY = (() => { const rc = coastR(CITY_A) + 900; return { a: CITY_A, x: Math.cos(CITY_A) * rc, z: Math.sin(CITY_A) * rc }; })(); // the town's middle, a little inland
 function terrainH(a, r) {
   const x = Math.cos(a) * r * 0.00011;
   const z = Math.sin(a) * r * 0.00011;
@@ -431,10 +434,14 @@ function terrainH(a, r) {
   const massif = 0.28 + 0.72 * fbm(x * 0.55 + 3.3, z * 0.55 + 8.1, 3); // which parts stand high
   const crest = 0.18 + 0.82 * ridges(wx * 2.4, wz * 2.4, 6);
   const rough = 0.04 * (fbm(x * 9, z * 9, 3) - 0.5); // the small stuff
-  const inland = sstep(0, 5200, r - coastR(a)); // foothills first, then the range
+  const inland = sstep(0, 5200, r - coastR(a) - 500); // a clean beach first, then foothills, then the range
   const aEnds = endTaper(a);
   const outer = 1 - 0.55 * sstep(13500, T_R1, r);
-  const h = T_H * massif * crest * inland * outer * aEnds ** 1.4 + T_H * rough * inland;
+  let h = T_H * massif * crest * inland * outer * aEnds ** 1.4 + T_H * rough * inland * aEnds + 12 * sstep(0, 1200, r - coastR(a)); // the 12 m is the beach: one clean rise out of the sea, no noise to flicker across the waterline
+  const px = Math.cos(a) * r;
+  const pz = Math.sin(a) * r;
+  const plain = 1 - sstep(1000, 2400, Math.hypot(px - CITY.x, pz - CITY.z)); // the coastal plain the town stands on
+  if (plain > 0) h += (10 + 2.5 * vnoise2(px * 0.004, pz * 0.004) - h) * plain;
   return h - 40 * (1 - sstep(0, 700, r - coastR(a))) - 6; // under the sea off the shore
 }
 let terrainMemo = null;
@@ -470,6 +477,10 @@ export function landHeightAt(dx, dz) {
   if (a > MOUNT_ARC[1]) return -1;
   return terrainH(a, Math.hypot(dx, dz));
 }
+// How much town there is at (dx, dz) metres from the ship, 0 to 1, for the radar map.
+export function cityAt(dx, dz) {
+  return 1 - sstep(700, 1250, Math.hypot(dx - CITY.x, dz - CITY.z));
+}
 export function ridgeAngle(dx, dz) {
   let a = Math.atan2(dz, dx);
   if (a < MOUNT_ARC[0]) a += 2 * Math.PI;
@@ -484,6 +495,60 @@ export function ridgeAngle(dx, dz) {
 
 const SUN = [-0.5, 0.62, 0.55]; // toward the sun, in the scene's x (north), y (up), z (east)
 const HAZE = [0.6, 0.76, 0.93]; // the sky at the horizon, as it shows (sRGB)
+// The coastal town: a few hundred small buildings on a flattened plain beside the shore, in a grid of lots with streets between, taller
+// toward the middle (a few blocks of flats), white, cream and ochre walls, red-tile roofs on some of the houses, a long pier and a
+// lighthouse on the point. They are lit by the scene's sun like the ships (Lambert), their colours already veiled with the haze.
+function createCity() {
+  const rng = mulberry32(77);
+  const hz = 0.16;
+  const veil = (hex) => new THREE.Color(hex).lerp(new THREE.Color(0xa0c4ee), hz);
+  const walls = [0xe8e2d6, 0xdcc9a3, 0xc9a46a, 0xd9b5a0, 0xb9c9d6, 0xe3d9c4].map((c) => new THREE.MeshLambertMaterial({ color: veil(c) }));
+  const roofM = new THREE.MeshLambertMaterial({ color: veil(0xa5503a) });
+  const flatM = new THREE.MeshLambertMaterial({ color: veil(0x8d8f90) });
+  const pierM = new THREE.MeshLambertMaterial({ color: veil(0x55575a) });
+  const whiteM = new THREE.MeshLambertMaterial({ color: veil(0xf4f1ea) });
+  const k = new Kit();
+  const ca = Math.cos(CITY.a);
+  const sa = Math.sin(CITY.a);
+  const at = (u, v) => [CITY.x + u * -sa + v * ca, CITY.z + u * ca + v * sa]; // u along the shore, v inland
+  const rotY = -(CITY.a + Math.PI / 2);
+  const hAt = (u, v) => { const [x, z] = at(u, v); return terrainH(Math.atan2(z, x), Math.hypot(x, z)); };
+  const lot = 84; // the buildings are drawn larger than life: at 6 km a real one would be a speck
+  for (let iu = -15; iu <= 15; iu++) {
+    for (let iv = -6; iv <= 13; iv++) {
+      if (iu % 4 === 0 || iv % 5 === 0) continue; // the streets
+      const u = iu * lot + (rng() - 0.5) * 12;
+      const v = iv * lot + (rng() - 0.5) * 12;
+      const d = Math.hypot(u, (v - 250) * 1.25) / 1250;
+      if (rng() > 0.92 * (1 - 0.85 * Math.min(1, d))) continue;
+      const g = hAt(u, v);
+      if (g < 5 || Math.abs(hAt(u + 25, v) - hAt(u - 25, v)) > 7) continue; // on the land, not on the slope
+      const [x, z] = at(u, v);
+      const tall = d < 0.28 && rng() < 0.3;
+      const w = 38 + rng() * 34;
+      const dp = 38 + rng() * 34;
+      const hh = tall ? 55 + rng() * 55 : 20 + rng() * 18 * (1.2 - d);
+      const m = walls[Math.floor(rng() * walls.length)];
+      k.add(new THREE.BoxGeometry(w, hh, dp), m, { pos: [x, g - 1 + hh / 2, z], rot: [0, rotY, 0] });
+      if (!tall && rng() < 0.5) k.add(new THREE.BoxGeometry(w * 1.06, 5, dp * 1.06), roofM, { pos: [x, g - 1 + hh + 2, z], rot: [0, rotY, 0] });
+      else k.add(new THREE.BoxGeometry(w * 0.96, 1.4, dp * 0.96), flatM, { pos: [x, g - 1 + hh + 0.6, z], rot: [0, rotY, 0] });
+    }
+  }
+  // The pier: out from the shore at u = 320, straight out to sea; and the lighthouse on the point at the town's end.
+  let vs = -900;
+  while (vs < 0 && hAt(320, vs) < 3) vs += 10;
+  const [px, pz] = at(320, vs - 150);
+  k.add(new THREE.BoxGeometry(16, 4, 420), pierM, { pos: [px, 3, pz], rot: [0, rotY + Math.PI, 0] });
+  let ve = -900;
+  while (ve < 0 && hAt(-1150, ve) < 3) ve += 10;
+  const [lx, lz] = at(-1150, ve + 40);
+  k.add(new THREE.CylinderGeometry(6, 9, 55, 12), whiteM, { pos: [lx, hAt(-1150, ve + 40) + 26, lz] });
+  k.add(new THREE.CylinderGeometry(7, 7, 6, 12), pierM, { pos: [lx, hAt(-1150, ve + 40) + 58, lz] });
+  const city = k.build({ name: 'city', castShadow: false, receiveShadow: false });
+  city.traverse((o) => { o.frustumCulled = false; o.renderOrder = -1; });
+  return city;
+}
+
 function createTallMountains() {
   const { rs, heights } = terrain();
   const [A0, A1] = MOUNT_ARC;
@@ -541,7 +606,10 @@ function createTallMountains() {
   mesh.name = 'mountains';
   mesh.frustumCulled = false;
   mesh.renderOrder = -1; // behind the sea and the ships
-  return mesh;
+  const group = new THREE.Group();
+  group.name = 'mountains';
+  group.add(mesh, createCity());
+  return group;
 }
 
 // Distant mountains for the drill and the formations: three ridge lines on the horizon in an arc, each a strip of flat-coloured

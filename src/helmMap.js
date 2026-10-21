@@ -1,4 +1,4 @@
-import { landHeightAt } from './environment.js';
+import { landHeightAt, cityAt } from './environment.js';
 import { RADAR_RANGE, ARC, MIN_RANGE, MISSILE_RANGE, GUN_RANGE, gunBlind, kmText } from './helm.js';
 
 // The Solo Air Defense mission's radar: the same round translucent disc as the other maps, but a ship's radar display:
@@ -45,7 +45,11 @@ function buildLand() {
       const hn = py > 0 ? H[(py - 1) * LAND_PX + px] : h;
       const shade = Math.min(1.45, Math.max(0.55, 1 + (hw - h) / 160 + (hn - h) / 220));
       const edge = h < 40 ? 1.25 : 1; // a lighter rim along the shore
-      for (let ch = 0; ch < 3; ch++) img.data[o + ch] = Math.min(255, (stops[k][ch + 1] + (stops[k + 1][ch + 1] - stops[k][ch + 1]) * t) * shade * edge);
+      const town = h > 4 ? cityAt(-(py - LAND_PX / 2 + 0.5) * LAND_M, (px - LAND_PX / 2 + 0.5) * LAND_M) : 0; // the town: pale ground with a grain of blocks
+      for (let ch = 0; ch < 3; ch++) {
+        const land = (stops[k][ch + 1] + (stops[k + 1][ch + 1] - stops[k][ch + 1]) * t) * shade * edge;
+        img.data[o + ch] = Math.min(255, land + ([228, 214, 186][ch] * (0.85 + 0.15 * ((px + py) % 2)) - land) * town * 0.85);
+      }
       img.data[o + 3] = 235;
     }
   }
