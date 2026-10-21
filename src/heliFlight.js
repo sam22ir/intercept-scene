@@ -2,13 +2,15 @@
 // does not take off or land while the ship is turning: she must hold a steady course (rudder amidships, no turn on) for a few
 // seconds first. Parked, it waits (a random time, counted only on a steady course), spins its rotor up, lifts to a hover, flies a
 // circuit round the ship and comes back over the pad; it lands only once the ship has been steady for LAND_STEADY seconds, and
-// otherwise holds its hover above the pad (a landing under way is waved off and climbs back if she starts to turn). The player can
+// otherwise it waits low and close over the pad, drifting a little as a hovering helicopter does (a landing under way is waved off
+// and climbs back to that hover if she starts to turn). The player can
 // also ask for a take-off or a landing (`request`): the same rules hold, so a request waits for a steady course. Imports nothing,
 // stepped by the sim at its own rate, so it is tested in Node (test/helicopter.test.mjs).
 import { mulberry32 } from './rng.js';
 
 export const PAD = { x: -45.8, y: 5.5, z: 0.5 }; // where the wheels rest, in the ship's frame (x ahead, z to starboard)
-export const HOVER = 14; // m above the pad
+export const HOVER = 14; // m above the pad, where it leaves the deck and joins the circuit
+export const HOLD_ALT = 6.5; // m above the pad: where it waits to land, close above the deck
 export const T_SPINUP = 6;
 export const T_LIFT = 5;
 export const T_DESC = 6;
@@ -26,7 +28,9 @@ export class HeliFlight {
     this.wait = 20 + this.rng() * 20; // s of steady course it waits parked
     this.rpm = 0;
     this.spin = 0;
-    this.prog = 0; // 0 on the deck, 1 at the hover
+    this.prog = 0; // the lift-off, 0 on the deck to 1 at the hover
+    this.alt = 0; // m above the pad
+    this.clock = 0; // for the drift of a hover
     this.u = 0; // progress round the circuit
     this.steadyFor = 0;
     this.landReq = false; // the player has asked it to land: the circuit is cut short and it comes in
@@ -80,23 +84,25 @@ export class HeliFlight {
         break;
       case 'lift':
         this.prog = Math.min(1, this.prog + dt / T_LIFT);
+        this.alt = HOVER * smooth(this.prog);
         if (this.prog >= 1) { this.newCircuit(); this.phase = this.landReq ? 'hold' : 'circuit'; }
         break;
       case 'circuit':
         this.u = Math.min(1, this.u + (dt / this.circuit.fly) * (this.landReq ? 1.5 : 1)); // asked to land: it flies the rest of the circuit faster
-        if (this.u >= 1) this.phase = 'hold';
+        if (this.u >= 1) { this.phase = 'hold'; this.alt = HOVER; }
         break;
-      case 'hold': // over the pad, waiting for a steady course to land
-        if (this.steadyFor >= LAND_STEADY) this.phase = 'descend';
+      case 'hold': // close over the pad, waiting for a steady course to land
+        this.alt += Math.max(-2.5 * dt, Math.min(2.5 * dt, HOLD_ALT - this.alt)); // settling down to the waiting height
+        if (this.steadyFor >= LAND_STEADY && this.alt <= HOLD_ALT + 0.5) this.phase = 'descend';
         break;
       case 'descend':
-        if (!steady && this.prog > 0.12) { this.phase = 'waveoff'; break; } // she has begun to turn: not with the wheels this close
-        this.prog = Math.max(0, this.prog - dt / T_DESC);
-        if (this.prog <= 0) { this.phase = 'spindown'; this.landReq = false; }
+        if (!steady && this.alt > 1.7) { this.phase = 'waveoff'; break; } // she has begun to turn: not with the wheels this close
+        this.alt = Math.max(0, this.alt - Math.min(1.6, Math.max(0.5, this.alt * 0.6)) * dt); // quicker high up, gently at the end
+        if (this.alt <= 0) { this.phase = 'spindown'; this.landReq = false; this.prog = 0; }
         break;
       case 'waveoff':
-        this.prog = Math.min(1, this.prog + dt / T_WAVEOFF);
-        if (this.prog >= 1) this.phase = 'hold';
+        this.alt = Math.min(HOLD_ALT, this.alt + 2.2 * dt);
+        if (this.alt >= HOLD_ALT) this.phase = 'hold';
         break;
       case 'spindown':
         this.rpm = Math.max(0, this.rpm - dt / T_SPINDOWN);
@@ -105,6 +111,7 @@ export class HeliFlight {
       default: break;
     }
     this.spin += W_ROTOR * this.rpm * dt;
+    this.clock += dt;
     this.pose();
   }
 
@@ -119,7 +126,7 @@ export class HeliFlight {
     st.yaw = 0;
     st.pitch = 0;
     st.roll = 0;
-    let h = HOVER * smooth(this.prog);
+    let h = this.alt;
     if (this.phase === 'circuit') {
       // A circle through the pad, leaving toward the bow, flown slowly at both ends and fastest in the middle.
       const u = this.u;
@@ -132,8 +139,17 @@ export class HeliFlight {
       st.pitch = -0.1 * sf;
       st.roll = c.side * 0.3 * Math.min(1, sf);
     }
+    if (this.phase === 'hold' || this.phase === 'descend' || this.phase === 'waveoff') { // a hover is never quite still
+      const a = Math.min(1, this.alt / 3);
+      const t = this.clock;
+      st.x += 0.9 * Math.sin(0.7 * t) * a;
+      st.z += 0.7 * Math.sin(0.53 * t + 1) * a;
+      h += 0.2 * Math.sin(1.1 * t) * a;
+      st.pitch = 0.025 * Math.sin(0.9 * t + 2) * a;
+      st.roll = 0.03 * Math.sin(0.7 * t) * a;
+    }
     st.y = PAD.y + h;
-    st.flying = this.prog > 0 || this.phase === 'circuit';
+    st.flying = this.alt > 0 || this.phase === 'circuit';
     return st;
   }
 }

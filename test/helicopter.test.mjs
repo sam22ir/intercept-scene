@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { HeliFlight, PAD, HOVER, LAND_STEADY, LIFT_STEADY } from '../src/heliFlight.js';
+import { HeliFlight, PAD, HOLD_ALT, LAND_STEADY, LIFT_STEADY } from '../src/heliFlight.js';
 import { HelmSim, DT } from '../src/helm.js';
 
 const run = (h, secs, steady, dt = 0.05) => { for (let t = 0; t < secs; t += dt) h.step(dt, steady); };
@@ -47,7 +47,8 @@ describe('the deck helicopter', () => {
     h.steadyFor = 0;
     run(h, 90, false);
     assert.equal(h.phase, 'hold');
-    assert.ok(Math.abs(h.state.y - PAD.y - HOVER) < 1e-9, 'hovering');
+    assert.ok(Math.abs(h.state.y - PAD.y - HOLD_ALT) < 0.5, 'waiting low, close above the pad');
+    assert.ok(Math.abs(h.state.x - PAD.x) < 1.5 && Math.abs(h.state.z - PAD.z) < 1.5, 'over the pad, drifting only a little');
     run(h, LAND_STEADY + 0.5, true);
     assert.equal(h.phase, 'descend');
     run(h, 30, true);
@@ -62,7 +63,7 @@ describe('the deck helicopter', () => {
     assert.equal(h.phase, 'waveoff');
     run(h, 6, false);
     assert.equal(h.phase, 'hold');
-    assert.ok(h.state.y - PAD.y > HOVER - 1e-6);
+    assert.ok(h.state.y - PAD.y > HOLD_ALT - 0.5, 'back at the waiting height');
   });
   it('is driven by the sim: it lifts off only when the rudder is amidships', () => {
     const sim = new HelmSim();
