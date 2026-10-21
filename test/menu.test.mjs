@@ -45,7 +45,7 @@ const chooser = () => html.slice(html.indexOf('<div id="chooser"'), html.indexOf
 // A mission is a list row, or (the three drills) a variant button in the Ships picker.
 const rowOf = (id) => chooser().match(new RegExp(`<button class="(mission|pick)"[^>]*data-mode="${id}">(.*?)</button>`, 's'))?.[2] ?? '';
 const rowKind = (id) => chooser().match(new RegExp(`<button class="(mission|pick)"[^>]*data-mode="${id}"`))?.[1];
-const tabButtons = () => [...chooser().matchAll(/<button class="tab"[^>]*data-tab="(\w+)"[^>]*>(.*?)<\/button>/g)].map((x) => [x[1], x[2]]);
+const tabButtons = () => [...chooser().matchAll(/<button class="tab"[^>]*data-tab="(\w+)"[^>]*>(.*?)<\/button>/gs)].map((x) => [x[1], text(x[2].match(/<b>(.*?)<\/b>/s)[1])]);
 const cardOf = (id) => chooser().match(new RegExp(`<button class="card"[^>]*data-ship="${id}">(.*?)</button>`, 's'))?.[1] ?? '';
 const text = (s) => s.replace(/<svg.*?<\/svg>/gs, '').replace(/<kbd>.*?<\/kbd>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
