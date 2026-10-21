@@ -1,11 +1,9 @@
-import { MAIN_ARC, MAIN_RANGE, GUN_RANGE, MSL_ARC, MSL_RANGE, MSL_LOCK } from './duel.js';
+import { MAIN_ARC, MAIN_RANGE, GUN_RANGE } from './duel.js';
 import { gunBlind, kmText } from './hull.js';
 
 // The Ship duel's radar, on the shared #minimap disc (the same one Solo Air Defense uses): centred on your ship,
-// heading up, with range rings, a turning sweep, the north mark on the rim, the 76 mm's arc, the forward launcher's
-// arc, and the aft 30 mm guns' clear sectors (the gaps in their dead zones, where they can answer a missile). It
-// shows the enemy contact, every anti-ship round in the air with its TTI, and the lock state both ways: your own
-// launcher locking or locked, and the enemy locking on you. Click it to change the range; N hides it.
+// heading up, with range rings, a turning sweep, the north mark on the rim, the 76 mm's arc, and the aft 30 mm guns'
+// clear sectors (where they can bear), and the enemy contact. Click it to change the range; N hides it.
 
 const SCALES = [2000, 4000, 8000, 16000]; // metres to the rim
 const ZOOMS = ['auto', 2000, 6000, 12000]; // what a click cycles through
@@ -43,8 +41,8 @@ export function createDuelMap() {
   let lastTrack = -Infinity;
   let lastKey = '';
   root.addEventListener('click', () => { zoom = (zoom + 1) % ZOOMS.length; lastKey = ''; });
-  root.title = 'Radar, heading up: 76 mm arc, launcher arc, aft-gun sectors, missiles and lock. Click to change the range (N hides it)';
-  root.setAttribute('aria-label', 'Ship duel radar: enemy, missiles, gun arcs and lock state, bow up');
+  root.title = 'Radar, heading up: 76 mm arc and aft-gun sectors. Click to change the range (N hides it)';
+  root.setAttribute('aria-label', 'Ship duel radar: enemy and gun arcs, bow up');
 
   function draw(sim) {
     measure();
@@ -53,7 +51,6 @@ export function createDuelMap() {
     let scale = ZOOMS[zoom];
     if (scale === 'auto') {
       let far = sim.range();
-      for (const m of sim.missiles) far = Math.max(far, Math.hypot(m.p[0] - sim.player.x, m.p[2] - sim.player.z));
       scale = SCALES.find((s) => s >= Math.max(far * 1.12, GUN_RANGE * 1.1)) ?? SCALES[SCALES.length - 1];
     }
     const k = (R - 6) / scale;
@@ -111,18 +108,8 @@ export function createDuelMap() {
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // The forward launcher's arc (green), inside its range.
-    ctx.beginPath();
-    ctx.moveTo(R, R);
-    ctx.arc(R, R, Math.min(MSL_RANGE * k, R - 4), aOf(-MSL_ARC), aOf(MSL_ARC));
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(61, 220, 132, 0.045)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(61, 220, 132, 0.4)';
-    ctx.stroke();
-
-    // The aft 30 mm guns' clear sectors (amber): wherever either gun can bear, out to its range. These are the
-    // bearings a missile can be shot down from, so the shaded gaps are the ones to keep your stern out of.
+    // The aft 30 mm guns' clear sectors (amber): wherever either gun can bear, out to its range. The shaded
+    // gaps are the dead zones to keep an enemy in.
     const rg = GUN_RANGE * k;
     const covered = (th) => !gunBlind(0, -th) || !gunBlind(1, -th);
     const STEP = Math.PI / 90;
@@ -196,62 +183,6 @@ export function createDuelMap() {
       ctx.moveTo(x - 3, y - 3); ctx.lineTo(x + 3, y + 3);
       ctx.moveTo(x + 3, y - 3); ctx.lineTo(x - 3, y + 3);
       ctx.stroke();
-    }
-
-    // The rounds in the air: ours in cyan, the ones coming for us in red with their time to impact.
-    ctx.font = '600 9px system-ui, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    let nearest = null;
-    for (const m of sim.missiles) {
-      const [x, y] = clampTo(...xy(m.p[0], m.p[2]));
-      const [x2, y2] = xy(m.p[0] + Math.cos(m.hdg) * 180, m.p[2] + Math.sin(m.hdg) * 180);
-      const mine = m.owner === 0;
-      arrow(x, y, x2 - x, y2 - y, 5.5, mine ? CYAN : RED, x !== xy(m.p[0], m.p[2])[0] || y !== xy(m.p[0], m.p[2])[1]);
-      if (m.target === 0) {
-        const dx = sim.player.x - m.p[0], dz = sim.player.z - m.p[2];
-        const vr = sim.velOf(sim.player);
-        const close = Math.max(1, ((Math.cos(m.hdg) * m.speed - vr[0]) * dx + (Math.sin(m.hdg) * m.speed - vr[2]) * dz) / (Math.hypot(dx, dz) || 1));
-        const tti = Math.hypot(dx, dz) / close;
-        if (!nearest || tti < nearest.tti) nearest = { x, y, tti };
-      }
-    }
-    if (nearest) {
-      ctx.fillStyle = RED;
-      ctx.fillText(`${Math.max(0, nearest.tti).toFixed(0)} s`, nearest.x + 7, nearest.y + 7);
-    }
-
-    // Lock state both ways. Yours: a ring filling as the launcher locks, and LOCK once it has.
-    const l = sim.player.msl;
-    if (l.ready && l.stock > 0) {
-      const frac = Math.min(1, l.lock / MSL_LOCK);
-      ctx.strokeStyle = frac >= 1 ? GREEN : 'rgba(61, 220, 132, 0.55)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(R, R, 13, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
-      ctx.stroke();
-      if (frac >= 1) {
-        ctx.fillStyle = GREEN;
-        ctx.font = '700 8px system-ui, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('LOCK', R, R + 24);
-      }
-    }
-    // Theirs: a red wedge on the rim pointing at the ship that is locking you, growing with the lock.
-    const e = sim.enemy;
-    if (e.tSunk === null && e.msl.ready && e.msl.stock > 0 && e.msl.lock > 0) {
-      const frac = Math.min(1, e.msl.lock / MSL_LOCK);
-      const th = aOf(sim.relBearing(sim.player));
-      ctx.fillStyle = `rgba(255, 93, 97, ${0.28 + 0.5 * frac})`;
-      ctx.beginPath();
-      ctx.moveTo(R + Math.cos(th) * (R - 1), R + Math.sin(th) * (R - 1));
-      ctx.arc(R, R, R - 1, th - 0.07 - 0.16 * frac, th + 0.07 + 0.16 * frac);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = RED;
-      ctx.font = '700 8px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('LOCK', R + Math.cos(th) * (R - 15), R + Math.sin(th) * (R - 15) + 2);
     }
 
     // The ship at the centre, pointing up.

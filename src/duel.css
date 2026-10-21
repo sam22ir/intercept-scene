@@ -63,11 +63,6 @@ body.mission-duel .hud { max-height: calc(100vh - 2 * var(--gap) - var(--keys-h,
 .dh-tags .leak { color: #35c8ff; }
 .dh-tags .crew { color: #f2c94c; }
 .dh-tags .crew.going { opacity: 0.5; }
-.dh-alert { display: grid; gap: 3px; margin-top: 6px; }
-.dh-threat { display: flex; justify-content: space-between; gap: 8px; padding: 4px 8px; border-radius: 6px; font-size: 11px; background: rgba(255, 93, 97, 0.2); border: 1px solid rgba(255, 93, 97, 0.7); color: #ffd9da; animation: duel-blink 0.8s steps(2) infinite; }
-.dh-threat b { letter-spacing: 0.08em; }
-@keyframes duel-blink { 50% { background: rgba(255, 93, 97, 0.45); } }
-@media (prefers-reduced-motion: reduce) { .dh-threat { animation: none; } }
 .duel-reticle { position: fixed; inset: 0; z-index: 4; pointer-events: none; }
 .duel-reticle[hidden] { display: none; }
 .duel-reticle .cross { position: absolute; left: var(--x, 50%); top: var(--y, 50%); width: 34px; height: 34px; margin: -17px 0 0 -17px; border: 1px solid rgba(255, 220, 120, 0.9); border-radius: 50%; }

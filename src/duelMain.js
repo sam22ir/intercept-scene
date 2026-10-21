@@ -12,11 +12,10 @@ import { menuText } from './menu.js';
 import { compass, relName, kmText, RUDDER_MAX } from './hull.js';
 import {
   DuelSim, TELEGRAPH, COMPARTMENTS, COMP_IDS, HULL_HP, LEVELS, DUEL_LEVELS, MAIN_ARC, MAIN_RANGE, GUN_MOUNT_LOCAL, GUN_RANGE, sinkState,
-  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, AMMO_TYPES, SWITCH_TIME, MSL_STOCK, MSL_LOCK, MSL_RELOAD, CREWS,
+  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, AMMO_TYPES, SWITCH_TIME, CREWS,
 } from './duel.js';
 import { createDuelAudio } from './duelAudio.js';
 import { createDuelMap } from './duelMap.js';
-import { createMissile } from './models/missile.js';
 import './duel.css';
 
 // Entry point of "Ship duel", mission id `duel` (see duel.js for the model): you sail a frigate against another and
@@ -57,7 +56,6 @@ const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 const _c = new THREE.Vector3();
 const _q = new THREE.Quaternion();
-const ZAXIS = new THREE.Vector3(0, 0, 1);
 const rad = THREE.MathUtils.degToRad;
 const clamp = THREE.MathUtils.clamp;
 
@@ -140,7 +138,7 @@ function poseShip(i, dt) {
   v.group.updateMatrixWorld(true);
   v.mainGun.pose(s.gun.yaw, s.gun.pitch);
   v.gats.forEach((g, k) => g.pose(s.gats[k].yaw, s.gats[k].pitch, s.gats[k].spin, s.gats[k].firing, sim.t));
-  v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0 }); // the radar turns; the missile box stays stowed
+  v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0 }); // the radar turns; the launcher box stays stowed
   v.wake.update({ t: sim.t, x: s.x, z: s.z, psi: s.psi, r: s.r, u: s.u });
   // Smoke and fire: a hurt compartment smokes, one that is out burns; a sinking ship pours it out.
   v.smokeT += dt;
@@ -207,30 +205,7 @@ function updateWeapons(dt) {
     if (!live) tracerVis.set(k, null);
   }
   tracerVis.done();
-  // The anti-ship rounds in the air: a model each, nose along the track (headings are [cos, 0, sin]), and a smoke column.
-  const seen = new Set();
-  for (const m of sim.missiles) {
-    seen.add(m.id);
-    let v = mvis.get(m.id);
-    if (!v) {
-      const model = createMissile();
-      model.group.scale.setScalar(2.6);
-      scene.add(model.group);
-      v = { model, last: new THREE.Vector3(m.p[0], m.p[1], m.p[2]) };
-      mvis.set(m.id, v);
-    }
-    _b.set(Math.cos(m.hdg), 0, Math.sin(m.hdg));
-    v.model.group.position.set(m.p[0], m.p[1], m.p[2]);
-    v.model.group.quaternion.setFromUnitVectors(ZAXIS, _b);
-    v.model.setExhaust?.(sim.t);
-    _c.set(m.p[0], m.p[1], m.p[2]);
-    const n = Math.min(120, Math.floor(v.last.distanceTo(_c) / 1.4));
-    for (let i = 1; i <= n; i++) fx.missileSmoke(_a.lerpVectors(v.last, _c, i / n), _b, sim.t);
-    if (n > 0) v.last.copy(_c);
-  }
-  for (const [id, v] of mvis) if (!seen.has(id)) { scene.remove(v.model.group); mvis.delete(id); }
 }
-const mvis = new Map();
 
 // --- The banner and the events -----------------------------------------------------------------------------------------
 const banner = document.querySelector('#shot-caption');
@@ -278,21 +253,6 @@ function handleEvents() {
       say(`${who(e.ship)} ${COMPARTMENTS[e.comp].name.toLowerCase()} is out`, e.ship === 0 ? 'bad' : 'ok', 3000);
     } else if (e.type === 'sunk') {
       for (let k = 0; k < 3; k++) fx.explosion(_c.set(e.pos[0] + (k - 1) * 14, e.pos[1], e.pos[2]), sim.t + k * 0.35);
-    } else if (e.type === 'mslLaunch') {
-      fx.launchBillow(_c.set(...e.pos), _b.set(0, 1, 0), sim.t);
-      if (e.owner === 0) say('Missile away', 'ok', 2000);
-      else say(`MISSILE INBOUND ${relName(sim.bearingOf(sim.player, { x: e.pos[0], z: e.pos[2] }))}: turn your stern to it, aft guns on`, 'bad', 4200);
-    } else if (e.type === 'mslHit') {
-      fx.explosion(_c.set(...e.pos), sim.t);
-      if (e.ship === 0) { alarmEl.classList.remove('hit'); void alarmEl.offsetWidth; alarmEl.classList.add('hit'); say(`Missile hit: ${COMPARTMENTS[e.comp].name}${e.out ? ' out' : ''}, fire aboard`, 'bad', 3000); }
-      else say('Your missile hit her', 'ok', 2400);
-    } else if (e.type === 'mslKilled') {
-      fx.explosion(_c.set(...e.pos), sim.t);
-      say(e.ship === 0 ? 'Aft guns killed the missile' : 'She shot your missile down', e.ship === 0 ? 'ok' : 'warn', 2200);
-    } else if (e.type === 'mslMiss') {
-      if (e.ship === 0) say('The missile missed', 'ok', 1600);
-    } else if (e.type === 'lockon') {
-      if (e.ship === 0) say(`LOCKED ON by her launcher ${relName(e.bearing)}: break the lock or be ready to answer`, 'bad', 4200);
     } else if (e.type === 'ammo') {
       if (e.ship === 0) say(`${AMMO_TYPES[e.kind].name} loaded`, '', 1400);
     } else if (e.type === 'fire') {
@@ -391,22 +351,6 @@ function gunStatus(s) {
   if (s.manual) return g.engaged ? (g.onTarget ? 'ON YOUR AIM' : 'TRAINING') : 'point at her';
   return g.onTarget ? 'ON TARGET' : 'TRAINING';
 }
-function mslStatus(s) {
-  const l = s.msl;
-  if (s.tSunk !== null) return '';
-  if (l.stock <= 0) return 'EMPTY';
-  if (!l.ready) return 'stood down';
-  if (l.cool > 0) return `LOADING ${l.cool.toFixed(0)} s`;
-  if (sim.locked(s)) return 'LOCKED: Enter fires';
-  return sim.mslInArc(s) ? `LOCKING ${Math.round((l.lock / MSL_LOCK) * 100)}%` : 'no target in arc';
-}
-function threatHtml() {
-  const list = sim.threats(0);
-  const locked = sim.enemy.msl.ready && sim.locked(sim.enemy);
-  if (!list.length && !locked) return '';
-  const rows = list.map((m) => `<div class="dh-threat"><b>MISSILE ${relName(m.bearing).toUpperCase()}</b><span>${kmText(m.range)} · ${Math.max(0, m.tti).toFixed(0)} s</span></div>`).join('');
-  return `<div class="dh-alert">${locked && !list.length ? '<div class="dh-threat lock"><b>LOCKED ON</b><span>she is locking your ship</span></div>' : ''}${rows}</div>`;
-}
 function statusHtml() {
   const p = sim.player;
   const rel = sim.relBearing(p);
@@ -420,8 +364,7 @@ function statusHtml() {
     + `<div><span>30 mm</span><b>${p.auto ? 'AUTO' : 'MANUAL'}</b><small>${p.gats.map((g) => (g.ammo > 0 ? '' : 'dry')).join('') || (sim.range() > GUN_RANGE ? 'out of range' : 'ready')}</small></div>`
     + `<div><span>AMMO · Q</span><b>${AMMO_TYPES[p.gun.type].name}</b><small>HE ${p.gun.stock.he} · AP ${p.gun.stock.ap}${p.gun.cool > 0 && p.gun.cool > MAIN_RELOAD ? ' · changing' : ''}</small></div>`
     + `<div><span>AIM · T</span><b>${p.manual ? 'MANUAL' : 'AUTO'}</b><small>${p.manual ? 'mouse, you lead' : 'fire control leads'}</small></div>`
-    + `<div class="wide"><span>MISSILE · M</span><b>${p.msl.stock} of ${MSL_STOCK}</b><small>${mslStatus(p)}</small></div>`
-    + `<div class="wide"><span>CREWS · Z X</span><b>${p.crews.filter((c) => c.to).length} of ${CREWS} out</b><small>${COMPARTMENTS[COMP_IDS[selComp]].name} selected</small></div></div>${threatHtml()}`;
+    + `<div class="wide"><span>CREWS · Z X</span><b>${p.crews.filter((c) => c.to).length} of ${CREWS} out</b><small>${COMPARTMENTS[COMP_IDS[selComp]].name} selected</small></div></div>`;
 }
 function endHtml() {
   if (sim.winner === null) return '';
@@ -526,8 +469,6 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>A</kbd>', 'The 30 mm guns on automatic'],
   ['<kbd>Q</kbd>', `Change the 76 mm round, HE or AP: HE starts fires and floods, AP hits one compartment harder; changing costs a ${SWITCH_TIME} s reload`],
   ['<kbd>T</kbd>', 'Aim the 76 mm by hand with the mouse (smaller scatter than the fire control, but you judge the lead); T again gives it back'],
-  ['<kbd>M</kbd>', `Ready or stand down the forward missile launcher (${MSL_STOCK} rounds): it locks on in ${MSL_LOCK} s with the enemy in its arc`],
-  ['<kbd>Enter</kbd>', 'Launch the missile once it has locked on; the aft 30 mm guns are the defence against hers, so turn your stern to it'],
   ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
   ['<kbd>1</kbd> to <kbd>6</kbd>', 'Behind, bridge, sight, above, shell, orbit'],
   ['<kbd>V</kbd>', 'Next view · drag looks round in the orbit view, the wheel zooms'],
@@ -536,7 +477,7 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>S</kbd>', 'Sound on / off'],
   ['<kbd>H</kbd> <kbd>C</kbd>', 'Readouts, hide the interface'],
 ].map(([k, d]) => `<dt>${k}</dt><dd>${d}</dd>`).join('');
-keysSheet.querySelector('.keys-note').textContent = 'The 76 mm aims itself unless you press T · a shell takes seconds to arrive and turning spoils your aim · her missile is answered by your stern and your aft guns';
+keysSheet.querySelector('.keys-note').textContent = 'The 76 mm aims itself unless you press T · a shell takes seconds to arrive and turning spoils your aim';
 
 const audio = createDuelAudio();
 eventHooks.push((e) => audio.event(e));
@@ -564,7 +505,7 @@ const input = { left: 0, right: 0, fire: 0, gat: 0, aim: null };
 const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`;
 function keysHtml() {
   return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', 'speed')}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}`
-    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('T', 'aim by hand', sim.player.manual)}${k('M', 'missile', sim.player.msl.ready)}${sim.locked(sim.player) ? k('Enter', 'launch', true) : ''}${k('Z X', 'crews')}`
+    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('T', 'aim by hand', sim.player.manual)}${k('Z X', 'crews')}`
     + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–6', 'views')}${k('R', 'again')}`;
 }
 let lastKeys = '';
@@ -600,8 +541,6 @@ function restart() {
   alarmEl.classList.remove('hit');
   input.aim = null;
   selComp = 0;
-  for (const v of mvis.values()) scene.remove(v.model.group);
-  mvis.clear();
   setManual(false);
   startBanner();
 }
@@ -609,7 +548,6 @@ function startBanner() {
   say(`Enemy ${relName(sim.relBearing(sim.player))}, ${kmText(sim.range())}: close, turn to bring your gun to bear, and keep her off your stern`, '', 5200);
 }
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && e.target?.tagName === 'BUTTON') e.target.blur();
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const tag = e.target?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
@@ -628,8 +566,6 @@ window.addEventListener('keydown', (e) => {
     case 'a': sim.toggleAuto(0); break;
     case 'q': sim.switchAmmo(0); break;
     case 't': setManual(!sim.player.manual); break;
-    case 'm': if (!sim.readyMissile(0) && sim.player.msl.stock <= 0) say('No missiles left', 'warn', 1500); break;
-    case 'Enter': if (!sim.launchMissile(0)) say(sim.locked(sim.player) ? 'Launcher loading' : 'No lock yet: ready the launcher (M) with the enemy in the arc', 'warn', 1600); break;
     case 'z': selComp = (selComp + 1) % COMP_IDS.length; break;
     case 'x': sim.assignCrew(0, COMP_IDS[selComp]); break;
     case 'r': restart(); break;
