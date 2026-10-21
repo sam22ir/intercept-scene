@@ -815,12 +815,12 @@ function updateCamera(dt) {
     lookAt.copy(d.pos).addScaledVector(_a, 30);
     camera.lookAt(lookAt);
     const ts = performance.now() / 1000;
-    camera.position.x += 0.22 * Math.sin(ts * 41) + 0.12 * Math.sin(ts * 67 + 1);
-    camera.position.y += 0.22 * Math.sin(ts * 47 + 2) + 0.1 * Math.sin(ts * 71);
-    camera.position.z += 0.22 * Math.sin(ts * 37 + 4) + 0.12 * Math.sin(ts * 59 + 3);
-    camera.rotateX(0.0035 * Math.sin(ts * 43 + 1) + 0.002 * Math.sin(ts * 73));
-    camera.rotateY(0.0035 * Math.sin(ts * 39 + 5) + 0.002 * Math.sin(ts * 61 + 2));
-    camera.rotateZ(0.004 * Math.sin(ts * 31 + 3));
+    camera.position.x += 0.07 * Math.sin(ts * 41) + 0.04 * Math.sin(ts * 67 + 1);
+    camera.position.y += 0.07 * Math.sin(ts * 47 + 2) + 0.03 * Math.sin(ts * 71);
+    camera.position.z += 0.07 * Math.sin(ts * 37 + 4) + 0.04 * Math.sin(ts * 59 + 3);
+    camera.rotateX(0.0012 * Math.sin(ts * 43 + 1) + 0.0007 * Math.sin(ts * 73));
+    camera.rotateY(0.0012 * Math.sin(ts * 39 + 5) + 0.0007 * Math.sin(ts * 61 + 2));
+    camera.rotateZ(0.0014 * Math.sin(ts * 31 + 3));
     wantFov = 46;
   } else if (view === 'sight' && sim.target) {
     wantFov = aimSight(dt, sim.target);
@@ -993,8 +993,8 @@ function domeSvg() {
     if (a < 0.05 || a > Math.PI - 0.05) continue;
     const major = d % 30 === 0;
     ticks += `<line x1="${pt(DOME_R, a).split(',')[0]}" y1="${pt(DOME_R, a).split(',')[1]}" x2="${pt(DOME_R - (major ? 9 : d % 10 === 0 ? 6 : 3.5), a).split(',')[0]}" y2="${pt(DOME_R - (major ? 9 : d % 10 === 0 ? 6 : 3.5), a).split(',')[1]}" class="${major ? 'mj' : ''}"/>`;
-    if (d % 30 === 0 && Math.abs(d - h) > 9) {
-      const [x, y] = pt(DOME_R - 18, a).split(',');
+    if (d % 30 === 0 && Math.abs(d - h) > 11) {
+      const [x, y] = pt(DOME_R - 21, a).split(',');
       labels += `<text x="${x}" y="${y}" class="dl">${String(((d % 360) + 360) % 360).padStart(3, '0')}</text>`;
     }
   }
