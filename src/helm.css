@@ -22,11 +22,13 @@ body:not(.mission-helm) .helm-views, body.ui-hidden .helm-views { display: none;
 .helm-sight i { position: absolute; left: 50%; top: 50%; background: rgba(120, 255, 170, 0.75); }
 .helm-sight .hs-h { width: 34vmin; height: 1px; transform: translate(-50%, -50%); background: linear-gradient(90deg, rgba(120, 255, 170, 0.75) 40%, transparent 40% 60%, rgba(120, 255, 170, 0.75) 60%); }
 .helm-sight .hs-v { width: 1px; height: 34vmin; transform: translate(-50%, -50%); background: linear-gradient(180deg, rgba(120, 255, 170, 0.75) 40%, transparent 40% 60%, rgba(120, 255, 170, 0.75) 60%); }
-.helm-sight .hs-box { width: 7vmin; height: 7vmin; transform: translate(-50%, -50%); background: transparent; border: 0; }
-.helm-sight .hs-box::before, .helm-sight .hs-box::after { content: ''; position: absolute; left: 50%; top: 50%; background: rgba(120, 255, 170, 0.6); transform: translate(-50%, -50%); }
-.helm-sight .hs-box::before { width: 100%; height: 2px; }
-.helm-sight .hs-box::after { width: 2px; height: 100%; }
-.helm-sight.lock .hs-box::before, .helm-sight.lock .hs-box::after { background: #3ddc84; box-shadow: 0 0 10px rgba(61, 220, 132, 0.8); }
+.helm-sight .hs-box { width: 9vmin; height: 9vmin; transform: translate(-50%, -50%); background: transparent; border: 1px solid rgba(120, 255, 170, 0.5); }
+.helm-sight.lock .hs-box { border: 2px solid #3ddc84; box-shadow: 0 0 12px rgba(61, 220, 132, 0.6); }
+/* Locked: a + on the target, inside the box. */
+.helm-sight .hs-box::before, .helm-sight .hs-box::after { content: none; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: #3ddc84; box-shadow: 0 0 8px rgba(61, 220, 132, 0.9); }
+.helm-sight.lock .hs-box::before, .helm-sight.lock .hs-box::after { content: ''; }
+.helm-sight .hs-box::before { width: 70%; height: 3px; }
+.helm-sight .hs-box::after { width: 3px; height: 70%; }
 /* The launcher has caught the target: a green + closing onto it, and the words. */
 .helm-lock { position: fixed; left: 50%; top: 50%; width: 26vmin; height: 26vmin; transform: translate(-50%, -50%); z-index: 6; pointer-events: none; }
 .helm-lock[hidden] { display: none; }
@@ -44,8 +46,7 @@ body:not(.mission-helm) .helm-views, body.ui-hidden .helm-views { display: none;
 body.helm-slowmo::after { content: 'SLOW MOTION'; position: fixed; left: 50%; top: 54px; transform: translateX(-50%); z-index: 5; pointer-events: none;
   font: 700 11px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.28em; color: #ffc454; text-shadow: 0 1px 3px #000; opacity: 0.9; }
 /* While the director is still finding the target: an amber, dashed box that breathes. */
-.helm-sight.searching .hs-box::before, .helm-sight.searching .hs-box::after { background: rgba(255, 196, 84, 0.95); }
-.helm-sight.searching .hs-box { animation: hs-search 0.45s ease-in-out infinite alternate; }
+.helm-sight.searching .hs-box { border: 2px dashed rgba(255, 196, 84, 0.9); box-shadow: none; animation: hs-search 0.45s ease-in-out infinite alternate; }
 @keyframes hs-search { from { opacity: 0.45; transform: translate(-50%, -50%) scale(1.3); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
 .helm-sight .hs-txt {
   position: absolute; left: 50%; top: calc(50% + 21vmin); transform: translateX(-50%);
@@ -82,3 +83,24 @@ body.helm-threat-3 .helm-alarm { animation: helm-pulse 0.55s ease-in-out infinit
 .helm-contact.none { display: block; color: var(--muted); }
 .helm-score { margin-top: 6px; font-size: 11.5px; color: var(--muted); }
 .helm-score b { color: var(--text); }
+
+/* The radar picture: a small square at the bottom right, the size of the map, always the fire-control sight. */
+.helm-pip { position: fixed; right: 14px; bottom: 14px; width: var(--map-d, 150px); height: var(--map-d, 150px); z-index: 4; pointer-events: none;
+  border: 2px solid rgba(120, 255, 170, 0.55); border-radius: 6px; box-shadow: 0 2px 14px rgba(0, 0, 0, 0.5); overflow: hidden; }
+.helm-pip.searching { border-color: rgba(255, 196, 84, 0.85); }
+.helm-pip.lock { border-color: #3ddc84; }
+.helm-pip i { position: absolute; left: 50%; top: 50%; background: rgba(120, 255, 170, 0.55); }
+.helm-pip .hp-h { width: 100%; height: 1px; transform: translate(-50%, -50%); }
+.helm-pip .hp-v { width: 1px; height: 100%; transform: translate(-50%, -50%); }
+.helm-pip .hp-box { width: 30%; height: 30%; transform: translate(-50%, -50%); background: transparent; border: 1px solid rgba(120, 255, 170, 0.5); }
+.helm-pip.lock .hp-box { border: 2px solid #3ddc84; box-shadow: 0 0 8px rgba(61, 220, 132, 0.6); }
+.helm-pip .hp-box::before, .helm-pip .hp-box::after { content: none; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: #3ddc84; box-shadow: 0 0 6px rgba(61, 220, 132, 0.9); }
+.helm-pip.lock .hp-box::before, .helm-pip.lock .hp-box::after { content: ''; }
+.helm-pip .hp-box::before { width: 70%; height: 2px; }
+.helm-pip .hp-box::after { width: 2px; height: 70%; }
+.helm-pip.searching .hp-box { border: 2px dashed rgba(255, 196, 84, 0.9); animation: hp-search 0.45s ease-in-out infinite alternate; }
+@keyframes hp-search { from { opacity: 0.45; transform: translate(-50%, -50%) scale(1.35); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+.helm-pip .hp-txt { position: absolute; left: 6px; right: 6px; bottom: 4px; font: 700 10px/1.2 ui-monospace, Consolas, monospace; letter-spacing: 0.06em; color: #9dffc0; text-shadow: 0 1px 2px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.helm-pip em { position: absolute; left: 6px; top: 4px; font: 800 9px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.2em; font-style: normal; color: #9dffc0; text-shadow: 0 1px 2px #000; }
+body.mission-helm .hud { max-height: calc(100vh - var(--map-d, 150px) - 64px); overflow: hidden; }
+body:not(.mission-helm) .helm-pip, body.ui-hidden .helm-pip { display: none; }

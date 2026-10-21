@@ -543,6 +543,7 @@ function cineStruck(e) {
     cine.fresh = false;
   }
   cine.phase = 'impact';
+  cine.cut = true;
   cine.tImpact = sim.t;
   cine.local.copy(sim.toLocal(e.pos, _a)).setY(Math.max(e.pos.y, 8)); // the same point the fire burns at
   cine.side = 0;
@@ -598,8 +599,9 @@ function frameImpact(c, dt) {
   const P = ship.group.localToWorld(_c.copy(c.local));
   _a.set(-Math.sin(sim.psi), 0, Math.cos(sim.psi)); // starboard
   if (!c.side) c.side = _a.dot(_b.set(camera.position.x - sim.x, 0, camera.position.z - sim.z)) >= 0 ? 1 : -1; // the side it was filmed from
-  const want = _d.copy(P).addScaledVector(_a, c.side * 60);
-  want.y = P.y + 14;
+  const want = _d.copy(P).addScaledVector(_a, c.side * 75);
+  want.y = P.y + 8;
+  if (c.cut) { c.pos.copy(want); c.look.copy(P); c.cut = false; } // a cut to the side of the hit, not a move from the drone's shot
   c.pos.lerp(want, 1 - Math.exp(-dt / 0.6)); // the dolly in
   c.look.lerp(P, 1 - Math.exp(-dt / 0.15));
   camera.position.copy(c.pos);
@@ -717,7 +719,7 @@ function aimSight(dt, d) {
   if (sight.phase === 'search') {
     const el = sim.t - sight.t0;
     const s = Math.min(el / sight.searchTime, 1);
-    if (s >= 1) sight.phase = 'lock';
+    if (s >= 1) { sight.phase = 'lock'; if (!cine) showLock(d.id); } // (in a launch shot the lock sign comes from the launcher's own lock)
     else { // hunts about the target, the sweeps shrinking, while the lens closes in
       const A = THREE.MathUtils.degToRad(3.4) * (1 - s) * (1 - s);
       _b.crossVectors(_a, UP).normalize(); // to the right of the line of sight
@@ -802,6 +804,91 @@ function updateCamera(dt) {
   fov += (wantFov - fov) * (view === 'sight' ? 1 - Math.exp(-dt / 0.3) : 1);
   setFov(fov);
 }
+
+// --- The radar picture ---------------------------------------------------------------------------------------------------
+// A small square at the bottom right, as big as the map, that always shows the fire-control sight: its own mount (the same
+// rules as the Radar view: it swings onto the current target, hunts about it, then locks and tracks) and a + on the target,
+// whatever the main camera is doing. It is drawn as a second pass of the scene into that square.
+const pipEl = document.createElement('div');
+pipEl.className = 'helm-pip';
+pipEl.innerHTML = '<i class="hp-h"></i><i class="hp-v"></i><i class="hp-box"></i><b class="hp-txt"></b><em>RADAR</em>';
+document.body.appendChild(pipEl);
+const pipTxt = pipEl.querySelector('.hp-txt');
+const pipCam = new THREE.PerspectiveCamera(24, 1, 0.3, 30000);
+const pipSt = { id: null, phase: 'slew', t0: 0, omega: 0, aim: new THREE.Vector3(1, 0.06, 0), fresh: true };
+let pipFov = 24;
+const pipV3 = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+function updatePip(dt) {
+  const [pa, pb, pc, pd] = pipV3;
+  ship.group.localToWorld(pipCam.position.copy(DIRECTOR_EYE));
+  const d = sim.target && sim.target.alive ? sim.target : null;
+  if (pipSt.fresh) { pipSt.aim.set(Math.cos(sim.psi), 0.06, Math.sin(sim.psi)).normalize(); pipSt.fresh = false; }
+  if (!d) { // nothing to look at: the mount rests along the bow
+    pipSt.id = null;
+    pipSt.phase = 'slew';
+    pipSt.aim.lerp(pa.set(Math.cos(sim.psi), 0.06, Math.sin(sim.psi)).normalize(), 1 - Math.exp(-dt / 0.4)).normalize();
+    pipFov += (SIGHT_WIDE - pipFov) * (1 - Math.exp(-dt / 0.3));
+    pipCam.lookAt(pb.copy(pipCam.position).add(pipSt.aim));
+    pipEl.classList.remove('lock');
+    pipEl.classList.add('searching');
+    pipTxt.textContent = 'no target';
+    return;
+  }
+  pa.subVectors(d.pos, pipCam.position);
+  const r = pa.length();
+  pa.divideScalar(r || 1);
+  if (pipSt.id !== d.id) { pipSt.id = d.id; pipSt.phase = 'slew'; }
+  const fovTrack = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(22 / r)), 1.2, 30);
+  let cmd = pa;
+  let fovWant = SIGHT_WIDE;
+  if (pipSt.phase === 'search') {
+    const el = sim.t - pipSt.t0;
+    const s = Math.min(el / SIGHT_SEARCH, 1);
+    if (s >= 1) pipSt.phase = 'lock';
+    else {
+      const A = THREE.MathUtils.degToRad(3.4) * (1 - s) * (1 - s);
+      pb.crossVectors(pa, UP).normalize();
+      pc.crossVectors(pb, pa);
+      cmd = pd.copy(pa).addScaledVector(pb, A * Math.sin(el * 5.2 + 0.7)).addScaledVector(pc, A * 0.6 * Math.sin(el * 7.9 + 1.9)).normalize();
+      fovWant = THREE.MathUtils.lerp(SIGHT_WIDE, fovTrack, s * s * (3 - 2 * s));
+    }
+  }
+  if (pipSt.phase === 'lock') fovWant = fovTrack;
+  const e = pipSt.aim.angleTo(cmd);
+  pipSt.omega += (Math.min(SIGHT_RATE, e * 9) - pipSt.omega) * (1 - Math.exp(-dt / 0.12));
+  if (e > 1e-5) pipSt.aim.lerp(cmd, Math.min(pipSt.omega * dt, e) / e).normalize();
+  const off = pipSt.aim.angleTo(pa);
+  if (pipSt.phase === 'slew' && off < THREE.MathUtils.degToRad(1.5)) { pipSt.phase = 'search'; pipSt.t0 = sim.t; }
+  else if (pipSt.phase === 'lock' && off > THREE.MathUtils.degToRad(3.5)) pipSt.phase = 'slew';
+  pipCam.lookAt(pb.copy(pipCam.position).add(pipSt.aim));
+  pipFov += (fovWant - pipFov) * (1 - Math.exp(-dt / 0.15));
+  const found = pipSt.phase === 'lock';
+  pipEl.classList.toggle('lock', found);
+  pipEl.classList.toggle('searching', !found);
+  pipTxt.textContent = found ? `${d.name} · ${kmText(r)}` : `${d.name} · searching…`;
+}
+const pipRect = { x: 0, y: 0, w: 0, h: 0 };
+function renderPip() {
+  const r = pipEl.getBoundingClientRect();
+  if (r.width < 8) return;
+  pipRect.x = r.left; pipRect.y = window.innerHeight - r.bottom; pipRect.w = r.width; pipRect.h = r.height;
+  pipCam.fov = pipFov;
+  pipCam.aspect = 1;
+  pipCam.updateProjectionMatrix();
+  const keepScale = pointScale.value;
+  pointScale.value = (r.height * renderer.getPixelRatio()) / (2 * Math.tan(THREE.MathUtils.degToRad(pipFov / 2)));
+  const auto = renderer.shadowMap.autoUpdate;
+  renderer.shadowMap.autoUpdate = false;
+  renderer.setScissorTest(true);
+  renderer.setViewport(pipRect.x, pipRect.y, pipRect.w, pipRect.h);
+  renderer.setScissor(pipRect.x, pipRect.y, pipRect.w, pipRect.h);
+  renderer.render(scene, pipCam);
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+  renderer.shadowMap.autoUpdate = auto;
+  pointScale.value = keepScale;
+}
+
 let behindYaw = 0;
 let sightZoom = 1;
 // The fire-control director's mount (see updateCamera): its aim, its turning speed and where it is in finding the target.
@@ -1101,6 +1188,7 @@ renderer.setAnimationLoop((now) => {
   handleEvents();
   applyState(dt);
   updateCamera(dt);
+  updatePip(dt);
   audio.update(sim, camera, dt);
   env.follow(camera.position);
   env.setShadowFocus(_b.set(sim.x, 0, sim.z), 90);
@@ -1120,6 +1208,7 @@ renderer.setAnimationLoop((now) => {
   if (keys !== lastKeys) { keysEl.innerHTML = keys; lastKeys = keys; }
   if (!banner.hidden && performance.now() > bannerUntil) banner.hidden = true;
   renderer.render(scene, camera);
+  renderPip();
   labels.render(scene, camera);
   if (frames++ === 0) loadingEl?.remove();
 });
