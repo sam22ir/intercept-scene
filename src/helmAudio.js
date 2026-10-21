@@ -19,7 +19,9 @@ import { GUN_MOUNTS, GUN_SPIN } from './helm.js';
 const SOUND_SPEED = 340;
 const { smoothstep, clamp } = THREE.MathUtils;
 const att = (d, ref) => ref / (ref + d);
-const doppler = (vr) => clamp(SOUND_SPEED / (SOUND_SPEED + vr), 0.5, 2);
+// The pitch shift of a source moving relative to the listener (the ship, not the camera): softened to half and held within a
+// few semitones, because an engine that swoops a whole octave as the camera flies past sounds like a squeal, not a Doppler.
+const doppler = (vr) => clamp(SOUND_SPEED / (SOUND_SPEED + vr * 0.5), 0.88, 1.15);
 
 const LOOPS = { hum: 'hum', surf: 'surf', wind: 'wind', drone0: 'engine', drone1: 'engine', motor0: 'motor', motor1: 'motor' };
 const SHOTS = { launch: { level: 1.0, ref: 110 }, hit: { level: 1.4, ref: 160 }, boom: { level: 1.0, ref: 160 }, splash: { level: 0.7, ref: 80 } };
@@ -385,11 +387,11 @@ export function createHelmAudio() {
   });
 
   const set = (param, value) => param.setTargetAtTime(value, ctx.currentTime, 0.03);
-  function place(voice, pos, level, ref) {
+  function place(voice, pos, level, ref, lpMax = 14000) {
     to.subVectors(pos, cam);
     const d = to.length();
     set(voice.g.gain, level * att(d, ref));
-    if (voice.lp) set(voice.lp.frequency, clamp(14000 / (1 + d / 140), 400, 14000));
+    if (voice.lp) set(voice.lp.frequency, clamp(14000 / (1 + d / 140), 400, lpMax));
     if (voice.p) set(voice.p.pan, d > 0.5 ? clamp(to.dot(right) / d, -1, 1) * 0.8 : 0);
   }
   function radial(pos, vel) {
@@ -398,7 +400,8 @@ export function createHelmAudio() {
     const d = to.length();
     return d > 0.5 ? rel.dot(to) / d : 0;
   }
-  const loopRate = (voice, rate) => { if (voice.src) set(voice.src.playbackRate, rate); };
+  // A loop's speed changes slowly (about a tenth of a second), so a quick camera cut or a pass never makes the pitch jump.
+  const loopRate = (voice, rate) => { if (voice.src) voice.src.playbackRate.setTargetAtTime(rate, ctx.currentTime, 0.12); };
 
   function shot(name, pos) {
     const buf = buffers[name];
@@ -411,7 +414,7 @@ export function createHelmAudio() {
     v.g.gain.cancelScheduledValues(ctx.currentTime);
     v.g.gain.value = SHOTS[name].level * att(d, SHOTS[name].ref);
     // The burst is rounded off: a deeper pitch and no harsh highs (the raw recording is brittle and clips).
-    if (v.lp) v.lp.frequency.value = Math.min(clamp(14000 / (1 + d / 140), 400, 14000), name === 'boom' ? 2800 : 14000);
+    if (v.lp) v.lp.frequency.value = Math.min(clamp(14000 / (1 + d / 140), 400, 14000), name === 'boom' ? 2800 : name === 'hit' ? 5500 : 14000);
     if (name === 'boom') node.playbackRate.value = 0.82;
     if (v.p) v.p.pan.value = d > 0.5 ? clamp(to.dot(right) / d, -1, 1) * 0.8 : 0;
     node.connect(v.in);
@@ -478,10 +481,7 @@ export function createHelmAudio() {
     camera.getWorldPosition(cam);
     camera.getWorldQuaternion(camQuat);
     right.set(1, 0, 0).applyQuaternion(camQuat);
-    if (haveCam && dt > 0) {
-      tmp.subVectors(cam, camPrev).divideScalar(dt);
-      if (tmp.length() < 600) camVel.lerp(tmp, 0.2); else camVel.set(0, 0, 0);
-    }
+    camVel.copy(sim.shipVel(tmp)); // the listener is the ship: the camera's flights and cuts do not shift any pitch
     camPrev.copy(cam);
     haveCam = true;
     const live = enabled && ctx.state === 'running' && !globalThis.document?.hidden;
@@ -502,8 +502,8 @@ export function createHelmAudio() {
       const d = drones[i];
       const voice = v[`drone${i}`];
       if (!d) { set(voice.g.gain, 0); continue; }
-      loopRate(voice, (d.phase === 'attack' ? 1.25 : 1.1) * doppler(radial(d.pos, d.vel)));
-      place(voice, d.pos, 0.7, 60);
+      loopRate(voice, (d.phase === 'attack' ? 1.12 : 1.0) * doppler(radial(d.pos, d.vel)));
+      place(voice, d.pos, 0.7, 60, 4200); // the engine's top is rolled off, so a camera right beside it is not shrill
     }
     // The missiles' motors.
     for (let i = 0; i < 2; i++) {
@@ -562,6 +562,7 @@ export function createHelmAudio() {
     setEnabled(on) { enabled = on; if (on) wake(false); },
     get state() { return ctx?.state ?? (failed ? 'unavailable' : 'idle'); },
     get supported() { return !failed; },
+    get droneRate() { return voices?.drone0?.src?.playbackRate.value ?? 1; }, // for checking: the nearest drone engine's playback speed
     get heliSample() { return !!voices?.heli?.parts?.sample; }, // the recorded rotor loop has decoded and replaced the synthesised one
   };
 }
