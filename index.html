@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Intercept scene</title>
+    <title>Simulation</title>
   </head>
   <body>
     <canvas id="scene"></canvas>
@@ -13,13 +13,22 @@
     <div id="chooser" class="chooser" hidden>
       <div class="mm">
         <header class="menu-head">
-          <div class="menu-brand"><span class="dot" aria-hidden="true"></span><b>Intercept</b><span>drone · frigate · missile</span></div>
-          <div class="tabs" role="radiogroup" aria-label="What to do">
-            <button class="tab" role="radio" aria-checked="true" data-tab="watch" title="Replays you can scrub both ways">Watch</button>
-            <button class="tab" role="radio" aria-checked="false" data-tab="play" title="You take the controls">Play</button>
-            <button class="tab" role="radio" aria-checked="false" data-tab="drill" title="Naval exercises run on orders">Drill</button>
-          </div>
+          <div class="menu-brand"><span class="dot" aria-hidden="true"></span><b>Simulation</b><span>drones · frigates · missiles</span></div>
           <p class="menu-hint"><kbd>M</kbd> next mission · <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> variant · <kbd>Enter</kbd> start</p>
+          <div class="tabs" role="radiogroup" aria-label="What to do">
+            <button class="tab" role="radio" aria-checked="true" data-tab="watch" title="Replays you can scrub both ways">
+              <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M4 20 Q20 6 36 20 Q20 34 4 20Z"/><circle cx="20" cy="20" r="5"/></svg>
+              <span class="tab-txt"><b>Watch</b><small>Replays you can scrub both ways</small></span>
+            </button>
+            <button class="tab" role="radio" aria-checked="false" data-tab="play" title="You take the controls">
+              <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="14"/><path d="M20 6 V34 M6 20 H34"/><circle cx="20" cy="20" r="3.5"/></svg>
+              <span class="tab-txt"><b>Play</b><small>You take the controls</small></span>
+            </button>
+            <button class="tab" role="radio" aria-checked="false" data-tab="drill" title="Naval exercises run on orders">
+              <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M6 12 H22 L28 16 L22 20 H6Z"/><path d="M6 26 H22 L28 30 L22 34 H6Z"/></svg>
+              <span class="tab-txt"><b>Drill</b><small>Naval exercises run on orders</small></span>
+            </button>
+          </div>
         </header>
 
         <div class="menu-body">
@@ -181,7 +190,7 @@
 
     <div class="panel topbar" id="topbar">
       <div class="bar-row">
-        <div class="brand"><span class="dot" aria-hidden="true"></span><div><b>Intercept</b><small id="mission-sub"></small></div></div>
+        <div class="brand"><span class="dot" aria-hidden="true"></span><div><b>Simulation</b><small id="mission-sub"></small></div></div>
         <div class="bar-tools" role="group" aria-label="View">
           <button id="btn-home" class="icon" title="Back to the main menu: pick another mission"><svg><use href="#i-home"/></svg><span class="cap">Menu</span></button>
           <button id="btn-director" class="toggle icon active" aria-pressed="true" title="Cinematic: the camera cuts between shots by itself (D)"><svg><use href="#i-director"/></svg><span class="cap">Cinematic</span></button>
