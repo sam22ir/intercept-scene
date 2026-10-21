@@ -237,11 +237,35 @@ describe('each gun has its own dead zone', () => {
     run(sim, 2);
     return sim.guns.map((g) => g.ammo < GUN_ROUNDS);
   };
-  it('astern both fire, abeam only the near gun, and ahead neither (the guns are port, starboard)', () => {
-    assert.deepEqual(fireAt(Math.PI), [true, true]);
+  it('astern one gun (its own side), abeam only the near gun, and ahead neither (the guns are port, starboard)', () => {
+    assert.equal(fireAt(Math.PI).filter(Boolean).length, 1, 'astern: only the gun on its side');
     assert.deepEqual(fireAt(Math.PI / 2), [false, true], 'starboard beam: only the starboard gun');
     assert.deepEqual(fireAt(-Math.PI / 2), [true, false], 'port beam: only the port gun');
     assert.deepEqual(fireAt(0.1), [false, false], 'right ahead: both are blind');
+  });
+  it('two drones, one each side: each gun takes the drone on its own side; with one gun empty the other takes both', () => {
+    const setup = () => {
+      const sim = new HelmSim();
+      sim.nextSpawn = Infinity;
+      const p = sim.spawn({ bearing: sim.psi - Math.PI / 2, range: 1800, alt: 80 });
+      const q = sim.spawn({ bearing: sim.psi + Math.PI / 2, range: 1800, alt: 80 });
+      run(sim, 0.5);
+      p.hp = 999;
+      q.hp = 999;
+      return { sim, p, q };
+    };
+    const a = setup();
+    assert.equal(a.sim.gunTarget(0), a.p, 'the port gun takes the port drone');
+    assert.equal(a.sim.gunTarget(1), a.q, 'the starboard gun takes the starboard drone');
+    a.sim.toggleAutoGuns();
+    run(a.sim, 2);
+    assert.ok(a.sim.guns.every((g) => g.ammo < GUN_ROUNDS), 'both fire');
+    const b = setup();
+    b.q.alive = false;
+    b.p.pos.set(b.sim.x + Math.cos(b.sim.psi - 2.6) * 1800, 80, b.sim.z + Math.sin(b.sim.psi - 2.6) * 1800); // on the port quarter, where both guns can reach
+    assert.equal(b.sim.gunTarget(1), null, 'a port drone only: the starboard gun leaves it to the port gun');
+    b.sim.guns[0].ammo = 0;
+    assert.equal(b.sim.gunTarget(1), b.p, 'the port gun is empty: the starboard gun takes it');
   });
   it('fire only while G is held, stop when it is let go, and fire by themselves in automatic', () => {
     const sim = new HelmSim();

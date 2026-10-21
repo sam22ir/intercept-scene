@@ -5,6 +5,7 @@ import {
 } from '../scenario.js';
 import { Kit, hexa, slab, facePanel, mat, canvasTexture, toMatrix } from './kit.js';
 import { mulberry32 } from '../rng.js';
+import { createHelicopter } from './helicopter.js';
 
 // Stealth frigate, ~122 m (C28A style, pennant 920 or 921 by variant). Bow along +X, built in
 // the ship frame; main moves `group` along with shipPos(t).
@@ -351,7 +352,8 @@ function raft(kit, white, metal, x, y, z) {
 
 // `ensign` picks the stern flag and hull tint: 'alg' (the default) or 'rus' (the second ship of the
 // maneuvers mission); `crew: false` leaves the deck crew out (the ship duel, where they stand in the gun's way).
-export function createShip({ ensign = 'alg', crew = true } = {}) {
+// `catapult: false` leaves the helideck bare, and `helicopter: true` parks a helicopter on it (the Solo Air Defense mission).
+export function createShip({ ensign = 'alg', crew = true, catapult = true, helicopter = false } = {}) {
   const group = new THREE.Group();
   group.name = 'ship';
 
@@ -923,7 +925,9 @@ export function createShip({ ensign = 'alg', crew = true } = {}) {
   cradle.add(sk.build());
   cradle.rotation.z = PITCH;
   rail.add(cradle);
-  group.add(rail);
+  if (catapult) group.add(rail);
+  const heli = helicopter ? createHelicopter() : null; // on the pad's ring; every so often it flies a circuit (update)
+  if (heli) group.add(heli);
 
   // Ensign on the stern staff, waving as a function of t.
   const flagGeo = new THREE.PlaneGeometry(2.2, 1.4, 16, 6);
@@ -1010,6 +1014,7 @@ export function createShip({ ensign = 'alg', crew = true } = {}) {
     // (The third argument, a second round's launch time, is accepted and unused: only one cell has a cap that blows off.)
     update(t, tLaunch, _tLaunch2 = Infinity, opts = null) {
       radar.rotation.y = t * 2.1;
+      if (heli && opts?.heli) heli.userData.update(opts.heli); // the sim's helicopter (heliFlight.js)
       const { yaw, pitch } = opts?.aim ?? launcherAim(t);
       yawGroup.rotation.y = yaw;
       pitchGroup.rotation.z = pitch;

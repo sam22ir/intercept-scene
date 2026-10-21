@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { createEnvironment, ridgeAngle } from './environment.js';
 import { createShip } from './models/ship.js';
+import { createBridge } from './models/bridge.js';
 import { createPlane } from './models/plane.js';
 import { createMissile } from './models/missile.js';
 import { createGatling } from './models/gatling.js';
@@ -47,12 +48,15 @@ controls.maxPolarAngle = Math.PI * 0.495;
 controls.enabled = false;
 const rig = new CameraRig(camera, controls);
 
-const env = createEnvironment(renderer, scene, { calm: true });
+const env = createEnvironment(renderer, scene, { calm: true, tallMountains: true });
 env.setShadowSize(1024);
 env.ocean.material.uniforms.uShipX.value = 1e7; // the shader's straight-line wake: this ship turns, she has her own
-const ship = createShip();
+const ship = createShip({ catapult: false, helicopter: true });
 ship.group.rotation.order = 'YXZ'; // heading, then heel, then trim
 scene.add(ship.group);
+const bridge = createBridge(); // the wheelhouse's inside, shown only in the bridge view
+bridge.group.visible = false;
+ship.group.add(bridge.group);
 const fx = createLiveFx(scene);
 // The two 30 mm rotary guns on the aft deckhouse roof, and their tracers (a pool of short lines flying on a ballistic path).
 const gatlings = GUN_MOUNTS.map((m) => {
@@ -253,7 +257,7 @@ function applyState(dt) {
   ship.group.position.set(sim.x, 0.12 * Math.sin(t * 0.61), sim.z);
   ship.group.rotation.set(roll, -sim.psi, pitch);
   ship.group.updateMatrixWorld(true);
-  ship.update(t, Infinity, Infinity, { aim: sim.launcher, cradleT: 0 });
+  ship.update(t, Infinity, Infinity, { aim: sim.launcher, cradleT: 0, heli: sim.heli.state });
   env.ocean.material.uniforms.uTime.value = t;
   wake.update({ t: sim.t, x: sim.x, z: sim.z, psi: sim.psi, r: sim.r, u: sim.u });
 
@@ -786,6 +790,11 @@ function wreckShot(dt) {
 }
 
 function updateCamera(dt) {
+  bridge.group.visible = view === 'bridge';
+  // Looking straight down from high up nothing is near the camera, so the near plane moves out with the height: the depth buffer then
+  // keeps its precision across the 10 km to the land (otherwise the shore flickers where the land dips under the sea).
+  const wantNear = view === 'above' ? Math.min(Math.max(aboveH * 0.2, 0.3), 400) : 0.3;
+  if (camera.near !== wantNear) { camera.near = wantNear; camera.updateProjectionMatrix(); }
   if (!cine && cineOn && view !== 'orbit' && !sim.out) { // a drone on its attack run really closing in: its own short shot
     const a = sim.drones.find((x) => x.alive && x.phase === 'attack' && Math.hypot(x.pos.x - sim.x, x.pos.z - sim.z) < DRONE_CAM_RANGE);
     if (a) startCine(null, a.id);
@@ -805,6 +814,7 @@ function updateCamera(dt) {
     controls.update();
     if (camera.position.y < 2) camera.position.y = 2;
   } else if (view === 'bridge') {
+    bridge.update(THREE.MathUtils.clamp(sim.rudder / RUDDER_MAX, -1, 1), sim.order / (TELEGRAPH.length - 1));
     ship.group.localToWorld(camera.position.copy(BRIDGE_EYE));
     const yaw = THREE.MathUtils.degToRad(lookYaw);
     _a.set(Math.cos(yaw) * Math.cos(lookPitch), Math.sin(lookPitch), Math.sin(yaw) * Math.cos(lookPitch)).transformDirection(ship.group.matrixWorld);
@@ -1032,7 +1042,7 @@ window.addEventListener('pointermove', (e) => {
 canvas.addEventListener('dblclick', () => { lookYaw = 0; lookPitch = -0.03; behindYaw = 0; behindDist = BEHIND_DIST; aboveH = 520; sightZoom = 1; });
 canvas.addEventListener('wheel', (e) => {
   if (view === 'behind') behindDist = THREE.MathUtils.clamp(behindDist * Math.exp(e.deltaY * 0.001), 60, 1200);
-  else if (view === 'above') aboveH = THREE.MathUtils.clamp(aboveH * Math.exp(e.deltaY * 0.001), 150, 4000);
+  else if (view === 'above') aboveH = THREE.MathUtils.clamp(aboveH * Math.exp(e.deltaY * 0.001), 150, 24000); // high enough to see the land, 5 km and more away
   else if (view === 'sight') sightZoom = THREE.MathUtils.clamp(sightZoom * Math.exp(e.deltaY * 0.001), 0.3, 4);
 }, { passive: true });
 
@@ -1295,7 +1305,7 @@ function keysHtml() {
   const t = sim.target;
   const ready = t && !sim.engageable(t) && !sim.shot && sim.cellsLeft > 0;
   return `${sim.shot?.hold ? `${k('M', 'stand down')}${k('F', 'launch', sim.shot.locked)}` : k('M', 'ready missile', ready)}${k('G', 'guns (hold)', input.gun === 1)}${k('A', 'auto guns', sim.gunsAuto)}`
-    + `${k('D', 'add drone')}${k('Tab', 'target', sim.detected.length > 1)}${k('1–7', 'views')}${k('V', 'next view')}`;
+    + `${k('E', sim.heli.action === 'takeoff' ? 'heli take off' : sim.heli.action === 'land' ? 'heli land' : 'heli landing', sim.heli.action === null)}${k('D', 'add drone')}${k('Tab', 'target', sim.detected.length > 1)}${k('1–7', 'views')}${k('V', 'next view')}`;
 }
 
 // --- Interface: the top bar, menu, keys sheet, sound, map ---------------------------------------------------------------
@@ -1400,6 +1410,7 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>↑</kbd> <kbd>↓</kbd>', 'Engine telegraph, one step: slow astern, stop, dead slow, slow, half, full, flank'],
   ['<kbd>M</kbd>', `Make a missile ready on the target: the launcher turns and locks, then waits (${CELLS} cells; ${kmText(MISSILE_RANGE)} at most; ahead and abeam only). Press M again to stand it down`],
   ['<kbd>F</kbd>', 'Launch the ready missile (with none ready, it readies and launches one)'],
+  ['<kbd>E</kbd>', 'The helicopter: take off, or land (only on a steady course: no rudder, no turn)'],
   ['<kbd>Tab</kbd>', 'Next target'],
   ['<kbd>1</kbd> to <kbd>6</kbd>', 'Bridge, behind, above, missile, radar, orbit'],
   ['<kbd>V</kbd>', 'Next view · drag looks round, the wheel zooms, double click resets'],
@@ -1449,6 +1460,7 @@ window.addEventListener('keydown', (e) => {
     case 'f': sim.launchReady(); break; // launch the ready missile
     case 'a': sim.toggleAutoGuns(); break;
     case 'd': sim.summon(); break; // send in a drone
+    case 'e': say(sim.heli.request(), ''); break; // the helicopter: take off, or land
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
     case '1': case '2': case '3': case '4': case '5': case '6': case '7': setView(VIEWS[Number(key) - 1]); break;
@@ -1538,4 +1550,4 @@ renderer.setAnimationLoop((now) => {
 
 setView('behind', true);
 say('Half ahead on 000. ← → rudder, ↑ ↓ telegraph: watch the radar for drones', '', 5200);
-window.__helm = { sim, camera, controls, rig, renderer, scene, env, fx, ship: ship.group, setView, restart, get view() { return view; }, get cine() { return cine; } };
+window.__helm = { sim, audio, camera, controls, rig, renderer, scene, env, fx, ship: ship.group, setView, restart, get view() { return view; }, get cine() { return cine; } };

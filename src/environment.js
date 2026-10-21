@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { mulberry32 } from './rng.js';
+import { Kit } from './models/kit.js';
 
 const SUN_ELEVATION = 24; // degrees
 const SUN_AZIMUTH = 215;
@@ -13,7 +14,7 @@ const CALM_ZENITH = new THREE.Color(0, 0.16, 1.4);
 
 // `calm` is the drill's look: a deeper, quieter sea and a bluer sky, so ships and readouts stand out (flatter
 // distant waves with no moire stripes, less sky reflection and glitter).
-export function createEnvironment(renderer, scene, { calm = false } = {}) {
+export function createEnvironment(renderer, scene, { calm = false, tallMountains = false } = {}) {
   const horizon = calm ? CALM_HORIZON : HORIZON;
   const sunDir = new THREE.Vector3().setFromSphericalCoords(
     1, THREE.MathUtils.degToRad(90 - SUN_ELEVATION), THREE.MathUtils.degToRad(SUN_AZIMUTH),
@@ -82,7 +83,7 @@ export function createEnvironment(renderer, scene, { calm = false } = {}) {
   const ocean = createOcean(sunDir, calm, horizon);
   scene.add(ocean);
   const clouds = createClouds(calm);
-  const mountains = calm ? createMountains() : null;
+  const mountains = calm ? (tallMountains ? createTallMountains() : createMountains()) : null;
   if (mountains) scene.add(mountains);
   scene.add(clouds);
   const CLOUD_PERIOD = 26000; // the cloud field repeats this often, so it never runs out under a far-flying camera
@@ -359,99 +360,348 @@ function createClouds(calm = false) {
   return group;
 }
 
-// Distant mountains for the drill: three ranges on the horizon in an arc, each one mesh of flat-coloured triangles (no textures, no
-// lighting): jagged ridged-noise peaks, lit a little on the side that faces the sun, with soft spurs running down their slopes, and bluer and hazier toward the sea and the
-// farther away they are. Static, far enough that moving the camera barely shifts them.
+// Solo Air Defense only (`tallMountains`): a range of real terrain on the horizon, a heightfield seen from the sea. Ridged noise (warped,
+// so the ridges bend and fork like real ones) gives peaks, spurs and valleys; the shore is irregular, with capes and bays, and the land
+// rises from it in foothills to the high ranges behind. Each vertex is lit by the slope it is on (the sun from the left), coloured by
+// height and steepness (green scrub low down, dry slopes, then bare rock higher up and wherever it is steep) and veiled in haze that
+// thickens with distance and clears toward the tops. One mesh of about 90,000 vertices, no textures, no lights. Static, far enough
+// that moving the camera barely shifts it. The ridge line that hides far drones (`ridgeAngle`) comes from the same heightfield.
 const MOUNT_ARC = [-0.3, 3.4]; // radians: an arc of about 210 degrees
-const MOUNT_LAYERS = (() => {
-  const rng = mulberry32(31);
-  return [
-    { r: 13000, h: 1150, col: [0.36, 0.5, 0.74], haze: 0.22, n: 900 },
-    { r: 10600, h: 850, col: [0.2, 0.32, 0.54], haze: 0.12, n: 900 },
-    { r: 8800, h: 580, col: [0.1, 0.2, 0.34], haze: 0.04, n: 900 },
-  ].map((L) => ({ ...L, p: [rng() * 100, rng() * 100, rng() * 100] }));
-})();
-const hash1 = (i) => { const s = Math.sin(i * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
-function vnoise(x) { // smooth value noise in 0..1
-  const i = Math.floor(x);
-  const f = x - i;
-  const u = f * f * (3 - 2 * f);
-  return hash1(i) * (1 - u) + hash1(i + 1) * u;
+const T_COLS = 900;
+const T_ROWS = 80;
+const T_R0 = 4800; // m: the nearest the land comes (so the radar map's 6 km range reaches the shore)
+const T_R1 = 17500; // m: the far edge of it
+const T_H = 2100; // m: roughly the highest peaks
+const hash2 = (ix, iz) => { // an integer hash, 0 to 1 (much cheaper than a sine, and this runs millions of times at start-up)
+  let h = Math.imul(ix, 374761393) + Math.imul(iz, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+function vnoise2(x, z) { // smooth value noise, 0 to 1
+  const ix = Math.floor(x);
+  const iz = Math.floor(z);
+  const fx = x - ix;
+  const fz = z - iz;
+  const ux = fx * fx * fx * (fx * (fx * 6 - 15) + 10);
+  const uz = fz * fz * fz * (fz * (fz * 6 - 15) + 10);
+  const a = hash2(ix, iz);
+  const b = hash2(ix + 1, iz);
+  const c = hash2(ix, iz + 1);
+  const d = hash2(ix + 1, iz + 1);
+  return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz;
 }
-function ridged(x, seed) { // sharp-crested peaks: 1 - |noise| squared, four octaves
+function fbm(x, z, oct, gain = 0.5) {
   let s = 0;
   let amp = 0.5;
   let fr = 1;
   let norm = 0;
-  for (let o = 0; o < 3; o++) {
-    const n = 1 - Math.abs(2 * vnoise(x * fr + seed + o * 5.1) - 1);
-    s += amp * n * n;
+  for (let o = 0; o < oct; o++) {
+    s += amp * vnoise2(x * fr + o * 17.3, z * fr - o * 9.1);
     norm += amp;
-    amp *= 0.5;
-    fr *= 2.15;
+    amp *= gain;
+    fr *= 2.03;
   }
   return s / norm;
 }
-// The height of a ridge line at its fraction t (0 to 1) along the arc.
-function ridgeTop(L, t) {
-  const a = MOUNT_ARC[0] + (MOUNT_ARC[1] - MOUNT_ARC[0]) * t;
-  const massif = 0.3 + 0.7 * vnoise(a * 2.6 + L.p[0]); // which stretches stand high
-  const peaks = 0.28 + 0.72 * ridged(a * 8 + L.p[1], L.p[1]);
-  const env = Math.sin(Math.PI * t) ** 0.5; // the range tapers into the sea at both ends
-  return L.h * Math.min(1, massif * peaks * 1.85) * env;
+function ridges(x, z, oct) { // sharp-crested ridges: 1 - |2n - 1|, squared, with each octave weighted by the one below it
+  let s = 0;
+  let amp = 0.5;
+  let fr = 1;
+  let w = 1;
+  let norm = 0;
+  for (let o = 0; o < oct; o++) {
+    const n = 1 - Math.abs(2 * vnoise2(x * fr + o * 31.7, z * fr + o * 5.3) - 1);
+    const v = n * n * w;
+    s += amp * v;
+    norm += amp;
+    w = Math.min(1, Math.max(0.15, v * 1.6));
+    amp *= 0.5;
+    fr *= 2.07;
+  }
+  return s / norm;
 }
-
-// The highest ridge in a direction seen from a point eyeY up (radians above the horizontal; -Infinity where there is none):
-// (dx, dz) is the direction on the sea, x north and z east as in the scene. Used to hide what lies behind the mountains.
-export function ridgeAngle(dx, dz, eyeY = 0) {
+const sstep = (a, b, x) => { const u = Math.min(1, Math.max(0, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
+// The shore's distance from the ship at angle a, and the height of the land at (a, r) (below zero under the sea).
+const endTaper = (a) => sstep(MOUNT_ARC[0], MOUNT_ARC[0] + 0.8, a) * sstep(MOUNT_ARC[1], MOUNT_ARC[1] - 0.8, a); // 0 at the ends of the arc, 1 along most of it
+const CITY_A = 0.52; // the town's bearing (radians from north toward east): ahead and to starboard of a ship heading north
+const coastR = (a) => T_R0 + 1500 * fbm(a * 3.2 + 4, 7.7, 3) + 700 * vnoise2(a * 11, 3.1) + 5500 * (1 - endTaper(a)) ** 1.5; // the shore draws back toward the ends
+const CITY = (() => { const rc = coastR(CITY_A) + 900; return { a: CITY_A, x: Math.cos(CITY_A) * rc, z: Math.sin(CITY_A) * rc }; })(); // the town's middle, a little inland
+function terrainH(a, r) {
+  const x = Math.cos(a) * r * 0.00011;
+  const z = Math.sin(a) * r * 0.00011;
+  const wx = x + 0.55 * (fbm(x * 1.7 + 11, z * 1.7, 3) - 0.5); // the warp bends the ridges
+  const wz = z + 0.55 * (fbm(x * 1.7, z * 1.7 + 23, 3) - 0.5);
+  const massif = 0.28 + 0.72 * fbm(x * 0.55 + 3.3, z * 0.55 + 8.1, 3); // which parts stand high
+  const crest = 0.18 + 0.82 * ridges(wx * 2.4, wz * 2.4, 6);
+  const rough = 0.04 * (fbm(x * 9, z * 9, 3) - 0.5); // the small stuff
+  const inland = sstep(0, 5200, r - coastR(a) - 500); // a clean beach first, then foothills, then the range
+  const aEnds = endTaper(a);
+  const outer = 1 - 0.55 * sstep(13500, T_R1, r);
+  let h = T_H * massif * crest * inland * outer * aEnds ** 1.4 + T_H * rough * inland * aEnds + 12 * sstep(0, 1200, r - coastR(a)); // the 12 m is the beach: one clean rise out of the sea, no noise to flicker across the waterline
+  const px = Math.cos(a) * r;
+  const pz = Math.sin(a) * r;
+  const plain = 1 - sstep(1000, 2400, Math.hypot(px - CITY.x, pz - CITY.z)); // the coastal plain the town stands on
+  if (plain > 0) h += (10 + 2.5 * vnoise2(px * 0.004, pz * 0.004) - h) * plain;
+  return h - 40 * (1 - sstep(0, 700, r - coastR(a))) - 6; // under the sea off the shore
+}
+let terrainMemo = null;
+function terrain() {
+  if (terrainMemo) return terrainMemo;
+  const [A0, A1] = MOUNT_ARC;
+  const rs = Array.from({ length: T_ROWS + 1 }, (_, j) => T_R0 - 600 + (T_R1 - T_R0 + 600) * (j / T_ROWS) ** 1.3);
+  const heights = new Float32Array((T_COLS + 1) * (T_ROWS + 1));
+  const sky = new Float32Array(T_COLS + 1); // the highest angle above the horizontal seen from the radar's height (15 m) in each direction
+  for (let i = 0; i <= T_COLS; i++) {
+    const a = A0 + ((A1 - A0) * i) / T_COLS;
+    let best = -Infinity;
+    for (let j = 0; j <= T_ROWS; j++) {
+      const h = terrainH(a, rs[j]);
+      heights[i * (T_ROWS + 1) + j] = h;
+      best = Math.max(best, Math.atan2(h - 15, rs[j]));
+    }
+    for (let k = 1; k < 60; k++) { // the ridge between the rows can be higher than at them: a finer look along the line of sight
+      const r = T_R0 + ((T_R1 - T_R0) * k) / 60;
+      best = Math.max(best, Math.atan2(terrainH(a, r) - 15, r));
+    }
+    sky[i] = best;
+  }
+  terrainMemo = { rs, heights, sky };
+  return terrainMemo;
+}
+// The highest ridge in a direction as seen from the radar (radians above the horizontal; -Infinity where there is no land): (dx, dz) is
+// the direction on the sea, x north and z east as in the scene. Used to hide what lies behind the mountains.
+// The height of the land at (dx, dz) metres from the ship, x north and z east (-1 over the sea), for the radar map.
+export function landHeightAt(dx, dz) {
+  let a = Math.atan2(dz, dx);
+  if (a < MOUNT_ARC[0]) a += 2 * Math.PI;
+  if (a > MOUNT_ARC[1]) return -1;
+  return terrainH(a, Math.hypot(dx, dz));
+}
+export function ridgeAngle(dx, dz) {
   let a = Math.atan2(dz, dx);
   if (a < MOUNT_ARC[0]) a += 2 * Math.PI;
   if (a > MOUNT_ARC[1]) return -Infinity;
-  const t = (a - MOUNT_ARC[0]) / (MOUNT_ARC[1] - MOUNT_ARC[0]);
-  let best = -Infinity;
-  for (const L of MOUNT_LAYERS) best = Math.max(best, Math.atan2(ridgeTop(L, t) - eyeY, L.r));
-  return best;
+  const f = ((a - MOUNT_ARC[0]) / (MOUNT_ARC[1] - MOUNT_ARC[0])) * T_COLS;
+  const i = Math.min(T_COLS - 1, Math.floor(f));
+  const { sky } = terrain();
+  const t = f - i;
+  const v = sky[i] * (1 - t) + sky[i + 1] * t;
+  return v < 0.0005 ? -Infinity : v;
 }
 
-const ROW_F = [0, 0.28, 0.58, 0.82, 1]; // the rows of vertices between the foot (just under the sea) and the crest, as fractions of the height
-const HAZE = [0.45, 0.62, 0.9]; // the colour the air turns the foot of a range to
+const SUN = [-0.5, 0.62, 0.55]; // toward the sun, in the scene's x (north), y (up), z (east)
+const HAZE = [0.6, 0.76, 0.93]; // the sky at the horizon, as it shows (sRGB)
+// The towns: a coastal town on the flattened plain by the shore (a grid of lots with streets between, flats in the middle) that climbs the
+// slope behind it in terraces, narrower houses laid along the contours and thinning with height, and two villages high on the
+// mountainsides. White, cream and ochre walls, red-tile roofs; lit by the scene's sun like the ships (Lambert), their colours already
+// veiled with a little haze. The layout is computed once (townLayout): the town mesh and the radar map's marks both come from it.
+let townMemo = null;
+function townLayout() {
+  if (townMemo) return townMemo;
+  const rng = mulberry32(77);
+  const out = [];
+  const ca = Math.cos(CITY.a);
+  const sa = Math.sin(CITY.a);
+  const at = (u, v) => [CITY.x + u * -sa + v * ca, CITY.z + u * ca + v * sa]; // u along the shore, v inland
+  const hXZ = (x, z) => terrainH(Math.atan2(z, x), Math.hypot(x, z));
+  const grad = (x, z) => [(hXZ(x + 30, z) - hXZ(x - 30, z)) / 60, (hXZ(x, z + 30) - hXZ(x, z - 30)) / 60];
+  const rotY = -(CITY.a + Math.PI / 2);
+  const place = (x, z, g, w, dp, hh, tall, roofed, slope, gx, gz) => {
+    let yaw = rotY;
+    if (slope > 0.12) yaw = Math.atan2(-gx, -gz); // laid along the contour: the box's long side across the fall line
+    out.push({ x, z, g, w, dp, hh, tall, roofed, yaw, slope });
+  };
+  const lot = 84;
+  // The town proper: the plain and the slope behind it.
+  for (let iu = -16; iu <= 16; iu++) {
+    for (let iv = -6; iv <= 40; iv++) {
+      if (iu % 4 === 0 || iv % 5 === 0) continue; // the streets
+      const u = iu * lot + (rng() - 0.5) * 12;
+      const v = iv * lot + (rng() - 0.5) * 12;
+      const [x, z] = at(u, v);
+      const g = hXZ(x, z);
+      if (g < 5) continue;
+      const [gx, gz] = grad(x, z);
+      const slope = Math.hypot(gx, gz);
+      if (slope > 0.5) continue; // too steep to build on
+      const dCore = Math.hypot(u, (v - 250) * 1.25) / 1250;
+      const dist = Math.hypot(u, v - 250);
+      const core = 0.92 * (1 - 0.85 * Math.min(1, dCore));
+      const hill = 0.6 * (1 - sstep(40, 650, g)) * (1 - sstep(1200, 3600, dist)) * (1 - 0.6 * sstep(0.2, 0.5, slope));
+      if (rng() > Math.max(dCore < 1 ? core : 0, hill)) continue;
+      const tall = dCore < 0.28 && slope < 0.1 && rng() < 0.3;
+      const onHill = slope > 0.1;
+      const w = (onHill ? 30 : 38) + rng() * (onHill ? 20 : 34);
+      const dp = (onHill ? 30 : 38) + rng() * (onHill ? 20 : 34);
+      const hh = tall ? 55 + rng() * 55 : 16 + rng() * 14 * (1.2 - Math.min(1, dCore));
+      place(x, z, g, w, dp, hh, tall, rng() < (onHill ? 0.75 : 0.5), slope, gx, gz);
+    }
+  }
+  // Two villages high on the slopes: the flattest ground between 150 and 450 m up, 1.5 to 6 km behind the shore.
+  for (const va of [1.55, 2.55]) {
+    let best = null;
+    for (let r = coastR(va) + 1500; r < coastR(va) + 6000; r += 120) {
+      for (let da = -0.05; da <= 0.05; da += 0.01) {
+        const x = Math.cos(va + da) * r;
+        const z = Math.sin(va + da) * r;
+        const g = hXZ(x, z);
+        if (g < 150 || g > 450) continue;
+        const [gx, gz] = grad(x, z);
+        const s = Math.hypot(gx, gz);
+        if (!best || s < best.s) best = { x, z, s };
+      }
+    }
+    if (!best) continue;
+    for (let i = 0; i < 90; i++) {
+      const ang = rng() * Math.PI * 2;
+      const rr = Math.sqrt(rng()) * 520;
+      const x = best.x + Math.cos(ang) * rr;
+      const z = best.z + Math.sin(ang) * rr;
+      const g = hXZ(x, z);
+      const [gx, gz] = grad(x, z);
+      const slope = Math.hypot(gx, gz);
+      if (g < 100 || slope > 0.45) continue;
+      place(x, z, g, 30 + rng() * 22, 30 + rng() * 22, 14 + rng() * 12, false, rng() < 0.8, slope, gx, gz);
+    }
+  }
+  townMemo = out;
+  return out;
+}
+// Where the buildings are, metres from the ship (x north, z east) with their size, for the radar map.
+export function townSpots() {
+  return townLayout().map((b) => [b.x, b.z, Math.max(b.w, b.dp)]);
+}
+function createCity() {
+  const hz = 0.16;
+  const veil = (hex) => new THREE.Color(hex).lerp(new THREE.Color(0xa0c4ee), hz);
+  const walls = [0xe8e2d6, 0xdcc9a3, 0xc9a46a, 0xd9b5a0, 0xb9c9d6, 0xe3d9c4].map((c) => new THREE.MeshLambertMaterial({ color: veil(c) }));
+  const roofM = new THREE.MeshLambertMaterial({ color: veil(0xa5503a) });
+  const flatM = new THREE.MeshLambertMaterial({ color: veil(0x8d8f90) });
+  const pierM = new THREE.MeshLambertMaterial({ color: veil(0x55575a) });
+  const whiteM = new THREE.MeshLambertMaterial({ color: veil(0xf4f1ea) });
+  const rng = mulberry32(78);
+  const k = new Kit();
+  for (const b of townLayout()) {
+    const sink = Math.min(1 + b.slope * Math.max(b.w, b.dp) * 0.5, b.hh * 0.4); // set into the slope: the uphill side buried
+    const y = b.g - sink + b.hh / 2;
+    k.add(new THREE.BoxGeometry(b.w, b.hh, b.dp), walls[Math.floor(rng() * walls.length)], { pos: [b.x, y, b.z], rot: [0, b.yaw, 0] });
+    if (b.roofed) k.add(new THREE.BoxGeometry(b.w * 1.06, 5, b.dp * 1.06), roofM, { pos: [b.x, y + b.hh / 2 + 2, b.z], rot: [0, b.yaw, 0] });
+    else k.add(new THREE.BoxGeometry(b.w * 0.96, 1.4, b.dp * 0.96), flatM, { pos: [b.x, y + b.hh / 2 + 0.6, b.z], rot: [0, b.yaw, 0] });
+  }
+  // The pier: out from the shore at u = 320, straight out to sea; and the lighthouse on the point at the town's end.
+  const ca = Math.cos(CITY.a);
+  const sa = Math.sin(CITY.a);
+  const at = (u, v) => [CITY.x + u * -sa + v * ca, CITY.z + u * ca + v * sa];
+  const hAt = (u, v) => { const [x, z] = at(u, v); return terrainH(Math.atan2(z, x), Math.hypot(x, z)); };
+  const rotY = -(CITY.a + Math.PI / 2);
+  let vs = -900;
+  while (vs < 0 && hAt(320, vs) < 3) vs += 10;
+  const [px, pz] = at(320, vs - 150);
+  k.add(new THREE.BoxGeometry(16, 4, 420), pierM, { pos: [px, 3, pz], rot: [0, rotY + Math.PI, 0] });
+  let ve = -900;
+  while (ve < 0 && hAt(-1150, ve) < 3) ve += 10;
+  const [lx, lz] = at(-1150, ve + 40);
+  k.add(new THREE.CylinderGeometry(6, 9, 55, 12), whiteM, { pos: [lx, hAt(-1150, ve + 40) + 26, lz] });
+  k.add(new THREE.CylinderGeometry(7, 7, 6, 12), pierM, { pos: [lx, hAt(-1150, ve + 40) + 58, lz] });
+  const city = k.build({ name: 'city', castShadow: false, receiveShadow: false });
+  city.traverse((o) => { o.frustumCulled = false; o.renderOrder = -1; });
+  return city;
+}
+
+function createTallMountains() {
+  const { rs, heights } = terrain();
+  const [A0, A1] = MOUNT_ARC;
+  const NR = T_ROWS + 1;
+  const n = (T_COLS + 1) * NR;
+  const pos = new Float32Array(n * 3);
+  for (let i = 0; i <= T_COLS; i++) {
+    const a = A0 + ((A1 - A0) * i) / T_COLS;
+    for (let j = 0; j < NR; j++) {
+      const k = i * NR + j;
+      pos[k * 3] = Math.cos(a) * rs[j];
+      pos[k * 3 + 1] = heights[k];
+      pos[k * 3 + 2] = Math.sin(a) * rs[j];
+    }
+  }
+  const idx = new Uint32Array(T_COLS * T_ROWS * 6);
+  let q = 0;
+  for (let i = 0; i < T_COLS; i++) {
+    for (let j = 0; j < T_ROWS; j++) {
+      const p = i * NR + j;
+      idx[q++] = p; idx[q++] = p + NR; idx[q++] = p + 1;
+      idx[q++] = p + 1; idx[q++] = p + NR; idx[q++] = p + NR + 1;
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.computeVertexNormals();
+  const nor = geo.attributes.normal.array;
+  const sl = Math.hypot(...SUN);
+  const col = new Float32Array(n * 3);
+  const mix = (a, b, t) => a + (b - a) * t;
+  const GREEN = [0.2, 0.29, 0.15];
+  const DRY = [0.45, 0.38, 0.27];
+  const ROCK = [0.5, 0.47, 0.44];
+  for (let k = 0; k < n; k++) {
+    const h = pos[k * 3 + 1];
+    const ny = nor[k * 3 + 1];
+    const slope = 1 - ny;
+    const d = Math.hypot(pos[k * 3], pos[k * 3 + 2]);
+    const grain = 0.9 + 0.2 * vnoise2(pos[k * 3] * 0.006, pos[k * 3 + 2] * 0.006) + 0.08 * (vnoise2(pos[k * 3] * 0.03, pos[k * 3 + 2] * 0.03) - 0.5);
+    const veg = (1 - sstep(250, 950, h)) * (1 - 0.85 * sstep(0.3, 0.6, slope));
+    const rock = Math.min(1, 0.75 * sstep(0.4, 0.78, slope) + 0.55 * sstep(850, 1500, h));
+    const dif = Math.max(0, (nor[k * 3] * SUN[0] + nor[k * 3 + 1] * SUN[1] + nor[k * 3 + 2] * SUN[2]) / sl);
+    const shade = (0.3 + 0.92 * dif) * (0.86 + 0.24 * ny);
+    const haze = Math.min(1, (1 - Math.exp(-((d / 21000) ** 1.2))) * (1 - 0.32 * sstep(0, 1400, h)));
+    for (let c = 0; c < 3; c++) {
+      let v = mix(mix(DRY[c], GREEN[c], veg), ROCK[c], rock) * grain * shade;
+      v = mix(v, HAZE[c], haze);
+      col[k * 3 + c] = Math.min(1, v) ** 2.2; // sRGB to the linear values the renderer expects
+    }
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, toneMapped: false, side: THREE.DoubleSide }));
+  mesh.name = 'mountains';
+  mesh.frustumCulled = false;
+  mesh.renderOrder = -1; // behind the sea and the ships
+  const group = new THREE.Group();
+  group.name = 'mountains';
+  group.add(mesh, createCity());
+  return group;
+}
+
+// Distant mountains for the drill and the formations: three ridge lines on the horizon in an arc, each a strip of flat-coloured
+// triangles (about 1,500 in all, one mesh, no textures, no lighting), paler the farther away so the air seems to thicken.
 function createMountains() {
-  const A0 = MOUNT_ARC[0];
-  const A1 = MOUNT_ARC[1];
+  const rng = mulberry32(31);
+  const layers = [
+    { r: 13000, h: 620, col: [0.5, 0.6, 0.72], n: 260 },
+    { r: 10600, h: 470, col: [0.34, 0.45, 0.58], n: 260 },
+    { r: 8800, h: 330, col: [0.2, 0.3, 0.42], n: 260 },
+  ];
+  const A0 = -0.3;
+  const A1 = 3.4; // radians: an arc of about 210 degrees
   const pos = [];
   const col = [];
   const idx = [];
-  const R = ROW_F.length;
-  for (const L of MOUNT_LAYERS) {
+  for (const L of layers) {
+    const p = [rng() * 6.28, rng() * 6.28, rng() * 6.28];
     const base = pos.length / 3;
     for (let i = 0; i <= L.n; i++) {
       const t = i / L.n;
       const a = A0 + (A1 - A0) * t;
-      const top = ridgeTop(L, t);
-      // The slope of the crest here: the side facing the sun (toward smaller angles) is lit, the other in shade.
-      const dt = 1 / L.n;
-      const slope = (ridgeTop(L, Math.min(1, t + dt)) - ridgeTop(L, Math.max(0, t - dt))) / (2 * dt * (A1 - A0) * L.r);
-      const lit = 0.88 + 0.24 * Math.min(1, Math.max(0, 0.5 + slope * 1.6));
+      const n = 0.5 * Math.sin(a * 7 + p[0]) + 0.3 * Math.sin(a * 17 + p[1]) + 0.2 * Math.sin(a * 41 + p[2]);
+      const env = Math.sin(Math.PI * t) ** 0.6; // the range tapers into the sea at both ends
+      const top = L.h * (0.3 + 0.7 * (0.5 + 0.5 * n)) * env;
       const x = Math.cos(a) * L.r;
       const z = Math.sin(a) * L.r;
-      for (let k = 0; k < R; k++) {
-        const f = ROW_F[k];
-        pos.push(x, -40 + (top + 40) * f, z);
-        const spur = 0.9 + 0.2 * vnoise(a * 55 + f * 7 + L.p[2]); // soft spurs running down the slopes
-        const hz = Math.min(1, L.haze + 0.6 * (1 - f) ** 2.2);
-        for (let c = 0; c < 3; c++) {
-          let v = L.col[c] * lit * spur;
-          v += (HAZE[c] - v) * hz;
-          col.push(v);
-        }
-      }
+      pos.push(x, -40, z, x, top, z);
+      col.push(L.col[0] * 0.8, L.col[1] * 0.8, L.col[2] * 0.85, L.col[0] * 1.1, L.col[1] * 1.1, L.col[2] * 1.08);
     }
     for (let i = 0; i < L.n; i++) {
-      for (let k = 0; k < R - 1; k++) {
-        const p = base + i * R + k;
-        const q = p + R;
-        idx.push(p, q, p + 1, p + 1, q, q + 1);
-      }
+      const k = base + i * 2;
+      idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3);
     }
   }
   const geo = new THREE.BufferGeometry();

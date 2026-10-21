@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { SOUNDS } from './audioAssets.js';
 import { HIT } from './helmHit.js';
+import { HELI_LOOP } from './helmHeli.js';
 import { GUN_MOUNTS, GUN_SPIN } from './helm.js';
 
 // Sound for the Solo Air Defense mission, driven live from the simulation (helm.js) like the manual flight's: the
@@ -8,6 +9,9 @@ import { GUN_MOUNTS, GUN_SPIN } from './helm.js';
 // distance, distant sounds darken, everything pans, and moving sources are Doppler-shifted.
 //  beds      the ship's hum and the surf along her side (both with her speed), the wind; the two nearest drones'
 //            engines; the motor of each missile in flight.
+//            the deck helicopter: an ElevenLabs recording of a helicopter's rotor chop (helmHeli.js) played at the rotor's speed (until it
+//            has decoded, a synthesised blade-slap loop), with a little turbine whine and tail rotor under it, from where she is,
+//            Doppler-shifted, loud while the rotor turns.
 //  one-shots the missile leaving its cell, the warhead, splashes.
 //  synth     the ship's own signals: a two-tone chime for a new radar contact, a rapid alarm for a drone closing
 //            or passing, a klaxon while one is on its attack run, and the telegraph's bell.
@@ -15,7 +19,9 @@ import { GUN_MOUNTS, GUN_SPIN } from './helm.js';
 const SOUND_SPEED = 340;
 const { smoothstep, clamp } = THREE.MathUtils;
 const att = (d, ref) => ref / (ref + d);
-const doppler = (vr) => clamp(SOUND_SPEED / (SOUND_SPEED + vr), 0.5, 2);
+// The pitch shift of a source moving relative to the listener (the ship, not the camera): softened to half and held within a
+// few semitones, because an engine that swoops a whole octave as the camera flies past sounds like a squeal, not a Doppler.
+const doppler = (vr) => clamp(SOUND_SPEED / (SOUND_SPEED + vr * 0.5), 0.88, 1.15);
 
 const LOOPS = { hum: 'hum', surf: 'surf', wind: 'wind', drone0: 'engine', drone1: 'engine', motor0: 'motor', motor1: 'motor' };
 const SHOTS = { launch: { level: 1.0, ref: 110 }, hit: { level: 1.4, ref: 160 }, boom: { level: 1.0, ref: 160 }, splash: { level: 0.7, ref: 80 } };
@@ -36,6 +42,11 @@ export function createHelmAudio() {
   const to = new THREE.Vector3();
   const rel = new THREE.Vector3();
   const tmp = new THREE.Vector3();
+  const heliPos = new THREE.Vector3();
+  const heliP = new THREE.Vector3();
+  const heliPrev = new THREE.Vector3();
+  const heliV = new THREE.Vector3();
+  let haveHeli = false;
   let haveCam = false;
   let klaxonNext = 0;
 
@@ -70,7 +81,7 @@ export function createHelmAudio() {
     comp.connect(ctx.destination);
     voices = {};
     for (const name of [...Object.keys(LOOPS), ...Object.keys(SHOTS)]) voices[name] = chain(name !== 'wind');
-    for (const name of ['gun0', 'gun1', 'spin0', 'spin1']) voices[name] = chain(true);
+    for (const name of ['gun0', 'gun1', 'spin0', 'spin1', 'heli']) voices[name] = chain(true);
     voices.signal = chain(false); // the ship's alarms sound on the bridge, where the listener is
   }
   function startLoop(sample) {
@@ -200,8 +211,159 @@ export function createHelmAudio() {
       voices[name].osc = o;
     }
   }
+  // The helicopter. The rotor is one pre-rendered loop of four turns of a four-blade rotor (16 blade slaps, 4.8 turns a second at
+  // full speed), each slap a low "whop" (a thump falling from about 95 to 45 Hz and a dull burst of low noise), a short sharp crack
+  // on top of it and a whoosh of air, every one a little different in strength and timing; it is played at a speed that follows
+  // the rotor, so the beat and the pitch fall together as it spins down, as a real one's do. Under it: the turbine's whine and its
+  // exhaust rumble, and the tail rotor's buzz, each following the rotor speed too.
+  function heliBuffer() {
+    const sr = ctx.sampleRate;
+    const n = Math.round((sr * 4) / 4.8);
+    const buf = ctx.createBuffer(1, n, sr);
+    const d = buf.getChannelData(0);
+    const slaps = 16;
+    const gap = n / slaps;
+    const blade = [1, 0.88, 1.06, 0.94]; // the blades are never quite alike
+    let brown = 0;
+    for (let k = 0; k < slaps; k++) {
+      const at = Math.floor(k * gap + (Math.random() - 0.5) * 0.003 * sr);
+      const amp = blade[k % 4] * (0.88 + Math.random() * 0.24);
+      const len = Math.floor(sr * 0.12);
+      let ph = 0;
+      let lp = 0;
+      for (let i = 0; i < len; i++) {
+        const t = i / sr;
+        ph += (2 * Math.PI * (95 - 50 * Math.min(1, t / 0.06))) / sr;
+        const w = Math.random() * 2 - 1;
+        lp += (w - lp) * 0.2;
+        brown = (brown + 0.08 * w) / 1.08;
+        const thump = Math.sin(ph) * Math.exp(-t / 0.032);
+        const crack = (w - lp) * Math.exp(-t / 0.007);
+        const body = brown * 5 * Math.exp(-t / 0.045);
+        d[(((at + i) % n) + n) % n] += amp * (thump * 1.1 + crack * 0.4 + body);
+      }
+    }
+    // The whoosh between: air noise swelling round each slap.
+    let sw = 0;
+    for (let i = 0; i < n; i++) {
+      const w = Math.random() * 2 - 1;
+      sw += (w - sw) * 0.07;
+      const ph = ((i % gap) / gap) * Math.PI * 2;
+      d[i] += sw * 1.6 * (0.35 + 0.65 * (0.5 - 0.5 * Math.cos(ph)) ** 2);
+    }
+    let mean = 0;
+    let peak = 0;
+    for (let i = 0; i < n; i++) mean += d[i];
+    mean /= n;
+    for (let i = 0; i < n; i++) { d[i] -= mean; peak = Math.max(peak, Math.abs(d[i])); }
+    for (let i = 0; i < n; i++) d[i] = (d[i] / (peak || 1)) * 0.9;
+    return buf;
+  }
+  // The recording: both channels mixed, its end blended into its start so the loop has no seam, then swapped in for the synthesised
+  // loop (the other voices of the helicopter are turned down, as the recording has its own whine).
+  function useHeliSample(buf) {
+    const p = voices.heli.parts;
+    if (!p) return;
+    const sr = buf.sampleRate;
+    const n = buf.length;
+    const f = Math.floor(sr * 0.15);
+    const out = ctx.createBuffer(1, n - f, sr);
+    const o = out.getChannelData(0);
+    const chans = Array.from({ length: buf.numberOfChannels }, (_, c) => buf.getChannelData(c));
+    const at = (i) => chans.reduce((a, c) => a + c[i], 0) / chans.length;
+    for (let i = 0; i < n - f; i++) o[i] = i < f ? at(i) * (i / f) + at(n - f + i) * (1 - i / f) : at(i);
+    let peak = 0;
+    for (let i = 0; i < o.length; i++) peak = Math.max(peak, Math.abs(o[i]));
+    for (let i = 0; i < o.length; i++) o[i] = (o[i] / (peak || 1)) * 0.95;
+    const src = ctx.createBufferSource();
+    src.buffer = out;
+    src.loop = true;
+    src.playbackRate.value = p.rotor.playbackRate.value;
+    src.connect(p.rotorIn);
+    src.start();
+    try { p.rotor.stop(); } catch { /* already stopped */ }
+    p.rotor = src;
+    p.sample = true;
+  }
+  function startHeli() {
+    const sr = ctx.sampleRate;
+    const out = voices.heli.in;
+    const rotor = ctx.createBufferSource();
+    rotor.buffer = heliBuffer();
+    rotor.loop = true;
+    rotor.playbackRate.value = 0.05;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 32;
+    const body = ctx.createBiquadFilter();
+    body.type = 'peaking';
+    body.frequency.value = 110;
+    body.gain.value = 4;
+    body.Q.value = 0.8;
+    const soft = ctx.createBiquadFilter();
+    soft.type = 'lowpass';
+    soft.frequency.value = 3800;
+    const rotorG = ctx.createGain();
+    rotorG.gain.value = 0;
+    rotor.connect(hp);
+    voices.heli.rotorIn = hp;
+    hp.connect(body);
+    body.connect(soft);
+    soft.connect(rotorG);
+    rotorG.connect(out);
+    // Turbine: a thin whine (two partials) and the exhaust's rumble.
+    const whine = ctx.createOscillator();
+    whine.type = 'sawtooth';
+    whine.frequency.value = 600;
+    const whine2 = ctx.createOscillator();
+    whine2.type = 'sine';
+    whine2.frequency.value = 1200;
+    const whineBp = ctx.createBiquadFilter();
+    whineBp.type = 'bandpass';
+    whineBp.frequency.value = 1500;
+    whineBp.Q.value = 0.7;
+    const whineG = ctx.createGain();
+    whineG.gain.value = 0;
+    whine.connect(whineBp);
+    whine2.connect(whineBp);
+    whineBp.connect(whineG);
+    whineG.connect(out);
+    const rb = ctx.createBuffer(1, sr * 2, sr);
+    const rd = rb.getChannelData(0);
+    let brown = 0;
+    for (let i = 0; i < rd.length; i++) { brown = (brown + 0.04 * (Math.random() * 2 - 1)) / 1.04; rd[i] = brown * 6; }
+    const f = Math.floor(sr * 0.1);
+    for (let i = 0; i < f; i++) { const a = i / f; rd[i] = rd[i] * a + rd[rd.length - f + i] * (1 - a); }
+    const rumble = ctx.createBufferSource();
+    rumble.buffer = rb;
+    rumble.loop = true;
+    rumble.loopEnd = (rd.length - f) / sr;
+    const rumbleLp = ctx.createBiquadFilter();
+    rumbleLp.type = 'lowpass';
+    rumbleLp.frequency.value = 260;
+    const rumbleG = ctx.createGain();
+    rumbleG.gain.value = 0;
+    rumble.connect(rumbleLp);
+    rumbleLp.connect(rumbleG);
+    rumbleG.connect(out);
+    // The tail rotor's buzz.
+    const tail = ctx.createOscillator();
+    tail.type = 'sawtooth';
+    tail.frequency.value = 80;
+    const tailLp = ctx.createBiquadFilter();
+    tailLp.type = 'lowpass';
+    tailLp.frequency.value = 700;
+    const tailG = ctx.createGain();
+    tailG.gain.value = 0;
+    tail.connect(tailLp);
+    tailLp.connect(tailG);
+    tailG.connect(out);
+    for (const n of [rotor, whine, whine2, rumble, tail]) n.start();
+    voices.heli.parts = { rotor, rotorIn: hp, rotorG, whine, whine2, whineG, rumbleG, tail, tailG, sample: false };
+  }
   function loadBuffers() {
     try { ctx.decodeAudioData(bytes(HIT), (buf) => { buffers.hit = buf; }, () => {})?.catch?.(() => {}); } catch { /* the burst stays silent */ }
+    try { ctx.decodeAudioData(bytes(HELI_LOOP), (buf) => useHeliSample(buf), () => {})?.catch?.(() => {}); } catch { /* the synthesised loop stays */ }
     for (const name of Object.keys(SOUNDS)) {
       if (name === 'motor') continue; // the missile's motor is synthesised (startRocket), not this recording
       const done = (buf) => { buffers[name] = buf; startLoop(name); };
@@ -210,7 +372,7 @@ export function createHelmAudio() {
   }
   function ensure() {
     if (ctx || failed) return;
-    try { ctx = new AudioCtx(); build(); loadBuffers(); startRocket(); startGuns(); } catch { failed = true; ctx = null; }
+    try { ctx = new AudioCtx(); build(); loadBuffers(); startRocket(); startGuns(); startHeli(); } catch { failed = true; ctx = null; }
   }
   const wake = (fromGesture = true) => {
     if (!enabled) return;
@@ -225,11 +387,11 @@ export function createHelmAudio() {
   });
 
   const set = (param, value) => param.setTargetAtTime(value, ctx.currentTime, 0.03);
-  function place(voice, pos, level, ref) {
+  function place(voice, pos, level, ref, lpMax = 14000) {
     to.subVectors(pos, cam);
     const d = to.length();
     set(voice.g.gain, level * att(d, ref));
-    if (voice.lp) set(voice.lp.frequency, clamp(14000 / (1 + d / 140), 400, 14000));
+    if (voice.lp) set(voice.lp.frequency, clamp(14000 / (1 + d / 140), 400, lpMax));
     if (voice.p) set(voice.p.pan, d > 0.5 ? clamp(to.dot(right) / d, -1, 1) * 0.8 : 0);
   }
   function radial(pos, vel) {
@@ -238,7 +400,8 @@ export function createHelmAudio() {
     const d = to.length();
     return d > 0.5 ? rel.dot(to) / d : 0;
   }
-  const loopRate = (voice, rate) => { if (voice.src) set(voice.src.playbackRate, rate); };
+  // A loop's speed changes slowly (about a tenth of a second), so a quick camera cut or a pass never makes the pitch jump.
+  const loopRate = (voice, rate) => { if (voice.src) voice.src.playbackRate.setTargetAtTime(rate, ctx.currentTime, 0.12); };
 
   function shot(name, pos) {
     const buf = buffers[name];
@@ -251,7 +414,7 @@ export function createHelmAudio() {
     v.g.gain.cancelScheduledValues(ctx.currentTime);
     v.g.gain.value = SHOTS[name].level * att(d, SHOTS[name].ref);
     // The burst is rounded off: a deeper pitch and no harsh highs (the raw recording is brittle and clips).
-    if (v.lp) v.lp.frequency.value = Math.min(clamp(14000 / (1 + d / 140), 400, 14000), name === 'boom' ? 2800 : 14000);
+    if (v.lp) v.lp.frequency.value = Math.min(clamp(14000 / (1 + d / 140), 400, 14000), name === 'boom' ? 2800 : name === 'hit' ? 5500 : 14000);
     if (name === 'boom') node.playbackRate.value = 0.82;
     if (v.p) v.p.pan.value = d > 0.5 ? clamp(to.dot(right) / d, -1, 1) * 0.8 : 0;
     node.connect(v.in);
@@ -318,10 +481,7 @@ export function createHelmAudio() {
     camera.getWorldPosition(cam);
     camera.getWorldQuaternion(camQuat);
     right.set(1, 0, 0).applyQuaternion(camQuat);
-    if (haveCam && dt > 0) {
-      tmp.subVectors(cam, camPrev).divideScalar(dt);
-      if (tmp.length() < 600) camVel.lerp(tmp, 0.2); else camVel.set(0, 0, 0);
-    }
+    camVel.copy(sim.shipVel(tmp)); // the listener is the ship: the camera's flights and cuts do not shift any pitch
     camPrev.copy(cam);
     haveCam = true;
     const live = enabled && ctx.state === 'running' && !globalThis.document?.hidden;
@@ -342,8 +502,8 @@ export function createHelmAudio() {
       const d = drones[i];
       const voice = v[`drone${i}`];
       if (!d) { set(voice.g.gain, 0); continue; }
-      loopRate(voice, (d.phase === 'attack' ? 1.25 : 1.1) * doppler(radial(d.pos, d.vel)));
-      place(voice, d.pos, 0.7, 60);
+      loopRate(voice, (d.phase === 'attack' ? 1.12 : 1.0) * doppler(radial(d.pos, d.vel)));
+      place(voice, d.pos, 0.7, 60, 4200); // the engine's top is rolled off, so a camera right beside it is not shrill
     }
     // The missiles' motors.
     for (let i = 0; i < 2; i++) {
@@ -366,6 +526,27 @@ export function createHelmAudio() {
         if (voices[`spin${i}`].osc) set(voices[`spin${i}`].osc.frequency, 90 + 520 * sp);
       }
     }
+    // The helicopter on the deck: silent parked, loud as the rotor turns, from wherever she is (in the ship's frame, so it rides
+    // with the ship); her motion over the water against the listener's makes the Doppler shift.
+    if (v.heli.parts) {
+      const st = sim.heli.state;
+      sim.toWorld(heliPos.set(st.x, st.y + 1.8, st.z), heliP);
+      if (haveHeli && dt > 0) heliV.subVectors(heliP, heliPrev).divideScalar(dt).clampLength(0, 120);
+      heliPrev.copy(heliP);
+      haveHeli = true;
+      const rpm = clamp(st.rpm, 0, 1);
+      const dop = doppler(radial(heliP, heliV));
+      const p = v.heli.parts;
+      set(p.rotor.playbackRate, Math.max(0.05, rpm) * dop);
+      set(p.rotorG.gain, (p.sample ? 0.8 : 0.6) * rpm ** 1.1);
+      set(p.whine.frequency, (420 + 700 * rpm) * dop);
+      set(p.whine2.frequency, (840 + 1400 * rpm) * dop);
+      set(p.whineG.gain, (p.sample ? 0.008 : 0.035) * rpm * rpm);
+      set(p.rumbleG.gain, (p.sample ? 0.12 : 0.5) * (0.15 + 0.85 * rpm) * (rpm > 0.01 ? 1 : 0));
+      set(p.tail.frequency, (30 + 75 * rpm) * dop);
+      set(p.tailG.gain, (p.sample ? 0.012 : 0.05) * rpm * rpm);
+      place(v.heli, heliP, 0.55, 70); // a background sound: it must not compete with the guns, missiles and alarms
+    }
     // The klaxon while a drone is on its attack run.
     if (sim.threat >= 3 && sim.t >= klaxonNext) {
       tones([[520, 0, 0.42], [390, 0.45, 0.42]], 'sawtooth', 0.07);
@@ -376,10 +557,12 @@ export function createHelmAudio() {
   return {
     update,
     event,
-    reset() { klaxonNext = 0; },
+    reset() { klaxonNext = 0; haveHeli = false; },
     get enabled() { return enabled; },
     setEnabled(on) { enabled = on; if (on) wake(false); },
     get state() { return ctx?.state ?? (failed ? 'unavailable' : 'idle'); },
     get supported() { return !failed; },
+    get droneRate() { return voices?.drone0?.src?.playbackRate.value ?? 1; }, // for checking: the nearest drone engine's playback speed
+    get heliSample() { return !!voices?.heli?.parts?.sample; }, // the recorded rotor loop has decoded and replaced the synthesised one
   };
 }

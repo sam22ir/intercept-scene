@@ -36,6 +36,7 @@
 import * as THREE from 'three';
 import { G, LAUNCHER_PIVOT, TUBE_MOUTH, launcherQuat } from './scenario.js';
 import { attitude } from './fly.js';
+import { HeliFlight } from './heliFlight.js';
 import { TELEGRAPH, START_ORDER, RUDDER_MAX, KT, HALF_LENGTH, HALF_BEAM, GUN_MOUNT_LOCAL, GUN_BLOCK, GUN_DEAD, gunBlind, stepHull, compass, relName, kmText } from './hull.js';
 
 const rad = THREE.MathUtils.degToRad;
@@ -51,7 +52,7 @@ export const DT = 1 / 120;
 // How she handles (the wheel, the telegraph, the turn) is in hull.js, shared with the ship duel.
 export { TELEGRAPH, START_ORDER, RUDDER_MAX, KT, HALF_LENGTH, HALF_BEAM };
 // Where the officer of the watch stands, and the fire-control director (both in the ship's frame).
-export const BRIDGE_EYE = new THREE.Vector3(16.9, 11.4, 0);
+export const BRIDGE_EYE = new THREE.Vector3(11.7, 11.0, 0); // inside the wheelhouse (models/bridge.js), behind the helm wheel
 export const DIRECTOR_EYE = new THREE.Vector3(14.4, 15.6, 0);
 
 // --- The drones -------------------------------------------------------------------------------------------
@@ -160,6 +161,7 @@ export class HelmSim {
     this.gunsAuto = false;
     this.guns = GUN_MOUNTS.map(() => ({ yaw: GUN_STOW.yaw, pitch: GUN_STOW.pitch, ammo: GUN_ROUNDS, firing: false, rounds: 0, spin: 0, spinRate: 0, burst: 0, cool: 0 }));
     this.events = [];
+    this.heli = new HeliFlight((this.seed ^ 0x2718) >>> 0); // the deck helicopter, only for the look: it never flies while she turns
   }
 
   say(text, tone = '') { this.events.push({ type: 'say', text, tone }); }
@@ -298,6 +300,7 @@ export class HelmSim {
   step(dt, input) {
     this.t += dt;
     this.stepShip(dt, input);
+    this.heli.step(dt, !this.out && Math.abs(this.r) < rad(0.4) && Math.abs(this.rudder) < rad(2), this.r); // a fixed course: no rudder, no turn
     this.stepSpawn();
     for (const d of this.drones) this.stepDrone(d, dt);
     this.stepLauncher();
@@ -507,7 +510,7 @@ export class HelmSim {
     if (this.out) return;
     if (this.gunRounds <= 0) { this.say('The guns are out of ammunition', 'warn'); return; }
     this.gunsAuto = !this.gunsAuto;
-    this.say(this.gunsAuto ? 'Guns on automatic: each fires alone on the target inside 2.6 km, outside its own dead zone' : 'Guns off automatic: hold G to fire', this.gunsAuto ? 'warn' : '');
+    this.say(this.gunsAuto ? 'Guns on automatic: each fires alone on a drone from its own side inside 2.6 km, outside its own dead zone' : 'Guns off automatic: hold G to fire', this.gunsAuto ? 'warn' : '');
   }
   // Can any gun engage this drone now? null if one can, else the reason. (Which ones: gunsBearing.)
   gunsBearing(d) {
@@ -526,11 +529,32 @@ export class HelmSim {
     return null;
   }
 
+  // Which gun a drone belongs to: the one on its side of the ship (0 port, 1 starboard).
+  gunSide(d) { return this.toLocal(d.pos, _e).z < 0 ? 0 : 1; }
+  // The drone gun i works on: each gun takes a drone from its own side (the selected one first, else the nearest), so two drones on
+  // two sides are shot by one gun each. It takes one from the other side only when that side's gun is out of ammunition or blind to it.
+  gunTarget(i) {
+    let best = null;
+    let bestScore = Infinity;
+    for (const d of this.drones) {
+      if (!d.alive || !d.detected || d.hidden) continue;
+      const range = this.rangeTo(d.pos);
+      if (range > GUN_RANGE) continue;
+      const able = this.gunsBearing(d);
+      if (!able.includes(i)) continue;
+      const mine = this.gunSide(d) === i;
+      if (!mine && this.guns[1 - i].ammo > 0 && able.includes(1 - i)) continue;
+      const score = range - (d.id === this.targetId ? 1e5 : 0) - (mine ? 1e6 : 0);
+      if (score < bestScore) { bestScore = score; best = d; }
+    }
+    return best;
+  }
+
   stepGuns(dt, input = {}) {
-    const d = this.target;
     const trigger = !this.out && (this.gunsAuto || !!input.gun); // held, or automatic
     for (let i = 0; i < this.guns.length; i++) {
       const g = this.guns[i];
+      const d = this.gunTarget(i);
       let wantYaw = GUN_STOW.yaw;
       let wantPitch = GUN_STOW.pitch;
       let engage = false;
