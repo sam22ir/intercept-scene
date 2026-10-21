@@ -72,6 +72,9 @@ const SHELL_LIFE = 30; // s
 // bridge (the fire control) is hurt, and the enemy's own aim factor on top.
 const SCATTER_BASE = 0.002;
 const SCATTER_TURN = 0.02; // per rad/s of the firing ship's turn
+// Manual aim (T): the player points the gun and the fire control no longer solves it. The gun's own base scatter is smaller than the auto
+// tracker's (a lagging velocity estimate is the auto's real error, the player has to lead by eye and by the splashes), and turning still spoils it.
+export const MANUAL_SCATTER = 0.6;
 
 // --- The 30 mm guns (the aft pair, as in helm.js) ----------------------------------------------------------------
 export const GUN_RANGE = 2600; // m
@@ -178,7 +181,8 @@ function makeShip(idx, x, z, psi) {
     gats: [0, 1].map(() => ({ yaw: GUN_STOW.yaw, pitch: GUN_STOW.pitch, ammo: GUN_ROUNDS, firing: false, rounds: 0, spin: 0, spinRate: 0, burst: 0, cool: 0 })),
     auto: true, // the aft guns fire by themselves
     est: null, // the velocity this ship's fire control believes the other ship has, [x, z]
-    cmd: { want: 0, fire: false, gat: false },
+    cmd: { want: 0, fire: false, gat: false, aim: null },
+    manual: false, // the 76 mm is aimed by hand (input.aim) instead of by the fire control
     ai: null,
     stats: { shells: 0, hits: 0, bursts: 0, burstHits: 0, taken: 0 },
   };
@@ -227,6 +231,18 @@ export class DuelSim {
   takeEvents() { const e = this.events; this.events = []; return e; }
   telegraph(i, d) { const s = this.ships[i]; if (s.tSunk === null) s.order = clamp(s.order + d, 0, TELEGRAPH.length - 1); }
   toggleAuto(i = 0) { this.ships[i].auto = !this.ships[i].auto; }
+  // Take the 76 mm by hand or give it back to the fire control (one call per key press). The enemy never does.
+  setManual(i, on) { const s = this.ships[i]; if (s.tSunk !== null || s.ai) return false; s.manual = !!on; return true; }
+  // Where a perfect gunner would aim now (the target's true velocity, ballistic drop): for tests and scripted players. The scene's reticle
+  // does not show this, only where the target is and how far it moves in a shell's time of flight at its last course.
+  leadSolution(i) {
+    const s = this.ships[i], o = this.ships[1 - i], keep = s.est;
+    const v = this.velOf(o);
+    s.est = [v[0], v[2]];
+    const sol = this.solve(s, MAIN_MOUNT, MUZZLE_V, true);
+    s.est = keep;
+    return sol;
+  }
   // Change the loaded kind of 76 mm round (one call per key press, never from `input`): costs a reload. `type` omitted: the other kind.
   switchAmmo(i, type = null) {
     const s = this.ships[i], g = s.gun;
@@ -280,7 +296,7 @@ export class DuelSim {
   step(dt, input) {
     this.t += dt;
     const [me, foe] = this.ships;
-    me.cmd = me.ai ? me.cmd : { want: (input.right ? 1 : 0) - (input.left ? 1 : 0), fire: !!input.fire, gat: !!input.gat };
+    me.cmd = me.ai ? me.cmd : { want: (input.right ? 1 : 0) - (input.left ? 1 : 0), fire: !!input.fire, gat: !!input.gat, aim: input.aim ?? null };
     for (const s of this.ships) {
       if (s.ai && this.t >= s.ai.next) this.think(s);
       this.stepShip(s, dt);
@@ -314,7 +330,7 @@ export class DuelSim {
   // The scatter of a ship's 76 mm (radians, one standard deviation).
   scatter(s) {
     const hurt = 1 - s.comp.bridge / COMPARTMENTS.bridge.hp;
-    return (SCATTER_BASE + SCATTER_TURN * Math.abs(s.r)) * (1 + 1.5 * hurt) * (s.ai ? s.ai.p.aim : 1);
+    return (SCATTER_BASE * (s.manual ? MANUAL_SCATTER : 1) + SCATTER_TURN * Math.abs(s.r)) * (1 + 1.5 * hurt) * (s.ai ? s.ai.p.aim : 1);
   }
 
   // The 76 mm's solution on the other ship: yaw, pitch and the time of flight, with the target assumed to go on
@@ -349,7 +365,13 @@ export class DuelSim {
     g.onTarget = false;
     if (g.stock[g.type] <= 0 && g.ammo > 0) this.switchAmmo(s.idx); // the loaded kind ran out: the other is loaded
     const alive = !sunk && s.comp.gun > 0 && g.ammo > 0 && this.ships[1 - s.idx].tSunk === null;
-    if (alive) {
+    const aim = s.manual && !s.ai ? s.cmd.aim : null;
+    if (alive && aim) {
+      // by hand: the gun goes where it is pointed, inside its arc and elevation, and fires when the trigger is down and it is there
+      wantYaw = clamp(aim.yaw, -MAIN_ARC, MAIN_ARC);
+      wantPitch = clamp(aim.pitch, MAIN_PITCH[0], MAIN_PITCH[1]);
+      g.engaged = this.solve(s, MAIN_MOUNT, MUZZLE_V, true).range <= MAIN_RANGE;
+    } else if (alive) {
       const sol = this.solve(s, MAIN_MOUNT, MUZZLE_V, true);
       if (Math.abs(sol.yaw) <= MAIN_ARC && sol.range <= MAIN_RANGE) {
         wantYaw = sol.yaw;

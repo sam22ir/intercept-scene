@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DuelSim, DT, MAIN_ARC, MAIN_RANGE, GUN_RANGE, HULL_HP, COMPARTMENTS, COMP_IDS, LEVELS, DUEL_LEVELS, SINK_TIME,
-  zoneAt, segmentBox, sinkState, gunBlind, TELEGRAPH, CREWS, CREW_MOVE, REPAIR_CAP, neighbours, AMMO_STOCK, AMMO_TYPES, SWITCH_TIME, MAIN_ROUNDS,
+  zoneAt, segmentBox, sinkState, gunBlind, TELEGRAPH, MANUAL_SCATTER, CREWS, CREW_MOVE, REPAIR_CAP, neighbours, AMMO_STOCK, AMMO_TYPES, SWITCH_TIME, MAIN_ROUNDS,
 } from '../src/duel.js';
 
 const run = (sim, seconds, input = {}) => { for (let i = 0; i < seconds * 10; i++) sim.advance(0.1, input); };
@@ -433,5 +433,69 @@ describe('damage control: fires, flooding and crews', () => {
     assert.equal(load('hard', true), 'ap');
     assert.equal(load('hard', false), 'he');
     assert.equal(load('easy', true), 'he');
+  });
+});
+
+describe('manual aim of the 76 mm', () => {
+  const still = (sim) => { sim.enemy.ai = null; sim.enemy.cmd = { want: 0, fire: false, gat: false }; };
+  it('is for the player only, and a ship in manual mode scatters less than auto at the same turn rate', () => {
+    const sim = new DuelSim({ seed: 1 });
+    assert.equal(sim.setManual(1, true), false, 'the enemy keeps the fire control');
+    const auto = sim.scatter(sim.player);
+    assert.ok(sim.setManual(0, true));
+    assert.ok(Math.abs(sim.scatter(sim.player) - auto * MANUAL_SCATTER) < 1e-12);
+    sim.player.r = 0.15;
+    assert.ok(sim.scatter(sim.player) > 0.004, 'but a turn still spoils it');
+  });
+
+  it('the gun follows the aim, inside its arc, and does not fire while it is elsewhere', () => {
+    const sim = new DuelSim({ seed: 2, level: 'easy' }); still(sim);
+    sim.setManual(0, true);
+    run(sim, 6, { fire: true, aim: { yaw: 1.0, pitch: 0.1 } });
+    assert.ok(Math.abs(sim.player.gun.yaw - 1.0) < 0.02, 'it turned to the aim');
+    run(sim, 2, { fire: true, aim: { yaw: 3.0, pitch: 0.1 } });
+    assert.ok(Math.abs(sim.player.gun.yaw) <= MAIN_ARC + 0.02, 'never past the arc');
+    const sh = sim.player.stats.shells;
+    sim.player.gun.cool = 0;
+    run(sim, 0.2, { fire: true, aim: { yaw: -1.0, pitch: 0.1 } });
+    assert.equal(sim.player.stats.shells, sh, 'far from the aim, nothing leaves');
+  });
+
+  it('beyond the range it does not fire', () => {
+    const sim = new DuelSim({ seed: 2, level: 'easy' }); still(sim);
+    sim.enemy.x = MAIN_RANGE + 2000;
+    sim.setManual(0, true);
+    run(sim, 10, { fire: true, aim: { yaw: 0, pitch: 0.4 } });
+    assert.equal(sim.player.stats.shells, 0);
+  });
+
+  it('a gunner who leads the target by the perfect solution out-shoots the auto tracker', () => {
+    const rate = (manual) => {
+      let shells = 0, hits = 0;
+      for (const seed of [1, 2, 3, 4, 5, 6]) {
+        const sim = new DuelSim({ seed, level: 'easy' }); still(sim);
+        sim.enemy.x = 4500; sim.enemy.z = 300; sim.enemy.psi = Math.PI / 2;
+        sim.setManual(0, manual);
+        for (let i = 0; i < 900; i++) {
+          const sol = sim.leadSolution(0);
+          sim.advance(0.1, { fire: true, aim: { yaw: sol.yaw, pitch: sol.pitch } });
+        }
+        shells += sim.player.stats.shells; hits += sim.player.stats.hits;
+      }
+      return hits / shells;
+    };
+    assert.ok(rate(true) >= rate(false), `manual ${rate(true).toFixed(2)} vs auto ${rate(false).toFixed(2)}`);
+  });
+
+  it('a gunner who aims at the target where it is, with no lead, misses a moving ship', () => {
+    const sim = new DuelSim({ seed: 3, level: 'easy' }); still(sim);
+    sim.enemy.x = 4500; sim.enemy.z = 300; sim.enemy.psi = Math.PI / 2;
+    sim.setManual(0, true);
+    for (let i = 0; i < 900; i++) {
+      const dx = sim.enemy.x - sim.player.x, dz = sim.enemy.z - sim.player.z;
+      const yaw = -(Math.atan2(dz, dx) - sim.player.psi);
+      sim.advance(0.1, { fire: true, aim: { yaw, pitch: 0.2 } });
+    }
+    assert.ok(sim.player.stats.hits / Math.max(1, sim.player.stats.shells) < 0.2);
   });
 });
