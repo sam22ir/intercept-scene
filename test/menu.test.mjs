@@ -106,7 +106,7 @@ describe('the title follows the options', () => {
       it(`${m.id} with the ${ship} launcher`, () => {
         const t = menuText(m.id, ship);
         assert.equal(t.title, m.name, 'the heading is the mission');
-        assert.ok(t.tabTitle.startsWith(m.name) && t.tabTitle.endsWith('— Intercept scene'), 'the tab says the mission');
+        assert.ok(t.tabTitle.startsWith(m.name) && t.tabTitle.endsWith('— Simulation'), 'the tab says the mission');
         assert.ok(t.summary.startsWith(`${m.name} · `));
         assert.ok(t.button.length > 3);
         if (m.ship) {
@@ -342,7 +342,7 @@ describe('index.html shows what the data says', () => {
     assert.equal((chooser().match(/data-ship="/g) ?? []).length, SHIPS.length);
     assert.equal((chooser().match(/data-level="/g) ?? []).length, ENEMY_LEVELS.length);
     assert.match(chooser(), /class="brief-level variant"/, 'the enemy block, shown for the ship duel');
-    assert.match(html, /<title>Intercept scene<\/title>/);
+    assert.match(html, /<title>Simulation<\/title>/);
   });
 
   it('start.js fills the previews from menuArt.js, which imports nothing', () => {
