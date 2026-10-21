@@ -169,7 +169,7 @@ export const ENEMY_LEVELS = [
 ];
 export const DEFAULT_LEVEL = 'normal';
 export const FIXED_SHIP = 'fwd'; // what a mission without a choice uses
-const SUFFIX = 'Intercept scene';
+const SUFFIX = 'Simulation';
 
 // What a tab lists, in order: a mission each, with the family's members folded into one entry.
 // `id` is the entry's first mission; `family` is set on a folded one.

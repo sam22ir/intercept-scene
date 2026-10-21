@@ -45,7 +45,7 @@ const chooser = () => html.slice(html.indexOf('<div id="chooser"'), html.indexOf
 // A mission is a list row, or (the three drills) a variant button in the Ships picker.
 const rowOf = (id) => chooser().match(new RegExp(`<button class="(mission|pick)"[^>]*data-mode="${id}">(.*?)</button>`, 's'))?.[2] ?? '';
 const rowKind = (id) => chooser().match(new RegExp(`<button class="(mission|pick)"[^>]*data-mode="${id}"`))?.[1];
-const tabButtons = () => [...chooser().matchAll(/<button class="tab"[^>]*data-tab="(\w+)"[^>]*>(.*?)<\/button>/g)].map((x) => [x[1], x[2]]);
+const tabButtons = () => [...chooser().matchAll(/<button class="tab"[^>]*data-tab="(\w+)"[^>]*>(.*?)<\/button>/gs)].map((x) => [x[1], text(x[2].match(/<b>(.*?)<\/b>/s)[1])]);
 const cardOf = (id) => chooser().match(new RegExp(`<button class="card"[^>]*data-ship="${id}">(.*?)</button>`, 's'))?.[1] ?? '';
 const text = (s) => s.replace(/<svg.*?<\/svg>/gs, '').replace(/<kbd>.*?<\/kbd>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
@@ -106,7 +106,7 @@ describe('the title follows the options', () => {
       it(`${m.id} with the ${ship} launcher`, () => {
         const t = menuText(m.id, ship);
         assert.equal(t.title, m.name, 'the heading is the mission');
-        assert.ok(t.tabTitle.startsWith(m.name) && t.tabTitle.endsWith('— Intercept scene'), 'the tab says the mission');
+        assert.ok(t.tabTitle.startsWith(m.name) && t.tabTitle.endsWith('— Simulation'), 'the tab says the mission');
         assert.ok(t.summary.startsWith(`${m.name} · `));
         assert.ok(t.button.length > 3);
         if (m.ship) {
@@ -342,7 +342,7 @@ describe('index.html shows what the data says', () => {
     assert.equal((chooser().match(/data-ship="/g) ?? []).length, SHIPS.length);
     assert.equal((chooser().match(/data-level="/g) ?? []).length, ENEMY_LEVELS.length);
     assert.match(chooser(), /class="brief-level variant"/, 'the enemy block, shown for the ship duel');
-    assert.match(html, /<title>Intercept scene<\/title>/);
+    assert.match(html, /<title>Simulation<\/title>/);
   });
 
   it('start.js fills the previews from menuArt.js, which imports nothing', () => {
