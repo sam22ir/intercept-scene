@@ -24,10 +24,10 @@
 //   engages ahead of and abeam the ship (ARC): a drone astern needs the ship turned. 8 cells, so 8 rounds.
 //
 // The guns
-//   G turns the two 30 mm seven-barrel rotary guns on the aft deckhouse on or off. With them on, both train onto the
-//   selected target (Tab picks another) and fire a burst whenever they are on it and it is inside GUN_RANGE, wherever
-//   the missile box cannot reach it: they cover everything but the sector within GUN_BLOCK of the bow, which the
-//   superstructure hides. Every burst has a chance to hit that falls with range; a drone has DRONE_HP of them to give.
+//   The two 30 mm seven-barrel rotary guns on the aft deckhouse train onto the selected target (Tab picks another) whenever
+//   it is inside GUN_RANGE and outside a gun's own dead zone. They fire only while G is held, or all the time in AUTO
+//   (A turns it on and off): the barrels spin up, then they fire in bursts, each gun alone, wherever the missile box
+//   (M, or F) cannot reach. Every burst has a chance to hit that falls with range; a drone has DRONE_HP of them to give.
 //
 // Coordinates are the scene's: metres, +Y up, the sea is y = 0. +X is north and +Z east: a heading `psi` is
 // measured from +X toward +Z (clockwise from north, as a compass). In the ship's own frame her bow is +X and
@@ -184,7 +184,7 @@ export class HelmSim {
     this.shot = null; // the launcher turning onto a target: { cell, tPress, from, aim, droneId }
     this.launcher = { yaw: 0, pitch: 0 };
     this.lastFire = -Infinity;
-    this.gunsOn = false;
+    this.gunsAuto = false;
     this.guns = GUN_MOUNTS.map(() => ({ yaw: GUN_STOW.yaw, pitch: GUN_STOW.pitch, ammo: GUN_ROUNDS, firing: false, rounds: 0, spin: 0, spinRate: 0, burst: 0, cool: 0 }));
     this.events = [];
   }
@@ -295,7 +295,7 @@ export class HelmSim {
     this.stepSpawn();
     for (const d of this.drones) this.stepDrone(d, dt);
     this.stepLauncher();
-    this.stepGuns(dt);
+    this.stepGuns(dt, input);
     for (const m of [...this.missiles]) this.stepMissile(m, dt);
     // Wrecks sink and are forgotten after a while.
     this.drones = this.drones.filter((d) => d.alive || this.t - d.tDown < 40);
@@ -498,11 +498,11 @@ export class HelmSim {
 
   // --- the guns ----------------------------------------------------------------------------------------------
   get gunRounds() { return this.guns.reduce((n, g) => n + Math.max(0, Math.round(g.ammo)), 0); }
-  toggleGuns() {
+  toggleAutoGuns() {
     if (this.out) return;
     if (this.gunRounds <= 0) { this.say('The guns are out of ammunition', 'warn'); return; }
-    this.gunsOn = !this.gunsOn;
-    this.say(this.gunsOn ? 'Guns on: each fires alone on the target inside 2.6 km, outside its own dead zone' : 'Guns off', this.gunsOn ? 'warn' : '');
+    this.gunsAuto = !this.gunsAuto;
+    this.say(this.gunsAuto ? 'Guns on automatic: each fires alone on the target inside 2.6 km, outside its own dead zone' : 'Guns off automatic: hold G to fire', this.gunsAuto ? 'warn' : '');
   }
   // Can any gun engage this drone now? null if one can, else the reason. (Which ones: gunsBearing.)
   gunsBearing(d) {
@@ -521,14 +521,15 @@ export class HelmSim {
     return null;
   }
 
-  stepGuns(dt) {
+  stepGuns(dt, input = {}) {
     const d = this.target;
+    const trigger = !this.out && (this.gunsAuto || !!input.gun); // held, or automatic
     for (let i = 0; i < this.guns.length; i++) {
       const g = this.guns[i];
       let wantYaw = GUN_STOW.yaw;
       let wantPitch = GUN_STOW.pitch;
       let engage = false;
-      if (this.gunsOn && !this.out && d && g.ammo > 0 && this.rangeTo(d.pos) <= GUN_RANGE) {
+      if (!this.out && d && g.ammo > 0 && this.rangeTo(d.pos) <= GUN_RANGE) { // trained on the target whether or not it fires
         // Where the drone will be as the round reaches it (the round carries the ship's own speed).
         const mw = this.toWorld(GUN_MOUNTS[i], _a);
         const tf = mw.distanceTo(d.pos) / GUN_MUZZLE_V;
@@ -546,12 +547,12 @@ export class HelmSim {
       const on = engage && cur.angleTo(want) < GUN_AIM_OK;
       // The barrels spin up as soon as the gun is given a target and only then does it fire, in bursts of about a second
       // with a short pause between (it does not hold the trigger down).
-      g.spinRate += (((engage ? GUN_SPIN : 0) - g.spinRate) / 0.5) * dt;
+      g.spinRate += (((engage && trigger ? GUN_SPIN : 0) - g.spinRate) / 0.5) * dt;
       g.spin += g.spinRate * dt;
       g.cool = Math.max(0, g.cool - dt);
-      if (!on) g.burst = 0;
+      if (!on || !trigger) g.burst = 0;
       else if (g.burst <= 0 && g.cool <= 0 && g.spinRate > 0.78 * GUN_SPIN) g.burst = 70 + this.rng() * 40;
-      g.firing = on && g.burst > 0;
+      g.firing = on && trigger && g.burst > 0;
       if (!g.firing) continue;
       const n = Math.min(GUN_RATE * dt, g.burst);
       g.burst -= n;
@@ -571,8 +572,8 @@ export class HelmSim {
         }
       }
     }
-    if (this.gunsOn && this.gunRounds <= 0) {
-      this.gunsOn = false;
+    if (this.gunsAuto && this.gunRounds <= 0) {
+      this.gunsAuto = false;
       this.say('The guns are out of ammunition', 'warn');
     }
   }

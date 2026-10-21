@@ -195,8 +195,8 @@ describe('the guns', () => {
     assert.ok(d.detected);
     assert.match(sim.engageable(d), /arc/, 'the missile box cannot take it');
     assert.equal(sim.gunReason(d), null);
-    sim.toggleGuns();
-    assert.ok(sim.gunsOn);
+    sim.toggleAutoGuns();
+    assert.ok(sim.gunsAuto);
     let hits = 0;
     for (let i = 0; i < 400 && d.alive; i++) {
       sim.advance(0.1, {});
@@ -216,7 +216,7 @@ describe('the guns', () => {
     run(sim, 0.5);
     run(sim, 2);
     assert.equal(sim.guns.some((g) => g.firing), false, 'off: no fire');
-    sim.toggleGuns();
+    sim.toggleAutoGuns();
     d.pos.set(sim.x - GUN_RANGE - 300, 90, sim.z);
     assert.match(sim.gunReason(d), /range/);
     d.pos.set(sim.x + 1500, 90, sim.z + 100);
@@ -233,7 +233,7 @@ describe('each gun has its own dead zone', () => {
     run(sim, 0.5);
     sim.targetId = d.id;
     d.hp = 99;
-    sim.toggleGuns();
+    sim.toggleAutoGuns();
     run(sim, 2);
     return sim.guns.map((g) => g.ammo < GUN_ROUNDS);
   };
@@ -242,6 +242,25 @@ describe('each gun has its own dead zone', () => {
     assert.deepEqual(fireAt(Math.PI / 2), [false, true], 'starboard beam: only the starboard gun');
     assert.deepEqual(fireAt(-Math.PI / 2), [true, false], 'port beam: only the port gun');
     assert.deepEqual(fireAt(0.1), [false, false], 'right ahead: both are blind');
+  });
+  it('fire only while G is held, stop when it is let go, and fire by themselves in automatic', () => {
+    const sim = new HelmSim();
+    sim.nextSpawn = Infinity;
+    const d = sim.spawn({ bearing: Math.PI, range: 1800, alt: 80 });
+    run(sim, 0.5);
+    sim.targetId = d.id;
+    d.hp = 999;
+    run(sim, 3);
+    assert.equal(sim.gunRounds, 2 * GUN_ROUNDS, 'trained on it, but nothing fired');
+    assert.ok(sim.guns.every((g) => !g.firing));
+    run(sim, 3, { gun: true });
+    const held = sim.gunRounds;
+    assert.ok(held < 2 * GUN_ROUNDS, 'held: it fired');
+    run(sim, 3);
+    assert.equal(sim.gunRounds, held, 'let go: it stopped');
+    sim.toggleAutoGuns();
+    run(sim, 3);
+    assert.ok(sim.gunRounds < held, 'automatic: it fires without the key');
   });
   it('the dead zones are mirror images', () => {
     for (const a of [-3, -2, -1.5, -0.8, 0, 0.5, 1.2, 2.2, 3]) assert.equal(gunBlind(0, a), gunBlind(1, -a));

@@ -189,10 +189,11 @@ describe('the words are true of the missions', () => {
     assert.ok(m.facts.includes(`${H.CELLS} missiles + 2 guns`));
     assert.match(src.helm, /const VIEWS = \['bridge', 'behind', 'above', 'missile', 'sight', 'target', 'orbit'\]/);
     assert.ok(m.facts.includes('7 views'));
-    for (const letter of ['f', 'm', 'r', 'v', 'i']) assert.match(src.helm, new RegExp(`case '${letter}':`), `helmMain binds ${letter}`);
+    for (const letter of ['f', 'm', 'a', 'n', 'r', 'v', 'i']) assert.match(src.helm, new RegExp(`case '${letter}':`), `helmMain binds ${letter}`);
     for (const k of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Tab']) assert.match(src.helm, new RegExp(k));
     const label = Object.fromEntries(m.keys);
-    assert.match(label.F, /missile/);
+    assert.match(label.M, /missile/);
+    assert.match(label.G, /guns/);
     assert.match(label['↑ ↓'], /telegraph/);
     assert.match(m.tagline, /three hits/);
     assert.equal(H.TELEGRAPH.length, 7);

@@ -1148,7 +1148,7 @@ function shipHtml() {
   return `<div class="hs-rect hs-dmg${sim.strikes ? ' hurt' : ''}"><span>Damage · ${dmg}</span><div class="hs-pips hs-hits">${hits}</div></div>`
     + `<div class="hs-dome">${domeSvg()}</div>`
     + `<div class="hs-rect hs-ammo"><span>Missiles · ${wTxt}</span><div class="hs-pips">${pips}</div>`
-    + `<span class="hs-guns${sim.gunsOn ? ' on' : ''}">Guns · ${sim.gunsOn ? (sim.guns.some((g) => g.firing) ? `FIRING ${sim.guns.map((g, i) => (g.firing ? ['port', 'stbd'][i] : '')).filter(Boolean).join(' + ')}` : 'on') : 'off'} · ${sim.gunRounds}</span></div>`;
+    + `<span class="hs-guns${sim.guns.some((g) => g.firing) ? ' on' : ''}">Guns · ${sim.guns.some((g) => g.firing) ? `FIRING ${sim.guns.map((g, i) => (g.firing ? ['port', 'stbd'][i] : '')).filter(Boolean).join(' + ')}` : sim.gunsAuto ? 'AUTO' : 'hold G'} · ${sim.gunRounds}</span></div>`;
 }
 
 function hudHtml() {
@@ -1193,7 +1193,7 @@ function keysHtml() {
   if (sim.out) return `${k('R', 'sail again', true)}${k('V', 'camera')}`;
   const t = sim.target;
   const ready = t && !sim.engageable(t) && !sim.shot && sim.cellsLeft > 0;
-  return `${k('←', '')}${k('→', 'rudder')}${k('↑', '')}${k('↓', 'telegraph')}${k('F', 'fire', ready)}${k('G', 'guns', sim.gunsOn)}`
+  return `${k('←', '')}${k('→', 'rudder')}${k('↑', '')}${k('↓', 'telegraph')}${k('M', 'missile', ready)}${k('G', 'guns (hold)', input.gun === 1)}${k('A', 'auto guns', sim.gunsAuto)}`
     + `${k('Tab', 'target', sim.detected.length > 1)}${k('1–7', 'views')}${k('V', 'next view')}`;
 }
 
@@ -1310,7 +1310,7 @@ keysSheet.querySelector('dl').innerHTML = [
 keysSheet.querySelector('.keys-note').textContent = 'A drone you leave alone makes one low pass, then dives into the ship on its second approach · the guns are coming';
 
 // --- Keys ------------------------------------------------------------------------------------------------------------
-const input = { left: 0, right: 0 };
+const input = { left: 0, right: 0, gun: 0 }; // gun: G held
 function restart() {
   sim.seed = (Date.now() % 100000) | 0;
   sim.reset();
@@ -1335,19 +1335,20 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     return;
   }
+  if (e.key === 'g' || e.key === 'G') { input.gun = 1; e.preventDefault(); return; }
   if (e.key === 'Tab') { e.preventDefault(); if (!e.repeat) sim.cycleTarget(); return; }
   if (e.repeat) { if (e.key.startsWith('Arrow')) e.preventDefault(); return; }
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   switch (key) {
     case 'ArrowUp': sim.telegraph(+1); break;
     case 'ArrowDown': sim.telegraph(-1); break;
-    case 'f': sim.fire(); break;
-    case 'g': sim.toggleGuns(); break;
+    case 'f': case 'm': sim.fire(); break; // the missile
+    case 'a': sim.toggleAutoGuns(); break;
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
     case '1': case '2': case '3': case '4': case '5': case '6': case '7': setView(VIEWS[Number(key) - 1]); break;
     case 'h': setHud(!hudOn); break;
-    case 'm': setMap(!map.enabled); break;
+    case 'n': setMap(!map.enabled); break;
     case 'i':
       cineOn = !cineOn;
       if (!cineOn) endCine();
@@ -1367,8 +1368,9 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   if (e.key === 'ArrowLeft') input.left = 0;
   if (e.key === 'ArrowRight') input.right = 0;
+  if (e.key === 'g' || e.key === 'G') input.gun = 0;
 });
-window.addEventListener('blur', () => { input.left = 0; input.right = 0; });
+window.addEventListener('blur', () => { input.left = 0; input.right = 0; input.gun = 0; });
 
 // --- Loop ---------------------------------------------------------------------------------------------------------------
 function resize() {
