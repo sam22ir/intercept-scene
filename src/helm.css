@@ -157,28 +157,23 @@ body.mission-helm .hud { background: rgba(9, 14, 21, 0.38); backdrop-filter: blu
 .helm-ship .hs-hits i { width: 13px; height: 9px; }
 .helm-ship .hr-bar { height: 6px; }
 
-/* The target readout: the name and what it is doing, the range large and coloured by how close, four small figures, and the fire state. */
-.hud .tg-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.hud .tg-top b { font-size: 20px; font-weight: 750; letter-spacing: 0.02em; }
-.hud .tg-top em { font-style: normal; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.hud .tg-top em.attack, .hud .tg-top em.pass { color: #ff5d61; font-weight: 700; }
-.hud .tg-range { display: flex; align-items: baseline; gap: 8px; margin: 2px 0 6px; }
-.hud .tg-range b { font-size: 34px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; }
-.hud .tg-range span { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
-.hud .tg-high .tg-range b { color: #ff5d61; }
-.hud .tg-mid .tg-range b { color: #ffc454; }
-.hud .tg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 12px; }
-.hud .tg-grid span { display: block; font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
-.hud .tg-grid b { font-size: 14px; font-weight: 650; }
-.hud .tg-grid small { font-size: 10px; color: var(--muted); font-weight: 500; }
-.hud .tg-fire { display: flex; align-items: center; gap: 7px; margin-top: 8px; padding: 4px 8px; border-radius: 8px; font-size: 11.5px; font-weight: 650; background: rgba(255, 255, 255, 0.06); }
-.hud .tg-fire i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+/* The target readout: one compact card: name, range (coloured by how close) and state on one line, bearing and height under it, the fire state last. */
+.hud .tg-line { display: flex; align-items: baseline; gap: 10px; }
+.hud .tg-line b { font-size: 15px; font-weight: 750; }
+.hud .tg-line strong { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+.hud .tg-line em { margin-left: auto; font-style: normal; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255, 255, 255, 0.78); }
+.hud .tg-line em.attack, .hud .tg-line em.pass { color: #ff5d61; font-weight: 700; }
+.hud .tg-high strong { color: #ff5d61; }
+.hud .tg-mid strong { color: #ffc454; }
+.hud .tg-sub { margin-top: 2px; font-size: 12px; color: rgba(255, 255, 255, 0.8); }
+.hud .tg-fire { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px; font-weight: 650; }
+.hud .tg-fire i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .hud .tg-fire.ok { color: #3ddc84; }
-.hud .tg-fire.ok i { background: #3ddc84; box-shadow: 0 0 6px #3ddc84; }
+.hud .tg-fire.ok i { background: #3ddc84; }
 .hud .tg-fire.no { color: #ffc454; }
 .hud .tg-fire.no i { background: #ffc454; }
-.hud .tg-none .tg-top b { font-size: 15px; color: var(--muted); }
-
+.hud .tg-none .tg-line b { font-size: 13px; color: rgba(255, 255, 255, 0.7); }
+body.mission-helm .hud { width: 200px; padding: 8px 11px 9px; }
 /* Readable labels on the see-through target card. */
 .hud .tg-range span, .hud .tg-grid span, .hud .tg-top em { color: rgba(255, 255, 255, 0.78); text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85); }
 .hud .tg-grid small { color: rgba(255, 255, 255, 0.7); }

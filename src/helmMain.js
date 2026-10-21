@@ -1066,30 +1066,19 @@ function shipHtml() {
 
 function hudHtml() {
   const out = [];
-  // The drone data: the target (name and state, range, bearing, height, closing speed, the time it has left, whether F can fire), then the radar contacts.
+  // The drone data: one compact card for the target, then the radar contacts.
   const t = sim.target;
-  const phaseWord = { inbound: 'inbound', pass: 'low pass', extend: 'opening', attack: 'ATTACK RUN' };
+  const phaseWord = { inbound: 'inbound', pass: 'low pass', extend: 'opening', attack: 'ATTACK' };
   if (t) {
     const r = sim.rangeTo(t.pos);
     const why = sim.engageable(t);
-    sim.shipVel(pipV3[0]);
-    pipV3[1].set(t.pos.x - sim.x, t.pos.y, t.pos.z - sim.z);
-    pipV3[2].subVectors(t.vel, pipV3[0]);
-    const closing = -pipV3[1].dot(pipV3[2]) / (pipV3[1].length() || 1); // m/s, + when it is coming in
-    const eta = closing > 8 ? r / closing : null;
     const tone = r < 1500 ? 'high' : r < 3000 ? 'mid' : 'low';
     const fire = why ? why.replace(/: turn the ship$/, '').replace(/^Target astern, outside the launcher's arc$/, 'Out of arc') : 'Ready to fire';
-    out.push(`<div class="hud-sec tg tg-${tone}"><div class="tg-top"><b>${t.name}</b><em class="${t.phase}">${phaseWord[t.phase] ?? t.phase}</em></div>`
-      + `<div class="tg-range"><b>${kmText(r)}</b><span>range</span></div>`
-      + '<div class="tg-grid">'
-      + `<div><span>Bearing</span><b>${relName(sim.relBearing(t.pos))}</b></div>`
-      + `<div><span>Height</span><b>${f(t.pos.y)}<small> m</small></b></div>`
-      + `<div><span>Closing</span><b>${closing > 2 ? f(closing * 1.944) : '–'}<small> kn</small></b></div>`
-      + `<div><span>Reaches ship</span><b>${eta !== null && eta < 120 ? `${f(eta)}<small> s</small>` : '–'}</b></div>`
-      + '</div>'
-      + `<div class="tg-fire ${why ? 'no' : 'ok'}"><i></i>F · ${fire}</div></div>`);
+    out.push(`<div class="hud-sec tg tg-${tone}"><div class="tg-line"><b>${t.name}</b><strong>${kmText(r)}</strong><em class="${t.phase}">${phaseWord[t.phase] ?? t.phase}</em></div>`
+      + `<div class="tg-sub">${relName(sim.relBearing(t.pos))} · ${f(t.pos.y)} m</div>`
+      + `<div class="tg-fire ${why ? 'no' : 'ok'}"><i></i>${fire}</div></div>`);
   } else {
-    out.push('<div class="hud-sec tg tg-none"><div class="tg-top"><b>No target</b><em>Tab selects one</em></div></div>');
+    out.push('<div class="hud-sec tg tg-none"><div class="tg-line"><b>No target</b><em>Tab selects</em></div></div>');
   }
 
   // The radar picture: every contact on one line.
@@ -1098,9 +1087,10 @@ function hudHtml() {
   const rows = contacts.map((d) => `<div class="helm-contact ${d.phase}${d.id === sim.targetId ? ' sel' : ''}"><b>${d.name}</b>`
     + `<span>${relName(sim.relBearing(d.pos))}</span><span>${kmText(sim.rangeTo(d.pos))}</span><em>${word[d.phase] ?? d.phase}</em></div>`).join('');
   const thr = ['Clear', 'Contact', 'Threat close', 'Under attack'][sim.threat];
-  out.push(`<div class="hud-sec">${head('Radar', thr, ['ok', 'warn', 'bad', 'bad'][sim.threat])}`
-    + `${rows || '<div class="helm-contact none">No contacts</div>'}`
-    + `<div class="helm-score">Drones down <b>${sim.kills}</b> · hits taken <b>${sim.strikes}</b> of 3</div></div>`);
+  const score = `<div class="helm-score">Drones down <b>${sim.kills}</b> · hits taken <b>${sim.strikes}</b> of 3</div>`;
+  if (contacts.length > 1) { // the list is only worth its room when there is more than the target to see
+    out.push(`<div class="hud-sec">${head('Radar', thr, ['ok', 'warn', 'bad', 'bad'][sim.threat])}${rows}${score}</div>`);
+  } else out.push(`<div class="hud-sec helm-foot">${score}</div>`);
   return out.join('');
 }
 
