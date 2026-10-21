@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {
   HelmSim, SLEW_TIME, ACQUIRE_TIME, LOCK_HOLD, TELEGRAPH, START_ORDER, KT, RUDDER_MAX, RADAR_RANGE, CELLS, ARC, relName, compass,
+  GUN_RANGE, GUN_ROUNDS, GUN_BLOCK, DRONE_HP, gunBlind,
 } from '../src/helm.js';
 
 const run = (sim, seconds, input = {}) => { for (let i = 0; i < seconds * 10; i++) sim.advance(0.1, input); };
@@ -182,6 +183,68 @@ describe('the missile', () => {
     run(sim, 15);
     assert.equal(d.alive, false, `drone still flying, ${sim.rangeTo(d.pos)} m`);
     assert.equal(sim.kills, 1);
+  });
+});
+
+describe('the guns', () => {
+  it('shoot down a drone astern that the missile box cannot reach, and spend ammunition doing it', () => {
+    const sim = new HelmSim();
+    sim.nextSpawn = Infinity;
+    const d = sim.spawn({ bearing: Math.PI, range: 2300, alt: 90 });
+    run(sim, 0.5);
+    assert.ok(d.detected);
+    assert.match(sim.engageable(d), /arc/, 'the missile box cannot take it');
+    assert.equal(sim.gunReason(d), null);
+    sim.toggleGuns();
+    assert.ok(sim.gunsOn);
+    let hits = 0;
+    for (let i = 0; i < 400 && d.alive; i++) {
+      sim.advance(0.1, {});
+      for (const e of events(sim)) if (e.type === 'gunhit') hits += 1;
+    }
+    assert.equal(d.alive, false, 'brought down');
+    assert.equal(d.wreck.by, 'gun');
+    assert.equal(sim.kills, 1);
+    assert.ok(hits >= DRONE_HP, 'it took its share of hits');
+    assert.ok(sim.gunRounds < 2 * GUN_ROUNDS, 'rounds were spent');
+  });
+
+  it('stay silent when off, out of range, or when the drone is in the blocked sector ahead', () => {
+    const sim = new HelmSim();
+    sim.nextSpawn = Infinity;
+    const d = sim.spawn({ bearing: Math.PI, range: 2000, alt: 90 });
+    run(sim, 0.5);
+    run(sim, 2);
+    assert.equal(sim.guns.some((g) => g.firing), false, 'off: no fire');
+    sim.toggleGuns();
+    d.pos.set(sim.x - GUN_RANGE - 300, 90, sim.z);
+    assert.match(sim.gunReason(d), /range/);
+    d.pos.set(sim.x + 1500, 90, sim.z + 100);
+    assert.match(sim.gunReason(d), /blocked/);
+    assert.ok(GUN_BLOCK > 0.5 && GUN_BLOCK < 1.2);
+  });
+});
+
+describe('each gun has its own dead zone', () => {
+  const fireAt = (bearing) => {
+    const sim = new HelmSim();
+    sim.nextSpawn = Infinity;
+    const d = sim.spawn({ bearing: sim.psi + bearing, range: 1800, alt: 80 });
+    run(sim, 0.5);
+    sim.targetId = d.id;
+    d.hp = 99;
+    sim.toggleGuns();
+    run(sim, 2);
+    return sim.guns.map((g) => g.ammo < GUN_ROUNDS);
+  };
+  it('astern both fire, abeam only the near gun, and ahead neither (the guns are port, starboard)', () => {
+    assert.deepEqual(fireAt(Math.PI), [true, true]);
+    assert.deepEqual(fireAt(Math.PI / 2), [false, true], 'starboard beam: only the starboard gun');
+    assert.deepEqual(fireAt(-Math.PI / 2), [true, false], 'port beam: only the port gun');
+    assert.deepEqual(fireAt(0.1), [false, false], 'right ahead: both are blind');
+  });
+  it('the dead zones are mirror images', () => {
+    for (const a of [-3, -2, -1.5, -0.8, 0, 0.5, 1.2, 2.2, 3]) assert.equal(gunBlind(0, a), gunBlind(1, -a));
   });
 });
 

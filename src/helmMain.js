@@ -5,6 +5,7 @@ import { createEnvironment } from './environment.js';
 import { createShip } from './models/ship.js';
 import { createPlane } from './models/plane.js';
 import { createMissile } from './models/missile.js';
+import { createGatling } from './models/gatling.js';
 import { createDebris } from './fx/effects.js';
 import { createLiveFx } from './fx/liveFx.js';
 import { pointScale } from './fx/particles.js';
@@ -14,7 +15,7 @@ import { createHelmMap } from './helmMap.js';
 import { createHelmAudio } from './helmAudio.js';
 import { menuText } from './menu.js';
 import {
-  HelmSim, SLEW_TIME, TELEGRAPH, RUDDER_MAX, CELLS, MISSILE_RANGE, BRIDGE_EYE, DIRECTOR_EYE, relName, kmText,
+  HelmSim, SLEW_TIME, TELEGRAPH, RUDDER_MAX, CELLS, MISSILE_RANGE, BRIDGE_EYE, DIRECTOR_EYE, GUN_MOUNTS, GUN_ROUNDS, relName, kmText,
 } from './helm.js';
 import './helm.css';
 
@@ -52,6 +53,61 @@ const ship = createShip();
 ship.group.rotation.order = 'YXZ'; // heading, then heel, then trim
 scene.add(ship.group);
 const fx = createLiveFx(scene);
+// The two 30 mm rotary guns on the aft deckhouse roof, and their tracers (a pool of short lines flying on a ballistic path).
+const gatlings = GUN_MOUNTS.map((m) => {
+  const g = createGatling();
+  g.group.position.copy(m);
+  g.group.position.y -= 1.3; // the mount's pivot is the gun's centre; its base stands on the roof
+  ship.group.add(g.group);
+  return g;
+});
+const TRACERS = 220;
+const tracers = Array.from({ length: TRACERS }, () => ({ on: false, p: new THREE.Vector3(), v: new THREE.Vector3(), t0: 0 }));
+const tracerGeo = new THREE.BufferGeometry();
+tracerGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRACERS * 6), 3));
+const tracerLines = new THREE.LineSegments(tracerGeo, new THREE.LineBasicMaterial({ color: 0xffcf70, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }));
+tracerLines.frustumCulled = false;
+scene.add(tracerLines);
+let tracerNext = 0;
+const gunClock = [0, 0];
+function updateGuns(dt) {
+  const t = sim.t;
+  for (let i = 0; i < gatlings.length; i++) {
+    const g = sim.guns[i];
+    gatlings[i].pose(g.yaw, g.pitch, g.spin, g.firing, t);
+    if (!g.firing) continue;
+    gunClock[i] += dt;
+    while (gunClock[i] >= 0.05) { // a tracer every fourth round
+      gunClock[i] -= 0.05;
+      const tr = tracers[tracerNext++ % TRACERS];
+      gatlings[i].muzzle.getWorldPosition(tr.p);
+      gatlings[i].muzzle.getWorldQuaternion(_q);
+      _a.set(1, 0, 0).applyQuaternion(_q);
+      tr.v.copy(_a).multiplyScalar(1050).add(sim.shipVel(_b));
+      tr.v.x += (Math.random() - 0.5) * 6; tr.v.y += (Math.random() - 0.5) * 6; tr.v.z += (Math.random() - 0.5) * 6;
+      tr.t0 = t;
+      tr.on = true;
+    }
+  }
+  const pos = tracerGeo.attributes.position;
+  for (let k = 0; k < TRACERS; k++) {
+    const tr = tracers[k];
+    let live = false;
+    if (tr.on) {
+      const age = t - tr.t0;
+      if (age > 2.2 || age < 0 || tr.p.y + tr.v.y * age < -1) tr.on = false;
+      else {
+        _a.copy(tr.p).addScaledVector(tr.v, age);
+        _b.copy(tr.v).normalize().multiplyScalar(-26);
+        pos.setXYZ(k * 2, _a.x, _a.y, _a.z);
+        pos.setXYZ(k * 2 + 1, _a.x + _b.x, _a.y + _b.y, _a.z + _b.z);
+        live = true;
+      }
+    }
+    if (!live) { pos.setXYZ(k * 2, 0, -9999, 0); pos.setXYZ(k * 2 + 1, 0, -9999, 0); }
+  }
+  pos.needsUpdate = true;
+}
 const audio = createHelmAudio();
 const sim = new HelmSim({ seed: (Date.now() % 100000) | 0 });
 
@@ -257,6 +313,7 @@ function handleEvents() {
         break;
       }
       case 'alarm': break; // an attack run: the drone's own shot comes only when it really closes in (see updateCamera)
+      case 'gunhit': fx.missileTrail(e.pos, sim.t); break; // a puff where the burst struck
       case 'splash': fx.splashAt(e.pos, sim.t, 1.6); break;
       case 'missile-lost': if (e.pos.y < 8) fx.splashAt(e.pos, sim.t, 1.2); break;
       case 'over': if (cine) pendingOrbit = true; else setView('orbit', true); break; // the shot of the last hit plays out first
@@ -1028,7 +1085,7 @@ function domeSvg() {
     if (a < 0.05 || a > Math.PI - 0.05) continue;
     const major = d % 30 === 0;
     ticks += `<line x1="${pt(DOME_R, a).split(',')[0]}" y1="${pt(DOME_R, a).split(',')[1]}" x2="${pt(DOME_R - (major ? 9 : d % 10 === 0 ? 6 : 3.5), a).split(',')[0]}" y2="${pt(DOME_R - (major ? 9 : d % 10 === 0 ? 6 : 3.5), a).split(',')[1]}" class="${major ? 'mj' : ''}"/>`;
-    if (d % 30 === 0 && Math.abs(d - h) > 11) {
+    if (d % 30 === 0) {
       const [x, y] = pt(DOME_R - 21, a).split(',');
       labels += `<text x="${x}" y="${y}" class="dl">${String(((d % 360) + 360) % 360).padStart(3, '0')}</text>`;
     }
@@ -1047,7 +1104,7 @@ function domeSvg() {
   return `<svg viewBox="0 0 200 104" class="dome-svg" aria-hidden="true">`
     + `<path d="M6,100 A${DOME_R},${DOME_R} 0 0 1 194,100" class="rim"/>${ticks}${labels}`
     + `<path d="M${cx - 4},${cy - DOME_R - 1} L${cx + 4},${cy - DOME_R - 1} L${cx},${cy - DOME_R + 6} Z" class="lub"/>`
-    + `<text x="${cx}" y="${cy - DOME_R + 21}" class="hd">${f(((h % 360) + 360) % 360).padStart(3, '0')}°</text>`
+    + `<text x="${cx}" y="79" class="hd">${f(((h % 360) + 360) % 360).padStart(3, '0')}°</text>`
     + `<path d="M${pl[0]},${pl[1]} A${RR},${RR} 0 0 1 ${pr[0]},${pr[1]}" class="rt"/>${fill}`
     + `<line x1="${p0[0]}" y1="${(Number(p0[1]) - 5).toFixed(1)}" x2="${p0[0]}" y2="${(Number(p0[1]) + 5).toFixed(1)}" class="rm"/>`
     + `<text x="${cx}" y="94" class="sp">${f(sim.knots, 1)}<tspan> kn</tspan></text></svg>`;
@@ -1061,7 +1118,8 @@ function shipHtml() {
   const dmg = sim.out ? 'out of action' : sim.strikes ? `${sim.strikes} of 3 hits` : 'no damage';
   return `<div class="hs-rect hs-dmg${sim.strikes ? ' hurt' : ''}"><span>Damage · ${dmg}</span><div class="hs-pips hs-hits">${hits}</div></div>`
     + `<div class="hs-dome">${domeSvg()}</div>`
-    + `<div class="hs-rect hs-ammo"><span>Missiles · ${wTxt}</span><div class="hs-pips">${pips}</div></div>`;
+    + `<div class="hs-rect hs-ammo"><span>Missiles · ${wTxt}</span><div class="hs-pips">${pips}</div>`
+    + `<span class="hs-guns${sim.gunsOn ? ' on' : ''}">Guns · ${sim.gunsOn ? (sim.guns.some((g) => g.firing) ? `FIRING ${sim.guns.map((g, i) => (g.firing ? ['port', 'stbd'][i] : '')).filter(Boolean).join(' + ')}` : 'on') : 'off'} · ${sim.gunRounds}</span></div>`;
 }
 
 function hudHtml() {
@@ -1106,7 +1164,7 @@ function keysHtml() {
   if (sim.out) return `${k('R', 'sail again', true)}${k('V', 'camera')}`;
   const t = sim.target;
   const ready = t && !sim.engageable(t) && !sim.shot && sim.cellsLeft > 0;
-  return `${k('←', '')}${k('→', 'rudder')}${k('↑', '')}${k('↓', 'telegraph')}${k('F', 'fire', ready)}`
+  return `${k('←', '')}${k('→', 'rudder')}${k('↑', '')}${k('↓', 'telegraph')}${k('F', 'fire', ready)}${k('G', 'guns', sim.gunsOn)}`
     + `${k('Tab', 'target', sim.detected.length > 1)}${k('1–7', 'views')}${k('V', 'next view')}`;
 }
 
@@ -1255,6 +1313,7 @@ window.addEventListener('keydown', (e) => {
     case 'ArrowUp': sim.telegraph(+1); break;
     case 'ArrowDown': sim.telegraph(-1); break;
     case 'f': sim.fire(); break;
+    case 'g': sim.toggleGuns(); break;
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
     case '1': case '2': case '3': case '4': case '5': case '6': case '7': setView(VIEWS[Number(key) - 1]); break;
@@ -1308,6 +1367,7 @@ renderer.setAnimationLoop((now) => {
   handleEvents();
   applyState(dt);
   updateCamera(dt);
+  updateGuns(dt * timeScale);
   updatePip(dt);
   audio.update(sim, camera, dt);
   env.follow(camera.position);

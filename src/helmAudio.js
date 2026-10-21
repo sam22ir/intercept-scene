@@ -36,6 +36,7 @@ export function createHelmAudio() {
   const tmp = new THREE.Vector3();
   let haveCam = false;
   let klaxonNext = 0;
+  let gunNext = 0;
 
   function bytes(b64) {
     const bin = atob(b64);
@@ -284,6 +285,11 @@ export function createHelmAudio() {
       loopRate(voice, clamp(doppler(radial(m.pos, m.vel)), 0.8, 1.25)); // the roar's pitch shifts only a little as it passes
       place(voice, m.pos, 0.6 * (1 - Math.exp(-age / 0.08)) * (0.65 + 0.35 * Math.exp(-age / 1.2)), 110);
     }
+    // The guns: a ripping buzz while either one fires.
+    if (sim.guns && sim.guns.some((g) => g.firing) && sim.t >= gunNext) {
+      tones([[110, 0, 0.1], [220, 0, 0.07]], 'sawtooth', 0.09);
+      gunNext = sim.t + 0.085;
+    }
     // The klaxon while a drone is on its attack run.
     if (sim.threat >= 3 && sim.t >= klaxonNext) {
       tones([[520, 0, 0.42], [390, 0.45, 0.42]], 'sawtooth', 0.07);
@@ -294,7 +300,7 @@ export function createHelmAudio() {
   return {
     update,
     event,
-    reset() { klaxonNext = 0; },
+    reset() { klaxonNext = 0; gunNext = 0; },
     get enabled() { return enabled; },
     setEnabled(on) { enabled = on; if (on) wake(false); },
     get state() { return ctx?.state ?? (failed ? 'unavailable' : 'idle'); },

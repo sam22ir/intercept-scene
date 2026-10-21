@@ -186,7 +186,7 @@ describe('the words are true of the missions', () => {
 
   it('Solo Air Defense: the rounds, the views, and every key it lists is really bound', () => {
     const m = missionById('helm');
-    assert.ok(m.facts.includes(`${H.CELLS} missiles`));
+    assert.ok(m.facts.includes(`${H.CELLS} missiles + 2 guns`));
     assert.match(src.helm, /const VIEWS = \['bridge', 'behind', 'above', 'missile', 'sight', 'target', 'orbit'\]/);
     assert.ok(m.facts.includes('7 views'));
     for (const letter of ['f', 'm', 'r', 'v', 'i']) assert.match(src.helm, new RegExp(`case '${letter}':`), `helmMain binds ${letter}`);

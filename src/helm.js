@@ -23,6 +23,12 @@
 //   by proportional navigation (the manual flight's numbers), fuzing within FUZE of the drone. The box only
 //   engages ahead of and abeam the ship (ARC): a drone astern needs the ship turned. 8 cells, so 8 rounds.
 //
+// The guns
+//   G turns the two 30 mm seven-barrel rotary guns on the aft deckhouse on or off. With them on, both train onto the
+//   selected target (Tab picks another) and fire a burst whenever they are on it and it is inside GUN_RANGE, wherever
+//   the missile box cannot reach it: they cover everything but the sector within GUN_BLOCK of the bow, which the
+//   superstructure hides. Every burst has a chance to hit that falls with range; a drone has DRONE_HP of them to give.
+//
 // Coordinates are the scene's: metres, +Y up, the sea is y = 0. +X is north and +Z east: a heading `psi` is
 // measured from +X toward +Z (clockwise from north, as a compass). In the ship's own frame her bow is +X and
 // her starboard side +Z (the frame scenario.js and the ship model use), so a ship-frame point p is in the
@@ -94,10 +100,32 @@ const MAX_IN_FLIGHT = 2;
 const CELL_MOUTHS = [];
 for (const y of [0.3, -0.3]) for (let c = 0; c < 4; c++) CELL_MOUTHS.push(new THREE.Vector3(TUBE_MOUTH.x, y, -0.93 + c * 0.62));
 
+// --- The guns ---------------------------------------------------------------------------------------------
+// Two 30 mm seven-barrel rotary guns on the aft deckhouse roof, one each side (the pivots in the ship's frame).
+export const GUN_MOUNTS = [new THREE.Vector3(-33.6, 13.3, -4.2), new THREE.Vector3(-33.6, 13.3, 4.2)];
+export const GUN_RANGE = 2600; // m
+export const GUN_ROUNDS = 900; // per gun
+export const GUN_BLOCK = rad(40); // each gun's own dead zone reaches this far past the bow on its own side ...
+// ... and, across the roof, the superstructure (radome, funnel, mast) hides the far side up to 110 degrees from the bow, so each gun
+// has its own dead zone, and each fires alone: yaw is + toward port, so the port gun is blind from 110 degrees to starboard to
+// GUN_BLOCK to port, and the starboard gun the mirror of it. Abeam only the near gun can fire, astern both.
+export const GUN_DEAD = [{ from: -rad(110), to: GUN_BLOCK }, { from: -GUN_BLOCK, to: rad(110) }];
+export const gunBlind = (i, yaw) => yaw > GUN_DEAD[i].from && yaw < GUN_DEAD[i].to;
+export const GUN_STOW = { yaw: Math.PI, pitch: rad(8) }; // trained aft
+const GUN_RATE = 83; // rounds a second (5,000 a minute)
+const GUN_BURST = 30; // rounds in a burst, one chance to hit
+const GUN_YAW_RATE = rad(150);
+const GUN_PITCH_RATE = rad(90);
+const GUN_AIM_OK = rad(3);
+const GUN_MUZZLE_V = 1050; // m/s
+export const DRONE_HP = 6; // bursts that hit, to bring a drone down
+
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 const _c = new THREE.Vector3();
 const _q = new THREE.Quaternion();
+const _d = new THREE.Vector3();
+const _e = new THREE.Vector3();
 
 // Compass helpers: a bearing from north (deg 0..360), and a relative one as the navy says it: green to
 // starboard, red to port ("green 045").
@@ -155,6 +183,8 @@ export class HelmSim {
     this.shot = null; // the launcher turning onto a target: { cell, tPress, from, aim, droneId }
     this.launcher = { yaw: 0, pitch: 0 };
     this.lastFire = -Infinity;
+    this.gunsOn = false;
+    this.guns = GUN_MOUNTS.map(() => ({ yaw: GUN_STOW.yaw, pitch: GUN_STOW.pitch, ammo: GUN_ROUNDS, firing: false, rounds: 0, spin: 0, spinRate: 0 }));
     this.events = [];
   }
 
@@ -264,6 +294,7 @@ export class HelmSim {
     this.stepSpawn();
     for (const d of this.drones) this.stepDrone(d, dt);
     this.stepLauncher();
+    this.stepGuns(dt);
     for (const m of [...this.missiles]) this.stepMissile(m, dt);
     // Wrecks sink and are forgotten after a while.
     this.drones = this.drones.filter((d) => d.alive || this.t - d.tDown < 40);
@@ -322,6 +353,7 @@ export class HelmSim {
       weave: rng() * 6,
       tDown: Infinity,
       wreck: null,
+      hp: DRONE_HP,
     };
     this.nextId += 1;
     this.drones.push(d);
@@ -461,6 +493,79 @@ export class HelmSim {
       this.events.push({ type: 'splash', id: d.id, pos: burstPos.clone() });
     }
     if (this.targetId === d.id) this.targetId = this.nearest()?.id ?? null;
+  }
+
+  // --- the guns ----------------------------------------------------------------------------------------------
+  get gunRounds() { return this.guns.reduce((n, g) => n + Math.max(0, Math.round(g.ammo)), 0); }
+  toggleGuns() {
+    if (this.out) return;
+    if (this.gunRounds <= 0) { this.say('The guns are out of ammunition', 'warn'); return; }
+    this.gunsOn = !this.gunsOn;
+    this.say(this.gunsOn ? 'Guns on: each fires alone on the target inside 2.6 km, outside its own dead zone' : 'Guns off', this.gunsOn ? 'warn' : '');
+  }
+  // Can any gun engage this drone now? null if one can, else the reason. (Which ones: gunsBearing.)
+  gunsBearing(d) {
+    if (!d) return [];
+    const out = [];
+    for (let i = 0; i < GUN_MOUNTS.length; i++) {
+      const rel = this.toLocal(d.pos, _e).sub(GUN_MOUNTS[i]);
+      if (!gunBlind(i, Math.atan2(-rel.z, rel.x))) out.push(i);
+    }
+    return out;
+  }
+  gunReason(d) {
+    if (!d) return 'No target on the radar';
+    if (this.rangeTo(d.pos) > GUN_RANGE) return `Out of gun range: ${kmText(GUN_RANGE)} at most`;
+    if (!this.gunsBearing(d).length) return 'Guns blocked: the superstructure is in the way ahead';
+    return null;
+  }
+
+  stepGuns(dt) {
+    const d = this.target;
+    for (let i = 0; i < this.guns.length; i++) {
+      const g = this.guns[i];
+      let wantYaw = GUN_STOW.yaw;
+      let wantPitch = GUN_STOW.pitch;
+      let engage = false;
+      if (this.gunsOn && !this.out && d && g.ammo > 0 && this.rangeTo(d.pos) <= GUN_RANGE) {
+        // Where the drone will be as the round reaches it (the round carries the ship's own speed).
+        const mw = this.toWorld(GUN_MOUNTS[i], _a);
+        const tf = mw.distanceTo(d.pos) / GUN_MUZZLE_V;
+        _b.copy(d.pos).addScaledVector(_c.copy(d.vel).sub(this.shipVel(_d)), tf);
+        const rel = this.toLocal(_b, _e).sub(GUN_MOUNTS[i]);
+        wantYaw = Math.atan2(-rel.z, rel.x);
+        wantPitch = clamp(Math.atan2(rel.y, Math.hypot(rel.x, rel.z)), rad(-5), rad(85));
+        engage = !gunBlind(i, wantYaw); // each gun by its own dead zone
+        if (!engage) { wantYaw = GUN_STOW.yaw; wantPitch = GUN_STOW.pitch; }
+      }
+      g.yaw = wrapPi(g.yaw + clamp(wrapPi(wantYaw - g.yaw), -GUN_YAW_RATE * dt, GUN_YAW_RATE * dt));
+      g.pitch += clamp(wantPitch - g.pitch, -GUN_PITCH_RATE * dt, GUN_PITCH_RATE * dt);
+      const cur = _a.set(Math.cos(g.pitch) * Math.cos(g.yaw), Math.sin(g.pitch), -Math.cos(g.pitch) * Math.sin(g.yaw));
+      const want = _b.set(Math.cos(wantPitch) * Math.cos(wantYaw), Math.sin(wantPitch), -Math.cos(wantPitch) * Math.sin(wantYaw));
+      g.firing = engage && cur.angleTo(want) < GUN_AIM_OK;
+      g.spinRate += (((g.firing ? 70 : 0) - g.spinRate) / 0.5) * dt;
+      g.spin += g.spinRate * dt;
+      if (!g.firing) continue;
+      const n = GUN_RATE * dt;
+      g.ammo = Math.max(0, g.ammo - n);
+      g.rounds += n;
+      while (g.rounds >= GUN_BURST && d.alive) {
+        g.rounds -= GUN_BURST;
+        const range = this.rangeTo(d.pos);
+        if (this.rng() < clamp(1.15 - range / 2900, 0.12, 0.92)) {
+          d.hp -= 1;
+          this.events.push({ type: 'gunhit', id: d.id, pos: d.pos.clone() });
+          if (d.hp <= 0) {
+            this.down(d, 'missile', d.pos.clone());
+            d.wreck.by = 'gun';
+          }
+        }
+      }
+    }
+    if (this.gunsOn && this.gunRounds <= 0) {
+      this.gunsOn = false;
+      this.say('The guns are out of ammunition', 'warn');
+    }
   }
 
   // --- the launcher and the missiles -------------------------------------------------------------------------------
