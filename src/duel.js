@@ -60,6 +60,7 @@ export const AMMO_TYPES = {
   ap: { name: 'AP', dmg: 1.5, fire: 0, flood: 0 },
 };
 export const SWITCH_TIME = 3.5; // s of reload to change the loaded kind
+const GUN_BLOCK_DEG = rad(40); // both aft guns are blind this close to the bow
 const AMMO_DWELL = 12; // s the enemy keeps a kind loaded before it may change
 const MAIN_YAW_RATE = rad(45);
 const MAIN_PITCH_RATE = rad(30);
@@ -87,6 +88,30 @@ const GUN_AIM_OK = rad(3);
 const GUN_MUZZLE_V = 1050;
 export const GUN_SPIN = 70;
 export const GUN_STOW = { yaw: Math.PI, pitch: rad(8) };
+
+// --- The anti-ship missiles (the same for both ships) ---------------------------------------------------------------------
+// A few rounds in the forward launcher. M readies it, and with the enemy inside the launcher's arc and range it locks on in MSL_LOCK s
+// (the lock drops if she leaves the arc); then the launch (Enter) sends a sea-skimming round that homes by proportional navigation for
+// about twenty seconds and does heavy damage and starts a fire. The only defence is the aft 30 mm pair, which engage a round that is
+// coming for their ship inside GUN_MSL_RANGE wherever their dead zones allow (so from astern, and from the quarters), and kill it with a chance
+// that falls with range and with the closing speed. The ship that is locked on is warned.
+export const MSL_STOCK = 4;
+export const MSL_ARC = rad(100); // either side of the bow
+export const MSL_RANGE = 8000; // m
+export const MSL_LOCK = 4; // s to lock on
+export const MSL_RELOAD = 6; // s between launches
+export const MSL_FIRST = 8; // s at the start before the launcher is ready
+export const MSL_MOUNT = [18, 12, 0];
+export const MSL_V = 280; // m/s once the motor has done
+const MSL_V0 = 70, MSL_ACCEL = 70;
+const MSL_NAV = 4;
+const MSL_TURN = rad(50); // rad/s at most
+export const MSL_LIFE = 32; // s
+export const MSL_ALT = 6; // m, sea-skimming
+export const MSL_DAMAGE = 26; // to the compartment
+export const MSL_HULL = 0.6; // the part of that which costs the hull
+export const GUN_MSL_RANGE = 2000; // m
+const MSL_PK = 0.08; // per burst, at the muzzle-near end of the range, before the closing-speed factor
 
 // --- The ships and the damage ------------------------------------------------------------------------------------
 export const HULL_HP = 100;
@@ -138,9 +163,9 @@ const TRACK_PLAYER = 3;
 // `every` seconds; `range` the distance it wants to fight at; `speed` its telegraph order; `retreat` the hull fraction below
 // which it runs.
 export const LEVELS = {
-  easy: { name: 'Easy', think: 1.4, aim: 2.4, track: 6, base: 0, jink: 0, every: [99, 99], range: 5200, speed: 4, retreat: 0, crews: 1, ammo: 'he' },
-  normal: { name: 'Normal', think: 0.6, aim: 1.5, track: 4, base: rad(22), jink: rad(18), every: [9, 16], range: 4600, speed: 5, retreat: 0.25, crews: 2, ammo: 'mixed' },
-  hard: { name: 'Hard', think: 0.25, aim: 1.0, track: 2.5, base: rad(40), jink: rad(40), every: [5, 10], range: 4000, speed: 5, retreat: 0.3, crews: 3, ammo: 'smart' },
+  easy: { name: 'Easy', think: 1.4, aim: 2.4, track: 6, base: 0, jink: 0, every: [99, 99], range: 5200, speed: 4, retreat: 0, crews: 1, ammo: 'he', msl: { after: 70, gap: 60, max: 1, safe: false }, guard: 0 },
+  normal: { name: 'Normal', think: 0.6, aim: 1.5, track: 4, base: rad(22), jink: rad(18), every: [9, 16], range: 4600, speed: 5, retreat: 0.25, crews: 2, ammo: 'mixed', msl: { after: 25, gap: 22, max: 4, safe: false }, guard: 1 },
+  hard: { name: 'Hard', think: 0.25, aim: 1.0, track: 2.5, base: rad(40), jink: rad(40), every: [5, 10], range: 4000, speed: 5, retreat: 0.3, crews: 3, ammo: 'smart', msl: { after: 20, gap: 16, max: 4, safe: true }, guard: 2 },
 };
 
 function mulberry32(seed) {
@@ -178,13 +203,14 @@ function makeShip(idx, x, z, psi) {
     crews: Array.from({ length: CREWS }, () => ({ to: null, eta: 0 })), // sent to `to`, working once eta has run out
     // The 76 mm: yaw (+ toward port), pitch, the time until it is loaded, the rounds, and whether it is on the solution.
     gun: { yaw: 0, pitch: rad(2), cool: 1.5, ammo: MAIN_ROUNDS, stock: { ...AMMO_STOCK }, type: 'he', onTarget: false, engaged: false },
-    gats: [0, 1].map(() => ({ yaw: GUN_STOW.yaw, pitch: GUN_STOW.pitch, ammo: GUN_ROUNDS, firing: false, rounds: 0, spin: 0, spinRate: 0, burst: 0, cool: 0 })),
+    gats: [0, 1].map(() => ({ yaw: GUN_STOW.yaw, pitch: GUN_STOW.pitch, ammo: GUN_ROUNDS, target: 'ship', firing: false, rounds: 0, spin: 0, spinRate: 0, burst: 0, cool: 0 })),
     auto: true, // the aft guns fire by themselves
     est: null, // the velocity this ship's fire control believes the other ship has, [x, z]
     cmd: { want: 0, fire: false, gat: false, aim: null },
+    msl: { stock: MSL_STOCK, ready: false, lock: 0, cool: MSL_FIRST }, // the forward launcher
     manual: false, // the 76 mm is aimed by hand (input.aim) instead of by the fire control
     ai: null,
-    stats: { shells: 0, hits: 0, bursts: 0, burstHits: 0, taken: 0 },
+    stats: { shells: 0, hits: 0, bursts: 0, burstHits: 0, taken: 0, missiles: 0, mslHits: 0, mslKilled: 0 },
   };
 }
 
@@ -211,7 +237,9 @@ export class DuelSim {
     this.rngF = mulberry32((this.seed ^ 0xf17e) >>> 0); // fires: a stream of its own, so they never shift the gunnery draws
     this.ships[1].ai = this.makeAi(this.level);
     if (this.auto) this.ships[0].ai = this.makeAi(this.auto);
+    this.rngM = mulberry32((this.seed ^ 0x5ee1) >>> 0); // missiles: a stream of their own
     this.shells = [];
+    this.missiles = [];
     this.shellId = 0;
     this.events = [];
     this.winner = null; // 0 you, 1 the enemy
@@ -308,6 +336,8 @@ export class DuelSim {
     }
     for (const s of this.ships) { this.stepMain(s, dt); this.stepGats(s, dt); }
     for (const sh of [...this.shells]) this.stepShell(sh, dt);
+    for (const s of this.ships) this.stepLauncher(s, dt);
+    for (const m of [...this.missiles]) this.stepMissile(m, dt);
     for (const s of this.ships) this.stepDamage(s, dt);
     if (this.winner === null && (me.tSunk !== null || foe.tSunk !== null)) {
       this.winner = me.tSunk !== null && foe.tSunk !== null ? (me.tSunk <= foe.tSunk ? 1 : 0) : me.tSunk !== null ? 1 : 0;
@@ -335,11 +365,11 @@ export class DuelSim {
 
   // The 76 mm's solution on the other ship: yaw, pitch and the time of flight, with the target assumed to go on
   // in a straight line at its present velocity, and the shell carrying the firing ship's own velocity.
-  solve(s, mount, muzzleV, drop, out = {}) {
+  solve(s, mount, muzzleV, drop, out = {}, pt = null) {
     const o = this.ships[1 - s.idx];
     const M = this.toWorld(s, mount);
-    const tp = this.toWorld(o, [0, 6, 0]);
-    const tv = [s.est[0], 0, s.est[1]], sv = this.velOf(s);
+    const tp = pt ? pt.p : this.toWorld(o, [0, 6, 0]);
+    const tv = pt ? pt.v : [s.est[0], 0, s.est[1]], sv = this.velOf(s);
     let T = Math.hypot(tp[0] - M[0], tp[2] - M[2]) / muzzleV;
     let d = [0, 0, 0];
     for (let i = 0; i < 6; i++) {
@@ -507,17 +537,141 @@ export class DuelSim {
     }
   }
 
+  // --- the missiles -----------------------------------------------------------------------------------------------------
+  mslVel(m) { return [Math.cos(m.hdg) * m.speed, 0, Math.sin(m.hdg) * m.speed]; }
+  // Ready the launcher (or stand it down), once per key press. Returns the new state.
+  readyMissile(i, on = null) {
+    const s = this.ships[i];
+    if (s.tSunk !== null || s.msl.stock <= 0) return false;
+    s.msl.ready = on === null ? !s.msl.ready : !!on;
+    if (!s.msl.ready) s.msl.lock = 0;
+    return s.msl.ready;
+  }
+  // Is the enemy inside the launcher's arc and range?
+  mslInArc(s) {
+    const o = this.ships[1 - s.idx];
+    return o.tSunk === null && Math.abs(this.relBearing(s)) <= MSL_ARC && Math.hypot(o.x - s.x, o.z - s.z) <= MSL_RANGE;
+  }
+  stepLauncher(s, dt) {
+    const l = s.msl;
+    l.cool = Math.max(0, l.cool - dt);
+    if (s.tSunk !== null || !l.ready || l.stock <= 0) { if (!l.ready || s.tSunk !== null) l.lock = 0; return; }
+    const before = l.lock;
+    l.lock = this.mslInArc(s) ? Math.min(MSL_LOCK, l.lock + dt) : Math.max(0, l.lock - 2 * dt);
+    if (before <= 0 && l.lock > 0) this.events.push({ type: 'lockon', owner: s.idx, ship: 1 - s.idx, bearing: this.bearingOf(this.ships[1 - s.idx], s) });
+  }
+  // The bearing of ship `b` from ship `a`'s bow (+ to starboard), as the navy says it.
+  bearingOf(a, b) { return wrapPi(Math.atan2(b.z - a.z, b.x - a.x) - a.psi); }
+  locked(s) { return s.msl.ready && s.msl.lock >= MSL_LOCK - 1e-9; }
+  // Fire a missile (once per key press). Needs the launcher ready, locked on, loaded and not cooling.
+  launchMissile(i) {
+    const s = this.ships[i], l = s.msl, o = this.ships[1 - i];
+    if (s.tSunk !== null || o.tSunk !== null || l.stock <= 0 || l.cool > 0 || !this.locked(s) || !this.mslInArc(s)) return false;
+    const P = this.toWorld(s, MSL_MOUNT);
+    const sv = this.velOf(s);
+    const m = {
+      id: ++this.shellId, owner: i, target: o.idx, age: 0,
+      p: [P[0], P[1], P[2]], hdg: Math.atan2(o.z - P[2], o.x - P[0]), speed: Math.hypot(sv[0], sv[2]) + MSL_V0, lam: 0, range: Infinity,
+    };
+    m.lam = m.hdg;
+    l.stock -= 1; l.cool = MSL_RELOAD; l.lock = 0;
+    s.stats.missiles += 1;
+    this.missiles.push(m);
+    this.events.push({ type: 'mslLaunch', owner: i, ship: o.idx, id: m.id, pos: m.p.slice() });
+    return true;
+  }
+  // The rounds coming for a ship, nearest first: { id, bearing (+ starboard from her bow), range, tti (s, at the present closing speed) }.
+  threats(i) {
+    const s = this.ships[i], out = [];
+    for (const m of this.missiles) {
+      if (m.target !== i) continue;
+      const dx = s.x - m.p[0], dz = s.z - m.p[2], r = Math.hypot(dx, dz);
+      const v = this.mslVel(m), sv = this.velOf(s);
+      const closing = Math.max(1, ((v[0] - sv[0]) * dx + (v[2] - sv[2]) * dz) / (r || 1));
+      out.push({ id: m.id, bearing: wrapPi(Math.atan2(-dz, -dx) - s.psi), range: r, tti: r / closing });
+    }
+    return out.sort((a, b) => a.range - b.range);
+  }
+  stepMissile(m, dt) {
+    const tgt = this.ships[m.target];
+    m.age += dt;
+    m.speed = Math.min(MSL_V, m.speed + MSL_ACCEL * dt);
+    // proportional navigation in the horizontal plane: turn at N times the rate the line of sight turns
+    const dx = tgt.x - m.p[0], dz = tgt.z - m.p[2];
+    const lam = Math.atan2(dz, dx);
+    m.hdg = wrapPi(m.hdg + clamp(MSL_NAV * wrapPi(lam - m.lam), -MSL_TURN * dt, MSL_TURN * dt));
+    m.lam = lam;
+    const p0 = m.p.slice();
+    const alt = MSL_ALT + (12 - MSL_ALT) * Math.max(0, 1 - m.age / 1.5);
+    m.p[0] += Math.cos(m.hdg) * m.speed * dt;
+    m.p[2] += Math.sin(m.hdg) * m.speed * dt;
+    m.p[1] = alt;
+    const range = Math.hypot(dx, dz);
+    if (tgt.tSunk === null || this.t - tgt.tSunk < 6) {
+      const hit = segmentBox(this.toLocal(tgt, p0), this.toLocal(tgt, m.p));
+      if (hit) { this.mslHit(m, tgt, hit); return; }
+    }
+    const passed = m.age > 3 && range > m.range && range < 600;
+    m.range = range;
+    if (passed || m.age > MSL_LIFE || (tgt.tSunk !== null && this.t - tgt.tSunk > 6)) {
+      this.missiles.splice(this.missiles.indexOf(m), 1);
+      this.events.push({ type: 'mslMiss', owner: m.owner, ship: m.target, pos: m.p.slice() });
+    }
+  }
+  mslHit(m, tgt, local) {
+    const from = this.ships[m.owner];
+    const comp = zoneAt(local[0]);
+    from.stats.mslHits += 1;
+    tgt.stats.taken += 1;
+    const pos = this.toWorld(tgt, [local[0], clamp(local[1], 0, BOX.y1), local[2]]);
+    this.damage(tgt, comp, MSL_DAMAGE, MSL_HULL, local[2]);
+    tgt.leak[comp] += 0.08;
+    tgt.fire[comp] = 0;
+    this.ignite(tgt, comp, 0.6);
+    this.events.push({ type: 'mslHit', owner: m.owner, ship: tgt.idx, comp, dmg: MSL_DAMAGE, pos, out: tgt.comp[comp] <= 0 });
+    this.missiles.splice(this.missiles.indexOf(m), 1);
+  }
+  // One 30 mm burst at an incoming round: the chance falls with range and rises as the round closes slower (from astern).
+  shootMissile(s, m) {
+    const range = Math.hypot(m.p[0] - s.x, m.p[2] - s.z);
+    const v = this.mslVel(m), sv = this.velOf(s), dx = s.x - m.p[0], dz = s.z - m.p[2];
+    const closing = Math.max(60, ((v[0] - sv[0]) * dx + (v[2] - sv[2]) * dz) / (range || 1));
+    const pk = clamp(MSL_PK * (1 - range / GUN_MSL_RANGE) * (MSL_V / closing), 0, 0.4);
+    if (this.rngM() >= pk) return;
+    const i = this.missiles.indexOf(m);
+    if (i < 0) return;
+    this.missiles.splice(i, 1);
+    s.stats.mslKilled += 1;
+    this.events.push({ type: 'mslKilled', owner: m.owner, ship: s.idx, pos: m.p.slice() });
+  }
+
   // --- the aft guns -----------------------------------------------------------------------------------------------------
   stepGats(s, dt) {
     const o = this.ships[1 - s.idx];
     const sunk = s.tSunk !== null || o.tSunk !== null;
-    const trigger = !sunk && (s.auto || s.cmd.gat);
+    const baseTrigger = !sunk && (s.auto || s.cmd.gat);
     const gunsHp = s.comp.guns / COMPARTMENTS.guns.hp;
     for (let i = 0; i < s.gats.length; i++) {
       const g = s.gats[i];
       const working = i === 0 ? gunsHp > 0 : gunsHp > 0.5;
       let wantYaw = GUN_STOW.yaw, wantPitch = GUN_STOW.pitch, engage = false;
-      if (!sunk && working && g.ammo > 0) {
+      g.target = 'ship';
+      let atMsl = null;
+      if (s.tSunk === null && working && g.ammo > 0) {
+        // a missile that is coming for this ship comes first, and the guns shoot at it by themselves, trigger or not
+        let best = Infinity;
+        for (const m of this.missiles) {
+          if (m.target !== s.idx) continue;
+          const sol = this.solve(s, GUN_MOUNT_LOCAL[i], GUN_MUZZLE_V, false, {}, { p: m.p, v: this.mslVel(m) });
+          if (sol.range <= GUN_MSL_RANGE && sol.range < best && !gunBlind(i, sol.yaw)) { best = sol.range; atMsl = { m, sol }; }
+        }
+      }
+      if (atMsl) {
+        wantYaw = atMsl.sol.yaw;
+        wantPitch = clamp(atMsl.sol.pitch, rad(-5), rad(85));
+        engage = true;
+        g.target = 'missile';
+      } else if (!sunk && working && g.ammo > 0) {
         const sol = this.solve(s, GUN_MOUNT_LOCAL[i], GUN_MUZZLE_V, false);
         if (sol.range <= GUN_RANGE && !gunBlind(i, sol.yaw)) {
           wantYaw = sol.yaw;
@@ -525,6 +679,7 @@ export class DuelSim {
           engage = true;
         }
       }
+      const trigger = baseTrigger || g.target === 'missile';
       g.yaw = wrapPi(g.yaw + clamp(wrapPi(wantYaw - g.yaw), -GUN_YAW_RATE * dt, GUN_YAW_RATE * dt));
       g.pitch += clamp(wantPitch - g.pitch, -GUN_PITCH_RATE * dt, GUN_PITCH_RATE * dt);
       const on = engage && Math.abs(wrapPi(wantYaw - g.yaw)) < GUN_AIM_OK && Math.abs(wantPitch - g.pitch) < GUN_AIM_OK;
@@ -542,6 +697,7 @@ export class DuelSim {
       g.rounds += n;
       while (g.rounds >= GUN_BURST) {
         g.rounds -= GUN_BURST;
+        if (g.target === 'missile') { this.shootMissile(s, atMsl.m); continue; }
         s.stats.bursts += 1;
         const range = Math.hypot(o.x - s.x, o.z - s.z);
         if (this.rng() < clamp(1.1 - range / 2200, 0.05, 0.9)) {
@@ -567,6 +723,22 @@ export class DuelSim {
     let want = hurt || (o.hp / HULL_HP < 0.4) ? 'ap' : 'he';
     if (mode === 'smart' && !hurt && !burning && o.hp / HULL_HP > 0.6) want = 'he';
     if (want !== g.type && this.switchAmmo(s.idx, want)) s.ai.ammoAt = this.t + AMMO_DWELL;
+  }
+
+  // The launcher: ready it after the level's delay, keep it readied while there are rounds and fire when it has locked (Hard only when the
+  // round would come in through your aft guns' dead zones, that is nearly from ahead of you), at most `max` and `gap` s apart.
+  thinkMissile(s, o) {
+    const p = s.ai.p.msl, l = s.msl;
+    if (this.t < p.after || s.stats.missiles >= p.max || l.stock <= 0) { if (l.ready) this.readyMissile(s.idx, false); return; }
+    if (!l.ready) this.readyMissile(s.idx, true);
+    if (!this.locked(s) || l.cool > 0) return;
+    if (this.t - (s.ai.lastMsl ?? -Infinity) < p.gap) return;
+    if (p.safe) {
+      const gunsHp = o.comp.guns / COMPARTMENTS.guns.hp;
+      const blind = Math.abs(this.bearingOf(o, s)) < GUN_BLOCK_DEG || gunsHp <= 0;
+      if (!blind) return;
+    }
+    if (this.launchMissile(s.idx)) s.ai.lastMsl = this.t;
   }
 
   // Send the crews where they are needed most: fire first, then a compartment that is out, then the most hurt. Level sets how many crews it uses.
@@ -599,10 +771,15 @@ export class DuelSim {
     if (hurt) { wantRel = ai.side * rad(150); order = TELEGRAPH.length - 1; } // turn away, flank
     else if (range < p.range * 0.7) wantRel = ai.side * rad(110) + ai.jink; // too close: open the range
     else if (range > p.range * 1.15) { wantRel = ai.side * p.base * 0.3 + ai.jink * 0.5; order = Math.min(order + 1, TELEGRAPH.length - 1); }
+    // Missile defence: Normal turns a stern quarter to a round that is coming, Hard also as soon as you ready yours. The aft guns can only
+    // shoot at what is outside their dead zones, so she shows them her quarter (and cannot lock on you from there: the launcher looks ahead).
+    const threatened = this.missiles.some((m) => m.target === s.idx) || (p.guard >= 2 && o.msl.ready && o.msl.stock > 0);
+    if (!hurt && p.guard > 0 && threatened && (p.guard >= 2 || this.missiles.some((m) => m.target === s.idx))) wantRel = (rel >= 0 ? 1 : -1) * rad(125);
     const err = wrapPi(rel - wantRel);
     s.cmd.want = Math.abs(err) < rad(3) ? 0 : Math.sign(err);
     if (s.order < order) s.order += 1; else if (s.order > order) s.order -= 1;
     this.chooseAmmo(s, o);
+    this.thinkMissile(s, o);
     this.dispatchCrews(s);
     s.cmd.fire = true; // it fires whenever the gun is on (the gun decides)
     s.cmd.gat = true;

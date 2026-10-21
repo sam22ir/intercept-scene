@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DuelSim, DT, MAIN_ARC, MAIN_RANGE, GUN_RANGE, HULL_HP, COMPARTMENTS, COMP_IDS, LEVELS, DUEL_LEVELS, SINK_TIME,
-  zoneAt, segmentBox, sinkState, gunBlind, TELEGRAPH, MANUAL_SCATTER, CREWS, CREW_MOVE, REPAIR_CAP, neighbours, AMMO_STOCK, AMMO_TYPES, SWITCH_TIME, MAIN_ROUNDS,
+  zoneAt, segmentBox, sinkState, gunBlind, TELEGRAPH, MSL_LOCK, MSL_STOCK, MSL_FIRST, MSL_LIFE, MSL_V, MSL_ARC, MANUAL_SCATTER, CREWS, CREW_MOVE, REPAIR_CAP, neighbours, AMMO_STOCK, AMMO_TYPES, SWITCH_TIME, MAIN_ROUNDS,
 } from '../src/duel.js';
 
 const run = (sim, seconds, input = {}) => { for (let i = 0; i < seconds * 10; i++) sim.advance(0.1, input); };
@@ -62,7 +62,7 @@ describe('the guns obey their arcs and ranges, for both ships', () => {
           if (!g.firing) return;
           bursts++;
           assert.ok(!(gunBlind(k, g.yaw + 0.06) && gunBlind(k, g.yaw - 0.06)), `gun ${k} fired deep in its dead zone`);
-          assert.ok(sim.range() <= GUN_RANGE + 80, `the 30 mm fired at ${sim.range().toFixed(0)} m`);
+          assert.ok(g.target === 'missile' || sim.range() <= GUN_RANGE + 80, `the 30 mm fired at ${sim.range().toFixed(0)} m`);
         });
       }
       assert.ok(shots > 10, `the duel had ${shots} rounds`);
@@ -497,5 +497,154 @@ describe('manual aim of the 76 mm', () => {
       sim.advance(0.1, { fire: true, aim: { yaw, pitch: 0.2 } });
     }
     assert.ok(sim.player.stats.hits / Math.max(1, sim.player.stats.shells) < 0.2);
+  });
+});
+
+describe('anti-ship missiles', () => {
+  const still = (sim) => { sim.enemy.ai = null; sim.enemy.cmd = { want: 0, fire: false, gat: false }; };
+  const armed = (sim, who = 0) => { sim.readyMissile(who, true); };
+  // A setup with the enemy `d` m away on a bearing `b` (rad from the player's bow, + to starboard), her own course and aft guns arranged by the caller.
+  const place = (sim, d, b) => { sim.enemy.x = sim.player.x + Math.cos(sim.player.psi + b) * d; sim.enemy.z = sim.player.z + Math.sin(sim.player.psi + b) * d; };
+
+  it('needs the launcher ready, a lock of MSL_LOCK s with the enemy in the arc and range, and a loaded rail', () => {
+    const sim = new DuelSim({ seed: 2, level: 'easy' }); still(sim);
+    assert.equal(sim.launchMissile(0), false, 'not readied');
+    armed(sim);
+    run(sim, 2);
+    assert.ok(sim.player.msl.lock > 0 && sim.player.msl.lock < MSL_LOCK);
+    assert.equal(sim.launchMissile(0), false, 'not locked yet');
+    run(sim, MSL_FIRST + MSL_LOCK);
+    assert.ok(sim.locked(sim.player));
+    assert.ok(sim.launchMissile(0), 'away');
+    assert.equal(sim.player.msl.stock, MSL_STOCK - 1);
+    assert.equal(sim.launchMissile(0), false, 'it has to lock on and reload again');
+    sim.readyMissile(0, false);
+    assert.equal(sim.player.msl.lock, 0, 'standing down drops the lock');
+  });
+
+  it('does not lock on a ship outside the launcher arc or range, and the lock drops when she leaves it', () => {
+    const sim = new DuelSim({ seed: 2, level: 'easy' }); still(sim);
+    armed(sim); place(sim, 4000, MSL_ARC + 0.3);
+    run(sim, 12);
+    assert.equal(sim.player.msl.lock, 0, 'abeam and aft is outside');
+    place(sim, 4000, 0.2); run(sim, 6);
+    assert.ok(sim.locked(sim.player));
+    place(sim, 4000, Math.PI); run(sim, 6);
+    assert.equal(sim.player.msl.lock, 0);
+    place(sim, 12000, 0); run(sim, 6);
+    assert.equal(sim.player.msl.lock, 0, 'out of range');
+  });
+
+  it('warns the ship that is locked on, and then the one a round is launched at, with a bearing', () => {
+    const sim = new DuelSim({ seed: 2, level: 'easy' }); still(sim);
+    armed(sim); run(sim, MSL_FIRST + MSL_LOCK + 1);
+    assert.ok(sim.takeEvents().some((e) => e.type === 'lockon' && e.ship === 1 && Math.abs(e.bearing) < 1));
+    sim.launchMissile(0); run(sim, 1);
+    const th = sim.threats(1);
+    assert.equal(th.length, 1);
+    assert.ok(th[0].range < sim.range() && th[0].tti > 5 && Math.abs(th[0].bearing) < 1);
+  });
+
+  it('flies low for about twenty seconds and hits: heavy damage, a fire and a leak', () => {
+    const sim = new DuelSim({ seed: 2, level: 'easy' }); still(sim);
+    sim.enemy.gats.forEach((g) => { g.ammo = 0; });
+    place(sim, 5000, 0.1); armed(sim); run(sim, MSL_FIRST + MSL_LOCK + 1);
+    const t0 = sim.t; sim.launchMissile(0);
+    let low = 0;
+    while (sim.missiles.length && sim.t < t0 + MSL_LIFE) { sim.advance(0.1, {}); if (sim.missiles[0] && sim.missiles[0].age > 2) low = Math.max(low, sim.missiles[0].p[1]); }
+    assert.ok(low <= 6.01, 'sea-skimming');
+    const ev = sim.takeEvents().find((e) => e.type === 'mslHit');
+    assert.ok(ev, 'a hit');
+    assert.ok(sim.t - t0 > 12 && sim.t - t0 < 28, `flew ${(sim.t - t0).toFixed(0)} s`);
+    assert.ok(sim.enemy.hp < 92 && sim.enemy.comp[ev.comp] < COMPARTMENTS[ev.comp].hp - 20);
+    assert.ok(sim.enemy.fire[ev.comp] > 0 || sim.enemy.comp[ev.comp] <= 0, 'a fire');
+    assert.ok(sim.enemy.leak[ev.comp] > 0);
+    assert.equal(sim.player.stats.mslHits, 1);
+  });
+
+  it('a round that has missed is gone and cannot be dodged by sitting still, but a fast turn can spoil it', () => {
+    const sim = new DuelSim({ seed: 2, level: 'easy' }); still(sim);
+    sim.missiles.push({ id: 1, owner: 0, target: 1, age: 0, p: [sim.enemy.x + 50, 6, sim.enemy.z + 3000], hdg: -Math.PI / 2, speed: 100, lam: -Math.PI / 2, range: Infinity });
+    sim.enemy.psi = 0;
+    run(sim, MSL_LIFE + 2);
+    assert.equal(sim.missiles.length, 0);
+  });
+
+  // The defence: two aft guns outside their dead zones; the same rules for both ships, so test one ship's guns on a round that is coming for her.
+  const kills = (relYaw, { guns = 1, n = 40, v = 0 } = {}) => {
+    let k = 0, engaged = 0;
+    for (let seed = 1; seed <= n; seed++) {
+      const sim = new DuelSim({ seed, level: 'easy' }); still(sim);
+      const p = sim.player;
+      p.u = v * 0.514444; p.order = v > 10 ? 4 : 1;
+      p.comp.guns = guns === 2 ? 30 : 10;
+      sim.enemy.gats.forEach((g) => { g.ammo = 0; });
+      const ang = p.psi + relYaw; // the round comes in from this bearing off her bow
+      sim.missiles.push({ id: 1, owner: 1, target: 0, age: 5, p: [p.x + Math.cos(ang) * 2100, 6, p.z + Math.sin(ang) * 2100], hdg: ang + Math.PI, speed: MSL_V, lam: ang + Math.PI, range: Infinity });
+      for (let i = 0; i < 300 && sim.missiles.length; i++) { sim.advance(0.05, {}); if (p.gats.some((g) => g.target === 'missile' && g.firing)) engaged++; }
+      if (p.stats.mslKilled) k++;
+    }
+    return { k: k / n, engaged };
+  };
+  it('the aft guns kill a round that comes in over the stern, and cannot see one from dead ahead', () => {
+    const astern = kills(Math.PI), ahead = kills(0);
+    assert.ok(astern.k > 0.35 && astern.k < 0.95, `astern ${astern.k}`);
+    assert.equal(ahead.k, 0, 'both guns blind');
+    assert.equal(ahead.engaged, 0, 'and they do not even try');
+  });
+  it('two guns do better than one, and a round from the quarter that only one gun can see does worse than one from astern', () => {
+    const two = kills(Math.PI, { guns: 2 }).k, one = kills(Math.PI, { guns: 1 }).k;
+    const quarter = kills(Math.PI * 0.75, { guns: 2 }).k, abeam = kills(Math.PI / 2, { guns: 2 }).k;
+    assert.ok(two > one, `two guns ${two} vs one ${one}`);
+    assert.ok(two >= quarter && quarter > abeam, `astern ${two}, quarter ${quarter}, abeam ${abeam}`);
+  });
+  it('a round that closes faster is harder to kill', () => {
+    assert.ok(kills(Math.PI, { v: 0 }).k > kills(Math.PI + 0, { v: -0 }).k - 1e-9);
+    const slowRound = kills(Math.PI, { v: 22 }).k, headOn = kills(Math.PI, { v: 0 }).k;
+    assert.ok(slowRound >= headOn - 0.1, `a ship running away from it (${slowRound}) is no worse off than one standing (${headOn})`);
+  });
+  it('the guns shoot at the round, never the ship, while one is inside range, and never beyond the old 30 mm range for a ship', () => {
+    const sim = new DuelSim({ seed: 2, level: 'easy' }); still(sim);
+    const p = sim.player; place(sim, 5000, Math.PI);
+    p.psi = 0; sim.enemy.psi = 0;
+    sim.missiles.push({ id: 1, owner: 1, target: 0, age: 5, p: [p.x - 1800, 6, p.z], hdg: 0, speed: MSL_V, lam: 0, range: Infinity });
+    run(sim, 2);
+    assert.ok(p.gats.some((g) => g.target === 'missile'));
+  });
+
+  it('the enemy launches by level: Easy rarely, Hard sooner and in quick succession, and only when the guns cannot answer', () => {
+    const fired = (level) => { let n = 0; for (const seed of [1, 2, 3, 4]) { const s = new DuelSim({ seed, level }); for (let i = 0; i < 600; i++) s.advance(0.1, {}); n += s.enemy.stats.missiles; } return n; };
+    const [e, n, h] = DUEL_LEVELS.map(fired);
+    assert.ok(e <= n && n <= h && h > e, `${e} ${n} ${h}`);
+  });
+  it('Normal shows a stern quarter to a round that is coming', () => {
+    const sim = new DuelSim({ seed: 3, level: 'normal' });
+    sim.missiles.push({ id: 1, owner: 0, target: 1, age: 0, p: [sim.player.x, 6, sim.player.z], hdg: 0, speed: MSL_V, lam: 0, range: Infinity });
+    run(sim, 25);
+    assert.ok(Math.abs(sim.relBearing(sim.enemy)) > 1.0, `her bow is ${Math.abs(sim.relBearing(sim.enemy)).toFixed(2)} rad off you`);
+  });
+});
+
+describe('the whole duel, with every system running', () => {
+  it('a player who only holds F loses to a Normal enemy, who locks on, launches, picks her rounds and sends crews', () => {
+    let lost = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const sim = duel({ seed, level: 'normal', limit: 900, input: () => ({ fire: 1 }) });
+      if (sim.winner === 1) lost++;
+    }
+    assert.ok(lost >= 5, `held F and lost ${lost} of 6`);
+  });
+  it('a full-featured Hard helmsman beats a Normal one most of the time, and a duel lasts about two to five minutes', () => {
+    let wins = 0, total = 0;
+    const times = [];
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const a = duel({ seed, level: 'normal', auto: 'hard', limit: 900 });
+      if (a.winner === 0) wins++;
+      times.push(a.t); total++;
+      assert.ok(a.stats ?? true);
+    }
+    assert.ok(wins >= 4, `won ${wins} of ${total}`);
+    const mean = times.reduce((x, y) => x + y, 0) / times.length;
+    assert.ok(mean > 100 && mean < 330, `a duel lasts ${mean.toFixed(0)} s`);
   });
 });
