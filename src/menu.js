@@ -7,7 +7,8 @@
 // fixed, for the summary line). The screen has three tabs (`GROUPS`, by what the player does): Watch (replays
 // to scrub), Play (take the controls) and Drill (the naval exercises). A tab lists its entries (`entriesOf`):
 // each mission is one, except the three drills, which are one entry ("Tactical maneuvers", `FAMILIES`) whose
-// variants are chosen by the number of ships (`ships`, `tile`, `tileSub`).
+// variants are chosen by the number of ships (`ships`, `tile`, `tileSub`). A mission with `level: true` (the ship
+// duel) lets the player pick the enemy's level (`ENEMY_LEVELS`).
 
 export const GROUPS = [
   { id: 'watch', name: 'Watch', hint: 'Replays you can scrub both ways' },
@@ -136,6 +137,23 @@ export const MISSIONS = [
     sub: '1 ship · you steer',
     button: 'Take command',
   },
+  {
+    id: 'duel',
+    group: 'play',
+    name: 'Ship duel',
+    kind: 'Manual',
+    blurb: 'Frigate against frigate: sink her first',
+    tagline: 'You sail a frigate against an enemy frigate that sails herself. Each has a 76 mm gun on the bow, which trains on the other ship by itself and fires while you hold F, and two 30 mm rotary guns aft that only reach astern and abeam. A shell takes seconds to arrive and the fire control assumes the target goes straight on, so your course is your weapon: turning spoils your own aim too. A hit knocks out the gun, bridge, engine room, steering or aft guns, and the hull floods, until one ship sinks.',
+    facts: ['2 frigates, 1 enemy helmsman', '76 mm + two 30 mm guns', '5 compartments each'],
+    keys: [['← →', 'rudder'], ['↑ ↓', 'engine telegraph'], ['F', 'fire the 76 mm (hold)'], ['G', 'fire the 30 mm guns (hold)'], ['A', '30 mm guns automatic on / off'], ['1 – 6', 'behind, bridge, sight, above, shell, orbit'], ['R', 'fight again'], ['N', 'map']],
+    ship: false,
+    level: true,
+    fixed: 'you steer',
+    fixedNote: 'One frigate with the forward 76 mm: you steer her.',
+    brand: 'Ship duel',
+    sub: 'frigate duel',
+    button: 'Open fire',
+  },
 ];
 
 export const SHIPS = [
@@ -144,6 +162,12 @@ export const SHIPS = [
 ];
 
 export const MISSION_IDS = MISSIONS.map((m) => m.id);
+export const ENEMY_LEVELS = [
+  { id: 'easy', name: 'Easy', desc: 'Sails straight at you and shoots wide' },
+  { id: 'normal', name: 'Normal', desc: 'Weaves a little and keeps her bow on you' },
+  { id: 'hard', name: 'Hard', desc: 'Shoots straight, jinks and runs when hurt' },
+];
+export const DEFAULT_LEVEL = 'normal';
 export const FIXED_SHIP = 'fwd'; // what a mission without a choice uses
 const SUFFIX = 'Intercept scene';
 
@@ -175,6 +199,7 @@ export function menuText(missionId, shipId = FIXED_SHIP) {
     facts: m.facts,
     keys: m.keys,
     hasShip: m.ship,
+    hasLevel: !!m.level,
     ship: m.ship ? s.name : null,
     summary: m.ship ? `${m.name} · ${s.name}` : `${m.name} · ${m.fixed}`,
     note: m.ship ? s.desc : m.fixedNote,

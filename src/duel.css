@@ -1,0 +1,63 @@
+/* "Ship duel": the interface pieces of its own (the rest is the manual flight's, body.mission-fly). */
+
+body.mission-duel .labels-layer.duel-labels { display: block; }
+body.mission-duel.ui-hidden .labels-layer.duel-labels { display: none; }
+body.mission-duel .topbar .brand, body.mission-duel .brand { display: none; }
+body.mission-duel .tag { display: flex; align-items: baseline; gap: 6px; padding: 1px 6px 2px; margin-top: -10px; background: rgba(8, 12, 18, 0.28); border: 0; border-left: 2px solid #ff5d61; border-radius: 4px; backdrop-filter: none; font-size: 10px; }
+body.mission-duel .tag::after { height: 9px; bottom: -10px; background: rgba(255, 255, 255, 0.35); }
+body.mission-duel .tag .tag-title { font-size: 9px; letter-spacing: 0.04em; }
+
+/* The view buttons: a strip at the top centre. */
+.duel-views {
+  position: fixed; z-index: 11; top: calc(var(--gap) + var(--safe-t)); left: 50%; transform: translateX(-50%);
+  display: flex; gap: 4px; padding: 4px; border-radius: 999px;
+  background: rgba(11, 17, 25, 0.62); border: 1px solid var(--border); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.duel-views button { padding: 5px 12px; border-radius: 999px; font-size: 12px; border-color: transparent; background: transparent; }
+.duel-views button.active { background: var(--accent); border-color: var(--accent); color: #1a0d02; font-weight: 700; }
+body:not(.mission-duel) .duel-views, body.ui-hidden .duel-views { display: none; }
+@media (max-width: 900px) { .duel-views { top: auto; bottom: calc(var(--gap) + var(--safe-b) + 44px); } .duel-views button { padding: 5px 9px; } }
+
+/* A hit on your ship flashes the screen's edge. */
+.duel-alarm { position: fixed; inset: 0; z-index: 3; pointer-events: none; opacity: 0; box-shadow: inset 0 0 90px 10px rgba(255, 50, 50, 0.85); }
+.duel-alarm.hit { animation: duel-hit 1.2s ease-out 1; }
+@keyframes duel-hit { 0% { opacity: 1; background: rgba(255, 140, 60, 0.35); } 100% { opacity: 0; background: transparent; } }
+
+/* The map: you at the centre, bow up. */
+.duel-map {
+  position: fixed; z-index: 9; width: var(--map-d); height: var(--map-d); border-radius: 50%; pointer-events: none;
+  left: calc(var(--gap) + var(--safe-l)); bottom: calc(var(--keys-h, 56px) + var(--gap) * 2 + var(--safe-b));
+  border: 1px solid var(--border); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+}
+.duel-map[hidden], body:not(.mission-duel) .duel-map, body.ui-hidden .duel-map { display: none; }
+
+/* Readouts: the enemy, the dials, your ship. */
+body.mission-duel .hud { max-height: calc(100vh - 2 * var(--gap) - var(--keys-h, 56px) - 70px); overflow: hidden; }
+.duel-hud { display: grid; gap: 8px; }
+.dh-ship h3 { margin: 0 0 4px; display: flex; justify-content: space-between; align-items: baseline; font-size: 10.5px; letter-spacing: 0.14em; color: var(--muted); }
+.dh-ship.foe h3 { color: #ff8a8d; }
+.dh-ship.you h3 { color: #7be9a8; }
+.dh-ship h3 small { font-size: 9.5px; letter-spacing: 0.1em; color: var(--dim); }
+.dh-ship.sunk { opacity: 0.55; }
+.dh-row { display: grid; grid-template-columns: 74px minmax(0, 1fr) 26px; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); line-height: 1.55; }
+.dh-row b { display: block; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.dh-row i { display: block; height: 100%; background: #3ddc84; border-radius: 3px; transition: width 0.25s; }
+.dh-row.hurt i { background: #f2c94c; }
+.dh-row.bad i, .dh-row.hull i.bad { background: #ff7a1a; }
+.dh-row em { font-style: normal; text-align: right; color: var(--text); font-size: 10.5px; }
+.dh-row.out { color: #ff8a8d; }
+.dh-row.out em { color: #ff5d61; font-weight: 700; }
+.dh-row.hull { color: var(--text); font-weight: 600; }
+.dh-row.hull b { height: 7px; }
+.dh-status, .dh-weapons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; padding: 7px 0; border-top: 1px solid var(--hair); }
+.dh-status > div, .dh-weapons > div { display: grid; gap: 1px; min-width: 0; }
+.dh-status span, .dh-weapons span { font-size: 9.5px; letter-spacing: 0.12em; color: var(--dim); }
+.dh-status b, .dh-weapons b { font-size: 14px; color: var(--text); }
+.dh-status small, .dh-weapons small { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dh-weapons { border-top: 0; padding-top: 0; }
+.dh-end { padding: 10px 12px; border-radius: 10px; text-align: center; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.05); }
+.dh-end h2 { margin: 0 0 4px; font-size: 18px; }
+.dh-end p { margin: 2px 0; font-size: 11.5px; color: var(--muted); }
+.dh-end.won { border-color: rgba(61, 220, 132, 0.7); } .dh-end.won h2 { color: #3ddc84; }
+.dh-end.lost { border-color: rgba(255, 93, 97, 0.7); } .dh-end.lost h2 { color: #ff5d61; }
+@media (max-width: 640px) and (min-height: 501px) { .duel-map { display: none; } }
