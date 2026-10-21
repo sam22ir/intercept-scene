@@ -368,9 +368,9 @@ function createClouds(calm = false) {
 const MOUNT_ARC = [-0.3, 3.4]; // radians: an arc of about 210 degrees
 const T_COLS = 900;
 const T_ROWS = 80;
-const T_R0 = 6200; // m: the nearest the land comes
+const T_R0 = 4800; // m: the nearest the land comes (so the radar map's 6 km range reaches the shore)
 const T_R1 = 17500; // m: the far edge of it
-const T_H = 2300; // m: roughly the highest peaks
+const T_H = 2100; // m: roughly the highest peaks
 const hash2 = (ix, iz) => { // an integer hash, 0 to 1 (much cheaper than a sine, and this runs millions of times at start-up)
   let h = Math.imul(ix, 374761393) + Math.imul(iz, 668265263);
   h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -421,7 +421,8 @@ function ridges(x, z, oct) { // sharp-crested ridges: 1 - |2n - 1|, squared, wit
 }
 const sstep = (a, b, x) => { const u = Math.min(1, Math.max(0, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
 // The shore's distance from the ship at angle a, and the height of the land at (a, r) (below zero under the sea).
-const coastR = (a) => T_R0 + 1500 * fbm(a * 3.2 + 4, 7.7, 3) + 700 * vnoise2(a * 11, 3.1);
+const endTaper = (a) => sstep(MOUNT_ARC[0], MOUNT_ARC[0] + 0.8, a) * sstep(MOUNT_ARC[1], MOUNT_ARC[1] - 0.8, a); // 0 at the ends of the arc, 1 along most of it
+const coastR = (a) => T_R0 + 1500 * fbm(a * 3.2 + 4, 7.7, 3) + 700 * vnoise2(a * 11, 3.1) + 5500 * (1 - endTaper(a)) ** 1.5; // the shore draws back toward the ends
 function terrainH(a, r) {
   const x = Math.cos(a) * r * 0.00011;
   const z = Math.sin(a) * r * 0.00011;
@@ -431,9 +432,9 @@ function terrainH(a, r) {
   const crest = 0.18 + 0.82 * ridges(wx * 2.4, wz * 2.4, 6);
   const rough = 0.04 * (fbm(x * 9, z * 9, 3) - 0.5); // the small stuff
   const inland = sstep(0, 5200, r - coastR(a)); // foothills first, then the range
-  const aEnds = sstep(MOUNT_ARC[0], MOUNT_ARC[0] + 0.45, a) * sstep(MOUNT_ARC[1], MOUNT_ARC[1] - 0.45, a);
+  const aEnds = endTaper(a);
   const outer = 1 - 0.55 * sstep(13500, T_R1, r);
-  const h = T_H * massif * crest * inland * outer * (0.35 + 0.65 * aEnds) + T_H * rough * inland;
+  const h = T_H * massif * crest * inland * outer * aEnds ** 1.4 + T_H * rough * inland;
   return h - 40 * (1 - sstep(0, 700, r - coastR(a))) - 6; // under the sea off the shore
 }
 let terrainMemo = null;
@@ -462,6 +463,13 @@ function terrain() {
 }
 // The highest ridge in a direction as seen from the radar (radians above the horizontal; -Infinity where there is no land): (dx, dz) is
 // the direction on the sea, x north and z east as in the scene. Used to hide what lies behind the mountains.
+// The height of the land at (dx, dz) metres from the ship, x north and z east (-1 over the sea), for the radar map.
+export function landHeightAt(dx, dz) {
+  let a = Math.atan2(dz, dx);
+  if (a < MOUNT_ARC[0]) a += 2 * Math.PI;
+  if (a > MOUNT_ARC[1]) return -1;
+  return terrainH(a, Math.hypot(dx, dz));
+}
 export function ridgeAngle(dx, dz) {
   let a = Math.atan2(dz, dx);
   if (a < MOUNT_ARC[0]) a += 2 * Math.PI;

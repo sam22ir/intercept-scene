@@ -10,10 +10,10 @@
 import { mulberry32 } from './rng.js';
 
 export const PAD = { x: -45.8, y: 5.5, z: 0.5 }; // where the wheels rest, in the ship's frame (x ahead, z to starboard)
-export const HOVER = 14; // m above the pad, where it leaves the deck and joins the circuit
-export const HOLD_ALT = 10; // m above the pad: where it waits to land
+export const HOVER = 32; // m above the pad (the mast's top is 28 m): where it climbs to, joins the circuit from and comes back to
+export const HOLD_ALT = 32; // m above the pad: where it waits to land, clear above the superstructure
 export const T_SPINUP = 6;
-export const T_LIFT = 5;
+export const T_LIFT = 7;
 export const T_DESC = 6;
 export const T_WAVEOFF = 4;
 export const T_SPINDOWN = 8;
@@ -55,12 +55,13 @@ export class HeliFlight {
     this.alt = 0; // m above the pad
     this.clock = 0; // for the drift of a hover
     this.sway = 0; // how much of the hover's drift is on (it fades in once it is hovering)
+    this.turb = 0; // how much of the flight's buffeting is on (in the circuit)
     this.yawLag = 0; // its heading off the ship's, rad: the ship turns under it and the pilot follows a moment later
     this.turn = 0; // the ship's rate of turn now, rad/s
     this.u = 0; // progress round the circuit
     this.steadyFor = 0;
     this.landReq = false; // the player has asked it to land: the circuit is cut short and it comes in
-    this.circuit = { D: 18, A: 180, B: 110, len: 700, fly: 28, side: 1, peak: 30 };
+    this.circuit = { D: 18, A: 180, B: 110, len: 700, fly: 28, side: 1, peak: 48 };
     this.state = { x: PAD.x, y: PAD.y, z: PAD.z, yaw: 0, pitch: 0, roll: 0, rpm: 0, spin: 0, flying: false, phase: 'parked' };
   }
 
@@ -69,7 +70,7 @@ export class HeliFlight {
     const A = 150 + this.rng() * 80; // the turn is that far ahead of the pad, past the bow
     const B = 90 + this.rng() * 50; // and the other one that far astern of it
     const len = 2 * A + 2 * B + 2 * Math.PI * D;
-    this.circuit = { D, A, B, len, fly: len / (22 + this.rng() * 8), side: this.rng() < 0.5 ? -1 : 1, peak: 24 + this.rng() * 16 };
+    this.circuit = { D, A, B, len, fly: len / (22 + this.rng() * 8), side: this.rng() < 0.5 ? -1 : 1, peak: 44 + this.rng() * 16 };
     this.u = 0;
   }
 
@@ -129,11 +130,11 @@ export class HeliFlight {
         break;
       case 'descend':
         if (!steady && this.alt > 1.7) { this.phase = 'waveoff'; break; } // she has begun to turn: not with the wheels this close
-        this.alt = Math.max(0, this.alt - Math.min(1.6, Math.max(0.5, this.alt * 0.6)) * dt); // quicker high up, gently at the end
+        this.alt = Math.max(0, this.alt - Math.min(3.5, Math.max(0.5, this.alt * 0.6)) * dt); // quicker high up, gently at the end
         if (this.alt <= 0) { this.phase = 'spindown'; this.landReq = false; this.prog = 0; }
         break;
       case 'waveoff':
-        this.alt = Math.min(HOLD_ALT, this.alt + 2.2 * dt);
+        this.alt = Math.min(HOLD_ALT, this.alt + 3 * dt);
         if (this.alt >= HOLD_ALT) this.phase = 'hold';
         break;
       case 'spindown':
@@ -146,6 +147,7 @@ export class HeliFlight {
     this.clock += dt;
     const hovering = this.phase === 'hold' || this.phase === 'descend' || this.phase === 'waveoff' || this.phase === 'lift';
     this.sway += ((hovering ? 1 : 0) - this.sway) * Math.min(1, dt / 1.2);
+    this.turb += ((this.phase === 'circuit' ? 1 : 0) - this.turb) * Math.min(1, dt / 1.2);
     this.pose();
   }
 
@@ -180,16 +182,23 @@ export class HeliFlight {
       st.pitch = -0.1 * Math.min(1.3, v / 30);
       st.roll = Math.max(-0.35, Math.min(0.35, Math.atan((v * v * kappa) / 9.81)));
     }
-    if (this.sway > 0.001) { // a hover is never quite still: it drifts, bobs, turns a little this way and that and leans
+    const t = this.clock;
+    if (this.turb > 0.001) { // in flight it is buffeted: the nose, the lean and the height never settle
+      const b = this.turb;
+      st.yaw += (0.06 * Math.sin(1.3 * t) + 0.035 * Math.sin(2.9 * t + 1)) * b;
+      st.roll += (0.045 * Math.sin(1.7 * t) + 0.03 * Math.sin(3.1 * t)) * b;
+      st.pitch += (0.03 * Math.sin(1.1 * t + 2) + 0.02 * Math.sin(2.3 * t)) * b;
+      h += (1.2 * Math.sin(0.9 * t) + 0.5 * Math.sin(2.3 * t)) * b;
+    }
+    if (this.sway > 0.001) { // a hover is never still: it drifts several metres, bobs, hunts left and right with its nose and leans
       const a = Math.min(1, this.alt / 4) * this.sway; // less and less as the wheels come down, so it lands square
-      const t = this.clock;
-      st.x += (1.6 * Math.sin(0.43 * t) + 0.7 * Math.sin(1.1 * t + 1)) * a;
-      st.z += (1.3 * Math.sin(0.37 * t + 1) + 0.6 * Math.sin(0.93 * t + 4)) * a;
-      h += (0.35 * Math.sin(0.8 * t) + 0.12 * Math.sin(2.1 * t)) * a;
-      const wander = 0.1 * Math.sin(0.29 * t + 0.5) + 0.05 * Math.sin(0.83 * t + 2); // heading, about +-9 degrees
-      st.yaw = -(wander + this.yawLag) * a;
-      st.pitch = (0.03 * Math.sin(0.9 * t + 2) + 0.025 * Math.sin(0.43 * t)) * a;
-      st.roll = (0.035 * Math.sin(0.7 * t) + 0.02 * Math.sin(0.37 * t + 1) + Math.max(-0.12, Math.min(0.12, this.turn * 1.5))) * a;
+      st.x += (4.2 * Math.sin(0.31 * t) + 1.6 * Math.sin(0.83 * t + 1) + 0.7 * Math.sin(1.9 * t)) * a;
+      st.z += (3.4 * Math.sin(0.27 * t + 1) + 1.4 * Math.sin(0.71 * t + 4) + 0.6 * Math.sin(1.7 * t + 2)) * a;
+      h += (0.7 * Math.sin(0.8 * t) + 0.25 * Math.sin(2.1 * t)) * a;
+      const wander = 0.2 * Math.sin(0.23 * t + 0.5) + 0.1 * Math.sin(0.71 * t + 2) + 0.04 * Math.sin(1.7 * t); // heading, up to about +-19 degrees
+      st.yaw += -(wander + this.yawLag) * a;
+      st.pitch += (0.05 * Math.sin(0.9 * t + 2) + 0.035 * Math.sin(0.43 * t) + 0.015 * Math.sin(2.3 * t)) * a;
+      st.roll += (0.055 * Math.sin(0.7 * t) + 0.03 * Math.sin(0.37 * t + 1) + 0.012 * Math.sin(2.1 * t) + Math.max(-0.14, Math.min(0.14, this.turn * 1.5))) * a;
     }
     st.y = PAD.y + h;
     st.flying = this.alt > 0 || this.phase === 'circuit';
