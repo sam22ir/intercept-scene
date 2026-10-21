@@ -130,6 +130,7 @@ const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 const _c = new THREE.Vector3();
 const _d = new THREE.Vector3();
+const _e = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const ZAXIS = new THREE.Vector3(0, 0, 1);
 
@@ -176,11 +177,13 @@ function handleEvents() {
         if (v) v.plane.group.visible = false;
         strikes.push({ local: sim.toLocal(e.pos, new THREE.Vector3()).setY(Math.max(e.pos.y, 8)), t: sim.t });
         flash('hit');
+        cineStruck(e);
         break;
       }
+      case 'alarm': if (e.level === 3) startCine(null, e.id); break; // an attack run: the camera watches it from the side
       case 'splash': fx.splashAt(e.pos, sim.t, 1.6); break;
       case 'missile-lost': if (e.pos.y < 8) fx.splashAt(e.pos, sim.t, 1.2); break;
-      case 'over': setView('orbit', true); break;
+      case 'over': if (cine) pendingOrbit = true; else setView('orbit', true); break; // the shot of the last hit plays out first
       default: break;
     }
   }
@@ -318,6 +321,7 @@ function setFov(f) {
 const shipTarget = (out) => out.set(sim.x, 10, sim.z);
 function setView(v, quiet = false) {
   view = v;
+  pendingOrbit = false;
   endCine();
   camera.up.set(0, 1, 0);
   if (v === 'orbit') {
@@ -336,22 +340,51 @@ function setView(v, quiet = false) {
 }
 
 // --- The intercept camera ------------------------------------------------------------------------------------------------
-// When a missile leaves, the camera cuts to the side of the shot and keeps the missile and the drone in the frame,
-// closing in as they close on each other, until the hit; it stays on the wreck until the last piece is in the sea,
-// waits CINE_TAIL seconds more, and goes back to the view that was on. Any view key, or I, ends it; it is skipped in
-// the free orbit (that view is the player's own, and its controls keep their own camera state).
+// The shot is cut automatically and goes back to the view that was on when it is over:
+//  - a missile leaves: the camera goes to the side of the shot, keeps the missile and the drone in the frame and closes in
+//    as they close on each other, until the hit; it stays on the wreck until the last piece is in the sea, waits CINE_TAIL
+//    seconds more, and goes back;
+//  - a drone starts an attack run (and no missile is on it): the same side view of the drone and the ship, closing in;
+//  - a drone hits the ship (whichever of the two shots was on): the camera comes in close, from outboard, on the place
+//    where it hit, and stays there IMPACT_HOLD seconds, the fire burning, then goes back.
+// A missile that is lost, or a drone that goes into the sea, ends the shot at once. Any view key, or I, ends it; it is
+// skipped in the free orbit (that view is the player's own, and its controls keep their own camera state).
 const CINE_TAIL = 2; // s kept on the scene after the drone is in the sea
 const CINE_MAX = 60; // s: a shot never holds the camera longer than this
+const IMPACT_HOLD = 5; // s on the place of a hit
 let cineOn = true;
 try { cineOn = localStorage.getItem('intercept.helmcine') !== '0'; } catch { /* storage unavailable */ }
 let cine = null;
-function startCine(missileId) {
-  if (!cineOn || cine || view === 'orbit' || sim.out) return;
-  const m = sim.missiles.find((x) => x.id === missileId);
-  if (!m || !sim.drones.some((d) => d.id === m.targetId && d.alive)) return;
-  cine = { mid: m.id, did: m.targetId, phase: 'approach', t0: sim.t, side: 0, pos: new THREE.Vector3(), look: new THREE.Vector3(), hold: new THREE.Vector3(), tSplash: null, fresh: true };
+let pendingOrbit = false; // the ship is out of action: the orbit view comes once the shot of the last hit is over
+function newCine(mid, did, phase) {
   sightEl.hidden = true;
   document.body.classList.remove('helm-sighting');
+  return { mid, did, phase, t0: sim.t, side: 0, pos: new THREE.Vector3(), look: new THREE.Vector3(), hold: new THREE.Vector3(), tSplash: null, fresh: true, local: new THREE.Vector3(), tImpact: 0 };
+}
+function startCine(missileId, droneId = null) {
+  if (!cineOn || cine || view === 'orbit' || sim.out) return;
+  if (missileId !== null) { // a missile leaves
+    const m = sim.missiles.find((x) => x.id === missileId);
+    if (!m || !sim.drones.some((d) => d.id === m.targetId && d.alive)) return;
+    cine = newCine(m.id, m.targetId, 'approach');
+  } else { // an attack run
+    if (!sim.drones.some((d) => d.id === droneId && d.alive)) return;
+    cine = newCine(null, droneId, 'dive');
+  }
+}
+// A drone has hit the ship at e.pos: close in on the place, from outboard.
+function cineStruck(e) {
+  if (!cineOn || view === 'orbit') return;
+  if (!cine) {
+    cine = newCine(null, e.id, 'impact');
+    cine.pos.copy(camera.position);
+    cine.look.copy(e.pos);
+    cine.fresh = false;
+  }
+  cine.phase = 'impact';
+  cine.tImpact = sim.t;
+  cine.local.copy(sim.toLocal(e.pos, _a)).setY(Math.max(e.pos.y, 8)); // the same point the fire burns at
+  cine.side = 0;
 }
 function endCine() {
   if (!cine) return;
@@ -359,34 +392,66 @@ function endCine() {
   snap = true; // the view that was on takes the camera back from where it is now
   sightEl.hidden = view !== 'sight';
   document.body.classList.toggle('helm-sighting', view === 'sight');
+  if (pendingOrbit) { pendingOrbit = false; setView('orbit', true); }
+}
+// The side view of two points: the camera on one side of the line between them, far enough to have both in the frame
+// and closer as they close; returns the lens (degrees), which closes in with them. `away`: put the camera on the far side
+// from the ship (the missile's shot), otherwise on the side the camera is already on.
+function frameSide(c, p, q, dt, away) {
+  const pull = 1 - Math.exp(-dt / 0.12);
+  const sep = p.distanceTo(q);
+  _a.subVectors(q, p).setY(0);
+  if (_a.lengthSq() < 1) _a.set(1, 0, 0);
+  _a.normalize();
+  _b.set(-_a.z, 0, _a.x); // to the side of the line between them
+  const mid = _c.addVectors(p, q).multiplyScalar(0.5);
+  if (!c.side) {
+    const ref = away ? _d.set(mid.x - sim.x, 0, mid.z - sim.z) : _d.set(camera.position.x - mid.x, 0, camera.position.z - mid.z);
+    c.side = _b.dot(ref) >= 0 ? 1 : -1;
+  }
+  const dist = THREE.MathUtils.clamp(sep * 1.45 + 45, 70, 6000);
+  const want = _d.copy(mid).addScaledVector(_b, c.side * dist);
+  want.y = Math.max(mid.y * 0.5 + dist * 0.07 + 6, 5);
+  if (c.fresh) { c.pos.copy(want); c.look.copy(mid); c.fresh = false; } else { c.pos.lerp(want, pull); c.look.lerp(mid, pull); }
+  camera.position.copy(c.pos);
+  camera.lookAt(c.look);
+  return THREE.MathUtils.clamp(28 + ((sep - 60) / 540) * 17, 28, 45);
+}
+// The hit: in close, from outboard, on the place; the ship moves, so it is followed in her own frame.
+function frameImpact(c, dt) {
+  if (sim.t - c.tImpact > IMPACT_HOLD) { endCine(); return null; }
+  const P = ship.group.localToWorld(_c.copy(c.local));
+  _a.set(-Math.sin(sim.psi), 0, Math.cos(sim.psi)); // starboard
+  if (!c.side) c.side = _a.dot(_b.set(camera.position.x - sim.x, 0, camera.position.z - sim.z)) >= 0 ? 1 : -1; // the side it was filmed from
+  const want = _d.copy(P).addScaledVector(_a, c.side * 60);
+  want.y = P.y + 14;
+  c.pos.lerp(want, 1 - Math.exp(-dt / 0.6)); // the dolly in
+  c.look.lerp(P, 1 - Math.exp(-dt / 0.15));
+  camera.position.copy(c.pos);
+  if (camera.position.y < 3) camera.position.y = 3;
+  camera.lookAt(c.look);
+  return 24;
 }
 // Frames the shot; returns the lens (degrees), or null once the shot is over.
 function updateCine(dt) {
   const c = cine;
+  if (c.phase === 'impact') return frameImpact(c, dt);
   const m = sim.missiles.find((x) => x.id === c.mid);
   if (m) c.did = m.targetId; // it may have taken another drone
   const d = sim.drones.find((x) => x.id === c.did);
   if (sim.out || !d || sim.t - c.t0 > CINE_MAX) { endCine(); return null; }
   const pull = 1 - Math.exp(-dt / 0.12);
   if (c.phase === 'approach' && !d.alive && d.wreck && d.wreck.kind === 'missile') { c.phase = 'wreck'; c.hold.copy(c.pos); }
+  if (c.phase === 'approach' && !m && d.alive && d.phase === 'attack') c.phase = 'dive'; // the missile is gone, the drone is still coming
   if (c.phase === 'approach') {
-    if (!m || !d.alive) { endCine(); return null; } // the missile was lost, or the drone hit the ship: back to the view
-    const sep = m.pos.distanceTo(d.pos);
-    _a.subVectors(d.pos, m.pos).setY(0);
-    if (_a.lengthSq() < 1) _a.set(m.dir.x, 0, m.dir.z);
-    _a.normalize();
-    _b.set(-_a.z, 0, _a.x); // to the side of the line between them
-    const mid = _c.addVectors(m.pos, d.pos).multiplyScalar(0.5);
-    if (!c.side) c.side = _b.dot(_d.set(mid.x - sim.x, 0, mid.z - sim.z)) >= 0 ? 1 : -1; // the far side from the ship: sea behind them
-    const dist = THREE.MathUtils.clamp(sep * 1.45 + 45, 70, 6000);
-    const want = _d.copy(mid).addScaledVector(_b, c.side * dist);
-    want.y = Math.max(mid.y * 0.5 + dist * 0.07 + 6, 5);
-    if (c.fresh) { c.pos.copy(want); c.look.copy(mid); c.fresh = false; } else { c.pos.lerp(want, pull); c.look.lerp(mid, pull); }
-    camera.position.copy(c.pos);
-    camera.lookAt(c.look);
-    return THREE.MathUtils.clamp(28 + ((sep - 60) / 540) * 17, 28, 45); // the lens closes in with them
+    if (!m || !d.alive) { endCine(); return null; } // the missile was lost, or the drone went into the sea: back to the view
+    return frameSide(c, m.pos, d.pos, dt, true);
   }
-  // The hit: the camera stays where it was and follows the falling pieces until the last one is in the sea.
+  if (c.phase === 'dive') {
+    if (!d.alive) { endCine(); return null; } // (a hit on the ship comes as its own event)
+    return frameSide(c, _e.set(sim.x, 9, sim.z), d.pos, dt, false);
+  }
+  // The missile's hit: the camera stays where it was and follows the falling pieces until the last one is in the sea.
   const v = vis.get(d.id);
   const tau = sim.t - d.wreck.t;
   if (c.tSplash === null && v?.debris) c.tSplash = d.wreck.t + Math.max(...v.debris.pieces.map((p) => p.tauWater));
