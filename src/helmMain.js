@@ -811,8 +811,8 @@ function updateCamera(dt) {
     // Close behind the target drone, a little above, looking along its flight; the camera shakes like a hand-held lens.
     const d = sim.target;
     _a.copy(d.vel).normalize();
-    camera.position.copy(d.pos).addScaledVector(_a, -38).y += 7;
-    lookAt.copy(d.pos).addScaledVector(_a, 40);
+    camera.position.copy(d.pos).addScaledVector(_a, -15).y += 3.2;
+    lookAt.copy(d.pos).addScaledVector(_a, 30);
     camera.lookAt(lookAt);
     const ts = performance.now() / 1000;
     camera.position.x += 0.22 * Math.sin(ts * 41) + 0.12 * Math.sin(ts * 67 + 1);
