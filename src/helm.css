@@ -135,10 +135,10 @@ body.mission-helm .hud { background: rgba(9, 14, 21, 0.38); backdrop-filter: blu
 @media (max-width: 900px) { .helm-ship { bottom: calc(var(--keys-h, 56px) + 58px); } } /* the view buttons sit above the keys only on narrow windows */
 
 /* Wide windows: the instruments stand on the bottom edge of the screen, out of the view; the key hints go up under the view buttons. */
-@media (min-width: 1101px) {
+@media (min-width: 901px) {
   .helm-ship { bottom: var(--gap, 14px); }
   body.mission-helm .shot-caption { top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 96px); bottom: auto; }
-  body.mission-helm .fly-keys { bottom: auto; top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 56px); padding: 4px 12px; gap: 4px 12px; font-size: 11px; background: rgba(9, 14, 21, 0.35); backdrop-filter: none; border-color: rgba(255, 255, 255, 0.08); }
+  body.mission-helm .fly-keys { width: max-content; flex-wrap: nowrap; bottom: auto; top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 56px); padding: 4px 12px; gap: 4px 12px; font-size: 11px; background: rgba(9, 14, 21, 0.35); backdrop-filter: none; border-color: rgba(255, 255, 255, 0.08); }
 }
 .helm-ship .hs-dome { flex: none; }
 .helm-ship .hs-rect { flex: 1 1 0; min-width: 0; }
