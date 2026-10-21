@@ -838,7 +838,7 @@ function updatePip(dt) {
   const r = pa.length();
   pa.divideScalar(r || 1);
   if (pipSt.id !== d.id) { pipSt.id = d.id; pipSt.phase = 'slew'; }
-  const fovTrack = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(1.5 / r)), 0.05, 30); // the lens closes until the drone fills the square
+  const fovTrack = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(2.4 / r)), 0.08, 30); // the lens closes until the drone fills the square
   let cmd = pa;
   let fovWant = SIGHT_WIDE;
   if (pipSt.phase === 'search') {
