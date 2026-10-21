@@ -1,5 +1,5 @@
 // The Solo Air Defense mission's model (src/helm.js): the ship answers the wheel and the telegraph like a ship, a drone
-// left alone escalates from detection to circling, low passes and a strike, and the missile kills it.
+// left alone escalates from detection to a low pass and a strike, and the missile kills it.
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -67,7 +67,7 @@ describe('the ship', () => {
 });
 
 describe('a drone left alone', () => {
-  it('is detected, closes, circles, makes closer and closer low passes, then dives into the ship', () => {
+  it('is detected, closes, makes one low pass, then comes round and dives into the ship on its second approach', () => {
     const sim = new HelmSim({ seed: 3 });
     const seen = [];
     let passes = [];
@@ -84,8 +84,9 @@ describe('a drone left alone', () => {
       if (d && !seen.includes(d.phase)) seen.push(d.phase);
     }
     assert.ok(firstRange !== null && firstRange <= RADAR_RANGE && firstRange > RADAR_RANGE - 100, `detected at ${firstRange}`);
-    for (const s of ['inbound', 'alarm1', 'circle', 'alarm2', 'pass', 'extend', 'attack', 'alarm3', 'struck']) assert.ok(seen.includes(s), `${s} in ${seen}`);
-    assert.ok(passes.length >= 3, `${passes.length} passes`);
+    for (const s of ['inbound', 'alarm1', 'alarm2', 'pass', 'extend', 'attack', 'alarm3', 'struck']) assert.ok(seen.includes(s), `${s} in ${seen}`);
+    assert.ok(!seen.includes('circle'), 'it does not circle');
+    assert.equal(passes.length, 1, `${passes.length} passes before the attack`);
     assert.equal(sim.strikes, 1);
     assert.ok(sim.t < 330, `strike after ${sim.t.toFixed(0)} s`);
   });

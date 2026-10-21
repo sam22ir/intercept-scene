@@ -24,6 +24,9 @@ body:not(.mission-helm) .helm-views, body.ui-hidden .helm-views { display: none;
 .helm-sight .hs-v { width: 1px; height: 34vmin; transform: translate(-50%, -50%); background: linear-gradient(180deg, rgba(120, 255, 170, 0.75) 40%, transparent 40% 60%, rgba(120, 255, 170, 0.75) 60%); }
 .helm-sight .hs-box { width: 9vmin; height: 9vmin; transform: translate(-50%, -50%); background: transparent; border: 1px solid rgba(120, 255, 170, 0.5); }
 .helm-sight.lock .hs-box { border: 2px solid #3ddc84; box-shadow: 0 0 12px rgba(61, 220, 132, 0.6); }
+/* While the director is still finding the target: an amber, dashed box that breathes. */
+.helm-sight.searching .hs-box { border: 2px dashed rgba(255, 196, 84, 0.9); box-shadow: none; animation: hs-search 0.45s ease-in-out infinite alternate; }
+@keyframes hs-search { from { opacity: 0.45; transform: translate(-50%, -50%) scale(1.3); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
 .helm-sight .hs-txt {
   position: absolute; left: 50%; top: calc(50% + 21vmin); transform: translateX(-50%);
   font: 700 12px/1.3 ui-monospace, Consolas, monospace; letter-spacing: 0.08em; color: #9dffc0; text-shadow: 0 1px 2px #000; white-space: nowrap;

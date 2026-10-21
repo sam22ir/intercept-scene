@@ -321,6 +321,7 @@ function setFov(f) {
 const shipTarget = (out) => out.set(sim.x, 10, sim.z);
 function setView(v, quiet = false) {
   view = v;
+  if (v === 'sight') sight.fresh = true; // the director starts from the bow and finds the target again
   pendingOrbit = false;
   endCine();
   camera.up.set(0, 1, 0);
@@ -505,14 +506,55 @@ function updateCamera(dt) {
     camera.lookAt(lookAt);
     snap = true;
   } else if (view === 'sight' && sim.target) {
-    // The fire-control director on the bridge roof, with a lens long enough to keep the drone a fair size.
+    // The fire-control director on the bridge roof. It is a real mount, not a camera glued to the drone: it turns at a
+    // limited rate, so on entering the view, or when the target changes, it swings round to it with the lens wide, hunts
+    // about the target for a moment (a wandering that dies away) while the lens closes in, and then locks on and tracks.
     const d = sim.target;
     ship.group.localToWorld(camera.position.copy(DIRECTOR_EYE));
-    camera.lookAt(d.pos);
-    const r = camera.position.distanceTo(d.pos);
-    wantFov = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(22 / r)), 1.2, 30) * sightZoom;
-    sightTxt.textContent = `${d.name} · ${relName(sim.relBearing(d.pos))} · ${kmText(sim.rangeTo(d.pos))} · ${Math.round(d.pos.y)} m${sim.engageable(d) ? '' : ' · IN ARC'}`;
-    sightEl.classList.toggle('lock', !sim.engageable(d));
+    _a.subVectors(d.pos, camera.position);
+    const r = _a.length();
+    _a.divideScalar(r || 1); // the way to the target
+    if (sight.fresh) { // from the bow, nearly level
+      sight.aim.set(Math.cos(sim.psi), 0.06, Math.sin(sim.psi)).normalize();
+      sight.fresh = false;
+      sight.id = d.id;
+      sight.phase = 'slew';
+      sight.omega = 0;
+    } else if (sight.id !== d.id) { // another target: the mount turns to it
+      sight.id = d.id;
+      sight.phase = 'slew';
+    }
+    const fovTrack = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(22 / r)), 1.2, 30);
+    let cmd = _a;
+    let fovWant = SIGHT_WIDE;
+    if (sight.phase === 'search') {
+      const el = sim.t - sight.t0;
+      const s = Math.min(el / SIGHT_SEARCH, 1);
+      if (s >= 1) sight.phase = 'lock';
+      else { // hunts about the target, the sweeps shrinking, while the lens closes in
+        const A = THREE.MathUtils.degToRad(3.4) * (1 - s) * (1 - s);
+        _b.crossVectors(_a, UP).normalize(); // to the right of the line of sight
+        _c.crossVectors(_b, _a); // above it
+        cmd = _d.copy(_a).addScaledVector(_b, A * Math.sin(el * 5.2 + 0.7)).addScaledVector(_c, A * 0.6 * Math.sin(el * 7.9 + 1.9)).normalize();
+        fovWant = THREE.MathUtils.lerp(SIGHT_WIDE, fovTrack, s * s * (3 - 2 * s));
+      }
+    }
+    if (sight.phase === 'lock') fovWant = fovTrack;
+    // Turn toward the command at a limited rate, easing in and out of the movement.
+    const e = sight.aim.angleTo(cmd);
+    sight.omega += (Math.min(SIGHT_RATE, e * 9) - sight.omega) * (1 - Math.exp(-dt / 0.12));
+    if (e > 1e-5) sight.aim.lerp(cmd, Math.min(sight.omega * dt, e) / e).normalize();
+    const off = sight.aim.angleTo(_a);
+    if (sight.phase === 'slew' && off < THREE.MathUtils.degToRad(1.5)) { sight.phase = 'search'; sight.t0 = sim.t; }
+    else if (sight.phase === 'lock' && off > THREE.MathUtils.degToRad(3.5)) sight.phase = 'slew'; // lost it: swing back onto it
+    camera.lookAt(_e.copy(camera.position).add(sight.aim));
+    wantFov = Math.max(fovWant * sightZoom, 1);
+    const found = sight.phase === 'lock';
+    sightTxt.textContent = found
+      ? `${d.name} · ${relName(sim.relBearing(d.pos))} · ${kmText(sim.rangeTo(d.pos))} · ${Math.round(d.pos.y)} m${sim.engageable(d) ? '' : ' · IN ARC'}`
+      : `${d.name} · searching…`;
+    sightEl.classList.toggle('lock', found && !sim.engageable(d));
+    sightEl.classList.toggle('searching', !found);
   } else {
     // Behind her (also the fallback for the missile and sight views with nothing to show).
     if (snap) camYaw = sim.psi;
@@ -524,13 +566,20 @@ function updateCamera(dt) {
     snap = false;
     if (view === 'sight') sightTxt.textContent = 'No target on the radar';
   }
-  fov += (wantFov - fov) * (view === 'sight' ? 1 - Math.exp(-dt / 0.25) : 1);
+  fov += (wantFov - fov) * (view === 'sight' ? 1 - Math.exp(-dt / 0.3) : 1);
   setFov(fov);
 }
 let behindYaw = 0;
 let sightZoom = 1;
+// The fire-control director's mount (see updateCamera): its aim, its turning speed and where it is in finding the target.
+const SIGHT_RATE = THREE.MathUtils.degToRad(55); // the fastest it turns, per second
+const SIGHT_WIDE = 24; // degrees: the lens while it looks for the target
+const SIGHT_SEARCH = 1.7; // s of hunting about the target before it locks
+const UP = new THREE.Vector3(0, 1, 0);
+const sight = { id: null, phase: 'slew', t0: 0, omega: 0, fresh: true, aim: new THREE.Vector3(1, 0, 0) };
 
-// Drag on the bridge looks round; drag behind swings round her; the wheel zooms (or narrows the sight).
+// Drag on the bridge looks round; drag behind swings round her; the wheel zooms (or narrows the sight). The view turns
+// the way the mouse goes, as in the free orbit: drag left and it turns left, drag up and (on the bridge) it looks up.
 let drag = null;
 canvas.addEventListener('pointerdown', (e) => { if (e.button === 0 && view !== 'orbit') drag = { x: e.clientX, y: e.clientY }; });
 window.addEventListener('pointerup', () => { drag = null; });
@@ -540,9 +589,9 @@ window.addEventListener('pointermove', (e) => {
   const dy = e.clientY - drag.y;
   drag = { x: e.clientX, y: e.clientY };
   if (view === 'bridge') {
-    lookYaw = ((lookYaw - dx * 0.25 + 540) % 360) - 180;
-    lookPitch = THREE.MathUtils.clamp(lookPitch + dy * 0.004, -0.9, 0.6);
-  } else if (view === 'behind') behindYaw -= dx * 0.3;
+    lookYaw = ((lookYaw + dx * 0.25 + 540) % 360) - 180; // lookYaw is + to starboard: dragging left (dx < 0) looks to port
+    lookPitch = THREE.MathUtils.clamp(lookPitch - dy * 0.004, -0.9, 0.6);
+  } else if (view === 'behind') behindYaw += dx * 0.3; // the camera swings to starboard, so the view turns to port
 });
 canvas.addEventListener('dblclick', () => { lookYaw = 0; lookPitch = -0.03; behindYaw = 0; behindDist = 190; aboveH = 520; sightZoom = 1; });
 canvas.addEventListener('wheel', (e) => {
@@ -596,7 +645,7 @@ function hudHtml() {
 
   // The radar picture: every contact on one line.
   const contacts = sim.detected.sort((a, b) => sim.rangeTo(a.pos) - sim.rangeTo(b.pos));
-  const word = { inbound: 'inbound', circle: 'circling', pass: 'low pass', extend: 'opening', attack: 'ATTACK RUN' };
+  const word = { inbound: 'inbound', pass: 'low pass', extend: 'opening', attack: 'ATTACK RUN' };
   const rows = contacts.map((d) => `<div class="helm-contact ${d.phase}${d.id === sim.targetId ? ' sel' : ''}"><b>${d.name}</b>`
     + `<span>${relName(sim.relBearing(d.pos))}</span><span>${kmText(sim.rangeTo(d.pos))}</span><em>${word[d.phase] ?? d.phase}</em></div>`).join('');
   const thr = ['Clear', 'Contact', 'Threat close', 'Under attack'][sim.threat];
@@ -730,7 +779,7 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>S</kbd>', 'Sound on / off'],
   ['<kbd>H</kbd> <kbd>C</kbd>', 'Readouts, hide the interface'],
 ].map(([k, d]) => `<dt>${k}</dt><dd>${d}</dd>`).join('');
-keysSheet.querySelector('.keys-note').textContent = 'A drone you leave alone circles, makes low passes and dives into the ship · the guns are coming';
+keysSheet.querySelector('.keys-note').textContent = 'A drone you leave alone makes one low pass, then dives into the ship on its second approach · the guns are coming';
 
 // --- Keys ------------------------------------------------------------------------------------------------------------
 const input = { left: 0, right: 0 };

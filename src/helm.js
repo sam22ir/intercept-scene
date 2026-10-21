@@ -13,7 +13,8 @@
 // The threat
 //   Drones come in one at a time, later two, from random bearings, 5.3 to 5.8 km out. The search radar sees them
 //   at RADAR_RANGE: an alarm and a call ("drone detected, green 045, 5.6 km"). Left alone a drone does not
-//   go away: it circles the ship, then makes low passes, each one closer, and in the end dives into her.
+//   go away: it makes one low pass along the ship's side and, if it has not been shot down, comes round for its
+//   second approach, which is the attack: it dives into her.
 //   Three drones on board and the ship is out of action.
 //
 // The missile
@@ -73,6 +74,7 @@ const ATTACK_SPEED = 56; // m/s on the final dive
 const DRONE_TURN = rad(24); // per second at most
 const DRONE_CLIMB = 6; // m/s
 const CLOSE_CALL = 2000; // m: "drone closing"
+const PASSES_BEFORE_ATTACK = 1; // the first approach is a pass; the second one is the attack
 const STRIKES_TO_LOSE = 3;
 
 // --- The missile ------------------------------------------------------------------------------------------
@@ -310,7 +312,7 @@ export class HelmSim {
       alive: true,
       detected: false,
       called: false, // the "closing" call made
-      phase: 'inbound', // inbound | circle | pass | extend | attack | down | struck
+      phase: 'inbound', // inbound | pass | extend | attack | down | struck
       tPhase: this.t,
       passes: 0,
       side: rng() < 0.5 ? -1 : 1,
@@ -333,7 +335,7 @@ export class HelmSim {
     const sv = this.shipVel(_b);
     switch (d.phase) {
       case 'inbound': {
-        if (range < 1100) { this.setPhase(d, 'circle'); return this.droneAim(d, out); }
+        if (range < 1100) { this.setPhase(d, 'pass'); return this.droneAim(d, out); } // its first approach: a low pass
         const w = Math.sin(this.t * 0.25 + d.weave) * 220; // a lazy weave on the way in
         const bx = (d.pos.z - this.z) / (range || 1);
         const bz = -(d.pos.x - this.x) / (range || 1);
@@ -362,7 +364,7 @@ export class HelmSim {
         return aim;
       }
       case 'extend': {
-        if (age > 16 || range > 900) { this.setPhase(d, d.passes >= 3 ? 'attack' : 'pass'); d.side = -d.side; return this.droneAim(d, out); }
+        if (age > 16 || range > 900) { this.setPhase(d, d.passes >= PASSES_BEFORE_ATTACK ? 'attack' : 'pass'); d.side = -d.side; return this.droneAim(d, out); }
         const k = 1 / (range || 1);
         return out.set(d.pos.x + (d.pos.x - this.x) * k * 300, lerp(d.pos.y, 80, 0.05), d.pos.z + (d.pos.z - this.z) * k * 300);
       }
@@ -396,7 +398,7 @@ export class HelmSim {
     if (d.phase !== before && d.phase === 'attack') {
       this.events.push({ type: 'alarm', level: 3, id: d.id });
       this.say(`Drone ${d.name} attack run! Fire!`, 'bad');
-    } else if (d.phase !== before && d.phase === 'pass' && before === 'circle') {
+    } else if (d.phase !== before && d.phase === 'pass' && before === 'inbound') {
       this.events.push({ type: 'alarm', level: 2, id: d.id });
       this.say(`Drone ${d.name} coming in low, ${relName(this.relBearing(d.pos))}`, 'bad');
     }
