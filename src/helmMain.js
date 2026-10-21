@@ -49,7 +49,7 @@ const rig = new CameraRig(camera, controls);
 const env = createEnvironment(renderer, scene, { calm: true });
 env.setShadowSize(1024);
 env.ocean.material.uniforms.uShipX.value = 1e7; // the shader's straight-line wake: this ship turns, she has her own
-const ship = createShip();
+const ship = createShip({ catapult: false, helicopter: true });
 ship.group.rotation.order = 'YXZ'; // heading, then heel, then trim
 scene.add(ship.group);
 const fx = createLiveFx(scene);

@@ -5,6 +5,7 @@ import {
 } from '../scenario.js';
 import { Kit, hexa, slab, facePanel, mat, canvasTexture, toMatrix } from './kit.js';
 import { mulberry32 } from '../rng.js';
+import { createHelicopter } from './helicopter.js';
 
 // Stealth frigate, ~122 m (C28A style, pennant 920 or 921 by variant). Bow along +X, built in
 // the ship frame; main moves `group` along with shipPos(t).
@@ -351,7 +352,8 @@ function raft(kit, white, metal, x, y, z) {
 
 // `ensign` picks the stern flag and hull tint: 'alg' (the default) or 'rus' (the second ship of the
 // maneuvers mission).
-export function createShip({ ensign = 'alg' } = {}) {
+// `catapult: false` leaves the helideck bare, and `helicopter: true` parks a helicopter on it (the Solo Air Defense mission).
+export function createShip({ ensign = 'alg', catapult = true, helicopter = false } = {}) {
   const group = new THREE.Group();
   group.name = 'ship';
 
@@ -891,7 +893,12 @@ export function createShip({ ensign = 'alg' } = {}) {
   cradle.add(sk.build());
   cradle.rotation.z = PITCH;
   rail.add(cradle);
-  group.add(rail);
+  if (catapult) group.add(rail);
+  if (helicopter) {
+    const heli = createHelicopter();
+    heli.position.set(-45.8, 5.5, 0.5); // the wheels on the pad's ring, the nose to the bow, the rotor clear of the hangar
+    group.add(heli);
+  }
 
   // Ensign on the stern staff, waving as a function of t.
   const flagGeo = new THREE.PlaneGeometry(2.2, 1.4, 16, 6);
