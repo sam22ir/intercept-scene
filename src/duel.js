@@ -108,8 +108,8 @@ const MSL_NAV = 4;
 const MSL_TURN = rad(50); // rad/s at most
 export const MSL_LIFE = 32; // s
 export const MSL_ALT = 6; // m, sea-skimming
-export const MSL_DAMAGE = 26; // to the compartment
-export const MSL_HULL = 0.6; // the part of that which costs the hull
+export const MSL_DAMAGE = 20; // to the compartment (a missile still hurts: a fire, a leak, and about a tenth of the hull)
+export const MSL_HULL = 0.45; // the part of that which costs the hull
 export const GUN_MSL_RANGE = 2000; // m
 const MSL_PK = 0.08; // per burst, at the muzzle-near end of the range, before the closing-speed factor
 
@@ -132,9 +132,11 @@ export function zoneAt(x) {
   return 'steering';
 }
 const SHELL_DAMAGE = [10, 14]; // to the compartment
-const SHELL_HULL = 0.5; // the part of that which costs the hull
+// A shell mostly wrecks the compartment it lands in; the hull pays a smaller share (the flooding and the fires do the
+// long, slow work), which is what keeps a duel at two to five minutes instead of a couple of minutes of hit points.
+const SHELL_HULL = 0.15; // the part of that which costs the hull
 const GUN_DAMAGE = 0.9; // a 30 mm burst that hits
-const FLOOD_RATE = 0.12; // hull points a second for each compartment that is out
+const FLOOD_RATE = 0.08; // hull points a second for each compartment that is out
 const BOX = { x: HALF_LENGTH, y0: 0, y1: 18, z: HALF_BEAM }; // the hull and superstructure as a box (the sea is y = 0)
 
 // --- Damage control -------------------------------------------------------------------------------------------------
