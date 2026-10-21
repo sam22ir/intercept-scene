@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DuelSim, DT, MAIN_ARC, MAIN_RANGE, GUN_RANGE, HULL_HP, COMPARTMENTS, COMP_IDS, LEVELS, DUEL_LEVELS, SINK_TIME,
-  zoneAt, segmentBox, sinkState, gunBlind, TELEGRAPH, AMMO_STOCK, AMMO_TYPES, SWITCH_TIME, MAIN_ROUNDS,
+  zoneAt, segmentBox, sinkState, gunBlind, TELEGRAPH, CREWS, CREW_MOVE, REPAIR_CAP, neighbours, AMMO_STOCK, AMMO_TYPES, SWITCH_TIME, MAIN_ROUNDS,
 } from '../src/duel.js';
 
 const run = (sim, seconds, input = {}) => { for (let i = 0; i < seconds * 10; i++) sim.advance(0.1, input); };
@@ -361,5 +361,77 @@ describe('ammunition: HE and AP', () => {
     run(sim, 0.1);
     assert.equal(g.type, 'ap');
     assert.ok(g.cool > 3);
+  });
+});
+
+describe('damage control: fires, flooding and crews', () => {
+  const still = (sim) => { sim.enemy.ai = null; sim.enemy.cmd = { want: 0, fire: false, gat: false }; };
+  const hit = (sim, kind, x = -30) => {
+    const e = sim.enemy; e.psi = Math.PI; e.heel = 0;
+    sim.shells.push({ id: 9, owner: 0, t0: sim.t, kind, p: [e.x + x * -1, 8, e.z], v: [0, -100, 0] });
+    sim.advance(0.05);
+    return sim.takeEvents();
+  };
+
+  it('HE can start a fire and a leak, AP never does', () => {
+    let fires = 0, apFires = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      const a = new DuelSim({ seed, level: 'easy' }); still(a); hit(a, 'he');
+      const b = new DuelSim({ seed, level: 'easy' }); still(b); hit(b, 'ap');
+      if (COMP_IDS.some((id) => a.enemy.fire[id] > 0)) fires++;
+      if (COMP_IDS.some((id) => b.enemy.fire[id] > 0 || b.enemy.leak[id] > 0)) apFires++;
+      assert.ok(COMP_IDS.some((id) => a.enemy.leak[id] > 0), 'HE opens a leak');
+    }
+    assert.ok(fires > 6 && fires < 24, `${fires} of 30 HE hits lit a fire`);
+    assert.equal(apFires, 0);
+  });
+
+  it('a fire grows, burns its compartment and the hull, and spreads along the hull', () => {
+    const sim = new DuelSim({ seed: 3, level: 'easy' }); still(sim);
+    const e = sim.enemy;
+    sim.ignite(e, 'bridge', 0.5);
+    run(sim, 20);
+    assert.ok(e.fire.bridge > 0.5, 'it grows');
+    assert.ok(e.comp.bridge < COMPARTMENTS.bridge.hp - 4, 'it burns the compartment');
+    run(sim, 120);
+    const lit = COMP_IDS.filter((id) => e.fire[id] > 0 || e.comp[id] <= 0);
+    assert.ok(lit.some((id) => neighbours('bridge').includes(id)), `spread to ${lit}`);
+    assert.ok(e.hp < 100);
+  });
+
+  it('a crew takes CREW_MOVE s to arrive, then puts the fire out, and one crew holds one compartment', () => {
+    const sim = new DuelSim({ seed: 3, level: 'easy' }); still(sim);
+    const p = sim.player;
+    sim.ignite(p, 'engine', 0.6);
+    assert.ok(sim.assignCrew(0, 'engine'));
+    run(sim, CREW_MOVE - 1);
+    assert.ok(p.fire.engine > 0.6, 'still on the way');
+    run(sim, 20);
+    assert.equal(p.fire.engine, 0, 'out');
+    assert.ok(sim.takeEvents().some((e) => e.type === 'fireout' && e.comp === 'engine'));
+    assert.equal(sim.assignCrew(0, 'engine'), true, 'the same call sends her home');
+    assert.equal(p.crews.filter((c) => c.to).length, 0);
+    for (const id of COMP_IDS.slice(0, CREWS)) assert.ok(sim.assignCrew(0, id));
+    assert.equal(sim.assignCrew(0, COMP_IDS[CREWS]), false, 'no crew left');
+  });
+
+  it('a crew slows the flooding and restores a compartment, even one that is out, up to the cap', () => {
+    const flood = (crew) => { const sim = new DuelSim({ seed: 2 }); sim.damage(sim.player, 'engine', 100, 0); if (crew) sim.assignCrew(0, 'engine'); run(sim, 40); return sim.player; };
+    const a = flood(false), b = flood(true);
+    assert.ok(b.hp > a.hp, 'less water');
+    assert.ok(b.comp.engine > 5 && b.comp.engine <= COMPARTMENTS.engine.hp * REPAIR_CAP + 1e-9, `engine back to ${b.comp.engine}`);
+    assert.equal(a.comp.engine, 0, 'unattended she stays out');
+  });
+
+  it('the enemy sends crews by priority, and as many as her level allows', () => {
+    const used = (level) => { const sim = new DuelSim({ seed: 4, level }); still(sim); sim.enemy.ai = sim.makeAi(level); for (const id of COMP_IDS) sim.ignite(sim.enemy, id, 0.4); run(sim, 3); return sim.enemy.crews.filter((c) => c.to).length; };
+    assert.deepEqual(DUEL_LEVELS.map(used), [1, 2, 3]);
+  });
+
+  it('Hard finishes a hurt compartment with AP and lights fires with HE, Easy always uses HE', () => {
+    const load = (level, hurt) => { const sim = new DuelSim({ seed: 4, level }); if (hurt) sim.damage(sim.player, 'bridge', 20, 0); run(sim, 3); return sim.enemy.gun.type; };
+    assert.equal(load('hard', true), 'ap');
+    assert.equal(load('hard', false), 'he');
+    assert.equal(load('easy', true), 'he');
   });
 });

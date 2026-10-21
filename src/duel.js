@@ -60,6 +60,7 @@ export const AMMO_TYPES = {
   ap: { name: 'AP', dmg: 1.5, fire: 0, flood: 0 },
 };
 export const SWITCH_TIME = 3.5; // s of reload to change the loaded kind
+const AMMO_DWELL = 12; // s the enemy keeps a kind loaded before it may change
 const MAIN_YAW_RATE = rad(45);
 const MAIN_PITCH_RATE = rad(30);
 const MAIN_PITCH = [rad(-5), rad(45)];
@@ -108,6 +109,23 @@ const GUN_DAMAGE = 0.9; // a 30 mm burst that hits
 const FLOOD_RATE = 0.12; // hull points a second for each compartment that is out
 const BOX = { x: HALF_LENGTH, y0: 0, y1: 18, z: HALF_BEAM }; // the hull and superstructure as a box (the sea is y = 0)
 
+// --- Damage control -------------------------------------------------------------------------------------------------
+// Fires (started by HE and by missiles) burn the compartment they are in, grow, and spread to the next one along the hull; HE also
+// opens a leak. A repair crew, sent to one compartment (one crew each, CREW_MOVE s to get there), puts its fire out, slows its flooding and
+// slowly restores it, even from out, but never above REPAIR_CAP of its points.
+export const CREWS = 3;
+export const CREW_MOVE = 6; // s to reach a compartment
+export const FIRE_GROW = 0.04; // intensity (0..1) a second
+export const FIRE_BURN = 0.6; // compartment points a second at full intensity
+export const FIRE_HULL = 0.03; // hull points a second at full intensity
+export const FIRE_SPREAD = 1 / 14; // chance a second, at full intensity, of catching the next compartment
+export const CREW_FIGHT = 0.12; // intensity put out a second
+export const CREW_FLOOD = 0.4; // the flooding that is left with a crew in the compartment
+export const CREW_REPAIR = 0.5; // compartment points a second
+export const REPAIR_CAP = 0.6;
+const NEXT_TO = { gun: ['bridge'], bridge: ['gun', 'engine'], engine: ['bridge', 'guns'], guns: ['engine', 'steering'], steering: ['guns'] };
+export const neighbours = (id) => NEXT_TO[id];
+
 export const DUEL_LEVELS = ['easy', 'normal', 'hard'];
 // The fire control does not know the target's velocity, it tracks it: the estimate follows the true one with a lag (`track`, s;
 // 3 s for the player's own, the enemy's by its level), so a change of course or speed spoils the solution for a few seconds.
@@ -117,9 +135,9 @@ const TRACK_PLAYER = 3;
 // `every` seconds; `range` the distance it wants to fight at; `speed` its telegraph order; `retreat` the hull fraction below
 // which it runs.
 export const LEVELS = {
-  easy: { name: 'Easy', think: 1.4, aim: 2.4, track: 6, base: 0, jink: 0, every: [99, 99], range: 5200, speed: 4, retreat: 0 },
-  normal: { name: 'Normal', think: 0.6, aim: 1.5, track: 4, base: rad(22), jink: rad(18), every: [9, 16], range: 4600, speed: 5, retreat: 0.25 },
-  hard: { name: 'Hard', think: 0.25, aim: 1.0, track: 2.5, base: rad(40), jink: rad(40), every: [5, 10], range: 4000, speed: 5, retreat: 0.3 },
+  easy: { name: 'Easy', think: 1.4, aim: 2.4, track: 6, base: 0, jink: 0, every: [99, 99], range: 5200, speed: 4, retreat: 0, crews: 1, ammo: 'he' },
+  normal: { name: 'Normal', think: 0.6, aim: 1.5, track: 4, base: rad(22), jink: rad(18), every: [9, 16], range: 4600, speed: 5, retreat: 0.25, crews: 2, ammo: 'mixed' },
+  hard: { name: 'Hard', think: 0.25, aim: 1.0, track: 2.5, base: rad(40), jink: rad(40), every: [5, 10], range: 4000, speed: 5, retreat: 0.3, crews: 3, ammo: 'smart' },
 };
 
 function mulberry32(seed) {
@@ -152,6 +170,9 @@ function makeShip(idx, x, z, psi) {
   return {
     idx, x, z, psi, u: 0, r: 0, rudder: 0, heel: 0, order: START_ORDER,
     hp: HULL_HP, comp, flood: 0, tSunk: null, listSide: 1,
+    fire: Object.fromEntries(COMP_IDS.map((id) => [id, 0])), // intensity 0..1 in each compartment
+    leak: Object.fromEntries(COMP_IDS.map((id) => [id, 0])), // hull points a second from holes in it
+    crews: Array.from({ length: CREWS }, () => ({ to: null, eta: 0 })), // sent to `to`, working once eta has run out
     // The 76 mm: yaw (+ toward port), pitch, the time until it is loaded, the rounds, and whether it is on the solution.
     gun: { yaw: 0, pitch: rad(2), cool: 1.5, ammo: MAIN_ROUNDS, stock: { ...AMMO_STOCK }, type: 'he', onTarget: false, engaged: false },
     gats: [0, 1].map(() => ({ yaw: GUN_STOW.yaw, pitch: GUN_STOW.pitch, ammo: GUN_ROUNDS, firing: false, rounds: 0, spin: 0, spinRate: 0, burst: 0, cool: 0 })),
@@ -183,6 +204,7 @@ export class DuelSim {
     ];
     for (const s of this.ships) { s.u = TELEGRAPH[START_ORDER].kn * KT; }
     for (const s of this.ships) { const v = this.velOf(this.ships[1 - s.idx]); s.est = [v[0], v[2]]; }
+    this.rngF = mulberry32((this.seed ^ 0xf17e) >>> 0); // fires: a stream of its own, so they never shift the gunnery draws
     this.ships[1].ai = this.makeAi(this.level);
     if (this.auto) this.ships[0].ai = this.makeAi(this.auto);
     this.shells = [];
@@ -393,6 +415,8 @@ export class DuelSim {
     tgt.stats.taken += 1;
     const pos = this.toWorld(tgt, [local[0], clamp(local[1], 0, BOX.y1), local[2]]);
     this.damage(tgt, comp, dmg, SHELL_HULL, local[2]);
+    if (am.fire > 0 && this.rngF() < am.fire) this.ignite(tgt, comp, 0.3);
+    tgt.leak[comp] += am.flood;
     this.events.push({ type: 'hit', owner: sh.owner, ship: tgt.idx, comp, dmg, kind: sh.kind, pos, local: local.slice(), out: tgt.comp[comp] <= 0 });
     this.shells.splice(this.shells.indexOf(sh), 1);
   }
@@ -406,9 +430,53 @@ export class DuelSim {
     if (before > 0 && s.comp[comp] <= 0) this.events.push({ type: 'out', ship: s.idx, comp });
   }
 
+  ignite(s, comp, level = 0.3) {
+    if (s.tSunk !== null || s.comp[comp] <= 0 || s.fire[comp] > 0) return;
+    s.fire[comp] = level;
+    this.events.push({ type: 'fire', ship: s.idx, comp });
+  }
+
+  // Send a crew to a compartment, or call back the one already there or on its way (one call per key press). Returns whether anything changed.
+  assignCrew(i, comp) {
+    const s = this.ships[i];
+    if (s.tSunk !== null || !COMPARTMENTS[comp]) return false;
+    const on = s.crews.find((c) => c.to === comp);
+    if (on) { on.to = null; return true; }
+    const free = s.crews.find((c) => c.to === null);
+    if (!free) return false;
+    free.to = comp; free.eta = CREW_MOVE;
+    return true;
+  }
+  crewIn(s, comp) { return s.crews.some((c) => c.to === comp && c.eta <= 0); }
+
   stepDamage(s, dt) {
     if (s.tSunk !== null) return;
-    s.flood = COMP_IDS.reduce((n, id) => n + (s.comp[id] <= 0 ? FLOOD_RATE : 0), 0);
+    for (const c of s.crews) if (c.to !== null && c.eta > 0) c.eta = Math.max(0, c.eta - dt);
+    let flood = 0;
+    for (const id of COMP_IDS) {
+      const crew = this.crewIn(s, id);
+      // fire: grows, burns the compartment and a little of the hull, spreads, and a crew puts it out
+      let f = s.fire[id];
+      if (f > 0) {
+        if (s.comp[id] <= 0) f = 0; // nothing left to burn
+        else {
+          f = Math.min(1, f + FIRE_GROW * dt);
+          s.comp[id] = Math.max(0, s.comp[id] - FIRE_BURN * f * dt);
+          s.hp = Math.max(0, s.hp - FIRE_HULL * f * dt);
+          if (s.comp[id] <= 0) this.events.push({ type: 'out', ship: s.idx, comp: id });
+          for (const n of NEXT_TO[id]) if (s.fire[n] <= 0 && this.rngF() < FIRE_SPREAD * f * dt) this.ignite(s, n, 0.15);
+          if (crew) f = Math.max(0, f - CREW_FIGHT * dt);
+        }
+        if (f <= 0 && s.fire[id] > 0) this.events.push({ type: 'fireout', ship: s.idx, comp: id });
+        s.fire[id] = f;
+      }
+      if (crew && s.fire[id] <= 0) { // restore, up to the cap (a compartment that was out can come back)
+        const cap = COMPARTMENTS[id].hp * REPAIR_CAP;
+        if (s.comp[id] < cap) s.comp[id] = Math.min(cap, s.comp[id] + CREW_REPAIR * dt);
+      }
+      flood += ((s.comp[id] <= 0 ? FLOOD_RATE : 0) + s.leak[id]) * (crew ? CREW_FLOOD : 1);
+    }
+    s.flood = flood;
     s.hp = Math.max(0, s.hp - s.flood * dt);
     if (s.hp <= 0) {
       s.tSunk = this.t;
@@ -467,6 +535,30 @@ export class DuelSim {
   }
 
   // --- the enemy's helmsman ----------------------------------------------------------------------------------------------
+  // Which round to have loaded. Easy leaves the HE in; Normal finishes a hurt compartment with AP and uses HE otherwise; Hard also
+  // lights fires with HE while the target has none. Never changes within AMMO_DWELL s of the last change (each change is a reload).
+  chooseAmmo(s, o) {
+    const mode = s.ai.p.ammo, g = s.gun;
+    if (mode === 'he' || this.t < (s.ai.ammoAt ?? 0)) return;
+    const hurt = COMP_IDS.some((id) => o.comp[id] > 0 && o.comp[id] <= (mode === 'smart' ? 16 : 11));
+    const burning = COMP_IDS.some((id) => o.fire[id] > 0);
+    let want = hurt || (o.hp / HULL_HP < 0.4) ? 'ap' : 'he';
+    if (mode === 'smart' && !hurt && !burning && o.hp / HULL_HP > 0.6) want = 'he';
+    if (want !== g.type && this.switchAmmo(s.idx, want)) s.ai.ammoAt = this.t + AMMO_DWELL;
+  }
+
+  // Send the crews where they are needed most: fire first, then a compartment that is out, then the most hurt. Level sets how many crews it uses.
+  dispatchCrews(s) {
+    const n = s.ai.p.crews;
+    const need = (id) => (s.fire[id] > 0 ? 3 + s.fire[id] : 0) + (s.comp[id] <= 0 ? 2 : 0) + (1 - s.comp[id] / COMPARTMENTS[id].hp) + s.leak[id] * 8;
+    const ranked = COMP_IDS.map((id) => [id, need(id)]).filter(([, v]) => v > 0.3).sort((a, b) => b[1] - a[1]).slice(0, n).map(([id]) => id);
+    for (const c of s.crews) if (c.to !== null && !ranked.includes(c.to) && need(c.to) < 0.2) c.to = null; // call back a crew with nothing left to do
+    for (const id of ranked) {
+      if (s.crews.filter((c) => c.to !== null).length >= n) break;
+      if (!s.crews.some((c) => c.to === id)) this.assignCrew(s.idx, id);
+    }
+  }
+
   // Every `think` seconds: where to point, how fast to go. The rudder follows by the same keys a player has.
   think(s) {
     const ai = s.ai, p = ai.p;
@@ -488,6 +580,8 @@ export class DuelSim {
     const err = wrapPi(rel - wantRel);
     s.cmd.want = Math.abs(err) < rad(3) ? 0 : Math.sign(err);
     if (s.order < order) s.order += 1; else if (s.order > order) s.order -= 1;
+    this.chooseAmmo(s, o);
+    this.dispatchCrews(s);
     s.cmd.fire = true; // it fires whenever the gun is on (the gun decides)
     s.cmd.gat = true;
   }
