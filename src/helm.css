@@ -132,7 +132,7 @@ body.mission-helm .topbar .brand, body.mission-helm .brand { display: none; }
 .helm-ship .hs-pips i.on { background: #ffc454; border-color: #ffc454; }
 @media (max-width: 1100px) { .helm-ship .hs-rect { width: 150px; } }
 body.mission-helm .hud { background: rgba(9, 14, 21, 0.38); backdrop-filter: blur(3px); max-height: calc(100vh - var(--map-d, 150px) - 64px); overflow: hidden; }
-@media (max-width: 1100px) { .helm-ship { bottom: calc(var(--keys-h, 56px) + 58px); } }
+@media (max-width: 900px) { .helm-ship { bottom: calc(var(--keys-h, 56px) + 58px); } } /* the view buttons sit above the keys only on narrow windows */
 
 /* Wide windows: the instruments stand on the bottom edge of the screen, out of the view; the key hints go up under the view buttons. */
 @media (min-width: 1101px) {
