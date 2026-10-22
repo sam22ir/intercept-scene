@@ -275,3 +275,9 @@ body.duel-radarview .duel-target:not([hidden]) { width: 212px; }
 /* In the radar view the old enemy card in #hud is hidden; its empty panel must not draw a dark bar over the target board. */
 body.duel-radarview #hud.duel-root { background: none; border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; padding: 0; pointer-events: none; }
 body.duel-radarview #hud.duel-root .dh-end { pointer-events: auto; }
+
+/* The sea state slider in the menu. */
+#sea-row { display: grid; gap: 4px; padding: 8px 12px; font-size: 13px; color: var(--text); }
+#sea-row[hidden] { display: none; }
+#sea-row span { display: flex; justify-content: space-between; gap: 8px; } #sea-row b { color: #35c8ff; font-weight: 600; }
+#sea-row input { width: 100%; accent-color: #35c8ff; cursor: pointer; }

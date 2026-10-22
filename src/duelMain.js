@@ -63,35 +63,31 @@ const _a = new THREE.Vector3();
 const _vel = new THREE.Vector3();
 wireWeather({ look: env.look });
 
-// --- The state of the sea (a choice in the menu, kept between visits, applied at once) ---------------------------------------------
-// Auto is the mission's own sea; the others are on the Douglas scale's steps (calm to very rough). The waves' steepness and the whitecaps
-// follow the choice, and so does how much the ships roll and pitch on them (`seaK`) and how much the behind camera sways.
-const SEAS = [
-  { name: 'Auto', state: null, caps: null },
-  { name: 'Calm', state: 0.45, caps: 0, num: 1 },
-  { name: 'Slight', state: 1.0, caps: 0.3, num: 3 },
-  { name: 'Moderate', state: 1.7, caps: 0.9, num: 4 },
-  { name: 'Rough', state: 2.5, caps: 1.2, num: 5 },
-  { name: 'Very rough', state: 3.4, caps: 1.2, num: 6 },
-];
-let seaIdx = 0;
-try { const v = Number(localStorage.getItem('intercept.duel.sea')); if (Number.isInteger(v) && v >= 0 && v < SEAS.length) seaIdx = v; } catch { /* storage unavailable */ }
-let seaK = env.look?.sea.state ?? 1; // the steepness now in use: 1 is the original sea
+// --- The state of the sea (a slider in the menu, kept between visits, applied at once) ---------------------------------------------
+// 0 is a flat calm and 100 is very high waves. The waves' steepness and the whitecaps follow the slider, and so does how much the ships
+// roll and pitch on them (`seaK`, 1 = the original sea) and how much the behind camera sways.
+const SEA_MAX = 5.4;
+const seaOf = (v) => 0.4 + (v / 100) ** 1.5 * (SEA_MAX - 0.4); // the steepness for a slider value
+const SEA_NAMES = [[0.7, 'Calm'], [1.3, 'Slight'], [2.1, 'Moderate'], [3.0, 'Rough'], [4.0, 'Very rough'], [Infinity, 'Very high waves']];
+let seaV = 41; // about the mission's own sea (1.7)
+try { const v = Number(localStorage.getItem('intercept.duel.sea2')); if (localStorage.getItem('intercept.duel.sea2') !== null && v >= 0 && v <= 100) seaV = v; } catch { /* storage unavailable */ }
+let seaK = seaOf(seaV);
+const seaRange = document.querySelector('#sea-range');
 function applySea() {
-  const c = SEAS[seaIdx];
-  seaK = c.state ?? env.look?.sea.state ?? 1;
-  env.setSea(seaK, c.caps ?? env.look?.sea.caps ?? 0);
-  const b = document.querySelector('#btn-sea');
-  if (b) b.firstChild.textContent = c.state === null ? `Sea state: Auto (${seaK.toFixed(1)})` : `Sea state: ${c.name} (${c.num})`;
+  seaK = seaOf(seaV);
+  env.setSea(seaK, THREE.MathUtils.clamp((seaK - 0.5) / 1.5, 0, 1.2));
+  const n = document.querySelector('#sea-name');
+  if (n) n.textContent = SEA_NAMES.find(([lim]) => seaK < lim)[1];
 }
-const seaButton = document.querySelector('#btn-sea');
-if (seaButton) {
-  seaButton.hidden = false;
-  seaButton.addEventListener('click', () => {
-    seaIdx = (seaIdx + 1) % SEAS.length;
-    try { localStorage.setItem('intercept.duel.sea', String(seaIdx)); } catch { /* storage unavailable */ }
+if (seaRange) {
+  document.querySelector('#sea-row').hidden = false;
+  seaRange.value = String(seaV);
+  seaRange.addEventListener('input', () => {
+    seaV = Number(seaRange.value);
+    try { localStorage.setItem('intercept.duel.sea2', String(seaV)); } catch { /* storage unavailable */ }
     applySea();
   });
+  seaRange.addEventListener('change', () => seaRange.blur()); // so the arrow keys steer again
 }
 applySea();
 const _b = new THREE.Vector3();
@@ -203,7 +199,7 @@ function poseShip(i, dt) {
   v.group.visible = !sink?.gone;
   v.group.position.set(s.x, sink ? sink.depth : 0, s.z);
   // A little of the sea's motion on every ship afloat: a slow roll and pitch that grow with the sea state, each ship on her own phase.
-  const rock = sink ? 0 : Math.min(seaK, 3.4);
+  const rock = sink ? 0 : Math.min(seaK, SEA_MAX);
   const rollSea = rock * (0.016 * Math.sin(0.72 * sim.t + i * 1.9) + 0.007 * Math.sin(1.63 * sim.t + i));
   const pitchSea = rock * (0.007 * Math.sin(0.58 * sim.t + i * 2.3) + 0.003 * Math.sin(1.4 * sim.t));
   v.group.rotation.set(s.heel + list + rollSea + (sink?.roll ?? 0), -s.psi, pitchSea + (sink?.trim ?? 0));
@@ -412,9 +408,9 @@ function updateCamera() {
     if (!behindOn || sim.t < behindT) behindHead = p.psi;
     behindOn = true; behindT = sim.t;
     behindHead += wrapAngle(p.psi - behindHead) * (1 - Math.exp(-frameDt / 0.9));
-    const swell = Math.min(seaK, 3.4);
+    const swell = Math.min(seaK, SEA_MAX);
     const bob = (Math.sin(sim.t * 0.9) * 1.0 + Math.sin(sim.t * 1.7 + 1) * 0.5) * swell;
-    const sway = Math.sin(sim.t * 0.55 + 2) * 1.8 * swell;
+    const sway = Math.sin(sim.t * 0.55 + 2) * 1.3 * swell;
     const hx = Math.cos(behindHead), hz = Math.sin(behindHead);
     camera.position.set(p.x - hx * 110 - hz * sway, 34 + bob, p.z - hz * 110 + hx * sway);
     camera.lookAt(p.x + Math.cos(p.psi) * 45, 6 + bob * 0.3, p.z + Math.sin(p.psi) * 45);
