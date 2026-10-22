@@ -223,7 +223,7 @@ describe('the information the scene shows', () => {
   it('a hull is a share of her own full hull, so the escort starts at 100 per cent', () => {
     const sim = quiet();
     for (const s of sim.squad) assert.equal(hullFrac(s), 1, s.role);
-    assert.ok(hullMax(sim.squad[3]) > hullMax(sim.squad[0]), 'the escort has the bigger hull');
+    assert.equal(hullMax(sim.squad[3]), hullMax(sim.squad[0]), 'no role has a bigger hull');
     sim.squad[0].hp = hullMax(sim.squad[0]) / 2;
     assert.equal(hullFrac(sim.squad[0]), 0.5);
   });
