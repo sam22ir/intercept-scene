@@ -179,6 +179,8 @@ function updateCamera() {
   camera.updateMatrixWorld(true);
 }
 const panKeys = new Set();
+const EDGE = 24; // px from the screen's edge where the pointer scrolls the view
+const mouse = { x: 0, y: 0, over: false }; // over: the pointer is on the sea itself, not on a panel or off the window
 function movePan(dt) {
   const speed = cam.h * 0.9 * dt;
   let dx = 0, dz = 0;
@@ -186,6 +188,12 @@ function movePan(dt) {
   if (panKeys.has('down')) dx -= 1;
   if (panKeys.has('right')) dz += 1;
   if (panKeys.has('left')) dz -= 1;
+  // The pointer at an edge of the screen scrolls that way; at a corner, diagonally (8 directions in all).
+  if (mouse.over && !panning && !drag) {
+    if (mouse.y < EDGE) dx += 1; else if (mouse.y > window.innerHeight - EDGE) dx -= 1;
+    if (mouse.x < EDGE) dz -= 1; else if (mouse.x > window.innerWidth - EDGE) dz += 1;
+  }
+  if (dx && dz) { dx *= Math.SQRT1_2; dz *= Math.SQRT1_2; } // a corner is no faster than a side
   cam.x = clamp(cam.x + dx * speed, -6000, 6000);
   cam.z = clamp(cam.z + dz * speed, -6000, 6000);
 }
@@ -395,6 +403,7 @@ window.addEventListener('pointerdown', (e) => {
   else if (e.button === 2) seaRight = { x0: e.clientX, y0: e.clientY, moved: false, shift: e.shiftKey }; // a click orders, a drag pans (on release / on the move)
 });
 window.addEventListener('pointermove', (e) => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.over = e.target === canvas;
   if (drag) { drag.x1 = e.clientX; drag.y1 = e.clientY; moveBox(); }
   if (mapRight) { // right-drag on the map: the camera follows the cursor
     if (!mapRight.moved && Math.hypot(e.clientX - mapRight.x, e.clientY - mapRight.y) > 4) mapRight.moved = true;
@@ -477,7 +486,8 @@ window.addEventListener('keyup', (e) => {
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   if (PAN[k]) panKeys.delete(PAN[k]);
 });
-window.addEventListener('blur', () => panKeys.clear());
+window.addEventListener('blur', () => { panKeys.clear(); mouse.over = false; });
+document.documentElement.addEventListener('mouseleave', () => { mouse.over = false; });
 const SPEEDS = [0.5, 1, 2, 4, 8, 16];
 function setSpeed(v) { speed = v; paused = false; say(`Speed ${v}x`, 'warn', 1000); }
 function frameSelection() {
@@ -502,7 +512,7 @@ document.body.append(ui);
 const shipsEl = ui.querySelector('.fl-ships');
 const helpEl = ui.querySelector('.fl-help');
 const resultEl = ui.querySelector('.fl-result');
-helpEl.innerHTML = '<b>Left</b> select · drag a box · <b>Right</b> move or attack · <b>Shift</b> queue · <b>Space</b> pause · <b>+ -</b> speed · <b>E</b> all · <b>X</b> stop · <b>F</b> find · wheel zoom · <b>WASD</b> pan';
+helpEl.innerHTML = '<b>Left</b> select · drag a box · <b>Right</b> move or attack · <b>Shift</b> queue · <b>Space</b> pause · <b>+ -</b> speed · <b>E</b> all · <b>X</b> stop · <b>F</b> find · wheel zoom · <b>WASD</b> or the screen edge pan';
 let lastShips = '';
 function shipsHtml() {
   const rows = sim.team(0).concat(sim.ships.filter((s) => s.team === 0 && s.hp <= 0)).map((s) => {
