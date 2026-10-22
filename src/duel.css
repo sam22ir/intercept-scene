@@ -199,7 +199,7 @@ body.mission-duel .mm-opt-gat[aria-pressed="true"] { border-color: rgba(80, 200,
 /* The damage board: your ship drawn from above in the radar view, down the left under the top bar (it replaces the strip there). */
 body.duel-radarview .duel-ship { display: none; }
 .duel-board { display: none; }
-body.duel-radarview .duel-board:not([hidden]) { display: block; position: fixed; z-index: 6; left: 14px; top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 82px); width: 186px; padding: 8px 9px 9px; border-radius: 12px; background: rgba(9, 14, 21, 0.58); border: 1px solid rgba(255, 255, 255, 0.12); backdrop-filter: blur(4px); color: var(--text); font-variant-numeric: tabular-nums; }
+body.duel-radarview .duel-board:not([hidden]) { display: block; position: fixed; z-index: 6; left: 14px; top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 82px); width: 186px; padding: 8px 9px 9px; border-radius: 12px; background: rgba(9, 14, 21, 0.74); border: 1px solid rgba(255, 255, 255, 0.12); backdrop-filter: blur(4px); color: var(--text); font-variant-numeric: tabular-nums; }
 body.ui-hidden .duel-board { display: none !important; }
 .duel-board .bd-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 10px; letter-spacing: 0.08em; color: var(--muted); }
 .duel-board .bd-head b { color: var(--text); }
@@ -231,3 +231,15 @@ body.ui-hidden .duel-board { display: none !important; }
   .duel-board .bd-flood { margin-top: 3px; }
   .duel-board .bd-repair { margin-top: 4px; padding: 5px 0; }
 }
+
+/* The target board: the enemy, on the right in the radar view (it replaces the enemy card there). */
+body.duel-radarview .duel-hud .dh-ship, body.duel-radarview .duel-hud .dh-range { display: none; }
+body.duel-radarview .duel-target:not([hidden]) { left: auto; right: 14px; top: calc(var(--gap, 14px) + var(--safe-t, 0px)); width: 196px; border-color: rgba(255, 93, 97, 0.35); }
+.duel-board .bd-bar.foe s { background: #ff5d61; }
+.duel-board .bd-head .good { color: #3ddc84; } .duel-board .bd-flood.good { color: #3ddc84; }
+.duel-board .bz.foe { cursor: default; }
+.duel-board .bt circle { fill: none; stroke: #fff; stroke-width: 1.2; stroke-dasharray: 3 2; } .duel-board .bt path { stroke: #fff; stroke-width: 1.2; fill: none; }
+.duel-board .bd-threat { margin-top: 4px; font-size: 9.5px; letter-spacing: 0.03em; color: var(--muted); text-align: center; } .duel-board .bd-threat.on { color: #ff7a7d; font-weight: 700; }
+.duel-board .bd-aim { margin-top: 6px; padding: 5px 6px; border-radius: 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-align: center; color: var(--muted); background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1); }
+.duel-board .bd-aim.focus { color: #f2c94c; border-color: rgba(242, 201, 76, 0.6); } .duel-board .bd-aim.lock { color: #3ddc84; border-color: rgba(61, 220, 132, 0.7); background: rgba(61, 220, 132, 0.12); }
+@media (max-height: 760px) { body.duel-radarview .duel-target:not([hidden]) { width: 180px; } }
