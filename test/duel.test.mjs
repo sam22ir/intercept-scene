@@ -3,6 +3,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { stepHullReal, KT } from '../src/hull.js';
 import {
   DuelSim, DT, MAIN_ARC, MAIN_RANGE, GUN_RANGE, HULL_HP, COMPARTMENTS, COMP_IDS, LEVELS, DUEL_LEVELS, SINK_TIME,
   REPAIR_TIME, REPAIR_WAIT, zoneAt, segmentBox, sinkState, gunBlind, TELEGRAPH, MANUAL_SCATTER, CREWS, CREW_MOVE, REPAIR_CAP, neighbours, AMMO_STOCK, AMMO_TYPES, SWITCH_TIME, MAIN_ROUNDS,
@@ -571,5 +572,44 @@ describe('the repair of each part', () => {
   it('the frigates start about three kilometres apart', () => {
     const sim = new DuelSim({ seed: 3 });
     assert.ok(sim.range() > 2800 && sim.range() < 3800, `range ${sim.range()}`);
+  });
+});
+
+describe('heavy handling (realHandling)', () => {
+  const sail = (opts, seconds, order = 4) => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', realHandling: true });
+    const p = sim.player;
+    const track = [];
+    for (let t = 0; t < seconds; t += 0.1) { sim.advance(0.1, opts(t)); track.push({ t, x: p.x, z: p.z, psi: p.psi, u: p.u, r: p.r, rudder: p.rudder, sway: p.sway ?? 0 }); }
+    return { sim, track };
+  };
+  it('a full-rudder circle has a tactical diameter of roughly three ship lengths and costs speed', () => {
+    const h = { x: 0, z: 0, psi: 0, u: 16 * KT, r: 0, rudder: 0, heel: 0 };
+    let transfer = null, t = 0;
+    for (; t < 250 && transfer === null; t += 0.05) { stepHullReal(h, 0.05, { want: 1, orderKn: 16 }); if (h.psi < 0) transfer = Math.abs(h.z); }
+    assert.ok(transfer > 220 && transfer < 480, `tactical diameter ${transfer?.toFixed(0)} m`);
+    assert.ok(h.u < 16 * KT * 0.85, 'she is slower in the turn');
+  });
+  it('the rudder travels slowly and the swing goes on after it is amidships', () => {
+    const { track } = sail((t) => (t < 6 ? { right: 1 } : {}), 20);
+    const at3 = track.find((s) => s.t >= 3);
+    assert.ok(at3.rudder < 0.3 && at3.rudder > 0.2, `rudder after 3 s ${at3.rudder.toFixed(2)}`);
+    const peak = Math.max(...track.map((s) => s.r));
+    const later = track.find((s) => s.t >= 9);
+    assert.ok(later.r > 0.2 * peak, 'she is still swinging three seconds after the rudder came back');
+  });
+  it('she skids outward in a turn (sway opposite the turn) and keeps her weight when the telegraph drops', () => {
+    const { track } = sail(() => ({ right: 1 }), 40);
+    assert.ok(track.at(-1).sway < -0.2, `sway ${track.at(-1).sway.toFixed(2)}`);
+    const sim = new DuelSim({ seed: 3, level: 'easy', realHandling: true });
+    sim.telegraph(0, -1); sim.telegraph(0, -1); sim.telegraph(0, -1); // down to Stop
+    const u0 = sim.player.u;
+    for (let i = 0; i < 100; i++) sim.advance(0.1, {});
+    assert.ok(sim.player.u > u0 * 0.55, `after 10 s she still carries way (${(sim.player.u / u0).toFixed(2)})`);
+  });
+  it('the old handling is untouched by default', () => {
+    const sim = new DuelSim({ seed: 3, level: 'easy' });
+    for (let i = 0; i < 100; i++) sim.advance(0.1, { right: 1 });
+    assert.equal(sim.player.sway, undefined);
   });
 });

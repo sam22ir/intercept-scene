@@ -35,7 +35,7 @@
 // loses the duel. Hulls that touch collide (damage by the closing speed where they meet).
 //
 // Coordinates are the scene's (see hull.js): metres, +Y up, the sea is y = 0. +X is north and +Z east.
-import { TELEGRAPH, START_ORDER, RUDDER_MAX, KT, HALF_LENGTH, HALF_BEAM, GUN_MOUNT_LOCAL, GUN_DEAD, gunBlind, stepHull } from './hull.js';
+import { TELEGRAPH, START_ORDER, RUDDER_MAX, KT, HALF_LENGTH, HALF_BEAM, GUN_MOUNT_LOCAL, GUN_DEAD, gunBlind, stepHull, stepHullReal, REAL_RADIUS } from './hull.js';
 
 export { TELEGRAPH, START_ORDER, KT, HALF_LENGTH, HALF_BEAM, GUN_MOUNT_LOCAL, gunBlind };
 
@@ -232,8 +232,9 @@ function makeShip(idx, x, z, psi, team = idx === 0 ? 0 : 1, kind = 'frigate') {
 
 export class DuelSim {
   // `level` is the enemy's; `auto` ('easy' | 'normal' | 'hard') hands the player's ship to the same kind of helmsman (tests).
-  constructor({ seed = 11, level = 'normal', auto = null, waves = false } = {}) {
+  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false } = {}) {
     this.seed = seed;
+    this.realHandling = !!realHandling; // heavy handling (hull.js stepHullReal): slow rudder, a long swing, weight, a skid in turns (the scene turns it on)
     this.wavesOn = !!waves; // more ships arrive (the scene turns it on)
     this.level = LEVELS[level] ? level : 'normal';
     this.auto = auto && LEVELS[auto] ? auto : null;
@@ -403,7 +404,10 @@ export class DuelSim {
     out[2] = lx * sn + lz * c;
     return out;
   }
-  velOf(s) { return [Math.cos(s.psi) * s.u, 0, Math.sin(s.psi) * s.u]; }
+  velOf(s) {
+    const w = s.sway ?? 0; // the skid of a heavy hull in a turn (realHandling only)
+    return [Math.cos(s.psi) * s.u - Math.sin(s.psi) * w, 0, Math.sin(s.psi) * s.u + Math.cos(s.psi) * w];
+  }
 
   // --- the step ------------------------------------------------------------------------------------------------------
   step(dt, input) {
@@ -526,10 +530,10 @@ export class DuelSim {
   stepShip(s, dt) {
     const sunk = s.tSunk !== null;
     const engine = s.comp.engine / COMPARTMENTS.engine.hp;
-    stepHull(s, dt, {
+    (this.realHandling ? stepHullReal : stepHull)(s, dt, {
       want: sunk ? 0 : s.cmd.want,
       orderKn: sunk ? 0 : s.merchant ? MERCHANT_KN : TELEGRAPH[s.order].kn,
-      radius: TURN_RADIUS,
+      radius: this.realHandling ? REAL_RADIUS : TURN_RADIUS,
       rudderLimit: RUDDER_MAX * (0.25 + 0.75 * s.comp.steering / COMPARTMENTS.steering.hp),
       speedCap: s.comp.engine <= 0 ? 5 / TELEGRAPH[s.order].kn : 0.35 + 0.65 * engine,
     });
