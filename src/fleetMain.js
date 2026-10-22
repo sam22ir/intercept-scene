@@ -380,6 +380,7 @@ function mapJump(px, py) {
 }
 let panning = null;
 let mapRight = null;
+let seaRight = null;
 const mapPoint = (px, py) => { const r = mapRect(); return { z: ((px - r.x - r.w / 2) / (r.w / 2)) * MAP_EXTENT, x: (-(py - r.y - r.h / 2) / (r.h / 2)) * MAP_EXTENT }; };
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 window.addEventListener('pointerdown', (e) => {
@@ -391,13 +392,17 @@ window.addEventListener('pointerdown', (e) => {
     return;
   }
   if (e.button === 0) drag = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY, shift: e.shiftKey };
-  else if (e.button === 2) issue(e.clientX, e.clientY, e.shiftKey);
+  else if (e.button === 2) seaRight = { x0: e.clientX, y0: e.clientY, moved: false, shift: e.shiftKey }; // a click orders, a drag pans (on release / on the move)
 });
 window.addEventListener('pointermove', (e) => {
   if (drag) { drag.x1 = e.clientX; drag.y1 = e.clientY; moveBox(); }
   if (mapRight) { // right-drag on the map: the camera follows the cursor
     if (!mapRight.moved && Math.hypot(e.clientX - mapRight.x, e.clientY - mapRight.y) > 4) mapRight.moved = true;
     if (mapRight.moved) { const q = mapPoint(e.clientX, e.clientY); cam.x = clamp(q.x, -6000, 6000); cam.z = clamp(q.z, -6000, 6000); }
+  }
+  if (seaRight && !seaRight.moved && Math.hypot(e.clientX - seaRight.x0, e.clientY - seaRight.y0) > 4) {
+    seaRight.moved = true;
+    panning = { x: e.clientX, y: e.clientY }; // the sea follows the cursor from here
   }
   if (panning) {
     const k = 1 / pxPerM();
@@ -408,6 +413,11 @@ window.addEventListener('pointermove', (e) => {
 });
 window.addEventListener('pointerup', (e) => {
   if (e.button === 1) panning = null;
+  if (e.button === 2 && seaRight) { // a right-click on the sea (no drag) gives the order; a drag has panned the camera
+    const m = seaRight;
+    seaRight = null;
+    if (m.moved) panning = null; else issue(m.x0, m.y0, m.shift);
+  }
   if (e.button === 2 && mapRight) { // a right-click on the map (no drag) sends the selected ships there
     const m = mapRight;
     mapRight = null;
