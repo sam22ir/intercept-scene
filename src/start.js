@@ -57,7 +57,7 @@ async function launch(id) {
   globalThis.__SHIP_VARIANT = id;
   // The maneuvers and fly missions have their own scenes; scenario.js (which the ship model imports) just sees
   // an intercept for the first and a recovery (no scripted missile to simulate) for the second.
-  globalThis.__SCENARIO = isDrill(mode) || mode === 'formations' ? 'intercept' : mode === 'fly' || mode === 'helm' || mode === 'duel' || mode === 'squadron' || mode === 'fleet' ? 'chute' : mode;
+  globalThis.__SCENARIO = isDrill(mode) || mode === 'formations' ? 'intercept' : mode === 'fly' || mode === 'helm' || mode === 'duel' || mode === 'squadron' ? 'chute' : mode;
   if (isDrill(mode)) globalThis.__DRILL_SHIPS = mode === 'maneuvers2' ? 2 : 3;
   if (menuText(mode, id).hasShip) { // the missions without a choice leave it alone
     write('localStorage', 'intercept.ship', id);
@@ -84,7 +84,7 @@ async function launch(id) {
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
   try {
     await (isDrill(mode) ? import('./maneuversMain.js') : mode === 'formations' ? import('./formationsMain.js')
-      : mode === 'fly' ? import('./flyMain.js') : mode === 'helm' ? import('./helmMain.js') : mode === 'duel' ? import('./duelMain.js') : mode === 'squadron' ? import('./squadronMain.js') : mode === 'fleet' ? import('./fleetMain.js') : import('./main.js'));
+      : mode === 'fly' ? import('./flyMain.js') : mode === 'helm' ? import('./helmMain.js') : mode === 'duel' ? import('./duelMain.js') : mode === 'squadron' ? import('./squadronMain.js') : import('./main.js'));
   } catch (err) {
     showFatal(err);
   }
@@ -133,7 +133,7 @@ function showChooser(preselect, preselectLevel = null, preselectScenario = null)
   // The address names a launcher for its own mission only: launch() writes ?ship= even for the missions with none.
   if (validShip(preselect) && missionById(mode).ship) shipFor[mode] = preselect;
   const drills = ENTRIES.find((e) => e.family).members;
-  const lastIn = { watch: 'intercept', play: 'fly', command: 'fleet', drill: drills.includes(read('localStorage', 'intercept.drill')) ? read('localStorage', 'intercept.drill') : drills[0] };
+  const lastIn = { watch: 'intercept', play: 'fly', command: 'squadron', drill: drills.includes(read('localStorage', 'intercept.drill')) ? read('localStorage', 'intercept.drill') : drills[0] };
   lastIn[groupOf(mode)] = mode;
   level = validLevel(preselectLevel) ?? validLevel(read('localStorage', mode === 'squadron' ? 'intercept.level.squadron' : 'intercept.level.duel')) ?? validLevel(read('localStorage', 'intercept.level.duel')) ?? DEFAULT_LEVEL;
   scenario = validScenario(preselectScenario) ?? validScenario(read('localStorage', 'intercept.scenario.squadron')) ?? DEFAULT_SCENARIO;
@@ -259,7 +259,7 @@ try {
 const rememberedMode = read('localStorage', 'intercept.mode');
 mode = MODES.includes(modeFromUrl) ? modeFromUrl : (MODES.includes(rememberedMode) ? rememberedMode : 'intercept');
 const validShip = fromUrl === 'fwd' || fromUrl === 'aft';
-if ((validShip || isDrill(mode) || mode === 'formations' || mode === 'fly' || mode === 'helm' || mode === 'duel' || mode === 'squadron' || mode === 'fleet') && !forceChooser && (skipChooser || scripted)) {
+if ((validShip || isDrill(mode) || mode === 'formations' || mode === 'fly' || mode === 'helm' || mode === 'duel' || mode === 'squadron') && !forceChooser && (skipChooser || scripted)) {
   level = validLevel(levelFromUrl) ?? validLevel(read('localStorage', mode === 'squadron' ? 'intercept.level.squadron' : 'intercept.level.duel')) ?? validLevel(read('localStorage', 'intercept.level.duel')) ?? DEFAULT_LEVEL;
   scenario = validScenario(scenarioFromUrl) ?? validScenario(read('localStorage', 'intercept.scenario.squadron')) ?? DEFAULT_SCENARIO;
   launch(validShip ? fromUrl : 'fwd');
