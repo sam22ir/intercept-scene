@@ -475,10 +475,57 @@ function restart() {
   sim.reset();
   selected.clear();
   fx.clear();
+  pulses.length = 0;
+  for (const v of visuals) v.smokeT = 0; // the clock starts again, so the smoke timers must too
   resultEl.hidden = true;
   cam.x = 0; cam.z = 0; cam.h = fitHeight();
   say('Fight!', 'ok', 1500);
 }
+
+// --- Interface: the top bar's More menu, the keys sheet, Hide ------------------------------------------------------------------
+const FOLD_KEY = 'intercept.uiHidden';
+const foldButton = document.querySelector('#btn-fold');
+const unfoldButton = document.querySelector('#btn-unfold');
+const menuButton = document.querySelector('#btn-menu');
+const menuEl = document.querySelector('#menu');
+const keysSheet = document.querySelector('#keys');
+function setMenu(open) { menuEl.hidden = !open; menuButton.setAttribute('aria-expanded', String(open)); }
+function setKeys(open) { keysSheet.hidden = !open; }
+function setFolded(on, save = true) {
+  if (on) { setMenu(false); setKeys(false); }
+  document.body.classList.toggle('ui-hidden', on);
+  unfoldButton.hidden = !on;
+  foldButton.setAttribute('aria-expanded', String(!on));
+  if (save) try { localStorage.setItem(FOLD_KEY, on ? '1' : '0'); } catch { /* storage unavailable */ }
+}
+foldButton.addEventListener('click', () => setFolded(true));
+unfoldButton.addEventListener('click', () => setFolded(false));
+menuButton.addEventListener('click', () => setMenu(menuEl.hidden));
+menuEl.addEventListener('click', (e) => { if (e.target.closest('button, a')) setMenu(false); });
+document.querySelector('#btn-keys').addEventListener('click', () => setKeys(true));
+document.querySelector('#keys-close').addEventListener('click', () => setKeys(false));
+window.addEventListener('pointerdown', (e) => {
+  if (!menuEl.hidden && !e.target.closest('#menu, #btn-menu')) setMenu(false);
+  if (!keysSheet.hidden && !e.target.closest('#keys, #btn-keys')) setKeys(false);
+}, true);
+window.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === '?') setKeys(keysSheet.hidden);
+  else if (e.key === 'h' || e.key === 'c') setFolded(!document.body.classList.contains('ui-hidden'));
+  else if (e.key === 'Escape') { setMenu(false); setKeys(false); }
+});
+setFolded(false, false);
+keysSheet.querySelector('dl').innerHTML = [
+  ['<kbd>Click</kbd> · <kbd>drag</kbd>', 'Select a ship, or drag a box round several (Shift adds, double click takes them all)'],
+  ['<kbd>Right-click</kbd>', 'On the sea: move there (a squadron sails in line abreast). On an enemy: attack her. Shift queues the order after the ones already given'],
+  ['<kbd>E</kbd> <kbd>1</kbd> to <kbd>3</kbd>', 'Select every ship, or ship 1 to 3'],
+  ['<kbd>X</kbd>', 'Stop: the selected ships drop their orders and hold (they still fire at what is in range)'],
+  ['<kbd>Space</kbd>', 'Pause (orders can still be given) · <kbd>+</kbd> <kbd>-</kbd> change the game speed'],
+  ['<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / wheel', 'Pan and zoom · middle-drag pans · <kbd>F</kbd> centres on the selected ships · <kbd>Tab</kbd> on the next enemy'],
+  ['<kbd>R</kbd>', 'Fight again'],
+  ['<kbd>H</kbd> <kbd>C</kbd>', 'Hide the interface'],
+].map(([k, d]) => `<dt>${k}</dt><dd>${d}</dd>`).join('');
+keysSheet.querySelector('.keys-note').textContent = 'Ships fire at the nearest enemy in range by themselves · a ship that turns hard aims worse';
 
 document.querySelector('#btn-ship').addEventListener('click', () => {
   try { sessionStorage.setItem('intercept.chooser', '1'); location.reload(); } catch { location.search = ''; }
