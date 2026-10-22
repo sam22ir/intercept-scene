@@ -271,3 +271,7 @@ body.duel-radarview .duel-target:not([hidden]) { width: 212px; }
 .duel-attack div { display: flex; gap: 6px; margin-top: 4px; }
 .duel-attack button { flex: 1; padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.08); color: #fff; font: 700 11px system-ui, sans-serif; cursor: pointer; }
 .duel-attack button[data-yes] { background: #e5484d; border-color: #ff7a7d; }
+
+/* In the radar view the old enemy card in #hud is hidden; its empty panel must not draw a dark bar over the target board. */
+body.duel-radarview #hud.duel-root { background: none; border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; padding: 0; pointer-events: none; }
+body.duel-radarview #hud.duel-root .dh-end { pointer-events: auto; }
