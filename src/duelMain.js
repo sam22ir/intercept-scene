@@ -155,7 +155,10 @@ bridge.group.visible = false;
 ships[0].group.add(bridge.group);
 
 // --- The sea picture: each ship's pose from the simulation -------------------------------------------------------------
-const ZONE_X = { gun: 32, bridge: 14, engine: -9, guns: -33, steering: -50 }; // where each compartment's fire burns
+// Where each compartment really is on the ship (her frame): the turret of the 76 mm, the wheelhouse, the funnel over the engine room, the aft
+// 30 mm mounts and the stern over the rudder. The radar view's marks sit here, a locked shell is sent here, and fires burn here.
+const ZONE_POS = { gun: [32, 7.5, 0], bridge: [11, 11.5, 0], engine: [-13.5, 10, 0], guns: [-33.6, 13, 0], steering: [-52, 4, 0] };
+const ZONE_X = Object.fromEntries(Object.entries(ZONE_POS).map(([id, p]) => [id, p[0]]));
 function poseShip(i, dt) {
   const s = sim.ships[i];
   const v = ships[i];
@@ -764,10 +767,13 @@ const SIGHT_RATE = THREE.MathUtils.degToRad(55);
 const SIGHT_ZOOM0 = 1.5; // the lens multiplier you start at (smaller is closer)
 // `lock` holds the sight on a point of a hull ({ ship, local }, in her frame) as she sails: a compartment you clicked, or the point under the
 // crosshair when you press Enter. Aiming by hand, or Space, lets it go.
-const sight = { aim: new THREE.Vector3(1, 0.03, 0), manual: false, fresh: true, omega: 0, dragYaw: 0, dragPitch: 0, zone: null, ship: null, warn: null, lock: null, hit: null };
-function lockSight() { // Enter: the point under the crosshair
-  if (!sight.hit) return;
-  sight.lock = { ship: sight.hit.ship, local: sight.hit.local.clone() };
+const sight = { aim: new THREE.Vector3(1, 0.03, 0), manual: false, fresh: true, omega: 0, dragYaw: 0, dragPitch: 0, zone: null, ship: null, warn: null, lock: null, hit: null, snap: null };
+function lockSight() { // Enter: lock the compartment the sight has snapped to, or the one under the crosshair
+  let ship = null, comp = null;
+  if (sight.snap) { ship = sim.enemy.idx; comp = sight.snap; }
+  else if (sight.hit) { ship = sight.hit.ship; comp = zoneAt(sight.hit.local.x); }
+  if (comp === null) return;
+  sight.lock = { ship, comp };
   sight.manual = false;
 }
 const radarKeys = { l: 0, r: 0, u: 0, d: 0, zi: 0, zo: 0 };
@@ -818,7 +824,7 @@ radarEl.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     const i = Number(mark.dataset.ship);
     if (!ships[i]) return;
-    sight.lock = { ship: i, local: new THREE.Vector3(ZONE_X[mark.dataset.comp], 7, 0), near: true };
+    sight.lock = { ship: i, comp: mark.dataset.comp };
     sight.manual = false;
     return;
   }
@@ -889,12 +895,8 @@ window.addEventListener('pointermove', (e) => {
   lookYaw = ((lookYaw + dx * 0.25 + 540) % 360) - 180;
   lookPitch = clamp(lookPitch - dy * 0.004, -0.9, 0.6);
 });
-// Which side of a hull faces the sight: +1 starboard, -1 port, in her frame.
-function nearSide(group) {
-  _c.copy(camera.position);
-  group.worldToLocal(_c);
-  return _c.z >= 0 ? 1 : -1;
-}
+const _w1 = new THREE.Vector3();
+const _w2 = new THREE.Vector3();
 const _sm = new THREE.Matrix4();
 const hullBox = new THREE.Box3(new THREE.Vector3(-HALF_LENGTH, 0, -HALF_BEAM), new THREE.Vector3(HALF_LENGTH, 18, HALF_BEAM));
 const sightRay = new THREE.Ray();
@@ -910,15 +912,28 @@ function aimSight(dt) {
   sightZoomGoal = clamp(sightZoomGoal * Math.exp((radarKeys.zo - radarKeys.zi) * dt * 1.3), 0.1, 8);
   sightZoom += (sightZoomGoal - sightZoom) * (1 - Math.exp(-dt / 0.1));
   const lens = clamp((Math.atan(80 / r) * 2 * 180) / Math.PI * sightZoom, 0.3, 30);
-  if (sight.lock) { // held on its point of her hull as she sails
+  sight.snap = null;
+  if (sight.lock) { // held on its compartment as she sails
     const ls = sim.ships[sight.lock.ship], lg = ships[sight.lock.ship]?.group;
     if (!ls || !lg || ls.tSunk !== null) sight.lock = null;
     else {
       lg.updateMatrixWorld(true);
-      const lp = _b.copy(sight.lock.local);
-      if (sight.lock.near) lp.z = nearSide(lg) * (HALF_BEAM - 0.3); // a compartment is hit on the side of the hull that faces you
-      _a.copy(lg.localToWorld(lp)).sub(camera.position).normalize();
+      _a.copy(lg.localToWorld(_w1.set(...ZONE_POS[sight.lock.comp]))).sub(camera.position).normalize();
       if (sim.player.target !== sight.lock.ship) sim.setTarget(0, sight.lock.ship);
+    }
+  } else if (!sight.manual) { // automatic: while the marks are on screen the sight snaps to the nearest one, else it holds her middle
+    const tg = sim.enemy, tgG = ships[tg.idx]?.group;
+    if (tgG && tg.team === 1 && tg.tSunk === null && (24 * window.innerHeight) / (2 * r * Math.tan(rad(lens / 2))) >= MARK_MIN) {
+      tgG.updateMatrixWorld(true);
+      let best = null, bestA = Infinity, keepA = Infinity;
+      for (const id of COMP_IDS) {
+        const ang = sight.aim.angleTo(_w2.copy(tgG.localToWorld(_w1.set(...ZONE_POS[id]))).sub(camera.position).normalize());
+        if (ang < bestA) { bestA = ang; best = id; }
+        if (id === sight.snapId) keepA = ang;
+      }
+      sight.snapId = keepA < 1.4 * bestA ? sight.snapId : best; // stay on the one it has until another is clearly nearer
+      sight.snap = sight.snapId;
+      _a.copy(tgG.localToWorld(_w1.set(...ZONE_POS[sight.snap]))).sub(camera.position).normalize();
     }
   }
   if (sight.manual && !sight.lock) {
@@ -943,6 +958,19 @@ function radarAimShell() {
   const p = sim.player;
   sight.zone = null; sight.ship = null; sight.warn = null; sight.hit = null;
   if (p.tSunk !== null || sim.winner !== null) { input.aim = null; return; }
+  if (sight.lock) { // locked: the shell goes to that compartment, led by her true velocity (a free shot is weak, see duel.js)
+    const ls = sim.ships[sight.lock.ship], lg = ships[sight.lock.ship]?.group;
+    if (ls && lg && ls.tSunk === null) {
+      lg.updateMatrixWorld(true);
+      const P = lg.localToWorld(_w1.set(...ZONE_POS[sight.lock.comp]));
+      const v = sim.velOf(ls);
+      const sol = sim.solve(p, MAIN_MOUNT, MUZZLE_V, true, {}, { p: [P.x, P.y, P.z], v: [v[0], 0, v[2]] });
+      sight.zone = sight.lock.comp;
+      sight.ship = sight.lock.ship;
+      input.aim = { yaw: sol.yaw, pitch: sol.pitch, ship: sight.lock.ship, lock: sight.lock.comp };
+      return;
+    }
+  }
   ships[0].group.localToWorld(_c.copy(BRIDGE_EYE));
   sightRay.origin.copy(_c);
   sightRay.direction.copy(sight.aim);
@@ -961,7 +989,7 @@ function radarAimShell() {
     const s = sim.ships[best];
     if (s.team === 1 && s.tSunk === null) {
       const P = ships[best].group.localToWorld(bestLocal.clone());
-      sight.zone = zoneAt(bestLocal.x);
+      sight.zone = sight.snap && sim.enemy.idx === best ? sight.snap : zoneAt(bestLocal.x);
       sight.ship = best;
       sight.hit = { ship: best, local: bestLocal.clone() };
       if (sim.player.target !== best && sight.manual) sim.setTarget(0, best);
@@ -990,6 +1018,7 @@ function radarAimShell() {
 }
 // The compartments of every enemy hull as marks on the screen: a dot each, with the name and its health once the lens is close enough to
 // tell them apart. A click lays the sight on one.
+const MARK_MIN = 7; // px between neighbouring compartments below which the marks are hidden (and the sight stops snapping to them)
 const marks = new Map();
 function markFor(key, i, id) {
   let m = marks.get(key);
@@ -1015,10 +1044,9 @@ function updateMarks() {
       const dist = Math.max(1, sim.distance(sim.player, s));
       const ppm = H / (2 * dist * Math.tan(rad(camera.fov / 2))); // pixels to a metre at her range
       const spacing = 24 * ppm; // between the two nearest compartments
-      if (spacing < 7) continue;
-      const side = nearSide(g) * (HALF_BEAM - 0.3);
+      if (spacing < MARK_MIN) continue;
       for (const id of COMP_IDS) {
-        g.localToWorld(_a.set(ZONE_X[id], 7, side));
+        g.localToWorld(_a.set(...ZONE_POS[id]));
         _a.project(camera);
         if (_a.z > 1 || Math.abs(_a.x) > 1.05 || Math.abs(_a.y) > 1.05) continue;
         const key = `${i}:${id}`;
@@ -1056,7 +1084,8 @@ function updateRadarUi() {
   fillEl.style.width = `${zf}%`;
   const gn = sim.player.gun;
   fireEl.style.setProperty('--rl', clamp(1 - gn.cool / MAIN_RELOAD, 0, 1).toFixed(3));
-  fireEl.classList.toggle('ready', gn.cool <= 0 && gn.onTarget && !sight.warn);
+  fireEl.classList.toggle('ready', gn.cool <= 0 && gn.onTarget && !sight.warn && !!sight.lock);
+  fireEl.classList.toggle('weak', !sight.lock && !sight.warn);
   fireEl.classList.toggle('hold', !!sight.warn || sim.player.comp.gun <= 0);
   ammoEl.textContent = `${AMMO_TYPES[gn.type].name} ${gn.stock[gn.type]}`;
   const g = sim.player.gun;
@@ -1065,7 +1094,7 @@ function updateRadarUi() {
   sightEl.classList.toggle('lock', !!sight.zone);
   sightEl.classList.toggle('searching', !sight.zone);
   sightEl.classList.toggle('warn', !!sight.warn);
-  const aim = sight.zone ? `${sight.lock ? 'LOCKED' : 'AIM'}: ${COMPARTMENTS[sight.zone].name.toUpperCase()}` : sight.warn ?? 'Off her hull';
+  const aim = sight.zone ? `${sight.lock ? 'LOCKED' : sight.snap ? 'FOCUS' : 'AIM'}: ${COMPARTMENTS[sight.zone].name.toUpperCase()}${sight.lock || !input.aim ? '' : ' · unlocked: weak'}` : sight.warn ?? 'Off her hull';
   sightTxt.textContent = `${aim} · enemy${which} ${kmText(sim.range())} · ${AMMO_TYPES[g.type].name} ${g.stock[g.type]} · ${gunStatus(sim.player)}`;
   map.sight = { yaw, locked: !!sight.zone };
 }

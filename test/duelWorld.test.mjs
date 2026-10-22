@@ -47,6 +47,43 @@ describe('the aim point: the shell goes where the sight is', () => {
   }
 });
 
+describe('locked and unlocked shots', () => {
+  // The enemy 2.5 km ahead, bow on to you (so a shell meets her bow first), both stopped.
+  function bowOn(seed) {
+    const sim = new DuelSim({ seed, level: 'easy' });
+    for (const s of sim.ships) { s.u = 0; s.order = 1; }
+    quiet(sim.enemy);
+    sim.enemy.x = 2500; sim.enemy.z = 0; sim.enemy.psi = Math.PI;
+    sim.player.est = [0, 0]; sim.enemy.est = [0, 0];
+    sim.setManual(0, true);
+    return sim;
+  }
+  const fireAt = (sim, local, lock) => {
+    const hits = [];
+    for (let i = 0; i < 20 * 60 && hits.length < 6; i++) {
+      const p = sim.toWorld(sim.enemy, local);
+      const aim = sim.solve(sim.player, MAIN_MOUNT, MUZZLE_V, true, {}, { p, v: [0, 0, 0] });
+      sim.advance(0.05, { fire: true, aim: { yaw: aim.yaw, pitch: aim.pitch, ship: 1, ...(lock ? { lock } : {}) } });
+      for (const e of sim.takeEvents()) if (e.type === 'hit' && e.owner === 0) hits.push(e);
+    }
+    return hits;
+  };
+  it('a locked shell lands in the compartment locked, whatever side she shows, and is not spread by scatter', () => {
+    for (const [comp, local] of [['engine', [-13.5, 10, 0]], ['steering', [-52, 4, 0]], ['guns', [-33.6, 13, 0]]]) {
+      const hits = fireAt(bowOn(5), local, comp);
+      assert.ok(hits.length >= 4, `${comp}: ${hits.length} hits`);
+      assert.ok(hits.every((h) => h.comp === comp), `${comp}: ${hits.map((h) => h.comp)}`);
+    }
+  });
+  it('an unlocked shell hits wherever it strikes, for a weak hit', () => {
+    const locked = fireAt(bowOn(6), [-13.5, 10, 0], 'engine');
+    const free = fireAt(bowOn(6), [-13.5, 10, 0], null);
+    const mean = (a) => a.reduce((x, h) => x + h.dmg, 0) / a.length;
+    assert.ok(free.length > 0 && mean(free) < 0.6 * mean(locked), `free ${mean(free)} vs locked ${mean(locked)}`);
+    assert.ok(free.some((h) => h.comp !== 'engine'), 'a bow-on shell meets the bow first');
+  });
+});
+
 describe('more ships', () => {
   it('a two-ship duel is unchanged: no one arrives unless waves are on', () => {
     const sim = new DuelSim({ seed: 3 });

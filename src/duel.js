@@ -80,6 +80,11 @@ const SCATTER_TURN = 0.02; // per rad/s of the firing ship's turn
 // Manual aim (T): the player points the gun and the fire control no longer solves it. The gun's own base scatter is smaller than the auto
 // tracker's (a lagging velocity estimate is the auto's real error, the player has to lead by eye and by the splashes), and turning still spoils it.
 export const MANUAL_SCATTER = 0.6;
+// A shell by hand either goes at a compartment the sight is locked on (`aim.lock`: it lands there, with next to no scatter) or at
+// whatever is under the crosshair unlocked (more scatter, and a weak hit): lock first, or waste the round.
+export const LOCK_SCATTER = 0.1;
+export const FREE_SCATTER = 1.5;
+export const FREE_DAMAGE = 0.4;
 
 // --- The 30 mm guns (the aft pair, as in helm.js) ----------------------------------------------------------------
 export const GUN_RANGE = 2600; // m
@@ -585,14 +590,16 @@ export class DuelSim {
     g.stock[g.type] -= 1;
     g.ammo = g.stock.he + g.stock.ap;
     s.stats.shells += 1;
-    const sigma = this.scatter(s);
+    const aim = s.manual && !s.ai ? s.cmd.aim : null;
+    const lock = aim?.lock && this.ships[aim.ship] ? { ship: aim.ship, comp: aim.lock } : null;
+    const sigma = this.scatter(s) * (lock ? LOCK_SCATTER : aim ? FREE_SCATTER : 1);
     const gauss = () => Math.sqrt(-2 * Math.log(1 - this.rng())) * Math.cos(2 * Math.PI * this.rng());
     const yaw = g.yaw + gauss() * sigma, pitch = g.pitch + gauss() * sigma;
     const dir = this.dirOf(s, yaw, pitch);
     const M = this.toWorld(s, MAIN_MOUNT);
     const sv = this.velOf(s);
     const sh = {
-      id: ++this.shellId, owner: s.idx, t0: this.t, kind: g.type,
+      id: ++this.shellId, owner: s.idx, t0: this.t, kind: g.type, lock, weak: !!aim && !lock,
       p: [M[0] + dir[0] * BARREL, M[1] + dir[1] * BARREL, M[2] + dir[2] * BARREL],
       v: [dir[0] * MUZZLE_V + sv[0], dir[1] * MUZZLE_V, dir[2] * MUZZLE_V + sv[2]],
     };
@@ -627,9 +634,9 @@ export class DuelSim {
 
   hit(sh, tgt, local) {
     const from = this.ships[sh.owner];
-    const comp = zoneAt(local[0]);
+    const comp = sh.lock && sh.lock.ship === tgt.idx ? sh.lock.comp : zoneAt(local[0]);
     const am = AMMO_TYPES[sh.kind] ?? AMMO_TYPES.he;
-    const dmg = lerp(SHELL_DAMAGE[0], SHELL_DAMAGE[1], this.rng()) * am.dmg;
+    const dmg = lerp(SHELL_DAMAGE[0], SHELL_DAMAGE[1], this.rng()) * am.dmg * (sh.weak ? FREE_DAMAGE : 1);
     if (this.hostile(from, tgt)) from.stats.hits += 1;
     tgt.stats.taken += 1;
     tgt.lastHitBy = from.idx;
