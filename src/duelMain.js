@@ -62,6 +62,38 @@ let lookPitch = -0.03;
 const _a = new THREE.Vector3();
 const _vel = new THREE.Vector3();
 wireWeather({ look: env.look });
+
+// --- The state of the sea (a choice in the menu, kept between visits, applied at once) ---------------------------------------------
+// Auto is the mission's own sea; the others are on the Douglas scale's steps (calm to very rough). The waves' steepness and the whitecaps
+// follow the choice, and so does how much the ships roll and pitch on them (`seaK`) and how much the behind camera sways.
+const SEAS = [
+  { name: 'Auto', state: null, caps: null },
+  { name: 'Calm', state: 0.45, caps: 0, num: 1 },
+  { name: 'Slight', state: 1.0, caps: 0.3, num: 3 },
+  { name: 'Moderate', state: 1.7, caps: 0.9, num: 4 },
+  { name: 'Rough', state: 2.5, caps: 1.2, num: 5 },
+  { name: 'Very rough', state: 3.4, caps: 1.2, num: 6 },
+];
+let seaIdx = 0;
+try { const v = Number(localStorage.getItem('intercept.duel.sea')); if (Number.isInteger(v) && v >= 0 && v < SEAS.length) seaIdx = v; } catch { /* storage unavailable */ }
+let seaK = env.look?.sea.state ?? 1; // the steepness now in use: 1 is the original sea
+function applySea() {
+  const c = SEAS[seaIdx];
+  seaK = c.state ?? env.look?.sea.state ?? 1;
+  env.setSea(seaK, c.caps ?? env.look?.sea.caps ?? 0);
+  const b = document.querySelector('#btn-sea');
+  if (b) b.firstChild.textContent = c.state === null ? `Sea state: Auto (${seaK.toFixed(1)})` : `Sea state: ${c.name} (${c.num})`;
+}
+const seaButton = document.querySelector('#btn-sea');
+if (seaButton) {
+  seaButton.hidden = false;
+  seaButton.addEventListener('click', () => {
+    seaIdx = (seaIdx + 1) % SEAS.length;
+    try { localStorage.setItem('intercept.duel.sea', String(seaIdx)); } catch { /* storage unavailable */ }
+    applySea();
+  });
+}
+applySea();
 const _b = new THREE.Vector3();
 const _c = new THREE.Vector3();
 const _q = new THREE.Quaternion();
@@ -170,7 +202,11 @@ function poseShip(i, dt) {
   const list = s.listSide * rad(9) * (1 - s.hp / HULL_HP) ** 2; // the hurt ship settles to the side she was hit on
   v.group.visible = !sink?.gone;
   v.group.position.set(s.x, sink ? sink.depth : 0, s.z);
-  v.group.rotation.set(s.heel + list + (sink?.roll ?? 0), -s.psi, sink?.trim ?? 0);
+  // A little of the sea's motion on every ship afloat: a slow roll and pitch that grow with the sea state, each ship on her own phase.
+  const rock = sink ? 0 : Math.min(seaK, 3.4);
+  const rollSea = rock * (0.016 * Math.sin(0.72 * sim.t + i * 1.9) + 0.007 * Math.sin(1.63 * sim.t + i));
+  const pitchSea = rock * (0.007 * Math.sin(0.58 * sim.t + i * 2.3) + 0.003 * Math.sin(1.4 * sim.t));
+  v.group.rotation.set(s.heel + list + rollSea + (sink?.roll ?? 0), -s.psi, pitchSea + (sink?.trim ?? 0));
   v.group.updateMatrixWorld(true);
   if (!s.merchant) {
     v.mainGun.pose(s.gun.yaw, s.gun.pitch);
@@ -181,7 +217,7 @@ function poseShip(i, dt) {
   if (!sink?.gone && s.tSunk === null) { // the funnel's haze and the bow's spray, while she is afloat
     _vel.x = Math.cos(s.psi) * s.u;
     _vel.z = Math.sin(s.psi) * s.u;
-    v.plume.update(sim.t, v.group, _vel, env.look?.sea.state ?? 1);
+    v.plume.update(sim.t, v.group, _vel, seaK);
   }
   // Smoke and fire: a hurt compartment smokes, one that is out burns; a sinking ship pours it out.
   v.smokeT += dt;
@@ -361,15 +397,28 @@ function setView(v) {
   viewButtons.forEach((b) => { const on = b.dataset.view === v; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
 }
 let frameDt = 1 / 60;
+let behindHead = 0, behindT = 0, behindOn = false; // the behind camera's own heading, which trails the ship's
 function updateCamera() {
+  if (view !== 'behind') behindOn = false;
   const me = ships[0].group;
   const foe = sim.enemy;
   bridge.group.visible = view === 'bridge';
   if (view === 'orbit') { setFov(50); rig.update(); controls.update(); return; }
   if (view === 'behind') {
     setFov(55);
-    camera.position.copy(me.localToWorld(_a.set(-110, 34, 0)));
-    camera.lookAt(me.localToWorld(_b.set(45, 6, 0)));
+    // Not bolted to the ship: the camera trails her heading (it swings out when she turns), rises and falls and sways with the sea,
+    // and leans a little into a turn, while it keeps looking at the point ahead of her real bow.
+    const p = sim.player;
+    if (!behindOn || sim.t < behindT) behindHead = p.psi;
+    behindOn = true; behindT = sim.t;
+    behindHead += wrapAngle(p.psi - behindHead) * (1 - Math.exp(-frameDt / 0.9));
+    const swell = Math.min(seaK, 3.4);
+    const bob = (Math.sin(sim.t * 0.9) * 1.0 + Math.sin(sim.t * 1.7 + 1) * 0.5) * swell;
+    const sway = Math.sin(sim.t * 0.55 + 2) * 1.8 * swell;
+    const hx = Math.cos(behindHead), hz = Math.sin(behindHead);
+    camera.position.set(p.x - hx * 110 - hz * sway, 34 + bob, p.z - hz * 110 + hx * sway);
+    camera.lookAt(p.x + Math.cos(p.psi) * 45, 6 + bob * 0.3, p.z + Math.sin(p.psi) * 45);
+    camera.rotateZ(wrapAngle(p.psi - behindHead) * -0.3 + Math.sin(sim.t * 0.8) * 0.012 * swell);
   } else if (view === 'bridge') {
     // The wheelhouse, as in Solo Air Defense: the wheel turns with the rudder and the telegraph levers follow the order; drag looks round.
     bridge.update(clamp(sim.player.rudder / RUDDER_MAX, -1, 1), sim.player.order / (TELEGRAPH.length - 1));

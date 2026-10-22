@@ -157,6 +157,8 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
     sunDir,
     ocean,
     look, // the resolved look (null for the original default and the calm look)
+    // A mission that lets the player pick the sea state: the waves' steepness (1 = the original sea) and the whitecaps (0 to 1.2), live.
+    setSea(state, caps) { ocean.material.uniforms.uSea.value = state; ocean.material.uniforms.uCaps.value = caps; },
     // For a camera that travels far from the origin (the manual-flight mission): the sky dome and the WebGL
     // sea plane ride along with it, and the clouds wrap around it, so the world never ends.
     follow(camPos) {
