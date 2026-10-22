@@ -4,7 +4,7 @@ import * as THREE from 'three';
 // closed-form function of (uTime - birth), so the GPU can render any moment
 // on the timeline directly, forwards or backwards.
 
-export const MODE = { SMOKE: 0, FIRE: 1, SPLASH: 2, BURNING: 3 };
+export const MODE = { SMOKE: 0, FIRE: 1, SPLASH: 2, BURNING: 3, FUNNEL: 4 };
 
 // Shared by every field: converts world size (m) to pixels.
 export const pointScale = { value: 1 };
@@ -62,6 +62,10 @@ const fragmentShader = /* glsl */ `
     } else if (uMode == 2) {
       col = vec3(0.93, 0.96, 1.0);
       a = 0.85 * (1.0 - vX);
+    } else if (uMode == 4) {
+      // A ship's funnel exhaust: thin grey haze, darker where it is fresh, thinning as it spreads.
+      col = mix(vec3(0.32, 0.32, 0.34), vec3(0.62, 0.63, 0.66), vX) * (0.9 + 0.1 * vSeed);
+      a = 0.3 * pow(1.0 - vX, 1.4) * smoothstep(0.0, 0.05, vX);
     } else {
       col = vX < 0.07 ? mix(vec3(1.0, 0.55, 0.12) * 3.0, vec3(0.16), vX / 0.07) : mix(vec3(0.15), vec3(0.42), vX);
       a = 0.65 * pow(1.0 - vX, 1.3);

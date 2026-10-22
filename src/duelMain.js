@@ -5,6 +5,8 @@ import { createEnvironment } from './environment.js';
 import { createShip } from './models/ship.js';
 import { createGatling } from './models/gatling.js';
 import { createLiveFx } from './fx/liveFx.js';
+import { ShipPlume } from './fx/shipFx.js';
+import { wireWeather } from './weatherButton.js';
 import { createWake } from './fx/wake.js';
 import { pointScale } from './fx/particles.js';
 import { CameraRig } from './cameraRig.js';
@@ -46,13 +48,15 @@ controls.maxPolarAngle = Math.PI * 0.495;
 controls.enabled = false;
 const rig = new CameraRig(camera, controls);
 
-const env = createEnvironment(renderer, scene, { calm: true });
+const env = createEnvironment(renderer, scene, { look: 'duel' });
 env.setShadowSize(1024);
 env.ocean.material.uniforms.uShipX.value = 1e7; // the shader's straight-line wake: these ships turn, each has her own
 const fx = createLiveFx(scene);
 
 const BRIDGE_EYE = new THREE.Vector3(16.9, 11.4, 0); // where the officer of the watch stands, in the ship's frame
 const _a = new THREE.Vector3();
+const _vel = new THREE.Vector3();
+wireWeather({ look: env.look });
 const _b = new THREE.Vector3();
 const _c = new THREE.Vector3();
 const _q = new THREE.Quaternion();
@@ -75,7 +79,7 @@ const ships = [createShip({ crew: false }), createShip({ ensign: 'rus', crew: fa
     m.group.add(g.group);
     return g;
   });
-  return { ...m, gats, wake: createWake(scene), smokeT: 0, flash: 0 };
+  return { ...m, gats, wake: createWake(scene), plume: new ShipPlume(fx), smokeT: 0, flash: 0 };
 });
 
 // --- Shells and tracers ---------------------------------------------------------------------------------------------
@@ -140,6 +144,11 @@ function poseShip(i, dt) {
   v.gats.forEach((g, k) => g.pose(s.gats[k].yaw, s.gats[k].pitch, s.gats[k].spin, s.gats[k].firing, sim.t));
   v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0 }); // the radar turns; the launcher box stays stowed
   v.wake.update({ t: sim.t, x: s.x, z: s.z, psi: s.psi, r: s.r, u: s.u });
+  if (!sink?.gone && s.tSunk === null) { // the funnel's haze and the bow's spray, while she is afloat
+    _vel.x = Math.cos(s.psi) * s.u;
+    _vel.z = Math.sin(s.psi) * s.u;
+    v.plume.update(sim.t, v.group, _vel, env.look?.sea.state ?? 1);
+  }
   // Smoke and fire: a hurt compartment smokes, one that is out burns; a sinking ship pours it out.
   v.smokeT += dt;
   while (v.smokeT >= 0.14) {

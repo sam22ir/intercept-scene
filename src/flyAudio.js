@@ -186,7 +186,7 @@ export function createFlyAudio() {
       case 'release': play('clunk', railPoint(1, sim.t, tmp)); break;
       case 'fire': play('launch', e.pos); break;
       case 'explosion': play('boom', e.pos); break;
-      case 'crash': play(e.kind === 'ship' ? 'boom' : 'splash', e.pos); break;
+      case 'crash': play(e.kind === 'ship' || e.kind === 'land' ? 'boom' : 'splash', e.pos); break;
       case 'splashdown': play('splash', e.pos); break;
       case 'missile-lost': if (e.pos.y < 8) play('splash', e.pos); break;
       default: break;

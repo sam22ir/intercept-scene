@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { scenario, shipPos, RAIL } from './scenario.js';
+import { scenario, shipPos, RAIL, SHIP_SPEED } from './scenario.js';
+import { ShipPlume } from './fx/shipFx.js';
+import { islandLayout } from './terrain.js';
+import { wireWeather } from './weatherButton.js';
 import { createEnvironment } from './environment.js';
 import { createShip } from './models/ship.js';
 import { createPlane } from './models/plane.js';
@@ -41,7 +44,7 @@ controls.maxPolarAngle = Math.PI * 0.495;
 controls.enabled = false; // only the orbit view uses it
 const rig = new CameraRig(camera, controls);
 
-const env = createEnvironment(renderer, scene);
+const env = createEnvironment(renderer, scene, { look: 'fly' });
 env.setShadowSize(1024);
 const ship = createShip();
 scene.add(ship.group);
@@ -53,13 +56,16 @@ scene.add(missile.group);
 const chute = createParachute();
 scene.add(chute.group);
 const fx = createLiveFx(scene);
+const plume = new ShipPlume(fx);
+wireWeather({ look: env.look });
+const SHIP_VEL = { x: SHIP_SPEED, z: 0 };
 const audio = createFlyAudio();
 
 // The cruise speed is remembered (default 75 m/s).
 const SPEED_KEY = 'intercept.fly.speed';
 let savedSpeed = DEFAULT_SPEED;
 try { savedSpeed = Number(localStorage.getItem(SPEED_KEY)) || DEFAULT_SPEED; } catch { /* storage unavailable */ }
-const sim = new FlySim({ speed: savedSpeed });
+const sim = new FlySim({ speed: savedSpeed, islands: env.look?.scenery.islands ? islandLayout(env.look.scenery.islands) : [] });
 sim.setSpeed(savedSpeed);
 // The recovery scenario this mission borrows would open the parachute at its own scripted time: not before
 // the pilot cuts the engine.
@@ -127,7 +133,7 @@ function handleEvents() {
         startWreck();
         break;
       case 'crash':
-        if (e.kind === 'ship') fx.explosion(e.pos, sim.t); else fx.splashAt(e.pos, sim.t, 2.4);
+        if (e.kind === 'ship' || e.kind === 'land') fx.explosion(e.pos, sim.t); else fx.splashAt(e.pos, sim.t, 2.4);
         startWreck();
         break;
       case 'missile-lost':
@@ -146,6 +152,8 @@ let trailT = 0;
 function applyState(dt) {
   const t = sim.t;
   shipPos(t, ship.group.position);
+  ship.group.updateMatrixWorld(true);
+  plume.update(t, ship.group, SHIP_VEL, env.look?.sea.state ?? 1);
   ship.update(t, sim.shots[0]?.tFire ?? Infinity, sim.shots[1]?.tFire ?? Infinity, {
     aim: sim.launcher, cradleT: sim.cradleT,
   });
@@ -308,7 +316,7 @@ function hudHtml() {
       + tile('Cruise speed', f(sim.speedTarget), 'm/s')
       + tile('Rail', sim.phase === 'cat' ? 'firing' : sim.armed ? 'armed' : 'ready', '');
   } else if (sim.phase === 'destroyed' || sim.phase === 'crashed') {
-    tiles = tile('Status', sim.phase === 'destroyed' ? 'Shot down' : sim.wreck?.kind === 'ship' ? 'Hit the ship' : 'Hit the sea', '', 'wide');
+    tiles = tile('Status', sim.phase === 'destroyed' ? 'Shot down' : sim.wreck?.kind === 'ship' ? 'Hit the ship' : sim.wreck?.kind === 'land' ? 'Hit an island' : 'Hit the sea', '', 'wide');
   } else {
     tiles = tile('Altitude', f(alt), 'm', low)
       + tile('Speed', f(sim.speed), 'm/s')
