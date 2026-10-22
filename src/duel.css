@@ -171,11 +171,6 @@ body.mission-duel .tag.tag-neutral { border-left-color: #9aa4ad; }
 .rc-pills button:hover { background: rgba(255, 255, 255, 0.16); }
 .rc-pills button i { font-style: normal; font-size: 15px; line-height: 1; }
 .rc-pills kbd, .rc-gun kbd { font: 600 9px system-ui, sans-serif; opacity: 0.55; }
-.rc-stick { position: relative; width: 104px; height: 104px; border-radius: 50%; cursor: grab; touch-action: none; border: 1px solid rgba(120, 255, 170, 0.3); background: radial-gradient(circle, rgba(61, 220, 132, 0.16), rgba(8, 13, 20, 0.62) 70%); box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.6); }
-.rc-stick s { position: absolute; text-decoration: none; font-size: 9px; color: rgba(255, 255, 255, 0.4); }
-.rc-stick .u { left: 50%; top: 5px; transform: translateX(-50%); } .rc-stick .d { left: 50%; bottom: 5px; transform: translateX(-50%); }
-.rc-stick .l { left: 7px; top: 50%; transform: translateY(-50%); } .rc-stick .r { right: 7px; top: 50%; transform: translateY(-50%); }
-.rc-knob { position: absolute; left: 50%; top: 50%; width: 38px; height: 38px; margin: -19px 0 0 -19px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #d9ffe8, #3ddc84 60%, #1d7a4a); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.6); transform: translate(var(--kx, 0px), var(--ky, 0px)); }
 .rc-gun { display: grid; gap: 6px; justify-items: center; }
 .rc-fire { position: relative; width: 96px; height: 96px; border-radius: 50%; border: 0; padding: 0; cursor: pointer; display: grid; place-items: center; color: #fff; font: 900 15px system-ui, sans-serif; letter-spacing: 0.12em; background: conic-gradient(#ff5d61 calc(var(--rl, 1) * 360deg), rgba(255, 255, 255, 0.14) 0); }
 .rc-fire::before { content: ''; position: absolute; inset: 7px; border-radius: 50%; background: radial-gradient(circle at 40% 30%, #ff8d8f, #c42f35 70%); box-shadow: inset 0 -4px 10px rgba(0, 0, 0, 0.35); transition: transform 0.08s; }
@@ -185,7 +180,7 @@ body.mission-duel .tag.tag-neutral { border-left-color: #9aa4ad; }
 .rc-fire.hold::before { background: radial-gradient(circle at 40% 30%, #7a8590, #3b434b 70%); }
 .rc-fire:active::before { transform: scale(0.93); }
 .rc-ammo { display: flex; gap: 8px; align-items: center; padding: 5px 12px; border-radius: 999px; font: 700 11px system-ui, sans-serif; color: var(--text); background: rgba(9, 14, 21, 0.6); border: 1px solid rgba(255, 255, 255, 0.14); cursor: pointer; }
-@media (max-width: 900px) { .rc-main { width: 300px; } .rc-stick { width: 84px; height: 84px; } .rc-fire { width: 76px; height: 76px; } }
+@media (max-width: 900px) { .rc-main { width: 300px; } .rc-fire { width: 76px; height: 76px; } }
 .rc-fire.weak::before { background: radial-gradient(circle at 40% 30%, #c98a8c, #8a3a3f 70%); }
 
 /* In the radar view your ship's status is a small card in the empty space down the left, under the top bar (the dome and the guns stay hidden there). */

@@ -863,7 +863,6 @@ radarEl.innerHTML = '<div class="hr-marks"></div><div class="rc">'
   + '<div class="rc-zoom"><span>WIDE</span><div class="rc-track" aria-label="Zoom"><i class="rc-ticks"></i><i class="rc-fill"></i><i class="rc-thumb"></i></div><span>CLOSE</span><b class="hr-zv"></b></div>'
   + '<div class="rc-pills"><button type="button" data-act="lock"><i>⌖</i>Hold<kbd>Enter</kbd></button><button type="button" data-act="auto"><i>◎</i>Auto<kbd>Space</kbd></button>'
   + '<button type="button" data-act="next"><i>⇥</i>Target<kbd>Tab</kbd></button><button type="button" data-act="back"><i>⏏</i>Helm<kbd>Esc</kbd></button></div></div>'
-  + '<div class="rc-stick" aria-label="Aim stick: drag"><s class="u">▲</s><s class="d">▼</s><s class="l">◀</s><s class="r">▶</s><i class="rc-knob"></i></div>'
   + '<div class="rc-gun"><button type="button" class="rc-fire" data-act="fire"><span>FIRE</span><kbd>F</kbd></button><button type="button" class="rc-ammo" data-act="ammo"><b class="rc-am"></b><kbd>Q</kbd></button></div></div>';
 document.body.appendChild(radarEl);
 const radarMode = radarEl.querySelector('.hr-mode');
@@ -873,12 +872,11 @@ const marksEl = radarEl.querySelector('.hr-marks');
 const trackEl = radarEl.querySelector('.rc-track');
 const thumbEl = radarEl.querySelector('.rc-thumb');
 const fillEl = radarEl.querySelector('.rc-fill');
-const stickEl = radarEl.querySelector('.rc-stick');
 const fireEl = radarEl.querySelector('.rc-fire');
 const ammoEl = radarEl.querySelector('.rc-am');
 const ZOOM_SPAN = Math.log(80); // the zoom goal runs from 8 (wide) to 0.1 (close) along the track
 const zoomFrac = () => 1 - Math.log(sightZoomGoal / 0.1) / ZOOM_SPAN;
-const radarStick = { x: 0, y: 0 }; // the aim stick, -1 to 1 (x to starboard, y up)
+const radarStick = { x: 0, y: 0 }; // (the on-screen aim stick was removed: always 0; arrows and a drag aim the sight)
 // Drag on a control until the pointer lets go.
 function dragOn(e, move) {
   const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); move(null); };
@@ -904,21 +902,6 @@ radarEl.addEventListener('pointerdown', (e) => {
       const r = trackEl.getBoundingClientRect();
       const t = clamp((ev.clientX - r.left) / r.width, 0, 1);
       sightZoomGoal = clamp(0.1 * Math.exp((1 - t) * ZOOM_SPAN), 0.1, 8);
-    });
-    return;
-  }
-  if (e.target.closest('.rc-stick')) { // the aim stick: the farther you push it the faster the sight turns
-    e.preventDefault();
-    const r = stickEl.getBoundingClientRect(), R = r.width / 2 - 14;
-    dragOn(e, (ev) => {
-      if (!ev) { radarStick.x = radarStick.y = 0; stickEl.style.setProperty('--kx', '0px'); stickEl.style.setProperty('--ky', '0px'); return; }
-      let dx = ev.clientX - (r.left + r.width / 2), dy = ev.clientY - (r.top + r.height / 2);
-      const d = Math.hypot(dx, dy);
-      if (d > R) { dx *= R / d; dy *= R / d; }
-      radarStick.x = dx / R; radarStick.y = -dy / R;
-      stickEl.style.setProperty('--kx', `${dx}px`);
-      stickEl.style.setProperty('--ky', `${dy}px`);
-      if (Math.hypot(radarStick.x, radarStick.y) > 0.06) { sight.manual = true; sight.lock = null; }
     });
     return;
   }
