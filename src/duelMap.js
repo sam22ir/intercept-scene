@@ -1,9 +1,8 @@
 import { MAIN_ARC, MAIN_RANGE, GUN_RANGE } from './duel.js';
-import { gunBlind, kmText } from './hull.js';
+import { kmText } from './hull.js';
 
 // The Ship duel's radar, on the shared #minimap disc (the same one Solo Air Defense uses): centred on your ship,
-// heading up, with range rings, a turning sweep, the north mark on the rim, the 76 mm's arc, and the aft 30 mm guns'
-// clear sectors (where they can bear), and the enemy contact. Click it to change the range; N hides it.
+// heading up, with range rings, a turning sweep, the north mark on the rim, the 76 mm's arc, and the other ships. Click it to change the range; N hides it.
 
 const SCALES = [2000, 4000, 8000, 16000]; // metres to the rim
 const ZOOMS = ['auto', 2000, 6000, 12000]; // what a click cycles through
@@ -42,7 +41,7 @@ export function createDuelMap() {
   let lastTrack = -Infinity;
   let lastKey = '';
   root.addEventListener('click', () => { zoom = (zoom + 1) % ZOOMS.length; lastKey = ''; });
-  root.title = 'Radar, heading up: 76 mm arc and aft-gun sectors. Click to change the range (N hides it)';
+  root.title = 'Radar, heading up: the 76 mm arc. Click to change the range (N hides it)';
   root.setAttribute('aria-label', 'Ship duel radar: enemy and gun arcs, bow up');
 
   function draw(sim) {
@@ -109,25 +108,6 @@ export function createDuelMap() {
     ctx.strokeStyle = 'rgba(255, 122, 26, 0.45)';
     ctx.lineWidth = 1;
     ctx.stroke();
-
-    // The aft 30 mm guns' clear sectors (amber): wherever either gun can bear, out to its range. The shaded
-    // gaps are the dead zones to keep an enemy in.
-    const rg = GUN_RANGE * k;
-    const covered = (th) => !gunBlind(0, -th) || !gunBlind(1, -th);
-    const STEP = Math.PI / 90;
-    ctx.fillStyle = 'rgba(255, 179, 64, 0.055)';
-    ctx.strokeStyle = 'rgba(255, 179, 64, 0.45)';
-    for (let th = -Math.PI; th < Math.PI; th += STEP) {
-      if (!covered(th + STEP / 2) || (covered(th - STEP / 2) && th > -Math.PI)) continue;
-      let end = th;
-      while (end < Math.PI && covered(end + STEP / 2)) end += STEP;
-      ctx.beginPath();
-      ctx.moveTo(R, R);
-      ctx.arc(R, R, rg, aOf(th), aOf(end));
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    }
 
     // Range rings every quarter of the scale, and the heading line.
     ctx.strokeStyle = 'rgba(61, 220, 132, 0.2)';
