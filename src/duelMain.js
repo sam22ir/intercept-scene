@@ -782,36 +782,75 @@ const sightTxt = sightEl.querySelector('.hs-txt');
 const radarEl = document.createElement('div');
 radarEl.className = 'duel-radar';
 radarEl.hidden = true;
-radarEl.innerHTML = '<div class="hr-marks"></div><div class="hr-pad">'
-  + '<div class="hr-acts"><button type="button" data-act="lock">Hold this point<kbd>Enter</kbd></button><button type="button" data-act="auto">Release / auto<kbd>Space</kbd></button><button type="button" data-act="next">Next target<kbd>Tab</kbd></button><button type="button" data-act="back">Back to the helm<kbd>Esc</kbd></button></div>'
-  + '<div class="hr-mid"><div class="hr-read"><b class="hr-mode">AUTO</b><span class="hr-brg"></span></div>'
-  + '<div class="hr-zoom"><button type="button" data-zoom="zo" aria-label="Zoom out">&minus;</button><span>Zoom <b class="hr-zv"></b><kbd>wheel / + -</kbd></span><button type="button" data-zoom="zi" aria-label="Zoom in">+</button></div>'
-  + '<div class="hr-dpad"><button type="button" data-dir="u" aria-label="Aim up">▲</button><button type="button" data-dir="l" aria-label="Aim left">◀</button>'
-  + '<i class="hr-hub"></i><button type="button" data-dir="r" aria-label="Aim right">▶</button><button type="button" data-dir="d" aria-label="Aim down">▼</button></div></div>'
-  + '<div class="hr-acts"><button type="button" data-act="fire" class="hr-fire">Fire<kbd>F</kbd></button><button type="button" data-act="ammo">Change round<kbd>Q</kbd></button></div></div>';
+radarEl.innerHTML = '<div class="hr-marks"></div><div class="rc">'
+  + '<div class="rc-main"><div class="rc-top"><b class="hr-mode">AUTO</b><span class="hr-brg"></span></div>'
+  + '<div class="rc-zoom"><span>WIDE</span><div class="rc-track" aria-label="Zoom"><i class="rc-ticks"></i><i class="rc-fill"></i><i class="rc-thumb"></i></div><span>CLOSE</span><b class="hr-zv"></b></div>'
+  + '<div class="rc-pills"><button type="button" data-act="lock"><i>⌖</i>Hold<kbd>Enter</kbd></button><button type="button" data-act="auto"><i>◎</i>Auto<kbd>Space</kbd></button>'
+  + '<button type="button" data-act="next"><i>⇥</i>Target<kbd>Tab</kbd></button><button type="button" data-act="back"><i>⏏</i>Helm<kbd>Esc</kbd></button></div></div>'
+  + '<div class="rc-stick" aria-label="Aim stick: drag"><s class="u">▲</s><s class="d">▼</s><s class="l">◀</s><s class="r">▶</s><i class="rc-knob"></i></div>'
+  + '<div class="rc-gun"><button type="button" class="rc-fire" data-act="fire"><span>FIRE</span><kbd>F</kbd></button><button type="button" class="rc-ammo" data-act="ammo"><b class="rc-am"></b><kbd>Q</kbd></button></div></div>';
 document.body.appendChild(radarEl);
 const radarMode = radarEl.querySelector('.hr-mode');
 const radarBrg = radarEl.querySelector('.hr-brg');
 const radarZoom = radarEl.querySelector('.hr-zv');
 const marksEl = radarEl.querySelector('.hr-marks');
+const trackEl = radarEl.querySelector('.rc-track');
+const thumbEl = radarEl.querySelector('.rc-thumb');
+const fillEl = radarEl.querySelector('.rc-fill');
+const stickEl = radarEl.querySelector('.rc-stick');
+const fireEl = radarEl.querySelector('.rc-fire');
+const ammoEl = radarEl.querySelector('.rc-am');
+const ZOOM_SPAN = Math.log(80); // the zoom goal runs from 8 (wide) to 0.1 (close) along the track
+const zoomFrac = () => 1 - Math.log(sightZoomGoal / 0.1) / ZOOM_SPAN;
+const radarStick = { x: 0, y: 0 }; // the aim stick, -1 to 1 (x to starboard, y up)
+// Drag on a control until the pointer lets go.
+function dragOn(e, move) {
+  const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); move(null); };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
+  move(e);
+}
 radarEl.addEventListener('pointerdown', (e) => {
   const mark = e.target.closest('.hr-mark');
-  if (mark) { // a compartment on a hull: lay the sight on it
+  if (mark) { // a compartment on a hull: hold the sight on it
     e.preventDefault();
     const i = Number(mark.dataset.ship);
-    const g = ships[i]?.group;
-    if (!g) return;
+    if (!ships[i]) return;
     sight.lock = { ship: i, local: new THREE.Vector3(ZONE_X[mark.dataset.comp], 7, 0), near: true };
     sight.manual = false;
+    return;
+  }
+  if (e.target.closest('.rc-track')) { // the zoom track
+    e.preventDefault();
+    dragOn(e, (ev) => {
+      if (!ev) return;
+      const r = trackEl.getBoundingClientRect();
+      const t = clamp((ev.clientX - r.left) / r.width, 0, 1);
+      sightZoomGoal = clamp(0.1 * Math.exp((1 - t) * ZOOM_SPAN), 0.1, 8);
+    });
+    return;
+  }
+  if (e.target.closest('.rc-stick')) { // the aim stick: the farther you push it the faster the sight turns
+    e.preventDefault();
+    const r = stickEl.getBoundingClientRect(), R = r.width / 2 - 14;
+    dragOn(e, (ev) => {
+      if (!ev) { radarStick.x = radarStick.y = 0; stickEl.style.setProperty('--kx', '0px'); stickEl.style.setProperty('--ky', '0px'); return; }
+      let dx = ev.clientX - (r.left + r.width / 2), dy = ev.clientY - (r.top + r.height / 2);
+      const d = Math.hypot(dx, dy);
+      if (d > R) { dx *= R / d; dy *= R / d; }
+      radarStick.x = dx / R; radarStick.y = -dy / R;
+      stickEl.style.setProperty('--kx', `${dx}px`);
+      stickEl.style.setProperty('--ky', `${dy}px`);
+      if (Math.hypot(radarStick.x, radarStick.y) > 0.06) { sight.manual = true; sight.lock = null; }
+    });
     return;
   }
   const b = e.target.closest('button');
   if (!b) return;
   e.preventDefault();
   const release = (fn) => { const up = () => { fn(); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); }; window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up); };
-  if (b.dataset.dir) { radarKeys[b.dataset.dir] = 1; sight.manual = true; sight.lock = null; release(() => { radarKeys[b.dataset.dir] = 0; }); }
-  else if (b.dataset.zoom) { radarKeys[b.dataset.zoom] = 1; release(() => { radarKeys[b.dataset.zoom] = 0; }); }
-  else if (b.dataset.act === 'fire') { input.fire = 1; release(() => { input.fire = 0; }); }
+  if (b.dataset.act === 'fire') { input.fire = 1; release(() => { input.fire = 0; }); }
   else if (b.dataset.act === 'auto') { sight.manual = false; sight.lock = null; }
   else if (b.dataset.act === 'lock') lockSight();
   else if (b.dataset.act === 'next') pickNextTarget();
@@ -883,8 +922,8 @@ function aimSight(dt) {
   }
   if (sight.manual && !sight.lock) {
     const rate = THREE.MathUtils.degToRad(50) * clamp(lens / 40, 0.004, 1);
-    let yaw = Math.atan2(sight.aim.z, sight.aim.x) + (radarKeys.r - radarKeys.l) * rate * dt + sight.dragYaw;
-    const pitch = clamp(Math.asin(clamp(sight.aim.y, -1, 1)) + (radarKeys.u - radarKeys.d) * rate * dt + sight.dragPitch, -0.25, 0.6);
+    let yaw = Math.atan2(sight.aim.z, sight.aim.x) + (radarKeys.r - radarKeys.l + radarStick.x) * rate * dt + sight.dragYaw;
+    const pitch = clamp(Math.asin(clamp(sight.aim.y, -1, 1)) + (radarKeys.u - radarKeys.d + radarStick.y) * rate * dt + sight.dragPitch, -0.25, 0.6);
     yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
     sight.aim.set(Math.cos(pitch) * Math.cos(yaw), Math.sin(pitch), Math.cos(pitch) * Math.sin(yaw));
   } else {
@@ -1011,6 +1050,14 @@ function updateRadarUi() {
   const rel = Math.atan2(Math.sin(yaw - sim.player.psi), Math.cos(yaw - sim.player.psi));
   radarBrg.textContent = `${relName(rel)} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${camera.fov.toFixed(camera.fov < 3 ? 2 : 1)}°`;
   radarZoom.textContent = `×${(30 / camera.fov).toFixed(camera.fov < 3 ? 0 : 1)}`;
+  const zf = clamp(zoomFrac(), 0, 1) * 100;
+  thumbEl.style.left = `${zf}%`;
+  fillEl.style.width = `${zf}%`;
+  const gn = sim.player.gun;
+  fireEl.style.setProperty('--rl', clamp(1 - gn.cool / MAIN_RELOAD, 0, 1).toFixed(3));
+  fireEl.classList.toggle('ready', gn.cool <= 0 && gn.onTarget && !sight.warn);
+  fireEl.classList.toggle('hold', !!sight.warn || sim.player.comp.gun <= 0);
+  ammoEl.textContent = `${AMMO_TYPES[gn.type].name} ${gn.stock[gn.type]}`;
   const g = sim.player.gun;
   const foes = sim.ships.filter((o) => o.team === 1);
   const which = foes.length > 1 ? ` ${foes.indexOf(sim.enemy) + 1}/${foes.length}` : '';
