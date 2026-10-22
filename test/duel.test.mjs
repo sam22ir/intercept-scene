@@ -529,3 +529,17 @@ describe('the whole duel, with every system running', () => {
     assert.ok(Math.min(...times) > 90 && Math.max(...times) < 420, `durations ${times.map(Math.round)}`);
   });
 });
+
+describe('Easy shields your ship', () => {
+  const strike = (level) => {
+    const sim = new DuelSim({ seed: 2, level });
+    const sh = { id: 1, owner: sim.enemy.idx, kind: 'ap', lock: null, focus: null, v: [0, 0, 0], p: [0, 0, 0] };
+    sim.shells.push(sh);
+    sim.hit(sh, sim.player, [30, 5, 0]);
+    return COMPARTMENTS.gun.hp - sim.player.comp.gun;
+  };
+  it('a hit by the enemy costs 2 % of the compartment on Easy, more on Normal', () => {
+    assert.ok(Math.abs(strike('easy') - COMPARTMENTS.gun.hp * 0.02) < 1e-9);
+    assert.ok(strike('normal') > COMPARTMENTS.gun.hp * 0.2);
+  });
+});

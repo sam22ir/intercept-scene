@@ -88,6 +88,7 @@ export const LOCK_SCATTER = 0.1;
 export const FOCUS_SCATTER = 1.5;
 export const LOCK_FRACTION = 0.25;
 export const FOCUS_FRACTION = 0.14;
+export const EASY_HIT_FRACTION = 0.02; // on Easy a hit by an enemy costs your ship this part of the compartment's points
 
 // --- The 30 mm guns (the aft pair, as in helm.js) ----------------------------------------------------------------
 export const GUN_RANGE = 2600; // m
@@ -310,6 +311,8 @@ export class DuelSim {
   // --- who is who ----------------------------------------------------------------------------------------------------
   foe(s) { return this.ships[s.target] ?? this.ships[1 - (s.idx % 2)]; }
   hostile(s, o) { return o !== s && o.team !== 2 && s.team !== 2 && o.team !== s.team; }
+  // On Easy your own ship is tough: each hit by an enemy costs EASY_HIT_FRACTION of the compartment.
+  easyShield(from, tgt) { return this.level === 'easy' && tgt.idx === 0 && this.hostile(from, tgt); }
   hostiles(s, alive = true) { return this.ships.filter((o) => this.hostile(s, o) && (!alive || o.tSunk === null)); }
   distance(a, b) { return Math.hypot(a.x - b.x, a.z - b.z); }
   // The velocity [x, z] this ship's fire control believes `o` has (the estimate lags the truth; for a ship it has not tracked, the truth).
@@ -643,7 +646,8 @@ export class DuelSim {
     const aimed = sh.lock?.ship === tgt.idx ? sh.lock : sh.focus?.ship === tgt.idx ? sh.focus : null;
     const comp = aimed ? aimed.comp : zoneAt(local[0]);
     const am = AMMO_TYPES[sh.kind] ?? AMMO_TYPES.he;
-    const dmg = aimed ? COMPARTMENTS[comp].hp * (sh.lock ? LOCK_FRACTION : FOCUS_FRACTION) : lerp(SHELL_DAMAGE[0], SHELL_DAMAGE[1], this.rng()) * am.dmg;
+    let dmg = aimed ? COMPARTMENTS[comp].hp * (sh.lock ? LOCK_FRACTION : FOCUS_FRACTION) : lerp(SHELL_DAMAGE[0], SHELL_DAMAGE[1], this.rng()) * am.dmg;
+    if (this.easyShield(from, tgt)) dmg = COMPARTMENTS[comp].hp * EASY_HIT_FRACTION;
     if (this.hostile(from, tgt)) from.stats.hits += 1;
     tgt.stats.taken += 1;
     tgt.lastHitBy = from.idx;
@@ -763,7 +767,7 @@ export class DuelSim {
           s.stats.burstHits += 1;
           o.stats.taken += 1;
           o.lastHitBy = s.idx;
-          this.damage(o, comp, GUN_DAMAGE, 0.5, this.rng() - 0.5);
+          this.damage(o, comp, this.easyShield(s, o) ? COMPARTMENTS[comp].hp * EASY_HIT_FRACTION : GUN_DAMAGE, 0.5, this.rng() - 0.5);
           this.events.push({ type: 'gunhit', owner: s.idx, ship: o.idx, comp, pos: this.toWorld(o, [x, 6, (this.rng() * 2 - 1) * HALF_BEAM]) });
         }
       }
