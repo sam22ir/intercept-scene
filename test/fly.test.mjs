@@ -318,3 +318,24 @@ describe('fly: determinism and reset', () => {
     assert.equal(sim.wreck, null);
   });
 });
+
+describe('islands', () => {
+  it('flying into an island crashes the drone (kind land)', async () => {
+    const { islandLayout } = await import('../src/terrain.js');
+    const isl = islandLayout(7).sort((p, q) => q.radius - p.radius)[0];
+    const sim = new F.FlySim({ islands: [isl] });
+    sim.phase = 'flight';
+    sim.engineOn = true;
+    sim.tRelease = -10;
+    sim.tLaunch = -11;
+    sim.t = 20;
+    sim.speed = 75;
+    sim.speedTarget = 75;
+    sim.pos.set(isl.x - 600, 4, isl.z); // low, heading straight at the island
+    sim.alpha = 0; // +X
+    sim.theta = 0;
+    for (let i = 0; i < 240 * 20 && sim.phase === 'flight'; i++) sim.stepOnce(F.DT, {});
+    assert.equal(sim.phase, 'crashed');
+    assert.equal(sim.wreck.kind, 'land');
+  });
+});

@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { mulberry32 } from './rng.js';
+import { resolveLook, fromDisplay, srgbToLinear, WEATHERS } from './looks.js';
+import { WORLD_PERIOD } from './terrain.js';
+import { createIslands, createBuoys, createFarShips, createWeatherSprites } from './scenery.js';
 
 const SUN_ELEVATION = 24; // degrees
 const SUN_AZIMUTH = 215;
@@ -11,44 +14,95 @@ const ZENITH = new THREE.Color(0.2, 0.38, 0.66);
 const CALM_HORIZON = new THREE.Color(0.06, 0.56, 3.0);
 const CALM_ZENITH = new THREE.Color(0, 0.16, 1.4);
 
+const rgbHex = (c) => (Math.round(c[0]) << 16) | (Math.round(c[1]) << 8) | Math.round(c[2]);
+
+// The weather override, read once: ?weather=clear|haze|squalls|overcast, else localStorage['intercept.weather'].
+function readWeather() {
+  try {
+    const q = new URLSearchParams(globalThis.location?.search ?? '').get('weather');
+    if (WEATHERS.includes(q)) return q;
+  } catch { /* no location */ }
+  try {
+    const w = globalThis.localStorage?.getItem('intercept.weather');
+    if (WEATHERS.includes(w)) return w;
+  } catch { /* blocked storage */ }
+  return undefined;
+}
+
 // `calm` is the drill's look: a deeper, quieter sea and a bluer sky, so ships and readouts stand out (flatter
 // distant waves with no moire stripes, less sky reflection and glitter).
-export function createEnvironment(renderer, scene, { calm = false, tallMountains = false } = {}) {
-  const horizon = calm ? CALM_HORIZON : HORIZON;
+// `look` (a name from looks.js, e.g. 'intercept') gives a mission its own time of day, sky, sea state, scenery and weather;
+// the weather can be overridden with ?weather= or localStorage['intercept.weather'] (read once). Without `look` the original
+// default or `calm` look is used, unchanged.
+export function createEnvironment(renderer, scene, { calm = false, tallMountains = false, look: lookName = null } = {}) {
+  const look = !calm && lookName ? resolveLook(lookName, readWeather()) : null;
+  const horizon = look ? new THREE.Color(...fromDisplay(look.horizon)) : calm ? CALM_HORIZON : HORIZON;
+  const zenith = look ? new THREE.Color(...fromDisplay(look.zenith)) : calm ? CALM_ZENITH : ZENITH;
   const sunDir = new THREE.Vector3().setFromSphericalCoords(
-    1, THREE.MathUtils.degToRad(90 - SUN_ELEVATION), THREE.MathUtils.degToRad(SUN_AZIMUTH),
+    1, THREE.MathUtils.degToRad(90 - (look ? look.elev : SUN_ELEVATION)), THREE.MathUtils.degToRad(look ? look.az : SUN_AZIMUTH),
   );
 
   const sky = new Sky();
   sky.scale.setScalar(20000);
   const u = sky.material.uniforms;
-  u.turbidity.value = calm ? 1.2 : 5;
-  u.rayleigh.value = calm ? 3.2 : 1.4;
-  u.mieCoefficient.value = calm ? 0.0012 : 0.004;
+  u.turbidity.value = look ? look.ibl.turbidity : calm ? 1.2 : 5;
+  u.rayleigh.value = look ? look.ibl.rayleigh : calm ? 3.2 : 1.4;
+  u.mieCoefficient.value = look ? look.ibl.mie : calm ? 0.0012 : 0.004;
   u.mieDirectionalG.value = 0.82;
   u.sunPosition.value.copy(sunDir);
   scene.add(sky);
   // The drill's sky: a gradient dome in saturated blue instead of the physical Sky (which tone-maps to grey). The
-  // Sky object still lights the scene through the environment map below.
+  // Sky object still lights the scene through the environment map below. The mission looks use a dome too, with the
+  // colours solved so they come out as designed after the tone mapping.
   let dome = null;
-  if (calm) {
+  if (calm || look) {
     sky.visible = false;
+    // A look's dome is drawn as designed, in display space with no tone mapping: blending the two colours before the
+    // tone curve would shift the hue (a warm horizon turns the whole sky pink). The sea's fog uses the matching
+    // scene-space colour, which tone-maps to the same pixels at the horizon, so the two meet with no seam.
+    const glow = look ? srgbToLinear(look.glow.map((v) => Math.max(v, 1))) : [1, 0.85, 0.55];
+    const gmax = Math.max(...glow);
     dome = new THREE.Mesh(
       new THREE.SphereGeometry(20000, 32, 16),
       new THREE.ShaderMaterial({
         side: THREE.BackSide, depthWrite: false, fog: false,
-        uniforms: { uHorizon: { value: CALM_HORIZON }, uZenith: { value: CALM_ZENITH }, uSun: { value: sunDir } },
+        uniforms: {
+          uHorizon: { value: look ? new THREE.Color(...srgbToLinear(look.horizon)) : horizon }, uZenith: { value: look ? new THREE.Color(...srgbToLinear(look.zenith)) : zenith }, uSun: { value: sunDir },
+          uGlow: { value: new THREE.Vector3(glow[0] / gmax, glow[1] / gmax, glow[2] / gmax) },
+          uGlowAmt: { value: look ? 1 - look.overcast : 1 }, // the sun's disc and glow, fading as the deck thickens
+          uCover: { value: look ? look.cover : 0 }, // the painted cloud deck
+          uLook: { value: look ? 1 : 0 },
+        },
         vertexShader: 'varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
         fragmentShader: `
-          uniform vec3 uHorizon, uZenith, uSun;
+          uniform vec3 uHorizon, uZenith, uSun, uGlow;
+          uniform float uGlowAmt, uCover, uLook;
           varying vec3 vDir;
+          float h21(vec2 p) { p = 50.0 * fract(p * 0.3183099 + vec2(0.71, 0.113)); return fract(p.x * p.y * (p.x + p.y)); }
+          float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
           void main() {
             float h = clamp(vDir.y, 0.0, 1.0);
             vec3 col = mix(uHorizon, uZenith, pow(h, 0.45));
             float s = max(dot(normalize(vDir), uSun), 0.0);
-            col += vec3(1.0, 0.85, 0.55) * (pow(s, 40.0) * 0.5 + pow(s, 900.0) * 6.0);
-            gl_FragColor = vec4(col, 1.0);
-            #include <tonemapping_fragment>
+            if (uLook < 0.5) {
+              col += vec3(1.0, 0.85, 0.55) * (pow(s, 40.0) * 0.5 + pow(s, 900.0) * 6.0);
+            } else {
+              // Aerial haze: a thin brighter band just above the horizon (zero at the horizon itself, so the sea's
+              // fog colour meets the sky with no seam), and a glow low in the sky on the sun's side.
+              col += uHorizon * 0.12 * smoothstep(0.0, 0.03, h) * pow(1.0 - h, 6.0);
+              col += uGlow * uGlowAmt * (pow(s, 5.0) * 0.35 * pow(1.0 - h, 4.0) + pow(s, 40.0) * 0.5 + pow(s, 900.0) * 6.0);
+              if (uCover > 0.001) { // an overcast deck: broad cloud shapes, darker in the thick parts, drawn in perspective
+                vec2 q = vDir.xz / (vDir.y + 0.16) * 0.9;
+                float c = 0.5 * vn(q) + 0.28 * vn(q * 2.3 + 7.0) + 0.14 * vn(q * 5.1 + 3.0) + 0.08 * vn(q * 11.0);
+                float deck = smoothstep(0.32, 0.78, c) * smoothstep(0.0, 0.1, h);
+                col *= 1.0 - uCover * deck * 0.32;
+                col += uHorizon * uCover * (1.0 - deck) * 0.1 * smoothstep(0.0, 0.1, h);
+              }
+            }
+            gl_FragColor = vec4(uLook > 0.5 ? min(col, vec3(1.0)) : col, 1.0);
+            if (uLook < 0.5) {
+              #include <tonemapping_fragment>
+            }
             #include <colorspace_fragment>
           }`,
       }),
@@ -66,30 +120,43 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
   skyClone.scale.setScalar(1000);
   skyScene.add(skyClone);
   scene.environment = pmrem.fromScene(skyScene).texture;
-  scene.environmentIntensity = 0.7;
+  scene.environmentIntensity = look ? look.env : 0.7;
   pmrem.dispose();
 
-  scene.fog = new THREE.Fog(horizon, 3000, 16000);
+  scene.fog = look ? new THREE.Fog(horizon, look.fog[0], look.fog[1]) : new THREE.Fog(horizon, 3000, 16000);
 
-  const sun = new THREE.DirectionalLight(0xfff1dc, 2.7);
+  const sun = new THREE.DirectionalLight(look ? rgbHex(look.sunColor) : 0xfff1dc, look ? look.sunI : 2.7);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.4;
   scene.add(sun, sun.target);
-  scene.add(new THREE.HemisphereLight(0xcfe0ff, 0x203040, 0.6));
+  scene.add(look ? new THREE.HemisphereLight(rgbHex(look.hemi), 0x203040, look.hemiI) : new THREE.HemisphereLight(0xcfe0ff, 0x203040, 0.6));
 
-  const ocean = createOcean(sunDir, calm, horizon);
+  const ocean = createOcean(sunDir, calm, horizon, look, zenith);
   scene.add(ocean);
-  const clouds = createClouds(calm);
+  const clouds = createClouds(calm, look);
   const mountains = calm ? (tallMountains ? createTallMountains() : createMountains()) : null;
   if (mountains) scene.add(mountains);
   scene.add(clouds);
+  // Scenery that stands still in the world (so it is a yardstick for speed and height), and weather on the horizon.
+  // Everything here repeats every WORLD_PERIOD metres around a far-flying camera; the period is at least twice the fog
+  // distance, so an object only jumps while it is fogged out.
+  const scenery = new THREE.Group();
+  const buoys = look && look.scenery.buoys ? createBuoys(look.scenery.buoys) : null;
+  if (look) {
+    if (look.scenery.islands) scenery.add(createIslands(look.scenery.islands));
+    if (look.scenery.ships) scenery.add(createFarShips(look.scenery.ships));
+    if (look.squalls || look.banks) scenery.add(createWeatherSprites(look.squalls, look.banks, look.overcast, horizon, look.fog[1]));
+    if (buoys) scenery.add(buoys.mesh);
+    scene.add(scenery);
+  }
   const CLOUD_PERIOD = 26000; // the cloud field repeats this often, so it never runs out under a far-flying camera
 
   return {
     sunDir,
     ocean,
+    look, // the resolved look (null for the original default and the calm look)
     // For a camera that travels far from the origin (the manual-flight mission): the sky dome and the WebGL
     // sea plane ride along with it, and the clouds wrap around it, so the world never ends.
     follow(camPos) {
@@ -102,12 +169,23 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
         const b = c.userData.base;
         c.position.x = b.x + Math.round((camPos.x - b.x) / CLOUD_PERIOD) * CLOUD_PERIOD;
         c.position.z = b.z + Math.round((camPos.z - b.z) / CLOUD_PERIOD) * CLOUD_PERIOD;
-        if (calm) { // a cloud the camera comes close to (a far zoom-out) fades away instead of filling the view
+        if (calm || look) { // a cloud the camera comes close to (a far zoom-out, or a flight through a layer) fades away instead of filling the view
           const near = c.scale.x * 0.7;
           const k = Math.min(Math.max((c.position.distanceTo(camPos) - near) / near, 0), 1);
           c.material.opacity = c.userData.opacity * k;
           c.visible = k > 0;
         }
+      }
+      if (look) {
+        for (const g of scenery.children) {
+          for (const o of g.children) {
+            if (!o.userData.base) continue;
+            const b = o.userData.base;
+            o.position.x = b.x + Math.round((camPos.x - b.x) / WORLD_PERIOD) * WORLD_PERIOD;
+            o.position.z = b.z + Math.round((camPos.z - b.z) / WORLD_PERIOD) * WORLD_PERIOD;
+          }
+        }
+        buoys?.follow(camPos, ocean.material.uniforms.uTime.value);
       }
     },
     // Smaller shadow map for the lower quality tiers (the old map is freed and rebuilt on the next frame).
@@ -139,22 +217,40 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
 // wake. No noise textures, no environment lookups. Noise, not sine waves: long swells rolled under the moving
 // ships and looked dizzying, and a few crossed sines read as parallel bands or a crosshatch. Each octave is
 // rotated and drifts slowly its own way, as a function of scene time, so it rewinds with the timeline.
-function createOcean(sunDir, calm, horizon) {
+function createOcean(sunDir, calm, horizon, look = null, zenithCol = ZENITH) {
+  // A mission look (looks.js) tints the water by the sky and sets the sea state; without one every added uniform keeps the
+  // value that reproduces the original (default or calm) sea exactly.
+  const sunLin = look ? new THREE.Color(...look.sunColor.map((c) => (c / 255) ** 2.2)) : new THREE.Color(1.0, 0.93, 0.8);
+  const deck = look ? look.overcast : 0;
+  const deep = new THREE.Color(0.006, 0.045, 0.085).lerp(new THREE.Color(0.012, 0.03, 0.045), deck);
+  const scatter = new THREE.Color(0.02, 0.13, 0.16).lerp(new THREE.Color(0.035, 0.07, 0.08), deck);
+  if (look) {
+    scatter.multiplyScalar(0.55 + 0.45 * Math.min(look.sunI / 2.7, 1));
+    scatter.lerp(new THREE.Color(...srgbToLinear(look.horizon)).multiplyScalar(0.1), look.warm * 0.8); // a low sun warms the water's own colour
+  }
   const material = new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
       uSunDir: { value: sunDir },
-      uSunColor: { value: new THREE.Color(1.0, 0.93, 0.8) },
+      uSunColor: { value: sunLin },
       uCalm: { value: calm ? 1 : 0 },
       uGrid: { value: 0 }, // the drill's tactical grid: on or off
       uGridCell: { value: 457.2 }, // 500 yd squares, north up
       uRingC: { value: new THREE.Vector2() }, // the range rings' centre (ALG), world x z
-      uDeep: { value: calm ? new THREE.Color(0.012, 0.075, 0.13) : new THREE.Color(0.006, 0.045, 0.085) },
-      uScatter: { value: calm ? new THREE.Color(0.03, 0.18, 0.24) : new THREE.Color(0.02, 0.13, 0.16) },
+      uDeep: { value: calm ? new THREE.Color(0.012, 0.075, 0.13) : deep },
+      uScatter: { value: calm ? new THREE.Color(0.03, 0.18, 0.24) : scatter },
       uHorizon: { value: horizon },
-      uZenith: { value: calm ? CALM_ZENITH : ZENITH },
-      uFogNear: { value: 3000 },
-      uFogFar: { value: 16000 },
+      uZenith: { value: look ? zenithCol : calm ? CALM_ZENITH : ZENITH },
+      uFogNear: { value: look ? look.fog[0] : 3000 },
+      uFogFar: { value: look ? look.fog[1] : 16000 },
+      uSkyOn: { value: look ? 1 : 0 }, // the sky the water mirrors: four stops solved in display space (looks.js), or the old two-colour blend
+      uSky: { value: look ? look.skyStops.map((c) => new THREE.Color(...fromDisplay(c))) : [0, 1, 2, 3].map(() => new THREE.Color()) },
+      uSea: { value: look ? look.sea.state : 1 }, // wave steepness (1 = the original sea)
+      uWind: { value: look ? new THREE.Vector2(...look.sea.wind) : new THREE.Vector2() }, // a steady drift added to every octave, m/s
+      uCaps: { value: look ? look.sea.caps : 0 }, // whitecaps on the steepest faces
+      uGlitter: { value: look ? look.sea.glitter : calm ? 0 : 1 },
+      uReflect: { value: look ? look.sea.reflect : calm ? 0.55 : 0.9 },
+      uFoamTint: { value: look ? 0.6 : 0 }, // foam picks up the sun's colour (a low sun warms it)
       uShipX: { value: 0 }, // ship position along +X, drives the wake
     },
     vertexShader: /* glsl */ `
@@ -171,7 +267,9 @@ function createOcean(sunDir, calm, horizon) {
       #define CHOP_DRIFT 0.7 // m/s each octave drifts
       uniform float uTime;
       uniform vec3 uSunDir, uSunColor, uDeep, uScatter, uHorizon, uZenith;
-      uniform float uFogNear, uFogFar, uShipX, uCalm, uGrid, uGridCell;
+      uniform float uFogNear, uFogFar, uShipX, uCalm, uGrid, uGridCell, uSea, uCaps, uGlitter, uReflect, uFoamTint, uSkyOn;
+      uniform vec3 uSky[4];
+      uniform vec2 uWind;
       uniform vec2 uRingC;
       varying vec3 vWorld;
 
@@ -199,12 +297,12 @@ function createOcean(sunDir, calm, horizon) {
       // and faded out once its features shrink toward a pixel (fp: metres per pixel), before it shimmers.
       vec2 chopGrad(vec2 p, float fp, float slope) {
         vec2 g = vec2(0.0);
-        float F = 48.0;
+        float F = 48.0 * (1.0 + 0.5 * max(uSea - 1.0, 0.0)); // a rougher sea has bigger lumps too
         float ang = 0.4;
         for (int o = 0; o < CHOP_OCTAVES; o++) {
           float c = cos(ang), s = sin(ang);
           mat2 R = mat2(c, s, -s, c);
-          vec2 drift = vec2(cos(ang * 2.3 + 1.0), sin(ang * 2.3 + 1.0)) * (CHOP_DRIFT * uTime);
+          vec2 drift = vec2(cos(ang * 2.3 + 1.0), sin(ang * 2.3 + 1.0)) * (CHOP_DRIFT * uTime) + uWind * uTime;
           vec3 n = noised(R * (p + drift) / F + float(o) * 17.3);
           float fade = 1.0 - smoothstep(0.12 * F, 0.4 * F, fp);
           g += (n.xy * R) * (slope * fade); // d/dp of n(R p / F) * F * slope / F
@@ -253,7 +351,8 @@ function createOcean(sunDir, calm, horizon) {
         vec3 toCam = cameraPosition - vWorld;
         float dist = length(toCam);
         float fp = length(fwidth(vWorld.xz));
-        vec2 grad = chopGrad(vWorld.xz, fp, CHOP_SLOPE * mix(1.0, 0.6, uCalm));
+        float slopeK = CHOP_SLOPE * mix(1.0, 0.6, uCalm) * uSea;
+        vec2 grad = chopGrad(vWorld.xz, fp, slopeK);
         vec3 n = normalize(vec3(-grad.x, 1.0, -grad.y));
         // Distant water flattens toward a smooth average normal.
         n = normalize(mix(n, vec3(0.0, 1.0, 0.0), smoothstep(mix(800.0, 250.0, uCalm), mix(6000.0, 2500.0, uCalm), dist) * mix(0.6, 0.85, uCalm)));
@@ -262,15 +361,30 @@ function createOcean(sunDir, calm, horizon) {
         float fresnel = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
         vec3 r = reflect(-v, n);
         r.y = abs(r.y);
-        vec3 sky = mix(uHorizon, uZenith, pow(clamp(r.y, 0.0, 1.0), 0.55));
+        float skyT = pow(clamp(r.y, 0.0, 1.0), 0.55);
+        vec3 sky = mix(uHorizon, uZenith, skyT);
+        if (uSkyOn > 0.5) {
+          sky = skyT < 0.28 ? mix(uSky[0], uSky[1], skyT / 0.28)
+              : skyT < 0.52 ? mix(uSky[1], uSky[2], (skyT - 0.28) / 0.24)
+              : mix(uSky[2], uSky[3], (skyT - 0.52) / 0.48);
+        }
         // Subsurface tint on wave faces turned toward the viewer.
         float sss = pow(max(dot(normalize(vec3(grad.x, 0.2, grad.y)), -v), 0.0), 2.0);
         vec3 water = mix(uDeep, uScatter, 0.25 + 0.5 * ndv * ndv + 0.6 * sss);
         float sunDot = max(dot(r, uSunDir), 0.0);
-        vec3 spec = uSunColor * (pow(sunDot, 700.0) * 5.0 + pow(sunDot, 70.0) * 0.12) * mix(1.0, 0.0, uCalm); // no sun glitter in the drill
-        vec3 col = mix(water, sky, fresnel * mix(0.9, 0.55, uCalm)) + spec;
+        vec3 spec = uSunColor * (pow(sunDot, 700.0) * 5.0 + pow(sunDot, 70.0) * 0.12) * uGlitter; // no sun glitter in the drill or under a grey deck
+        vec3 col = mix(water, sky, fresnel * uReflect) + spec;
         float foam = wakeFoam(vWorld.xz, dist);
         vec3 foamCol = vec3(0.82, 0.87, 0.9) * (0.55 + 0.45 * max(uSunDir.y, 0.0));
+        foamCol *= mix(vec3(1.0), uSunColor / max(max(uSunColor.r, uSunColor.g), uSunColor.b), uFoamTint);
+        if (uCaps > 0.001) {
+          // Whitecaps: only on the steepest faces of the chop we already have (no new octaves), broken into patches by
+          // a drifting noise, and faded out with the pixel footprint and distance so they never shimmer.
+          float sl = length(grad) / max(slopeK, 1e-4);
+          float capFade = (1.0 - smoothstep(1.2, 4.5, fp)) * (1.0 - smoothstep(500.0, 3200.0, dist));
+          float capPatch = smoothstep(0.38, 0.7, vnoise(vWorld.xz * 0.33 + vec2(uTime * 0.21, -uTime * 0.14)));
+          foam = max(foam, uCaps * smoothstep(1.25, 2.1, sl) * capPatch * capFade * 0.85);
+        }
         col = mix(col, foamCol, foam);
         if (uGrid > 0.5) {
           // Tactical grid: 500 yd squares (every second line brighter) aligned to north, and solid range rings
@@ -309,7 +423,8 @@ function createOcean(sunDir, calm, horizon) {
 
 // Scattered fair-weather cumulus: soft billboard sprites from a generated
 // texture, far enough away that parallax sells them.
-function createClouds(calm = false) {
+function createClouds(calm = false, look = null) {
+  const crisp = calm || !!look;
   const rng = mulberry32(77);
   const textures = [0, 1, 2].map((seed) => {
     const r = mulberry32(seed + 5);
@@ -323,7 +438,7 @@ function createClouds(calm = false) {
       const rad = 25 + r() * 55;
       const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
       let shade = 225 + r() * 30;
-      if (calm) {
+      if (crisp) {
         // Crisper, whiter puffs with a soft blue-grey underside, so each cloud reads against the blue sky.
         shade = 255 - Math.max(0, (y - 90) / 70) * 55;
         g.addColorStop(0, `rgba(${shade},${shade},${Math.min(255, shade + 6)},0.95)`);
@@ -341,20 +456,36 @@ function createClouds(calm = false) {
     return tex;
   });
   const group = new THREE.Group();
-  for (let i = 0; i < (calm ? 70 : 38); i++) {
-    const a = rng() * Math.PI * 2;
-    const d = 2500 + rng() * (calm ? 11000 : 9000);
-    const size = calm ? 900 + rng() * 1600 : 700 + rng() * 1300;
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: textures[i % 3], transparent: true, depthWrite: false, fog: false, opacity: (calm ? 0.88 : 0.75) + rng() * (calm ? 0.12 : 0.25),
-      color: new THREE.Color(2.3, 2.3, 2.4), // above 1 so tone mapping keeps them as bright as the sky
-    }));
-    // The calm (drill) clouds ride high, 3,000 to 4,800 m, above where the camera works, so they never cross the view.
-    sprite.position.set(Math.cos(a) * d, (calm ? 3000 : 900) + rng() * (calm ? 1800 : 1400), Math.sin(a) * d);
-    sprite.userData.base = sprite.position.clone();
-    sprite.userData.opacity = sprite.material.opacity;
-    sprite.scale.set(size, size * 0.5, 1);
-    group.add(sprite);
+  // The sprites' tint follows the sky: warm under a low sun, grey under a deck (above 1 so tone mapping keeps them bright).
+  const lum = (c) => 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
+  const tintFor = (k) => {
+    if (!look) return new THREE.Color(2.3, 2.3, 2.4);
+    const hn = look.horizon.map((v) => v / Math.max(lum(look.horizon), 1));
+    const warm = Math.min(1, look.warm * 1.8);
+    const grey = 1 - look.overcast * 0.45;
+    const base = [2.3, 2.3, 2.4].map((v, j) => v * (1 - warm + warm * hn[j]) * grey * k);
+    return new THREE.Color(...base);
+  };
+  const layers = look
+    ? [look.clouds, look.clouds.low].filter((l) => l && l.count > 0)
+    : [{ count: calm ? 70 : 38, alt: calm ? [3000, 4800] : [900, 2300], size: calm ? [900, 2500] : [700, 2000], opacity: calm ? 0.88 : 0.75, opVar: calm ? 0.12 : 0.25, dist: [2500, calm ? 13500 : 11500] }];
+  let n = 0;
+  for (const L of layers) {
+    for (let i = 0; i < L.count; i++, n++) {
+      const a = rng() * Math.PI * 2;
+      const d = L.dist ? L.dist[0] + rng() * (L.dist[1] - L.dist[0]) : 2500 + rng() * 11000;
+      const size = L.size[0] + rng() * (L.size[1] - L.size[0]);
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: textures[n % 3], transparent: true, depthWrite: false, fog: false, opacity: L.opacity + rng() * (L.opVar ?? (1 - L.opacity) * 0.5),
+        color: tintFor(1),
+      }));
+      // The calm (drill) clouds ride high, above where the camera works, so they never cross the view.
+      sprite.position.set(Math.cos(a) * d, L.alt[0] + rng() * (L.alt[1] - L.alt[0]), Math.sin(a) * d);
+      sprite.userData.base = sprite.position.clone();
+      sprite.userData.opacity = sprite.material.opacity;
+      sprite.scale.set(size, size * 0.5, 1);
+      group.add(sprite);
+    }
   }
   return group;
 }
