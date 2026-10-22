@@ -32,7 +32,7 @@
 //   otherwise asks hooks.scoreOf. winner is 0 (won) or 1 (lost), over is the reason, as in DuelSim.
 // ====================================================================================================================
 import { DuelSim, DT, LEVELS, TELEGRAPH, KT, makeShip, mulberry32 } from './duel.js';
-import { applyOrder, steerGoal } from './fleetOrders.js';
+import { applyOrder, steerGoal, formationStation, leadOf } from './fleetOrders.js';
 import { planThreats, spawnThreat } from './fleetThreats.js';
 import { stepResources } from './fleetResources.js';
 import { applyRole } from './fleetRoles.js';
@@ -100,8 +100,23 @@ export class FleetSim extends DuelSim {
   // The player gives no steering input: `input` is ignored, the whole state is a function of the seed and the order log.
   step(dt) {
     super.step(dt, {});
+    for (const s of this.squad) { // role top-speed cap: only the fleet reads s.topSpeed, duel.js is untouched
+      if (s.topSpeed && s.topSpeed < 1 && s.tSunk === null) s.u = Math.min(s.u, TELEGRAPH[TELEGRAPH.length - 1].kn * KT * s.topSpeed);
+    }
     this.steps += 1;
     this.hooks.stepResources(this, dt);
+  }
+
+  // A gun ship reloads faster (role `reload` multiplier): the round just fired starts a shorter cool-down.
+  fireMain(s) {
+    super.fireMain(s);
+    if (s.reload > 0 && s.reload !== 1) s.gun.cool /= s.reload;
+  }
+
+  // Where a ship in formation should be ({x, z}, tolerance), or null when she has none (the lead, or no formation ordered).
+  stationOf(s) {
+    if (!s.form || s === leadOf(this)) return null;
+    try { const st = formationStation(this, s); return st ? { x: st.x, z: st.z, tol: 120 } : null; } catch { return null; }
   }
 
   // Squadron ships a selector names (living only): 'all', one index, or a list of indexes.
