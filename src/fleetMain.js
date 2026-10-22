@@ -230,6 +230,20 @@ const overlay = document.createElement('canvas');
 overlay.className = 'fleet-overlay';
 document.body.append(overlay);
 const ctx = overlay.getContext('2d');
+const dragging = () => Math.hypot(drag.x1 - drag.x0, drag.y1 - drag.y0) > 5;
+const inBox = (p, d) => p.x >= Math.min(d.x0, d.x1) && p.x <= Math.max(d.x0, d.x1) && p.y >= Math.min(d.y0, d.y1) && p.y <= Math.max(d.y0, d.y1);
+// The selection rectangle is a DOM element moved on every pointer event (not on the next drawn frame), so it follows the
+// mouse with no lag even when the scene is slow; the compositor does the rest.
+const boxEl = document.createElement('div');
+boxEl.className = 'fleet-box';
+document.body.append(boxEl);
+function moveBox() {
+  if (!drag || !dragging()) { boxEl.classList.remove('on'); return; }
+  boxEl.classList.add('on');
+  boxEl.style.transform = `translate(${Math.min(drag.x0, drag.x1)}px, ${Math.min(drag.y0, drag.y1)}px)`;
+  boxEl.style.width = `${Math.abs(drag.x1 - drag.x0)}px`;
+  boxEl.style.height = `${Math.abs(drag.y1 - drag.y0)}px`;
+}
 let drag = null; // { x0, y0, x1, y1, shift }
 const MAP = 190;
 const MAP_EXTENT = 3600;
@@ -309,11 +323,13 @@ function drawOverlay() {
     ctx.beginPath(); ctx.arc(p.x, p.y, 8 + a * 26, 0, 7); ctx.stroke();
     ctx.globalAlpha = 1;
   }
-  // Selection box.
-  if (drag && Math.hypot(drag.x1 - drag.x0, drag.y1 - drag.y0) > 5) {
-    ctx.strokeStyle = 'rgba(159,232,112,0.9)'; ctx.fillStyle = 'rgba(159,232,112,0.12)';
-    ctx.fillRect(drag.x0, drag.y0, drag.x1 - drag.x0, drag.y1 - drag.y0);
-    ctx.strokeRect(drag.x0, drag.y0, drag.x1 - drag.x0, drag.y1 - drag.y0);
+  // Ships under the selection box so far get a soft ring (the box itself is a DOM element, see boxEl).
+  if (drag && dragging()) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+    for (const s of sim.team(0)) {
+      const p = toScreen(P(s).x, P(s).z);
+      if (inBox(p, drag)) { ctx.beginPath(); ctx.arc(p.x, p.y, shipPx(s) + 5, 0, 7); ctx.stroke(); }
+    }
   }
   drawMap();
 }
@@ -373,7 +389,7 @@ window.addEventListener('pointerdown', (e) => {
   else if (e.button === 2) issue(e.clientX, e.clientY, e.shiftKey);
 });
 window.addEventListener('pointermove', (e) => {
-  if (drag) { drag.x1 = e.clientX; drag.y1 = e.clientY; }
+  if (drag) { drag.x1 = e.clientX; drag.y1 = e.clientY; moveBox(); }
   if (panning) {
     const k = 1 / pxPerM();
     cam.z = clamp(cam.z - (e.clientX - panning.x) * k, -6000, 6000);
@@ -386,6 +402,7 @@ window.addEventListener('pointerup', (e) => {
   if (e.button !== 0 || !drag) return;
   const d = drag;
   drag = null;
+  moveBox();
   if (Math.hypot(d.x1 - d.x0, d.y1 - d.y0) > 5) {
     const x0 = Math.min(d.x0, d.x1), x1 = Math.max(d.x0, d.x1), y0 = Math.min(d.y0, d.y1), y1 = Math.max(d.y0, d.y1);
     if (!d.shift) selected.clear();

@@ -1,6 +1,10 @@
 /* Fleet command (fleetMain.js): a top-down strategy view. The overlay canvas draws the rings, health bars and the map;
    the side panel lists your ships. The drone scene's own panels do not apply here. */
 .fleet-overlay { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 4; }
+/* The selection rectangle: a DOM box moved straight from the pointer events, so it never lags the mouse. */
+.fleet-box { position: fixed; z-index: 5; left: 0; top: 0; pointer-events: none; box-sizing: border-box; border: 1.5px solid rgba(159, 232, 112, 0.95); border-radius: 6px; background: rgba(159, 232, 112, 0.13); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 0 18px rgba(159, 232, 112, 0.25); opacity: 0; transition: opacity 0.12s ease-out; will-change: transform, width, height; }
+.fleet-box.on { opacity: 1; }
+body:not(.mission-fleet) .fleet-box, body.mission-fleet.ui-hidden .fleet-box { display: none; }
 body:not(.mission-fleet) .fleet-overlay, body:not(.mission-fleet) .fleet-ui { display: none; }
 body.mission-fleet.ui-hidden .fleet-overlay, body.mission-fleet.ui-hidden .fleet-ui { display: none; }
 body.mission-fleet .topbar .brand { display: none; }
