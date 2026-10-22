@@ -451,8 +451,8 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'x') { if (selected.size) sim.order([...selected], { type: 'stop' }); }
   else if (k === 'f') { frameSelection(); }
   else if (k === 'Escape') selected.clear();
-  else if (k === '+' || k === '=') setSpeed(Math.min(4, speed * 2));
-  else if (k === '-') setSpeed(Math.max(0.5, speed / 2));
+  else if (k === '+' || k === '=') setSpeed(SPEEDS[Math.min(SPEEDS.length - 1, SPEEDS.indexOf(speed) + 1)]);
+  else if (k === '-') setSpeed(SPEEDS[Math.max(0, SPEEDS.indexOf(speed) - 1)]);
   else if (k === 'r') restart();
   else if (k === 'Tab') { e.preventDefault(); cycleFoe(); }
 });
@@ -461,7 +461,8 @@ window.addEventListener('keyup', (e) => {
   if (PAN[k]) panKeys.delete(PAN[k]);
 });
 window.addEventListener('blur', () => panKeys.clear());
-function setSpeed(v) { speed = v; say(`Speed ${v}x`, 'warn', 1000); }
+const SPEEDS = [0.5, 1, 2, 4, 8, 16];
+function setSpeed(v) { speed = v; paused = false; say(`Speed ${v}x`, 'warn', 1000); }
 function frameSelection() {
   const list = selected.size ? [...selected].map((i) => sim.ships[i]) : sim.team(0);
   if (!list.length) return;
@@ -484,7 +485,7 @@ document.body.append(ui);
 const shipsEl = ui.querySelector('.fl-ships');
 const helpEl = ui.querySelector('.fl-help');
 const resultEl = ui.querySelector('.fl-result');
-helpEl.innerHTML = '<b>Left</b> select · drag a box · <b>Right</b> move or attack · <b>Shift</b> queue · <b>Space</b> pause · <b>E</b> all · <b>X</b> stop · <b>F</b> find · wheel zoom · <b>WASD</b> pan';
+helpEl.innerHTML = '<b>Left</b> select · drag a box · <b>Right</b> move or attack · <b>Shift</b> queue · <b>Space</b> pause · <b>+ -</b> speed · <b>E</b> all · <b>X</b> stop · <b>F</b> find · wheel zoom · <b>WASD</b> pan';
 let lastShips = '';
 function shipsHtml() {
   const rows = sim.team(0).concat(sim.ships.filter((s) => s.team === 0 && s.hp <= 0)).map((s) => {
@@ -493,9 +494,13 @@ function shipsHtml() {
     return `<button class="fl-row${selected.has(s.id) ? ' sel' : ''}${s.hp <= 0 ? ' dead' : ''}" data-id="${s.id}"><b>${s.id + 1}</b><span class="fl-n">${nameOf(s)}<small>${state} · ${(s.u / KT).toFixed(0)} kn</small></span><i><u style="width:${Math.max(0, s.hp)}%" class="${s.hp > 55 ? '' : s.hp > 30 ? 'mid' : 'low'}"></u></i></button>`;
   });
   const foes = sim.team(1).length;
-  return `<div class="fl-head">${LEVELS[level].name} · enemy ships: <b>${foes}</b>${paused ? ' · <em>paused</em>' : ''}${speed !== 1 ? ` · ${speed}x` : ''}</div>${rows.join('')}`;
+  const bar = `<div class="fl-speed"><button data-pause class="${paused ? 'on' : ''}" title="Pause (Space)">${paused ? '▶' : '❚❚'}</button>${SPEEDS.filter((v) => v >= 1).map((v) => `<button data-speed="${v}" class="${!paused && speed === v ? 'on' : ''}" title="${v}x game speed (+ -)">${v}x</button>`).join('')}</div>`;
+  return `${bar}<div class="fl-head">${LEVELS[level].name} · enemy ships: <b>${foes}</b>${paused ? ' · <em>paused</em>' : ''}${speed !== 1 ? ` · ${speed}x` : ''}</div>${rows.join('')}`;
 }
 shipsEl.addEventListener('click', (e) => {
+  const sp = e.target.closest('[data-speed]');
+  if (sp) { setSpeed(Number(sp.dataset.speed)); return; }
+  if (e.target.closest('[data-pause]')) { paused = !paused; return; }
   const b = e.target.closest('.fl-row');
   if (!b) return;
   const s = sim.ships[Number(b.dataset.id)];
@@ -601,7 +606,7 @@ say('Select your ships and right-click the sea to move them', 'warn', 5000);
 let last = performance.now();
 let frames = 0;
 renderer.setAnimationLoop((now) => {
-  const dt = Math.max(0, Math.min((now - last) / 1000, 0.05));
+  const dt = Math.max(0, Math.min((now - last) / 1000, 0.1));
   last = now;
   cam.h += (cam.hT - cam.h) * (1 - Math.exp(-dt * 10));
   movePan(dt);
