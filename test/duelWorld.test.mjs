@@ -75,12 +75,41 @@ describe('locked and unlocked shots', () => {
       assert.ok(hits.every((h) => h.comp === comp), `${comp}: ${hits.map((h) => h.comp)}`);
     }
   });
-  it('an unlocked shell hits wherever it strikes, for a weak hit', () => {
-    const locked = fireAt(bowOn(6), [-13.5, 10, 0], 'engine');
-    const free = fireAt(bowOn(6), [-13.5, 10, 0], null);
-    const mean = (a) => a.reduce((x, h) => x + h.dmg, 0) / a.length;
-    assert.ok(free.length > 0 && mean(free) < 0.6 * mean(locked), `free ${mean(free)} vs locked ${mean(locked)}`);
-    assert.ok(free.some((h) => h.comp !== 'engine'), 'a bow-on shell meets the bow first');
+  it('a locked hit takes 25 % of the compartment, a focused one 14 %, and a free shell falls in the sea', () => {
+    const run = (extra) => {
+      const sim = bowOn(6), hits = [], splashes = [];
+      for (let i = 0; i < 20 * 60 && hits.length < 3; i++) {
+        const p = sim.toWorld(sim.enemy, [-13.5, 10, 0]);
+        const aim = sim.solve(sim.player, MAIN_MOUNT, MUZZLE_V, true, {}, { p, v: [0, 0, 0] });
+        sim.advance(0.05, { fire: true, aim: { yaw: aim.yaw, pitch: aim.pitch, ship: 1, ...extra } });
+        for (const e of sim.takeEvents()) { if (e.type === 'hit' && e.owner === 0) hits.push(e); if (e.type === 'splash' && e.owner === 0) splashes.push(e); }
+      }
+      return { hits, splashes };
+    };
+    const hp = COMPARTMENTS.engine.hp;
+    const lock = run({ lock: 'engine' });
+    assert.ok(lock.hits.length >= 3 && lock.hits.every((h) => h.comp === 'engine' && Math.abs(h.dmg - 0.25 * hp) < 1e-9));
+    const focus = run({ focus: 'engine' });
+    assert.ok(focus.hits.length >= 1 && focus.hits.every((h) => h.comp === 'engine' && Math.abs(h.dmg - 0.14 * hp) < 1e-9), JSON.stringify(focus.hits.map((h) => [h.comp, h.dmg])));
+    const free = run({ free: true });
+    assert.equal(free.hits.length, 0, 'no shell reaches her');
+    assert.ok(free.splashes.length >= 3, 'they fall in the sea');
+  });
+});
+
+describe('Easy: the ones that arrive do not fire', () => {
+  it('a reinforcement is passive on Easy, armed on Normal, and a friend always fights', () => {
+    const easy = new DuelSim({ seed: 3, level: 'easy' });
+    easy.spawn({ kind: 'enemy', t: 0 }); easy.spawn({ kind: 'ally', t: 0 });
+    assert.equal(easy.ships[2].passive, true);
+    assert.ok(!easy.ships[3].passive);
+    const normal = new DuelSim({ seed: 3, level: 'normal' });
+    normal.spawn({ kind: 'enemy', t: 0 });
+    assert.ok(!normal.ships[2].passive);
+    easy.ships[2].x = easy.player.x + 1500; easy.ships[2].z = easy.player.z; easy.ships[2].psi = Math.PI;
+    easy.enemy.x = 9e4; easy.enemy.z = 9e4; easy.ships[3].x = 9e4;
+    run(easy, 20);
+    assert.equal(easy.ships[2].stats.shells, 0, 'she never fires');
   });
 });
 

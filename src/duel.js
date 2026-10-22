@@ -80,11 +80,14 @@ const SCATTER_TURN = 0.02; // per rad/s of the firing ship's turn
 // Manual aim (T): the player points the gun and the fire control no longer solves it. The gun's own base scatter is smaller than the auto
 // tracker's (a lagging velocity estimate is the auto's real error, the player has to lead by eye and by the splashes), and turning still spoils it.
 export const MANUAL_SCATTER = 0.6;
-// A shell by hand either goes at a compartment the sight is locked on (`aim.lock`: it lands there, with next to no scatter) or at
-// whatever is under the crosshair unlocked (more scatter, and a weak hit): lock first, or waste the round.
+// A shell by hand (the radar view) is one of three kinds, by `aim`: LOCKED on a compartment (`aim.lock`: it lands there, with next to no
+// scatter, and takes LOCK_FRACTION of that compartment's points), FOCUSED (`aim.focus`, the sight snapped to a compartment but not locked: it lands
+// there, with more scatter, and takes FOCUS_FRACTION), or FREE (`aim.free`, neither: the shell falls in the sea). An aim without any of them is
+// the plain manual shot (the tests'): it lands where it strikes.
 export const LOCK_SCATTER = 0.1;
-export const FREE_SCATTER = 1.5;
-export const FREE_DAMAGE = 0.4;
+export const FOCUS_SCATTER = 1.5;
+export const LOCK_FRACTION = 0.25;
+export const FOCUS_FRACTION = 0.14;
 
 // --- The 30 mm guns (the aft pair, as in helm.js) ----------------------------------------------------------------
 export const GUN_RANGE = 2600; // m
@@ -412,7 +415,7 @@ export class DuelSim {
         e[1] += (v[2] - e[1]) * k;
       }
     }
-    for (const s of this.ships) { if (s.merchant) continue; this.stepMain(s, dt); this.stepGats(s, dt); }
+    for (const s of this.ships) { if (s.merchant || s.passive) continue; this.stepMain(s, dt); this.stepGats(s, dt); }
     for (const sh of [...this.shells]) this.stepShell(sh, dt);
     for (const s of this.ships) this.stepDamage(s, dt);
     this.judge();
@@ -458,6 +461,7 @@ export class DuelSim {
       const sx = me.x + Math.cos(brg) * ARRIVE_RANGE, sz = me.z + Math.sin(brg) * ARRIVE_RANGE;
       s = makeShip(idx, sx, sz, brg + Math.PI + (r() * 2 - 1) * rad(15), 1);
       s.ai = this.makeAi(this.level);
+      s.passive = this.level === 'easy'; // on Easy the ones that arrive only show themselves: they do not fire
     } else { // the friendly frigate: from astern of you, heading for the enemy
       const brg = me.psi + Math.PI + (r() * 2 - 1) * rad(40);
       const sx = me.x + Math.cos(brg) * 4500, sz = me.z + Math.sin(brg) * 4500;
@@ -591,15 +595,17 @@ export class DuelSim {
     g.ammo = g.stock.he + g.stock.ap;
     s.stats.shells += 1;
     const aim = s.manual && !s.ai ? s.cmd.aim : null;
-    const lock = aim?.lock && this.ships[aim.ship] ? { ship: aim.ship, comp: aim.lock } : null;
-    const sigma = this.scatter(s) * (lock ? LOCK_SCATTER : aim ? FREE_SCATTER : 1);
+    const at = aim && this.ships[aim.ship] ? aim.ship : null;
+    const lock = at !== null && aim.lock ? { ship: at, comp: aim.lock } : null;
+    const focus = at !== null && !lock && aim.focus ? { ship: at, comp: aim.focus } : null;
+    const sigma = this.scatter(s) * (lock ? LOCK_SCATTER : focus ? FOCUS_SCATTER : 1);
     const gauss = () => Math.sqrt(-2 * Math.log(1 - this.rng())) * Math.cos(2 * Math.PI * this.rng());
     const yaw = g.yaw + gauss() * sigma, pitch = g.pitch + gauss() * sigma;
     const dir = this.dirOf(s, yaw, pitch);
     const M = this.toWorld(s, MAIN_MOUNT);
     const sv = this.velOf(s);
     const sh = {
-      id: ++this.shellId, owner: s.idx, t0: this.t, kind: g.type, lock, weak: !!aim && !lock,
+      id: ++this.shellId, owner: s.idx, t0: this.t, kind: g.type, lock, focus, sea: !!aim?.free,
       p: [M[0] + dir[0] * BARREL, M[1] + dir[1] * BARREL, M[2] + dir[2] * BARREL],
       v: [dir[0] * MUZZLE_V + sv[0], dir[1] * MUZZLE_V, dir[2] * MUZZLE_V + sv[2]],
     };
@@ -617,7 +623,7 @@ export class DuelSim {
     const tgt = this.foe(owner);
     let struck = null, at = null, nearest = Infinity;
     for (const t of this.ships) {
-      if (t.team === owner.team || (t.tSunk !== null && this.t - t.tSunk >= 6) || Math.hypot(sh.p[0] - t.x, sh.p[2] - t.z) > 90) continue;
+      if (sh.sea || t.team === owner.team || (t.tSunk !== null && this.t - t.tSunk >= 6) || Math.hypot(sh.p[0] - t.x, sh.p[2] - t.z) > 90) continue;
       const a = this.toLocal(t, p0), b = this.toLocal(t, sh.p);
       const hit = segmentBox(a, b);
       const d2 = hit ? (a[0] - hit[0]) ** 2 + (a[1] - hit[1]) ** 2 + (a[2] - hit[2]) ** 2 : Infinity;
@@ -634,9 +640,10 @@ export class DuelSim {
 
   hit(sh, tgt, local) {
     const from = this.ships[sh.owner];
-    const comp = sh.lock && sh.lock.ship === tgt.idx ? sh.lock.comp : zoneAt(local[0]);
+    const aimed = sh.lock?.ship === tgt.idx ? sh.lock : sh.focus?.ship === tgt.idx ? sh.focus : null;
+    const comp = aimed ? aimed.comp : zoneAt(local[0]);
     const am = AMMO_TYPES[sh.kind] ?? AMMO_TYPES.he;
-    const dmg = lerp(SHELL_DAMAGE[0], SHELL_DAMAGE[1], this.rng()) * am.dmg * (sh.weak ? FREE_DAMAGE : 1);
+    const dmg = aimed ? COMPARTMENTS[comp].hp * (sh.lock ? LOCK_FRACTION : FOCUS_FRACTION) : lerp(SHELL_DAMAGE[0], SHELL_DAMAGE[1], this.rng()) * am.dmg;
     if (this.hostile(from, tgt)) from.stats.hits += 1;
     tgt.stats.taken += 1;
     tgt.lastHitBy = from.idx;

@@ -14,7 +14,7 @@ import { menuText } from './menu.js';
 import { compass, relName, kmText, RUDDER_MAX, HALF_LENGTH, HALF_BEAM } from './hull.js';
 import {
   DuelSim, TELEGRAPH, COMPARTMENTS, COMP_IDS, HULL_HP, LEVELS, DUEL_LEVELS, MAIN_ARC, MAIN_RANGE, GUN_MOUNT_LOCAL, GUN_RANGE, sinkState,
-  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, zoneAt, AMMO_TYPES, SWITCH_TIME, CREWS,
+  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, zoneAt, AMMO_TYPES, SWITCH_TIME, CREWS, LOCK_FRACTION, FOCUS_FRACTION,
 } from './duel.js';
 import { createDuelAudio } from './duelAudio.js';
 import { createDuelMap } from './duelMap.js';
@@ -971,6 +971,17 @@ function radarAimShell() {
       return;
     }
   }
+  if (sight.snap && sim.enemy.tSunk === null && ships[sim.enemy.idx]) { // snapped to a compartment but not locked: it lands there, for less
+    const ts = sim.enemy, tg = ships[ts.idx].group;
+    tg.updateMatrixWorld(true);
+    const P = tg.localToWorld(_w1.set(...ZONE_POS[sight.snap]));
+    const e = sim.estOf(p, ts);
+    const sol = sim.solve(p, MAIN_MOUNT, MUZZLE_V, true, {}, { p: [P.x, P.y, P.z], v: [e[0], 0, e[1]] });
+    sight.zone = sight.snap;
+    sight.ship = ts.idx;
+    input.aim = { yaw: sol.yaw, pitch: sol.pitch, ship: ts.idx, focus: sight.snap };
+    return;
+  }
   ships[0].group.localToWorld(_c.copy(BRIDGE_EYE));
   sightRay.origin.copy(_c);
   sightRay.direction.copy(sight.aim);
@@ -995,7 +1006,7 @@ function radarAimShell() {
       if (sim.player.target !== best && sight.manual) sim.setTarget(0, best);
       const e = sim.estOf(p, s);
       const sol = sim.solve(p, MAIN_MOUNT, MUZZLE_V, true, {}, { p: [P.x, P.y, P.z], v: [e[0], 0, e[1]] });
-      input.aim = { yaw: sol.yaw, pitch: sol.pitch, ship: best };
+      input.aim = { yaw: sol.yaw, pitch: sol.pitch, ship: best, free: true }; // neither locked nor focused: the shell falls in the sea
     } else {
       sight.warn = s.tSunk !== null ? 'SINKING' : s.merchant ? 'MERCHANT: HOLD FIRE' : 'FRIENDLY: HOLD FIRE';
       input.aim = null;
@@ -1014,7 +1025,7 @@ function radarAimShell() {
   P.y = Math.max(0, P.y);
   const e = sim.estOf(p, tgt);
   const sol = sim.solve(p, MAIN_MOUNT, MUZZLE_V, true, {}, { p: [P.x, P.y, P.z], v: [e[0], 0, e[1]] });
-  input.aim = { yaw: sol.yaw, pitch: sol.pitch, ship: tgt.idx };
+  input.aim = { yaw: sol.yaw, pitch: sol.pitch, ship: tgt.idx, free: true };
 }
 // The compartments of every enemy hull as marks on the screen: a dot each, with the name and its health once the lens is close enough to
 // tell them apart. A click lays the sight on one.
@@ -1086,6 +1097,7 @@ function updateRadarUi() {
   fireEl.style.setProperty('--rl', clamp(1 - gn.cool / MAIN_RELOAD, 0, 1).toFixed(3));
   fireEl.classList.toggle('ready', gn.cool <= 0 && gn.onTarget && !sight.warn && !!sight.lock);
   fireEl.classList.toggle('weak', !sight.lock && !sight.warn);
+  fireEl.classList.toggle('sea', !sight.lock && !sight.snap && !sight.warn);
   fireEl.classList.toggle('hold', !!sight.warn || sim.player.comp.gun <= 0);
   ammoEl.textContent = `${AMMO_TYPES[gn.type].name} ${gn.stock[gn.type]}`;
   const g = sim.player.gun;
@@ -1094,7 +1106,8 @@ function updateRadarUi() {
   sightEl.classList.toggle('lock', !!sight.zone);
   sightEl.classList.toggle('searching', !sight.zone);
   sightEl.classList.toggle('warn', !!sight.warn);
-  const aim = sight.zone ? `${sight.lock ? 'LOCKED' : sight.snap ? 'FOCUS' : 'AIM'}: ${COMPARTMENTS[sight.zone].name.toUpperCase()}${sight.lock || !input.aim ? '' : ' · unlocked: weak'}` : sight.warn ?? 'Off her hull';
+  const pct = (f) => Math.round(f * 100);
+  const aim = sight.zone ? `${sight.lock ? `LOCKED: ${COMPARTMENTS[sight.zone].name.toUpperCase()} · ${pct(LOCK_FRACTION)}% a hit` : sight.snap ? `FOCUS: ${COMPARTMENTS[sight.zone].name.toUpperCase()} · ${pct(FOCUS_FRACTION)}% a hit, Enter locks` : 'NO FOCUS: the shell falls in the sea'}` : sight.warn ?? 'NO FOCUS: the shell falls in the sea';
   sightTxt.textContent = `${aim} · enemy${which} ${kmText(sim.range())} · ${AMMO_TYPES[g.type].name} ${g.stock[g.type]} · ${gunStatus(sim.player)}`;
   map.sight = { yaw, locked: !!sight.zone };
 }
