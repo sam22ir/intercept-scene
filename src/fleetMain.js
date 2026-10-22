@@ -673,12 +673,12 @@ function startBanner() {
 
 // --- Keys ---------------------------------------------------------------------------------------------------------------------------
 let lastTurn = 0;
-function act(raw) {
+function act(raw, repeat = false) {
   const key = raw.length === 1 ? raw.toLowerCase() : raw;
   const now = performance.now();
   switch (key) {
     case 'ArrowLeft': case 'ArrowRight':
-      if (now - lastTurn < 120) return true; // a held key repeats; one order every 120 ms is plenty
+      if (now - lastTurn < (repeat ? 250 : 120)) return true; // a held key repeats: a turn of ten degrees every quarter second is plenty, and every one is an order in the log
       lastTurn = now;
       give(courseOrder(sim, input.sel, key === 'ArrowLeft' ? -TURN_STEP : TURN_STEP));
       break;
@@ -708,8 +708,8 @@ window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const tag = e.target?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-  if (e.repeat && !e.key.startsWith('Arrow')) { if (e.key === ' ') e.preventDefault(); return; }
-  if (act(e.key)) e.preventDefault();
+  if (e.repeat && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') { if (e.key === ' ' || e.key.startsWith('Arrow')) e.preventDefault(); return; } // only a held turn repeats
+  if (act(e.key, e.repeat)) e.preventDefault();
 });
 window.addEventListener('blur', () => { lastTurn = 0; });
 

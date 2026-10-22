@@ -31,7 +31,8 @@ body.mission-fleet .fleet-ui { position: fixed; inset: 0; z-index: 11; pointer-e
 body.mission-fleet .fleet-ui[hidden], body.mission-fleet.ui-hidden .fleet-ui { display: none; }
 body.mission-fleet .fleet-ships, body.mission-fleet .fleet-side { position: absolute; top: calc(var(--bar-h, 34px) + var(--gap) * 2 + var(--safe-t)); display: grid; align-content: start; gap: 6px; pointer-events: none; }
 body.mission-fleet .fleet-ships { left: calc(var(--gap) + var(--safe-l)); width: 252px; max-height: calc(100vh - var(--bar-h, 34px) - var(--keys-h, 56px) - var(--gap) * 5); overflow-y: auto; scrollbar-width: thin; }
-body.mission-fleet .fleet-side { right: calc(var(--gap) + var(--safe-r)); width: 272px; max-height: calc(100vh - var(--bar-h, 34px) - var(--keys-h, 56px) - var(--gap) * 5); overflow: hidden; }
+body.mission-fleet .fleet-side { right: calc(var(--gap) + var(--safe-r)); width: 272px; max-height: calc(100vh - var(--bar-h, 34px) - var(--keys-h, 56px) - var(--gap) * 5); overflow-y: auto; scrollbar-width: none; }
+body.mission-fleet:not(.fleet-mapview) .fleet-side { max-height: calc(100vh - var(--bar-h, 34px) - var(--keys-h, 56px) - var(--gap) * 7 - 230px); }
 body.mission-fleet .fs-card, body.mission-fleet .fleet-side section {
   pointer-events: auto; background: rgba(9, 14, 21, 0.66); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; color: var(--muted);
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); font-size: 11px; font-variant-numeric: tabular-nums;
@@ -137,10 +138,21 @@ body.mission-fleet .fe-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 body.mission-fleet .fe-actions button { flex: 1; padding: 8px 12px; border-radius: 8px; }
 body.mission-fleet .fe-actions .primary { background: var(--accent); border-color: var(--accent); color: #1a0d02; font-weight: 700; }
 
-/* Short windows: the cards lose their detail lines. */
+/* Short windows (a laptop, a 1920 px screen at 175 %): the cards and the contact list shrink, nothing is left out. */
 @media (min-width: 901px) and (max-height: 780px) {
-  body.mission-fleet .fs-line, body.mission-fleet .fs-comps { display: none; }
-  body.mission-fleet .fleet-contacts { display: none; }
+  body.mission-fleet .fs-card { gap: 2px; padding: 4px 8px 5px; }
+  body.mission-fleet .fleet-ships { gap: 4px; scrollbar-width: none; }
+  body.mission-fleet .fs-comps .cp { height: 15px; }
+  body.mission-fleet .fs-comps .cp b { left: 3px; right: auto; top: 2px; text-align: left; font-size: 7.5px; }
+  body.mission-fleet .fs-comps .cp em { left: auto; right: 2px; top: 2px; bottom: auto; }
+  body.mission-fleet .fs-line { font-size: 9.5px; gap: 8px; }
+  body.mission-fleet .fs-order { font-size: 10px; }
+  body.mission-fleet .fleet-contacts li:nth-child(n+5) { display: none; }
+  body.mission-fleet .fleet-side section { padding: 5px 8px 6px; }
+  body.mission-fleet .fleet-side p { font-size: 10.5px; margin: 2px 0; }
+  body.mission-fleet .fm-clock b { font-size: 17px; }
+  body.mission-fleet:not(.fleet-mapview) .minimap { width: 170px; height: 170px; }
+  body.mission-fleet:not(.fleet-mapview) .fleet-side { max-height: calc(100vh - var(--bar-h, 34px) - var(--keys-h, 56px) - var(--gap) * 7 - 170px); }
 }
 
 /* Phones and narrow windows: the squadron is a row of chips under the camera buttons, the side column goes (the banner carries the
@@ -152,7 +164,13 @@ body.mission-fleet .fe-actions .primary { background: var(--accent); border-colo
   body.mission-fleet .fs-card { flex: 0 0 132px; width: 132px; padding: 4px 7px 5px; }
   body.mission-fleet .fs-comps, body.mission-fleet .fs-line, body.mission-fleet .fs-head em { display: none; }
   body.mission-fleet .fs-order { font-size: 9.5px; flex-direction: column; gap: 0; }
-  body.mission-fleet .fleet-side { display: none; }
+  body.mission-fleet .fleet-side { top: calc(var(--bar-h, 34px) + var(--gap) + var(--safe-t) + 8px); right: var(--gap); left: auto; width: auto; max-height: none; overflow: visible; }
+  body.mission-fleet .fleet-contacts, body.mission-fleet .fleet-alerts, body.mission-fleet .fleet-mission h3, body.mission-fleet .fleet-mission p, body.mission-fleet .fleet-mission .fm-kv { display: none; }
+  body.mission-fleet .fleet-mission { padding: 3px 9px; border-radius: 999px; }
+  body.mission-fleet .fm-clock { display: flex; gap: 5px; }
+  body.mission-fleet .fm-clock b { font-size: 14px; }
+  body.mission-fleet .fm-clock span { font-size: 10px; }
+  body.mission-fleet .fm-clock .fm-prog { display: none; }
   body.mission-fleet .minimap.fleet-map-big { left: var(--gap); right: var(--gap); top: calc(var(--bar-h, 34px) + var(--gap) + var(--safe-t) + 104px); bottom: calc(var(--keys-h, 56px) + var(--gap) * 2 + var(--safe-b)); }
   body.mission-fleet:not(.fleet-mapview) .minimap { display: none; }
   body.mission-fleet .fleet-keys { bottom: calc(var(--gap) + var(--safe-b)); left: var(--gap); right: var(--gap); transform: none; width: auto; justify-content: center; gap: 3px 4px; padding: 5px 6px; }
