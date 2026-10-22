@@ -372,17 +372,15 @@ function mapJump(px, py) {
   cam.x = clamp((-(py - r.y - r.h / 2) / (r.h / 2)) * MAP_EXTENT, -6000, 6000);
 }
 let panning = null;
+let mapRight = null;
+const mapPoint = (px, py) => { const r = mapRect(); return { z: ((px - r.x - r.w / 2) / (r.w / 2)) * MAP_EXTENT, x: (-(py - r.y - r.h / 2) / (r.h / 2)) * MAP_EXTENT }; };
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 window.addEventListener('pointerdown', (e) => {
   if (e.target !== canvas) return;
   if (e.button === 1) { panning = { x: e.clientX, y: e.clientY }; e.preventDefault(); return; }
   if (inMap(e.clientX, e.clientY)) {
     if (e.button === 0) mapJump(e.clientX, e.clientY);
-    else if (e.button === 2) { // an order given on the map
-      const r = mapRect();
-      const z = ((e.clientX - r.x - r.w / 2) / (r.w / 2)) * MAP_EXTENT, x = (-(e.clientY - r.y - r.h / 2) / (r.h / 2)) * MAP_EXTENT;
-      if (selected.size) { sim.order([...selected], { type: 'move', x, z }, e.shiftKey); pulse(x, z, '#9fe870'); }
-    }
+    else if (e.button === 2) mapRight = { x: e.clientX, y: e.clientY, moved: false, shift: e.shiftKey }; // click orders, drag pans (on release)
     return;
   }
   if (e.button === 0) drag = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY, shift: e.shiftKey };
@@ -390,6 +388,10 @@ window.addEventListener('pointerdown', (e) => {
 });
 window.addEventListener('pointermove', (e) => {
   if (drag) { drag.x1 = e.clientX; drag.y1 = e.clientY; moveBox(); }
+  if (mapRight) { // right-drag on the map: the camera follows the cursor
+    if (!mapRight.moved && Math.hypot(e.clientX - mapRight.x, e.clientY - mapRight.y) > 4) mapRight.moved = true;
+    if (mapRight.moved) { const q = mapPoint(e.clientX, e.clientY); cam.x = clamp(q.x, -6000, 6000); cam.z = clamp(q.z, -6000, 6000); }
+  }
   if (panning) {
     const k = 1 / pxPerM();
     cam.z = clamp(cam.z - (e.clientX - panning.x) * k, -6000, 6000);
@@ -399,6 +401,11 @@ window.addEventListener('pointermove', (e) => {
 });
 window.addEventListener('pointerup', (e) => {
   if (e.button === 1) panning = null;
+  if (e.button === 2 && mapRight) { // a right-click on the map (no drag) sends the selected ships there
+    const m = mapRight;
+    mapRight = null;
+    if (!m.moved && selected.size) { const q = mapPoint(m.x, m.y); sim.order([...selected], { type: 'move', x: q.x, z: q.z }, m.shift); pulse(q.x, q.z, '#9fe870'); }
+  }
   if (e.button !== 0 || !drag) return;
   const d = drag;
   drag = null;
