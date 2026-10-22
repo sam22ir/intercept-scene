@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mulberry32, randomUnit, range } from '../rng.js';
 import { ParticleField, MODE } from './particles.js';
 import { G, deckHeight } from '../scenario.js';
+import { funnelPuff, sprayDrop } from './shipFx.js';
 
 // Particle effects for the manual-flight mission, where nothing is known in advance. effects.js bakes
 // every particle's birth at load; here the births are written as things happen, into ring buffers
@@ -69,7 +70,9 @@ export function createLiveFx(scene) {
   const fire = new LiveField(700, { mode: MODE.FIRE, drag: 2.4, rise: 2.5, size: [1.6, 9], wind: [1.5, 0, 0.8] });
   const burning = new LiveField(2600, { mode: MODE.BURNING, drag: 1.5, rise: 1.5, size: [0.8, 6], wind: WIND });
   const splash = new LiveField(1400, { mode: MODE.SPLASH, drag: 0.3, gravity: G, size: [1.2, 4] });
-  const fields = [trail, rocket, flame, gunsmoke, launch, puff, blast, exhaust, fire, burning, splash];
+  const funnel = new LiveField(2400, { mode: MODE.FUNNEL, drag: 0.6, rise: 1.3, size: [0.8, 9], wind: WIND });
+  const spray = new LiveField(3000, { mode: MODE.SPLASH, drag: 0.4, gravity: G, size: [0.5, 1.8] });
+  const fields = [trail, rocket, flame, gunsmoke, launch, puff, blast, exhaust, fire, burning, splash, funnel, spray];
   for (const f of fields) group.add(f);
 
   // Foam rings on the water, a few at a time.
@@ -159,6 +162,13 @@ export function createLiveFx(scene) {
       flame.push(_o, _v, t, range(rng, 0.08, 0.18), rng());
     },
     // A wisp of powder smoke at a gun's muzzle: it leaves moving with the ship and the round's blast, and hangs behind.
+    // A ship's funnel exhaust and bow spray (see shipFx.js, which drives these as the ship moves).
+    funnelSmoke(pos, vel, t) {
+      funnel.push(pos, funnelPuff(rng, vel, _v), t, range(rng, 7, 11), rng());
+    },
+    bowSpray(pos, vel, side, k, t, fwd) {
+      spray.push(pos, sprayDrop(rng, vel, side, k, _v, fwd), t + range(rng, 0, 0.05), range(rng, 0.6, 1.5), rng());
+    },
     gunSmoke(pos, vel, t) {
       randomUnit(rng, _v).multiplyScalar(range(rng, 0.2, 1.4)).add(vel);
       gunsmoke.push(pos, _v, t, range(rng, 0.8, 1.6), rng());

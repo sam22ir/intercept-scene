@@ -23,6 +23,7 @@ import * as THREE from 'three';
 import {
   scenario, RAIL, SHIP_SPEED, G, LAUNCHER_PIVOT, TUBE_MOUTHS, launcherQuat, deckHeight, shipPos,
 } from './scenario.js';
+import { landHeightAtWorld } from './terrain.js';
 
 const rad = THREE.MathUtils.degToRad;
 const sm = THREE.MathUtils.smoothstep;
@@ -94,8 +95,10 @@ export function insideShip(x, y, z) {
 }
 
 export class FlySim {
-  constructor({ speed = DEFAULT_SPEED } = {}) {
+  // `islands`: land that stands in the world (terrain.js), which the drone can fly into.
+  constructor({ speed = DEFAULT_SPEED, islands = [] } = {}) {
     this.speedTarget = speed;
+    this.islands = islands;
     this.pos = new THREE.Vector3();
     this.vel = new THREE.Vector3();
     this.quat = new THREE.Quaternion();
@@ -286,6 +289,10 @@ export class FlySim {
 
     // Into the sea or the ship.
     if (this.pos.y <= 0.4) { this.crash('sea'); return; }
+    if (this.islands.length) {
+      const h = landHeightAtWorld(this.islands, this.pos.x, this.pos.z);
+      if (h > 0.5 && this.pos.y <= h + 0.6) { this.crash('land'); return; }
+    }
     if (this.t - this.tRelease > 0.8) {
       const rel = _tmp2.copy(this.pos).sub(shipPos(this.t, _tmp));
       if (insideShip(rel.x, rel.y, rel.z)) this.crash('ship');
@@ -366,12 +373,13 @@ export class FlySim {
     this.phase = 'crashed';
     const burstPos = this.pos.clone();
     if (kind === 'sea') burstPos.y = 0;
+    if (kind === 'land') burstPos.y = Math.max(0, landHeightAtWorld(this.islands, this.pos.x, this.pos.z));
     this.wreck = {
       t: this.t, kind, pos: this.pos.clone(), quat: this.quat.clone(), vel: this.vel.clone(), burstPos, burstDist: 0, prop: this.prop,
     };
     this.engineOn = false;
     this.events.push({ type: 'crash', kind, pos: burstPos.clone() });
-    this.say(kind === 'ship' ? 'The drone hit the ship' : 'The drone hit the sea', 'bad');
+    this.say(kind === 'ship' ? 'The drone hit the ship' : kind === 'land' ? 'The drone hit an island' : 'The drone hit the sea', 'bad');
   }
 
   destroy(burstPos) {

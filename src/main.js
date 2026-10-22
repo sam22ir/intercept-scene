@@ -9,6 +9,9 @@ import { createMinimap } from './minimap.js';
 import { createParachute } from './models/parachute.js';
 import { createPathEditor, toast } from './pathEditor.js';
 import { createEnvironment } from './environment.js';
+import { lookFor } from './looks.js';
+import { createShipFx } from './fx/shipFx.js';
+import { wireWeather } from './weatherButton.js';
 import { createShip } from './models/ship.js';
 import { createPlane } from './models/plane.js';
 import { createMissile } from './models/missile.js';
@@ -63,7 +66,7 @@ for (const type of ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown
 }
 canvas.addEventListener('webglcontextrestored', invalidate);
 
-const env = createEnvironment(renderer, scene);
+const env = createEnvironment(renderer, scene, { look: lookFor(scenario.mode) });
 
 const ship = createShip();
 scene.add(ship.group);
@@ -77,6 +80,8 @@ const chute = scenario.hasMissile ? null : createParachute();
 if (chute) scene.add(chute.group);
 const effects = createEffects(scene, debris);
 if (debris) scenario.tEnd = scenario.tHit + debris.fallTime + 5;
+wireWeather({ look: env.look, getTime: () => clock.t });
+const shipFx = createShipFx(scene, { tEnd: scenario.tEnd, sea: env.look?.sea.state ?? 1 });
 
 // Floating tags + missile path; the on/off choice is remembered per viewer.
 const labels = createLabels(scene);
@@ -180,6 +185,7 @@ function applyTime(t) {
   ou.uTime.value = t;
   ou.uShipX.value = ship.group.position.x;
   effects.update(t);
+  shipFx.update(t);
 }
 
 // --- Focus targets ------------------------------------------------------------
@@ -475,6 +481,7 @@ createShare({
     focus: rig.id,
     director: directing,
     path: scenario.customPath ? scenario.activePath : null,
+    extra: env.look ? { weather: env.look.weather } : undefined, // the same sky and sea for whoever opens the link
   }),
 });
 
