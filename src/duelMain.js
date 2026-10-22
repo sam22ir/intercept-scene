@@ -573,7 +573,7 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
   ['<kbd>1</kbd> to <kbd>5</kbd>', 'Behind, bridge, above, orbit, radar'],
   ['<kbd>2</kbd>', 'The wheelhouse, as in Solo Air Defense: the wheel turns with the rudder, the telegraph levers follow the engine order, and a drag looks round (double click looks ahead)'],
-  ['<kbd>5</kbd>', 'Radar view: the fire-control sight. Arrows, a drag or the on-screen pad aim it. <kbd>wheel</kbd>, <kbd>+</kbd> <kbd>-</kbd> or the Zoom buttons close the lens until a compartment fills it (<kbd>0</kbd> resets); every enemy hull shows its compartments as marks, and a click lays the sight on one. F fires there: the shell goes to the point under the crosshair, so you choose what to break. Space returns the sight to auto. A merchant or a friendly ship in the sight is not fired on. The helm is locked until Esc'],
+  ['<kbd>5</kbd>', 'Radar view: the fire-control sight. Arrows, a drag or the on-screen pad aim it. hold <kbd>Shift</kbd> to zoom in and <kbd>Ctrl</kbd> to zoom out (the wheel, <kbd>+</kbd> <kbd>-</kbd> and the lens track work too) to close the lens until a compartment fills it (<kbd>0</kbd> resets); every enemy hull shows its compartments as marks, and a click lays the sight on one. F fires there: the shell goes to the point under the crosshair, so you choose what to break. Space returns the sight to auto. A merchant or a friendly ship in the sight is not fired on. The helm is locked until Esc'],
   ['<kbd>Tab</kbd>', 'Next enemy to fight (locked until she sinks). More enemy frigates arrive, a friendly frigate joins you, and merchant ships cross the fight: sinking one yourself loses the duel'],
   ['<kbd>V</kbd>', 'Next view · drag looks round in the orbit view, the wheel zooms'],
   ['<kbd>R</kbd>', 'Fight again'],
@@ -609,7 +609,7 @@ const input = { left: 0, right: 0, fire: 0, gat: 0, aim: null };
 const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`;
 function keysHtml() {
   if (view === 'radar') {
-    return `${k('← → ↑ ↓', 'aim the sight')}${k('wheel + −', 'zoom')}${k('click', 'lock a compartment')}${k('Enter', 'lock the point', !!sight.lock)}${k('F', 'fire 76 mm (hold)', input.fire)}`
+    return `${k('← → ↑ ↓', 'aim the sight')}${k('Shift Ctrl', 'zoom in / out')}${k('click', 'lock a compartment')}${k('Enter', 'lock the point', !!sight.lock)}${k('F', 'fire 76 mm (hold)', input.fire)}`
       + `${k('Tab', 'next target')}${k('Space', 'auto')}${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Esc', 'helm')}`;
   }
   return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', `thrust ${TELEGRAPH[sim.player.order].name}`)}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}${k('Tab', 'target')}`
@@ -677,6 +677,7 @@ function startBanner() {
   say(`Enemy ${relName(sim.relBearing(sim.player))}, ${kmText(sim.range())}: close, turn to bring your gun to bear, and keep her off your stern`, '', 5200);
 }
 window.addEventListener('keydown', (e) => {
+  if (view === 'radar' && (e.key === 'Shift' || e.key === 'Control')) { radarKeys[e.key === 'Shift' ? 'zi' : 'zo'] = 1; return; } // Shift closes the lens, Ctrl opens it
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const tag = e.target?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
@@ -732,15 +733,15 @@ window.addEventListener('keydown', (e) => {
   if (key !== 'Escape') e.preventDefault();
 });
 window.addEventListener('keyup', (e) => {
-  if (e.key === '+' || e.key === '=') radarKeys.zi = 0;
-  if (e.key === '-' || e.key === '_') radarKeys.zo = 0;
+  if (e.key === '+' || e.key === '=' || e.key === 'Shift') radarKeys.zi = 0;
+  if (e.key === '-' || e.key === '_' || e.key === 'Control') radarKeys.zo = 0;
   if (e.key.startsWith('Arrow')) radarKeys[{ ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd' }[e.key]] = 0;
   if (e.key === 'ArrowLeft') input.left = 0;
   if (e.key === 'ArrowRight') input.right = 0;
   if (e.key === 'f' || e.key === 'F') input.fire = 0;
   if (e.key === 'g' || e.key === 'G') input.gat = 0;
 });
-window.addEventListener('blur', () => { input.left = 0; input.right = 0; input.fire = 0; input.gat = 0; });
+window.addEventListener('blur', () => { radarKeys.zi = radarKeys.zo = 0; input.left = 0; input.right = 0; input.fire = 0; input.gat = 0; });
 
 // --- The gun by hand: only through the radar view (below) ---------------------------------------------------------------------
 // In the radar view the 76 mm goes where the sight points (input.aim); everywhere else the fire control has it.
