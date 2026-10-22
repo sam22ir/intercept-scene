@@ -51,7 +51,7 @@ const text = (s) => s.replace(/<svg.*?<\/svg>/gs, '').replace(/<kbd>.*?<\/kbd>/g
 
 describe('the menu data', () => {
   it('lists the nine missions once each, in a fixed order, with every field', () => {
-    assert.deepEqual(MISSION_IDS, ['intercept', 'chute', 'fly', 'maneuvers2', 'maneuvers', 'formations', 'helm', 'duel', 'squadron', 'fleet']);
+    assert.deepEqual(MISSION_IDS, ['intercept', 'chute', 'fly', 'maneuvers2', 'maneuvers', 'formations', 'helm', 'duel', 'squadron']);
     assert.equal(new Set(MISSIONS.map((m) => m.name)).size, MISSIONS.length, 'names are unique');
     for (const m of MISSIONS) {
       for (const f of ['name', 'kind', 'blurb', 'tagline', 'brand', 'button']) assert.ok(typeof m[f] === 'string' && m[f].length >= 3, `${m.id}.${f}`);
@@ -60,15 +60,15 @@ describe('the menu data', () => {
       assert.ok(m.brand.length <= 16, `${m.id}'s top-bar title fits`);
       if (!m.ship) assert.ok(m.fixed && m.fixedNote && m.sub, `${m.id} says what is fixed`);
     }
-    assert.deepEqual(MISSIONS.filter((m) => !m.ship).map((m) => m.id), ['fly', 'maneuvers2', 'maneuvers', 'formations', 'helm', 'duel', 'squadron', 'fleet']);
+    assert.deepEqual(MISSIONS.filter((m) => !m.ship).map((m) => m.id), ['fly', 'maneuvers2', 'maneuvers', 'formations', 'helm', 'duel', 'squadron']);
   });
 
   it('has three tabs by what the player does, each with real missions', () => {
     assert.deepEqual(GROUPS.map((g) => g.id), ['watch', 'play', 'command', 'drill']);
     assert.deepEqual(GROUPS.map((g) => g.name), ['Watch', 'Play', 'Command', 'Drill']);
     assert.deepEqual(MISSIONS.filter((m) => m.group === 'watch').map((m) => m.id), ['intercept', 'chute']);
-    assert.deepEqual(MISSIONS.filter((m) => m.group === 'play').map((m) => m.id), ['fly', 'helm', 'duel', 'squadron']);
-    assert.deepEqual(MISSIONS.filter((m) => m.group === 'command').map((m) => m.id), ['fleet']);
+    assert.deepEqual(MISSIONS.filter((m) => m.group === 'play').map((m) => m.id), ['fly', 'helm', 'duel']);
+    assert.deepEqual(MISSIONS.filter((m) => m.group === 'command').map((m) => m.id), ['squadron']);
     assert.deepEqual(MISSIONS.filter((m) => m.group === 'drill').map((m) => m.id), ['maneuvers2', 'maneuvers', 'formations']);
     assert.ok(MISSIONS.every((m) => GROUPS.some((g) => g.id === m.group)), 'every mission is on a tab');
     for (const g of GROUPS) assert.ok(g.hint && entriesOf(g.id).length > 0, `${g.id} lists something`);
@@ -87,7 +87,7 @@ describe('the menu data', () => {
       assert.ok(m.tileSub && m.facts[0].startsWith(`${m.ships} ships`), `${id} says how many ships`);
     }
     assert.deepEqual(entriesOf('drill').map((e) => e.members), [FAMILIES[0].members]);
-    assert.deepEqual(ENTRIES.map((e) => e.id), ['intercept', 'chute', 'fly', 'helm', 'duel', 'squadron', 'fleet', 'maneuvers2'], 'the list order M steps through');
+    assert.deepEqual(ENTRIES.map((e) => e.id), ['intercept', 'chute', 'fly', 'helm', 'duel', 'squadron', 'maneuvers2'], 'the list order M steps through');
     assert.equal(new Set(ENTRIES.flatMap((e) => e.members)).size, MISSIONS.length, 'every mission is reachable from one entry');
     assert.equal(groupOf('formations'), 'drill');
     assert.equal(M.SHIP_IDS.length, 3);
@@ -311,7 +311,7 @@ describe('the words are true of squadron orders', () => {
     assert.ok(m.tagline.includes('four frigates') && m.facts[0].startsWith('4 frigates'));
     assert.equal(sim.n, 4);
     assert.ok(sim.squad.every((s) => s.ai), 'every hull has a helmsman: the player only orders');
-    assert.equal(m.group, 'play');
+    assert.equal(m.group, 'command');
     assert.equal(m.level, true, 'the raiders have a level');
     assert.match(m.fixedNote, /picket, two gun ships and an escort/);
     assert.deepEqual(sim.squad.map((s) => s.role), ['picket', 'gun', 'gun', 'escort']);
