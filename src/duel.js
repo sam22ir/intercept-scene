@@ -141,7 +141,8 @@ const PICK_EVERY = 0.5; // s between a ship's looks for a nearer target
 const ENEMY_WAVES = { easy: [110], normal: [80, 175], hard: [70, 140, 215] };
 const ALLY_WAVE = 95;
 const MERCHANT_WAVES = [30, 125, 210];
-const ARRIVE_RANGE = 7500; // m from you where a warship appears
+const START_RANGE = 3200; // m between the two frigates at the start
+const ARRIVE_RANGE = 4800; // m from you where a warship appears
 
 // --- Damage control -------------------------------------------------------------------------------------------------
 // Fires (started by HE) burn the compartment they are in, grow, and spread to the next one along the hull; HE also
@@ -157,6 +158,14 @@ export const CREW_FIGHT = 0.12; // intensity put out a second
 export const CREW_FLOOD = 0.4; // the flooding that is left with a crew in the compartment
 export const CREW_REPAIR = 0.5; // compartment points a second
 export const REPAIR_CAP = 0.6;
+// The quick repair (your ship's own option): the whole crew drops everything for REPAIR_TIME s, then every fire is out, the leaks are
+// stopped, each compartment gets REPAIR_GAIN of its points back (up to REPAIR_TOP, one that was out comes back) and the hull REPAIR_HULL points.
+// It can be used again after REPAIR_WAIT s.
+export const REPAIR_TIME = 4;
+export const REPAIR_WAIT = 40;
+export const REPAIR_GAIN = 0.35;
+export const REPAIR_TOP = 0.9;
+export const REPAIR_HULL = 8;
 const NEXT_TO = { gun: ['bridge'], bridge: ['gun', 'engine'], engine: ['bridge', 'guns'], guns: ['engine', 'steering'], steering: ['guns'] };
 export const neighbours = (id) => NEXT_TO[id];
 
@@ -169,9 +178,9 @@ const TRACK_PLAYER = 3;
 // `every` seconds; `range` the distance it wants to fight at; `speed` its telegraph order; `retreat` the hull fraction below
 // which it runs.
 export const LEVELS = {
-  easy: { name: 'Easy', think: 1.4, aim: 2.4, track: 6, base: 0, jink: 0, every: [99, 99], range: 5200, speed: 4, retreat: 0, crews: 1, ammo: 'he' },
-  normal: { name: 'Normal', think: 0.6, aim: 1.2, track: 4, base: rad(22), jink: rad(18), every: [9, 16], range: 4600, speed: 5, retreat: 0.25, crews: 2, ammo: 'mixed' },
-  hard: { name: 'Hard', think: 0.25, aim: 1.0, track: 2.5, base: rad(40), jink: rad(40), every: [5, 10], range: 4000, speed: 5, retreat: 0.3, crews: 3, ammo: 'smart' },
+  easy: { name: 'Easy', think: 1.4, aim: 2.4, track: 6, base: 0, jink: 0, every: [99, 99], range: 3800, speed: 4, retreat: 0, crews: 1, ammo: 'he' },
+  normal: { name: 'Normal', think: 0.6, aim: 1.2, track: 4, base: rad(22), jink: rad(18), every: [9, 16], range: 3400, speed: 5, retreat: 0.25, crews: 2, ammo: 'mixed' },
+  hard: { name: 'Hard', think: 0.25, aim: 1.0, track: 2.5, base: rad(40), jink: rad(40), every: [5, 10], range: 3000, speed: 5, retreat: 0.3, crews: 3, ammo: 'smart' },
 };
 
 function mulberry32(seed) {
@@ -207,6 +216,7 @@ function makeShip(idx, x, z, psi, team = idx === 0 ? 0 : 1, kind = 'frigate') {
     hp: kind === 'merchant' ? MERCHANT_HP : HULL_HP, comp, flood: 0, tSunk: null, listSide: 1,
     fire: Object.fromEntries(COMP_IDS.map((id) => [id, 0])), // intensity 0..1 in each compartment
     leak: Object.fromEntries(COMP_IDS.map((id) => [id, 0])), // hull points a second from holes in it
+    repair: 0, repairWait: 0, // s left of the quick repair under way, and until it can be used again
     crews: Array.from({ length: CREWS }, () => ({ to: null, eta: 0 })), // sent to `to`, working once eta has run out
     // The 76 mm: yaw (+ toward port), pitch, the time until it is loaded, the rounds, and whether it is on the solution.
     gun: { yaw: 0, pitch: rad(2), cool: 1.5, ammo: MAIN_ROUNDS, stock: { ...AMMO_STOCK }, type: 'he', onTarget: false, engaged: false },
@@ -237,7 +247,7 @@ export class DuelSim {
     this.acc = 0;
     this.ships = [
       makeShip(0, 0, 0, 0),
-      makeShip(1, 5500, side * (300 + this.rng() * 500), Math.PI + side * rad(-6)),
+      makeShip(1, START_RANGE, side * (200 + this.rng() * 300), Math.PI + side * rad(-6)),
     ];
     for (const s of this.ships) { s.u = TELEGRAPH[START_ORDER].kn * KT; }
     this.pickTargets();
@@ -685,11 +695,33 @@ export class DuelSim {
     free.to = comp; free.eta = CREW_MOVE;
     return true;
   }
+  // Start the quick repair. Returns whether it began (not while one runs, during the wait, or on a ship that is sinking).
+  startRepair(i) {
+    const s = this.ships[i];
+    if (!s || s.tSunk !== null || s.repair > 0 || s.repairWait > 0) return false;
+    s.repair = REPAIR_TIME;
+    this.events.push({ type: 'repair', ship: s.idx, phase: 'start' });
+    return true;
+  }
   crewIn(s, comp) { return s.crews.some((c) => c.to === comp && c.eta <= 0); }
 
   stepDamage(s, dt) {
     if (s.tSunk !== null) return;
     for (const c of s.crews) if (c.to !== null && c.eta > 0) c.eta = Math.max(0, c.eta - dt);
+    s.repairWait = Math.max(0, s.repairWait - dt);
+    if (s.repair > 0) {
+      s.repair = Math.max(0, s.repair - dt);
+      if (s.repair === 0) {
+        for (const id of COMP_IDS) {
+          s.fire[id] = 0; s.leak[id] = 0;
+          const hp = COMPARTMENTS[id].hp;
+          s.comp[id] = Math.max(s.comp[id], Math.min(hp * REPAIR_TOP, s.comp[id] + hp * REPAIR_GAIN));
+        }
+        s.hp = Math.min(HULL_HP, s.hp + REPAIR_HULL);
+        s.repairWait = REPAIR_WAIT;
+        this.events.push({ type: 'repair', ship: s.idx, phase: 'done' });
+      }
+    }
     let flood = 0;
     for (const id of COMP_IDS) {
       const crew = this.crewIn(s, id);

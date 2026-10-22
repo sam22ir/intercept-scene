@@ -14,7 +14,7 @@ import { menuText } from './menu.js';
 import { compass, relName, kmText, RUDDER_MAX, HALF_LENGTH, HALF_BEAM } from './hull.js';
 import {
   DuelSim, TELEGRAPH, COMPARTMENTS, COMP_IDS, HULL_HP, LEVELS, DUEL_LEVELS, MAIN_ARC, MAIN_RANGE, GUN_MOUNT_LOCAL, GUN_RANGE, sinkState,
-  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, zoneAt, AMMO_TYPES, SWITCH_TIME, CREWS, LOCK_FRACTION, FOCUS_FRACTION,
+  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, zoneAt, AMMO_TYPES, SWITCH_TIME, CREWS, REPAIR_TIME, REPAIR_WAIT, LOCK_FRACTION, FOCUS_FRACTION,
 } from './duel.js';
 import { createDuelAudio } from './duelAudio.js';
 import { createDuelMap } from './duelMap.js';
@@ -298,6 +298,8 @@ function handleEvents() {
       for (let k = 0; k < 3; k++) fx.explosion(_c.set(e.pos[0] + (k - 1) * 14, e.pos[1], e.pos[2]), sim.t + k * 0.35);
     } else if (e.type === 'ammo') {
       if (e.ship === 0) say(`${AMMO_TYPES[e.kind].name} loaded`, '', 1400);
+    } else if (e.type === 'repair') {
+      if (e.ship === 0) say(e.phase === 'start' ? `Repairing: ${REPAIR_TIME} s` : 'Repair done: fires out, leaks stopped', e.phase === 'start' ? 'warn' : 'ok', 2200);
     } else if (e.type === 'fire') {
       if (e.ship === 0) say(`Fire in the ${COMPARTMENTS[e.comp].name.toLowerCase()}: send a crew`, 'warn', 2400);
     } else if (e.type === 'over') {
@@ -481,7 +483,7 @@ function shipHtml() {
   return `<div class="hs-rect hs-hull${p.hp < HULL_HP ? ' hurt' : ''}"><span>HULL <b>${Math.round(p.hp)}</b>${p.tSunk !== null ? ' · SINKING' : ''}</span><div class="hs-cells">${cells}</div></div>`
     + `<div class="hs-dome">${domeSvg()}</div>`
     + `<div class="hs-rect hs-wpn"><span>76 mm <b>${AMMO_TYPES[g.type].name}</b> · HE ${g.stock.he} AP ${g.stock.ap} · ${gunStatus(p)}</span>`
-    + `<span>30 mm <b>${dry ? 'DRY' : p.auto ? 'AUTO' : 'HOLD G'}</b> · crews <b>${p.crews.filter((c) => c.to).length}/${CREWS}</b> · ${COMPARTMENTS[COMP_IDS[selComp]].name}</span></div>`;
+    + `<span>30 mm <b>${dry ? 'DRY' : p.auto ? 'AUTO' : 'HOLD G'}</b> · crews <b>${p.crews.filter((c) => c.to).length}/${CREWS}</b> · ${COMPARTMENTS[COMP_IDS[selComp]].name} · repair <b>${p.repair > 0 ? `${p.repair.toFixed(1)} s` : p.repairWait > 0 ? `wait ${Math.ceil(p.repairWait)} s` : 'READY (E)'}</b></span></div>`;
 }
 
 const map = createDuelMap();
@@ -574,6 +576,7 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>A</kbd>', 'The 30 mm guns on automatic'],
   ['<kbd>Q</kbd>', `Change the 76 mm round, HE or AP: HE starts fires and floods, AP hits one compartment harder; changing costs a ${SWITCH_TIME} s reload`],
   ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
+  ['<kbd>E</kbd>', `Quick repair: ${REPAIR_TIME} s, then every fire is out, the leaks are stopped and each compartment gets a third of its points back; ready again after ${REPAIR_WAIT} s`],
   ['<kbd>1</kbd> to <kbd>5</kbd>', 'Behind, bridge, above, orbit, radar'],
   ['<kbd>2</kbd>', 'The wheelhouse, as in Solo Air Defense: the wheel turns with the rudder, the telegraph levers follow the engine order, and a drag looks round (double click looks ahead)'],
   ['<kbd>5</kbd>', 'Radar view: the fire-control sight. Arrows, a drag or the on-screen pad aim it. hold <kbd>Shift</kbd> to zoom in and <kbd>Ctrl</kbd> to zoom out (the wheel, <kbd>+</kbd> <kbd>-</kbd> and the lens track work too) to close the lens until a compartment fills it (<kbd>0</kbd> resets); every enemy hull shows its compartments as marks, and a click lays the sight on one. F fires there: the shell goes to the point under the crosshair, so you choose what to break. Space returns the sight to auto. A merchant or a friendly ship in the sight is not fired on. The helm is locked until Esc'],
@@ -616,7 +619,7 @@ function keysHtml() {
       + `${k('Tab', 'next target')}${k('Space', 'auto')}${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Esc', 'helm')}`;
   }
   return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', `thrust ${TELEGRAPH[sim.player.order].name}`)}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}${k('Tab', 'target')}`
-    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}`
+    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}${k('E', 'repair', sim.player.repair > 0)}`
     + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–5', 'views')}${k('R', 'again')}`;
 }
 let lastKeys = '';
@@ -718,6 +721,7 @@ window.addEventListener('keydown', (e) => {
     case 'a': sim.toggleAuto(0); break;
     case 'q': sim.switchAmmo(0); break;
     case 'z': selComp = (selComp + 1) % COMP_IDS.length; break;
+    case 'e': sim.startRepair(0); break;
     case 'x': sim.assignCrew(0, COMP_IDS[selComp]); break;
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;

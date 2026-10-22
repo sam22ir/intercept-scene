@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DuelSim, DT, MAIN_ARC, MAIN_RANGE, GUN_RANGE, HULL_HP, COMPARTMENTS, COMP_IDS, LEVELS, DUEL_LEVELS, SINK_TIME,
-  zoneAt, segmentBox, sinkState, gunBlind, TELEGRAPH, MANUAL_SCATTER, CREWS, CREW_MOVE, REPAIR_CAP, neighbours, AMMO_STOCK, AMMO_TYPES, SWITCH_TIME, MAIN_ROUNDS,
+  REPAIR_TIME, REPAIR_WAIT, zoneAt, segmentBox, sinkState, gunBlind, TELEGRAPH, MANUAL_SCATTER, CREWS, CREW_MOVE, REPAIR_CAP, neighbours, AMMO_STOCK, AMMO_TYPES, SWITCH_TIME, MAIN_ROUNDS,
 } from '../src/duel.js';
 
 const run = (sim, seconds, input = {}) => { for (let i = 0; i < seconds * 10; i++) sim.advance(0.1, input); };
@@ -19,7 +19,7 @@ function duel({ seed, level = 'normal', auto = null, limit = 900, input = () => 
 describe('the ships', () => {
   it('start apart, bow to bow, at half ahead on a steady course', () => {
     const sim = new DuelSim({ seed: 3 });
-    assert.ok(sim.range() > 4000 && sim.range() < 7000, `range ${sim.range()}`);
+    assert.ok(sim.range() > 2800 && sim.range() < 3800, `range ${sim.range()}`);
     assert.ok(Math.abs(sim.relBearing(sim.player)) < 0.4, 'the enemy is ahead of you');
     assert.ok(Math.abs(sim.relBearing(sim.enemy)) < 0.4, 'and you are ahead of her');
     assert.equal(TELEGRAPH[sim.player.order].name, 'Half');
@@ -211,6 +211,7 @@ describe('the sinking', () => {
   it('sinks a ship whose hull runs out, ends the duel and names the winner', () => {
     const sim = new DuelSim({ seed: 6, level: 'easy' });
     for (const id of COMP_IDS) sim.damage(sim.enemy, id, 1000, 0);
+    sim.enemy.hp = 20; // the ships start closer now, so the idle player must not be sunk first by the time the flooding finishes
     run(sim, 1000 / 10 * 0.2); // flooding does the rest
     let n = 0;
     while (sim.enemy.tSunk === null && n++ < 4000) run(sim, 1);
@@ -541,5 +542,26 @@ describe('Easy shields your ship', () => {
   it('a hit by the enemy costs 2 % of the compartment on Easy, more on Normal', () => {
     assert.ok(Math.abs(strike('easy') - COMPARTMENTS.gun.hp * 0.02) < 1e-9);
     assert.ok(strike('normal') > COMPARTMENTS.gun.hp * 0.2);
+  });
+});
+
+describe('the quick repair', () => {
+  it('takes a few seconds, then puts out fires, stops leaks and mends, and waits before the next', () => {
+    const sim = new DuelSim({ seed: 2 });
+    const p = sim.player;
+    p.comp.engine = 0; p.hp = 60; sim.ignite(p, 'bridge'); p.leak.gun = 0.2;
+    assert.ok(sim.startRepair(0));
+    assert.ok(!sim.startRepair(0), 'not twice at once');
+    run(sim, REPAIR_TIME - 1);
+    assert.equal(p.comp.engine, 0, 'nothing yet');
+    run(sim, 2);
+    assert.ok(p.comp.engine > 10 && p.fire.bridge === 0 && p.leak.gun === 0 && p.hp > 60);
+    assert.ok(!sim.startRepair(0), 'it has to wait');
+    run(sim, REPAIR_WAIT);
+    assert.ok(sim.startRepair(0));
+  });
+  it('the frigates start about three kilometres apart', () => {
+    const sim = new DuelSim({ seed: 3 });
+    assert.ok(sim.range() > 2800 && sim.range() < 3800, `range ${sim.range()}`);
   });
 });
