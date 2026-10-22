@@ -1,5 +1,5 @@
 import { MAIN_ARC, MAIN_RANGE, GUN_RANGE } from './duel.js';
-import { kmText } from './hull.js';
+import { kmText, GUN_BLOCK } from './hull.js';
 
 // The Ship duel's radar, on the shared #minimap disc (the same one Solo Air Defense uses): centred on your ship,
 // heading up, with range rings, a turning sweep, the north mark on the rim, the 76 mm's arc, and the other ships. Click it to change the range; N hides it.
@@ -34,12 +34,33 @@ export function createDuelMap() {
   measure();
   window.addEventListener('resize', measure);
 
+  // Small switches under the map: show or hide each weapon's sector (kept between visits).
+  const show = { main: true, gat: true };
+  try { const v = JSON.parse(localStorage.getItem('intercept.duel.sectors') ?? 'null'); if (v) { show.main = v.main !== false; show.gat = v.gat !== false; } } catch { /* storage unavailable */ }
+  const opts = document.createElement('div');
+  opts.className = 'mm-opts';
+  opts.hidden = root.hidden;
+  let lastKey = '';
+  for (const [id, text, tip] of [['main', '76 mm', 'Show or hide the 76 mm sector'], ['gat', '30 mm', 'Show or hide the 30 mm sector']]) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = `mm-opt mm-opt-${id}`; b.textContent = text; b.title = tip;
+    const paint = () => { b.setAttribute('aria-pressed', String(show[id])); };
+    paint();
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      show[id] = !show[id]; paint(); lastKey = '';
+      try { localStorage.setItem('intercept.duel.sectors', JSON.stringify(show)); } catch { /* storage unavailable */ }
+      b.blur();
+    });
+    opts.append(b);
+  }
+  document.body.append(opts);
+
   let enabled = true;
   let sightView = null; // in the radar view: { yaw (world, radians from north), locked }
   let zoom = 0;
   const track = [];
   let lastTrack = -Infinity;
-  let lastKey = '';
   root.addEventListener('click', () => { zoom = (zoom + 1) % ZOOMS.length; lastKey = ''; });
   root.title = 'Radar, heading up: the 76 mm arc. Click to change the range (N hides it)';
   root.setAttribute('aria-label', 'Ship duel radar: enemy and gun arcs, bow up');
@@ -98,16 +119,30 @@ export function createDuelMap() {
     ctx.fillStyle = 'rgba(6, 18, 16, 0.72)';
     ctx.fillRect(0, 0, SIZE, SIZE);
 
+    // The 30 mm sector (cyan): every bearing but the bow, where both aft guns are blind, out to the gun range.
+    if (show.gat) {
+      ctx.beginPath();
+      ctx.moveTo(R, R);
+      ctx.arc(R, R, Math.min(GUN_RANGE * k, R - 4), aOf(GUN_BLOCK), aOf(2 * Math.PI - GUN_BLOCK));
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(80, 200, 255, 0.07)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(80, 200, 255, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
     // The 76 mm's arc (orange): either side of the bow to the main range.
-    ctx.beginPath();
-    ctx.moveTo(R, R);
-    ctx.arc(R, R, Math.min(MAIN_RANGE * k, R - 4), aOf(-MAIN_ARC), aOf(MAIN_ARC));
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(255, 122, 26, 0.07)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255, 122, 26, 0.45)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    if (show.main) {
+      ctx.beginPath();
+      ctx.moveTo(R, R);
+      ctx.arc(R, R, Math.min(MAIN_RANGE * k, R - 4), aOf(-MAIN_ARC), aOf(MAIN_ARC));
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(255, 122, 26, 0.07)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 122, 26, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
 
     // Range rings every quarter of the scale, and the heading line.
     ctx.strokeStyle = 'rgba(61, 220, 132, 0.2)';
@@ -241,12 +276,13 @@ export function createDuelMap() {
     setEnabled(on) {
       enabled = on;
       root.hidden = !on;
+      opts.hidden = !on;
       document.body.classList.toggle('has-map', on);
       if (on) lastKey = '';
     },
     update(sim) {
       if (!enabled) return;
-      const key = `${sim.t.toFixed(2)}|${zoom}`;
+      const key = `${sim.t.toFixed(2)}|${zoom}|${show.main}${show.gat}`;
       if (key === lastKey) return;
       lastKey = key;
       draw(sim);
