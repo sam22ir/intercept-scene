@@ -8,8 +8,8 @@
 // to scrub), Play (take the controls) and Drill (the naval exercises). A tab lists its entries (`entriesOf`):
 // each mission is one, except the three drills, which are one entry ("Tactical maneuvers", `FAMILIES`) whose
 // variants are chosen by the number of ships (`ships`, `tile`, `tileSub`). A mission with `level: true` (the ship
-// duel and the fleet mission) lets the player pick the enemy's level (`ENEMY_LEVELS`); a mission with `scenario: true` (the fleet
-// mission) also picks its scenario (`FLEET_SCENARIOS`).
+// duel and the squadron mission) lets the player pick the enemy's level (`ENEMY_LEVELS`); a mission with `scenario: true` (the squadron
+// mission) also picks its scenario (`SQUADRON_SCENARIOS`).
 
 export const GROUPS = [
   { id: 'watch', name: 'Watch', hint: 'Replays you can scrub both ways' },
@@ -156,9 +156,9 @@ export const MISSIONS = [
     button: 'Open fire',
   },
   {
-    id: 'fleet',
+    id: 'squadron',
     group: 'play',
-    name: 'Fleet command',
+    name: 'Squadron orders',
     kind: 'Manual',
     blurb: 'Command four frigates: escort or defend',
     tagline: 'You command four frigates that steer and fight themselves: give orders on the radar, pause to plan, rewind with Z. Escort merchant ships past a gate or defend a zone.',
@@ -169,7 +169,7 @@ export const MISSIONS = [
     scenario: true,
     fixed: 'you command',
     fixedNote: 'Four frigates, fixed: a picket, two gun ships and an escort.',
-    brand: 'Fleet command',
+    brand: 'Squadron orders',
     sub: 'four frigates',
     button: 'Take command',
   },
@@ -187,9 +187,9 @@ export const ENEMY_LEVELS = [
   { id: 'hard', name: 'Hard', desc: 'Shoots straight, jinks and runs when hurt' },
 ];
 export const DEFAULT_LEVEL = 'normal';
-// The fleet mission's scenario (a choice on the start screen like the level; the scene reads it once). test/menu.test.mjs checks the
-// ids against fleetScoring.js's SCENARIOS, so this pure list stays true.
-export const FLEET_SCENARIOS = [
+// The squadron mission's scenario (a choice on the start screen like the level; the scene reads it once). test/menu.test.mjs checks the
+// ids against squadronScoring.js's SCENARIOS, so this pure list stays true.
+export const SQUADRON_SCENARIOS = [
   { id: 'escort', name: 'Escort', desc: 'Bring the merchant ships past the gate' },
   { id: 'defend', name: 'Defend', desc: 'Hold a zone against raiders and drones' },
 ];

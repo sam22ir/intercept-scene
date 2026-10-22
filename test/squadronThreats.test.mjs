@@ -1,16 +1,16 @@
-// src/fleetThreats.js: planning is deterministic per seed and rises with the level; spawning adds the right ships; a drone can be
+// src/squadronThreats.js: planning is deterministic per seed and rises with the level; spawning adds the right ships; a drone can be
 // shot down by the squadron's guns and can damage a ship.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { planThreats, spawnThreat, DRONE_RANGE, DRONE_SPEED } from '../src/fleetThreats.js';
-import { FleetSim } from '../src/fleet.js';
+import { planThreats, spawnThreat, DRONE_RANGE, DRONE_SPEED } from '../src/squadronThreats.js';
+import { SquadronSim } from '../src/squadron.js';
 import { DT, COMPARTMENTS, mulberry32 } from '../src/duel.js';
 
 const LEVELS = ['easy', 'normal', 'hard'];
 // Ships a plan brings (a wave counts for its raiders).
 const shipsIn = (list) => list.reduce((n, w) => n + (w.kind === 'wave' ? w.n : 1), 0);
 const plan = (scenario, level, seed = 3) => {
-  const sim = new FleetSim({ seed, scenario, level });
+  const sim = new SquadronSim({ seed, scenario, level });
   return planThreats(sim, mulberry32(seed));
 };
 
@@ -55,7 +55,7 @@ describe('planThreats', () => {
 
 describe('spawnThreat', () => {
   it('adds a raider of team 1 and pushes an arrive event', () => {
-    const sim = new FleetSim({ seed: 1 });
+    const sim = new SquadronSim({ seed: 1 });
     const n = sim.ships.length;
     spawnThreat(sim, { t: 0, kind: 'raider', brg: 0 });
     assert.equal(sim.ships.length, n + 1);
@@ -67,16 +67,16 @@ describe('spawnThreat', () => {
   });
 
   it('a raider is passive on easy only', () => {
-    const easy = new FleetSim({ seed: 2, level: 'easy' });
+    const easy = new SquadronSim({ seed: 2, level: 'easy' });
     spawnThreat(easy, { kind: 'raider', brg: 0 });
     assert.equal(easy.ships.at(-1).passive, true);
-    const normal = new FleetSim({ seed: 2, level: 'normal' });
+    const normal = new SquadronSim({ seed: 2, level: 'normal' });
     spawnThreat(normal, { kind: 'raider', brg: 0 });
     assert.equal(normal.ships.at(-1).passive, false);
   });
 
   it('a wave adds its raiders at once', () => {
-    const sim = new FleetSim({ seed: 1 });
+    const sim = new SquadronSim({ seed: 1 });
     const n = sim.ships.length;
     spawnThreat(sim, { t: 0, kind: 'wave', n: 3, brg: 0 });
     assert.equal(sim.ships.length, n + 3);
@@ -84,7 +84,7 @@ describe('spawnThreat', () => {
   });
 
   it('a merchant is neutral, 70 hp, and pushes an arrive event', () => {
-    const sim = new FleetSim({ seed: 1, scenario: 'escort' });
+    const sim = new SquadronSim({ seed: 1, scenario: 'escort' });
     const n = sim.ships.length;
     spawnThreat(sim, { t: 0, kind: 'merchant', mode: 'follow', brg: 0 });
     const s = sim.ships[n];
@@ -97,7 +97,7 @@ describe('spawnThreat', () => {
   });
 
   it('a drone is team 1 and pushes arrive and inbound events', () => {
-    const sim = new FleetSim({ seed: 1 });
+    const sim = new SquadronSim({ seed: 1 });
     const n = sim.ships.length;
     spawnThreat(sim, { t: 0, kind: 'drone', brg: 0 });
     const s = sim.ships[n];
@@ -108,7 +108,7 @@ describe('spawnThreat', () => {
   });
 
   it('a drone flies its straight line at constant speed', () => {
-    const sim = new FleetSim({ seed: 4 });
+    const sim = new SquadronSim({ seed: 4 });
     spawnThreat(sim, { kind: 'drone', brg: 0 });
     const s = sim.ships.at(-1);
     const x0 = s.x, z0 = s.z;
@@ -134,7 +134,7 @@ describe('drones in a fight', () => {
   it('can be shot down by the aft 30 mm (the 76 mm kept dry)', () => {
     let kills = 0;
     for (let seed = 1; seed <= 6; seed++) {
-      const sim = new FleetSim({ seed, scenario: 'defend' });
+      const sim = new SquadronSim({ seed, scenario: 'defend' });
       sim.pending = [];
       for (const s of sim.squad) s.gun.ammo = 0; // only the aft guns can fire
       const d = nearDrone(sim, 2400);
@@ -146,7 +146,7 @@ describe('drones in a fight', () => {
   });
 
   it('can damage a ship when it is not shot down (guns held)', () => {
-    const sim = new FleetSim({ seed: 9, scenario: 'defend' });
+    const sim = new SquadronSim({ seed: 9, scenario: 'defend' });
     sim.pending = [];
     sim.order({ type: 'stance', stance: 'hold' });
     const before = sim.squad.map((s) => Object.values(s.comp).reduce((a, b) => a + b, 0));
@@ -162,7 +162,7 @@ describe('drones in a fight', () => {
 
   it('replays the same drone flight bit for bit', () => {
     const run = () => {
-      const sim = new FleetSim({ seed: 12, scenario: 'defend' });
+      const sim = new SquadronSim({ seed: 12, scenario: 'defend' });
       sim.pending = [];
       nearDrone(sim, 1500);
       for (let i = 0; i < 120 * 30; i++) sim.step(DT);
@@ -172,7 +172,7 @@ describe('drones in a fight', () => {
   });
 
   it('rewinding repeatedly does not stack the drone mover (digest and drone track match a fresh run)', () => {
-    const mk = () => new FleetSim({ seed: 5, level: 'normal', scenario: 'defend' });
+    const mk = () => new SquadronSim({ seed: 5, level: 'normal', scenario: 'defend' });
     const run = (sim, t) => { while (sim.t < t) sim.advance(1 / 30); };
     const a = mk(); a.order({ to: 'all', type: 'course', course: 20 }); run(a, 200);
     for (let i = 0; i < 3; i++) a.rewindTo(100);

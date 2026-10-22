@@ -1,10 +1,10 @@
-// fleetInfo: gradual contacts (detected, then tracked, then lost) and alerts that fire once. Runs in Node.
+// squadronInfo: gradual contacts (detected, then tracked, then lost) and alerts that fire once. Runs in Node.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { contactsFor, alertsOf, TRACK_AFTER, LOST_FADE } from '../src/fleetInfo.js';
-import { FleetSim } from '../src/fleet.js';
+import { contactsFor, alertsOf, TRACK_AFTER, LOST_FADE } from '../src/squadronInfo.js';
+import { SquadronSim } from '../src/squadron.js';
 
-const quiet = (over = {}) => new FleetSim({ seed: 1, hooks: { planThreats: () => [], ...over } });
+const quiet = (over = {}) => new SquadronSim({ seed: 1, hooks: { planThreats: () => [], ...over } });
 const find = (list, idx) => list.find((c) => c.idx === idx);
 
 describe('contacts (gradual)', () => {

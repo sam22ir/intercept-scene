@@ -1,9 +1,9 @@
-import { SCENARIOS } from './fleetScoring.js';
-import { leadOf } from './fleetOrders.js';
-import { RADAR_RANGE } from './fleetInfo.js';
-import { contactLabel, hullFrac } from './fleetControls.js';
+import { SCENARIOS } from './squadronScoring.js';
+import { leadOf } from './squadronOrders.js';
+import { RADAR_RANGE } from './squadronInfo.js';
+import { contactLabel, hullFrac } from './squadronControls.js';
 
-// Fleet command's tactical radar, on the shared #minimap element: north up (screen up is +X, screen right is +Z, so a bearing is the
+// Squadron orders's tactical radar, on the shared #minimap element: north up (screen up is +X, screen right is +Z, so a bearing is the
 // compass bearing), centred on the squadron. It is the main view of the mission. The squadron is drawn from the simulation (numbered,
 // coloured by role, with formation stations, sector wedges, destinations and the track steamed); everything else only as the sensors
 // give it (sim.contacts(): a vague '?' when merely detected, the class and course once tracked, a fading mark when lost).
@@ -19,7 +19,7 @@ const TRACK_STEP = 3; // s between track samples
 const TRACK_MAX = 50;
 const PICK_PX = 24;
 
-export function createFleetMap({ onPick, onGround }) {
+export function createSquadronMap({ onPick, onGround }) {
   const root = document.querySelector('#minimap');
   const canvas = root.querySelector('canvas');
   const label = root.querySelector('.mm-scale');
@@ -69,7 +69,7 @@ export function createFleetMap({ onPick, onGround }) {
   mk('A', 'Follow the squadron and fit everything in', () => { zoom = 'auto'; pan = null; });
   root.append(tools);
   root.title = 'Tactical radar, north up. Click a frigate to pick her, click the sea to send her there (shift: steer for it). Wheel zooms, drag pans, double click follows the squadron';
-  root.setAttribute('aria-label', 'Fleet command tactical radar, north up');
+  root.setAttribute('aria-label', 'Squadron orders tactical radar, north up');
 
   // --- clicks -----------------------------------------------------------------------------------------------------------------
   let down = null;
@@ -382,7 +382,7 @@ export function createFleetMap({ onPick, onGround }) {
   return {
     update: draw,
     setEnabled(on) { enabled = on; root.hidden = !on; if (on) remeasure(); },
-    setBig(b) { big = b; root.classList.toggle('fleet-map-big', b); remeasure(); },
+    setBig(b) { big = b; root.classList.toggle('squadron-map-big', b); remeasure(); },
     get zoom() { return zoom; },
   };
 }

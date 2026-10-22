@@ -1,13 +1,13 @@
-// Fleet command, hook 1: what an order does, and where a squadron ship steers. Pure and deterministic: imports nothing,
+// Squadron orders, hook 1: what an order does, and where a squadron ship steers. Pure and deterministic: imports nothing,
 // no randomness, and steerGoal never changes the ship.
-//   applyOrder(sim, order)  -> void   apply one logged order (format in the header of fleet.js) to the ships it names.
-//   steerGoal(sim, ship)    -> { course (deg true, 0 = +X, clockwise), kn }   what FleetSim.think steers for, every 0.5 s.
+//   applyOrder(sim, order)  -> void   apply one logged order (format in the header of squadron.js) to the ships it names.
+//   steerGoal(sim, ship)    -> { course (deg true, 0 = +X, clockwise), kn }   what SquadronSim.think steers for, every 0.5 s.
 //
 // The lead (the first living squadron ship, the guide) always steers her own goal: `course`, `goto` and `speed` orders
 // set it. The others steer by what they were ordered, in this priority:
 // - form:   each ship holds a station in a formation laid off from the lead, on her present heading (FORM 1 column astern,
 //           FORM 3 line abreast to starboard, BOX, FORM D diamond; neighbours FORM_SPACING m apart, the same spacing as
-//           the fleet's columns). The station is moving with the lead, so the steering feeds forward her velocity and adds
+//           the squadron's columns). The station is moving with the lead, so the steering feeds forward her velocity and adds
 //           a proportional pull back to the station (time constant K_STATION s).
 // - sector: a screen patrol. The ship is laid off from a reference ship (the lead unless `sector.ref` names one) inside
 //           true bearings from..to and ranges inner..outer (m). The point she holds sweeps slowly across the sector
@@ -21,7 +21,7 @@
 
 const KT = 1852 / 3600; // m/s per knot
 const MAX_KN = 22; // the telegraph's Full
-const FORM_SPACING = 400; // m between neighbouring stations (the fleet's COLUMN_GAP)
+const FORM_SPACING = 400; // m between neighbouring stations (the squadron's COLUMN_GAP)
 const K_STATION = 45; // s: a station error closes at about this time constant
 const PATROL_BRG_T = 900; // s for a full swing of the patrol bearing
 const PATROL_RANGE_T = 700; // s for a full swing of the patrol range

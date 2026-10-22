@@ -35,7 +35,7 @@ function showFatal(err) {
   document.body.appendChild(box);
 }
 
-import { MISSION_IDS, FIXED_SHIP, ENTRIES, GROUPS, ENEMY_LEVELS, DEFAULT_LEVEL, FLEET_SCENARIOS, DEFAULT_SCENARIO, groupOf, missionById, menuText } from './menu.js';
+import { MISSION_IDS, FIXED_SHIP, ENTRIES, GROUPS, ENEMY_LEVELS, DEFAULT_LEVEL, SQUADRON_SCENARIOS, DEFAULT_SCENARIO, groupOf, missionById, menuText } from './menu.js';
 import { previewArt } from './menuArt.js';
 
 const MODES = MISSION_IDS;
@@ -46,9 +46,9 @@ const isDrill = (m) => m === 'maneuvers' || m === 'maneuvers2';
 // The ship duel's enemy level (a choice on the start screen, like the launcher); the scene reads it once.
 let level = DEFAULT_LEVEL;
 const validLevel = (id) => (ENEMY_LEVELS.some((l) => l.id === id) ? id : null);
-// The fleet mission's scenario (escort or defend), chosen the same way; the scene reads it once.
+// The squadron mission's scenario (escort or defend), chosen the same way; the scene reads it once.
 let scenario = DEFAULT_SCENARIO;
-const validScenario = (id) => (FLEET_SCENARIOS.some((x) => x.id === id) ? id : null);
+const validScenario = (id) => (SQUADRON_SCENARIOS.some((x) => x.id === id) ? id : null);
 
 let launched = false;
 async function launch(id) {
@@ -57,15 +57,15 @@ async function launch(id) {
   globalThis.__SHIP_VARIANT = id;
   // The maneuvers and fly missions have their own scenes; scenario.js (which the ship model imports) just sees
   // an intercept for the first and a recovery (no scripted missile to simulate) for the second.
-  globalThis.__SCENARIO = isDrill(mode) || mode === 'formations' ? 'intercept' : mode === 'fly' || mode === 'helm' || mode === 'duel' || mode === 'fleet' ? 'chute' : mode;
+  globalThis.__SCENARIO = isDrill(mode) || mode === 'formations' ? 'intercept' : mode === 'fly' || mode === 'helm' || mode === 'duel' || mode === 'squadron' ? 'chute' : mode;
   if (isDrill(mode)) globalThis.__DRILL_SHIPS = mode === 'maneuvers2' ? 2 : 3;
   if (menuText(mode, id).hasShip) { // the missions without a choice leave it alone
     write('localStorage', 'intercept.ship', id);
     write('localStorage', `intercept.ship.${mode}`, id); // each mission remembers its own launcher
   }
   if (groupOf(mode) === 'drill') write('localStorage', 'intercept.drill', mode); // and the drill its number of ships
-  if (menuText(mode, id).hasLevel) { globalThis.__DUEL_LEVEL = level; write('localStorage', mode === 'fleet' ? 'intercept.level.fleet' : 'intercept.level.duel', level); }
-  if (menuText(mode, id).hasScenario) { globalThis.__FLEET_SCENARIO = scenario; write('localStorage', 'intercept.scenario.fleet', scenario); }
+  if (menuText(mode, id).hasLevel) { globalThis.__DUEL_LEVEL = level; write('localStorage', mode === 'squadron' ? 'intercept.level.squadron' : 'intercept.level.duel', level); }
+  if (menuText(mode, id).hasScenario) { globalThis.__SQUADRON_SCENARIO = scenario; write('localStorage', 'intercept.scenario.squadron', scenario); }
   write('localStorage', 'intercept.mode', mode);
   try {
     const url = new URL(location.href);
@@ -84,7 +84,7 @@ async function launch(id) {
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
   try {
     await (isDrill(mode) ? import('./maneuversMain.js') : mode === 'formations' ? import('./formationsMain.js')
-      : mode === 'fly' ? import('./flyMain.js') : mode === 'helm' ? import('./helmMain.js') : mode === 'duel' ? import('./duelMain.js') : mode === 'fleet' ? import('./fleetMain.js') : import('./main.js'));
+      : mode === 'fly' ? import('./flyMain.js') : mode === 'helm' ? import('./helmMain.js') : mode === 'duel' ? import('./duelMain.js') : mode === 'squadron' ? import('./squadronMain.js') : import('./main.js'));
   } catch (err) {
     showFatal(err);
   }
@@ -135,8 +135,8 @@ function showChooser(preselect, preselectLevel = null, preselectScenario = null)
   const drills = ENTRIES.find((e) => e.family).members;
   const lastIn = { watch: 'intercept', play: 'fly', drill: drills.includes(read('localStorage', 'intercept.drill')) ? read('localStorage', 'intercept.drill') : drills[0] };
   lastIn[groupOf(mode)] = mode;
-  level = validLevel(preselectLevel) ?? validLevel(read('localStorage', mode === 'fleet' ? 'intercept.level.fleet' : 'intercept.level.duel')) ?? validLevel(read('localStorage', 'intercept.level.duel')) ?? DEFAULT_LEVEL;
-  scenario = validScenario(preselectScenario) ?? validScenario(read('localStorage', 'intercept.scenario.fleet')) ?? DEFAULT_SCENARIO;
+  level = validLevel(preselectLevel) ?? validLevel(read('localStorage', mode === 'squadron' ? 'intercept.level.squadron' : 'intercept.level.duel')) ?? validLevel(read('localStorage', 'intercept.level.duel')) ?? DEFAULT_LEVEL;
+  scenario = validScenario(preselectScenario) ?? validScenario(read('localStorage', 'intercept.scenario.squadron')) ?? DEFAULT_SCENARIO;
   const lastPlayed = MISSION_IDS.includes(rememberedMode) ? rememberedMode : null;
   const shipNow = () => shipFor[mode] ?? FIXED_SHIP;
 
@@ -210,7 +210,7 @@ function showChooser(preselect, preselectLevel = null, preselectScenario = null)
       else return;
       e.preventDefault();
     } else if ((e.key === 's' || e.key === 'S') && menuText(mode, shipNow()).hasScenario) {
-      setScenario(FLEET_SCENARIOS[(FLEET_SCENARIOS.findIndex((x) => x.id === scenario) + 1) % FLEET_SCENARIOS.length].id); // S: the other scenario
+      setScenario(SQUADRON_SCENARIOS[(SQUADRON_SCENARIOS.findIndex((x) => x.id === scenario) + 1) % SQUADRON_SCENARIOS.length].id); // S: the other scenario
     } else if (e.key === 'm' || e.key === 'M') {
       const next = ENTRIES[(ENTRIES.findIndex((en) => en.members.includes(mode)) + 1) % ENTRIES.length];
       setMode(next.family ? lastIn[next.group] : next.id);
@@ -259,9 +259,9 @@ try {
 const rememberedMode = read('localStorage', 'intercept.mode');
 mode = MODES.includes(modeFromUrl) ? modeFromUrl : (MODES.includes(rememberedMode) ? rememberedMode : 'intercept');
 const validShip = fromUrl === 'fwd' || fromUrl === 'aft';
-if ((validShip || isDrill(mode) || mode === 'formations' || mode === 'fly' || mode === 'helm' || mode === 'duel' || mode === 'fleet') && !forceChooser && (skipChooser || scripted)) {
-  level = validLevel(levelFromUrl) ?? validLevel(read('localStorage', mode === 'fleet' ? 'intercept.level.fleet' : 'intercept.level.duel')) ?? validLevel(read('localStorage', 'intercept.level.duel')) ?? DEFAULT_LEVEL;
-  scenario = validScenario(scenarioFromUrl) ?? validScenario(read('localStorage', 'intercept.scenario.fleet')) ?? DEFAULT_SCENARIO;
+if ((validShip || isDrill(mode) || mode === 'formations' || mode === 'fly' || mode === 'helm' || mode === 'duel' || mode === 'squadron') && !forceChooser && (skipChooser || scripted)) {
+  level = validLevel(levelFromUrl) ?? validLevel(read('localStorage', mode === 'squadron' ? 'intercept.level.squadron' : 'intercept.level.duel')) ?? validLevel(read('localStorage', 'intercept.level.duel')) ?? DEFAULT_LEVEL;
+  scenario = validScenario(scenarioFromUrl) ?? validScenario(read('localStorage', 'intercept.scenario.squadron')) ?? DEFAULT_SCENARIO;
   launch(validShip ? fromUrl : 'fwd');
 } else showChooser(validShip ? fromUrl : null, validLevel(levelFromUrl), validScenario(scenarioFromUrl));
 

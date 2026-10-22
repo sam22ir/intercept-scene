@@ -1,9 +1,9 @@
-// fleetScoring: the two scenarios (escort, defend) won and lost in seeded runs, the raider call-in, and the debrief. Runs in Node.
+// squadronScoring: the two scenarios (escort, defend) won and lost in seeded runs, the raider call-in, and the debrief. Runs in Node.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { SCENARIOS, LEVELS, LEVEL_RULES, scoreOf, debriefOf } from '../src/fleetScoring.js';
+import { SCENARIOS, LEVELS, LEVEL_RULES, scoreOf, debriefOf } from '../src/squadronScoring.js';
 import { LEVELS as DUEL_LEVELS } from '../src/duel.js';
-import { FleetSim } from '../src/fleet.js';
+import { SquadronSim } from '../src/squadron.js';
 
 const noRaiders = { planThreats: () => [] };
 const runUntil = (sim, limit) => { while (sim.t < limit && sim.winner === null) sim.advance(0.25); return sim; };
@@ -21,7 +21,7 @@ describe('the tables', () => {
 describe('scoreOf at the start', () => {
   it('is running in both scenarios', () => {
     for (const scenario of ['escort', 'defend']) {
-      const r = scoreOf(new FleetSim({ seed: 1, scenario }));
+      const r = scoreOf(new SquadronSim({ seed: 1, scenario }));
       assert.equal(r.status, 'running');
       assert.equal(typeof r.reason, 'string');
     }
@@ -30,7 +30,7 @@ describe('scoreOf at the start', () => {
 
 describe('escort', () => {
   it('is won when enough merchants get past the gate', () => {
-    const sim = new FleetSim({ seed: 2, scenario: 'escort', hooks: noRaiders });
+    const sim = new SquadronSim({ seed: 2, scenario: 'escort', hooks: noRaiders });
     sim.newShip(1000, -900, 0, 2, 'merchant');
     sim.newShip(1200, -1200, 0, 2, 'merchant');
     runUntil(sim, 400);
@@ -39,7 +39,7 @@ describe('escort', () => {
   });
 
   it('is lost when a merchant is sunk on a level that allows none', () => {
-    const sim = new FleetSim({ seed: 3, scenario: 'escort', level: 'hard', hooks: noRaiders });
+    const sim = new SquadronSim({ seed: 3, scenario: 'escort', level: 'hard', hooks: noRaiders });
     const m = sim.newShip(-500, -900, Math.PI, 2, 'merchant');
     sim.advance(5);
     m.tSunk = sim.t;
@@ -49,7 +49,7 @@ describe('escort', () => {
   });
 
   it('is lost when the merchants do not get past the gate in time', () => {
-    const sim = new FleetSim({ seed: 4, scenario: 'escort', hooks: noRaiders });
+    const sim = new SquadronSim({ seed: 4, scenario: 'escort', hooks: noRaiders });
     sim.newShip(-500, -900, Math.PI, 2, 'merchant');
     runUntil(sim, SCENARIOS.escort.duration + 5);
     assert.equal(sim.winner, 1);
@@ -59,14 +59,14 @@ describe('escort', () => {
 
 describe('defend', () => {
   it('is won when the time is up with no raider left (no raiders at all here)', () => {
-    const sim = new FleetSim({ seed: 5, scenario: 'defend', hooks: noRaiders });
+    const sim = new SquadronSim({ seed: 5, scenario: 'defend', hooks: noRaiders });
     runUntil(sim, SCENARIOS.defend.duration + 5);
     assert.equal(sim.winner, 0);
     assert.equal(sim.over, 'held');
   });
 
   it('is lost when the lead ship stays out of the zone for too long (hard)', () => {
-    const sim = new FleetSim({ seed: 6, scenario: 'defend', level: 'hard', hooks: noRaiders });
+    const sim = new SquadronSim({ seed: 6, scenario: 'defend', level: 'hard', hooks: noRaiders });
     sim.squad[0].x = SCENARIOS.defend.zone.r + 1500;
     runUntil(sim, 200);
     assert.equal(sim.winner, 1);
@@ -74,7 +74,7 @@ describe('defend', () => {
   });
 
   it('calls the next raider in once the last one is down', () => {
-    const sim = new FleetSim({ seed: 7, scenario: 'defend', level: 'normal' });
+    const sim = new SquadronSim({ seed: 7, scenario: 'defend', level: 'normal' });
     while (sim.t < 200 && !sim.ships.some((s) => s.team === 1)) sim.advance(0.25);
     const raider = sim.ships.find((s) => s.team === 1);
     assert.ok(raider, 'the first raider arrived');
@@ -89,7 +89,7 @@ describe('defend', () => {
 
 describe('debrief', () => {
   it('reports the fields and a verdict line, and reads without moving the sim', () => {
-    const sim = new FleetSim({ seed: 8, scenario: 'defend', hooks: noRaiders });
+    const sim = new SquadronSim({ seed: 8, scenario: 'defend', hooks: noRaiders });
     const before = sim.digest();
     const d = debriefOf(sim);
     assert.equal(sim.digest(), before);
@@ -105,7 +105,7 @@ describe('debrief', () => {
   });
 
   it('after a won escort: merchants saved and crossed are counted, the verdict says won', () => {
-    const sim = new FleetSim({ seed: 2, scenario: 'escort', hooks: noRaiders });
+    const sim = new SquadronSim({ seed: 2, scenario: 'escort', hooks: noRaiders });
     sim.newShip(1000, -900, 0, 2, 'merchant');
     sim.newShip(1200, -1200, 0, 2, 'merchant');
     runUntil(sim, 400);
@@ -119,7 +119,7 @@ describe('debrief', () => {
   });
 
   it('after a lost defence: the verdict says lost and the reason is named', () => {
-    const sim = new FleetSim({ seed: 6, scenario: 'defend', level: 'hard', hooks: noRaiders });
+    const sim = new SquadronSim({ seed: 6, scenario: 'defend', level: 'hard', hooks: noRaiders });
     sim.squad[0].x = SCENARIOS.defend.zone.r + 1500;
     runUntil(sim, 200);
     const d = debriefOf(sim);

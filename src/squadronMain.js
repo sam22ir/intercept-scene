@@ -15,28 +15,28 @@ import { CameraRig } from './cameraRig.js';
 import { menuText } from './menu.js';
 import { compass, kmText, RUDDER_MAX } from './hull.js';
 import { TELEGRAPH, COMPARTMENTS, COMP_IDS, LEVELS, DUEL_LEVELS, GUN_MOUNT_LOCAL, sinkState, HULL_HP } from './duel.js';
-import { FleetSim, DT } from './fleet.js';
-import { applyOrder, leadOf } from './fleetOrders.js';
-import { transferCrew, stocksOf, CREW_RANGE } from './fleetResources.js';
-import { SCENARIOS, LEVEL_RULES } from './fleetScoring.js';
-import { createFleetMap, ROLE_COLOUR } from './fleetMap.js';
+import { SquadronSim, DT } from './squadron.js';
+import { applyOrder, leadOf } from './squadronOrders.js';
+import { transferCrew, stocksOf, CREW_RANGE } from './squadronResources.js';
+import { SCENARIOS, LEVEL_RULES } from './squadronScoring.js';
+import { createSquadronMap, ROLE_COLOUR } from './squadronMap.js';
 import {
   FORM_LABEL, TURN_STEP, ROLE_NAME, courseOrder, speedOrder, formOrder, sectorOrders, stanceOrder, gotoOrders, courseToOrder, crewTarget,
   rewindTarget, describeOrder, issue, logCrew, withCrewHook, AlertFeed, hullFrac, headingDeg, pad3, shipName, contactLabel, targets,
-} from './fleetControls.js';
-import './fleet.css';
+} from './squadronControls.js';
+import './squadron.css';
 
-// Entry point of "Fleet command", mission id `fleet` (the model is fleet.js, over the ship duel's physics): you command a squadron of
+// Entry point of "Squadron orders", mission id `squadron` (the model is squadron.js, over the ship duel's physics): you command a squadron of
 // three or four frigates that steer and fight themselves. The orders are the only input: a course, a speed, a formation, a sector
-// patrol, hold fire, a destination, a repair crew sent from one ship to another. The tactical radar (fleetMap.js) is the main view; the
+// patrol, hold fire, a destination, a repair crew sent from one ship to another. The tactical radar (squadronMap.js) is the main view; the
 // 3D scene shows the same sea from above the squadron, behind a ship, or from her bridge. Real time, but the simulation can be paused to
 // plan (orders issued then are stamped with the paused time) and rewound to the moment of an earlier order (Z), because it is a pure
 // function of the seed and the order log. start.js imports this file when the mission is picked, with the enemy's level in
-// globalThis.__DUEL_LEVEL and the scenario in globalThis.__FLEET_SCENARIO (or ?level= and ?scenario=).
+// globalThis.__DUEL_LEVEL and the scenario in globalThis.__SQUADRON_SCENARIO (or ?level= and ?scenario=).
 
 const canvas = document.querySelector('#scene');
 const loadingEl = document.querySelector('#loading');
-document.body.classList.add('mission-fly', 'mission-fleet'); // the manual flight's interface, and this one's own
+document.body.classList.add('mission-fly', 'mission-squadron'); // the manual flight's interface, and this one's own
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -76,14 +76,14 @@ let squadSize = 4;
 try {
   const q = new URLSearchParams(location.search);
   level = globalThis.__DUEL_LEVEL ?? q.get('level') ?? 'normal';
-  scenario = globalThis.__FLEET_SCENARIO ?? q.get('scenario') ?? 'defend';
+  scenario = globalThis.__SQUADRON_SCENARIO ?? q.get('scenario') ?? 'defend';
   squadSize = Number(q.get('n')) || 4;
 } catch { /* no address */ }
 if (!DUEL_LEVELS.includes(level)) level = 'normal';
 if (!SCENARIOS[scenario]) scenario = 'defend';
 const crewResult = { last: null };
 // A crew moved between ships goes in the order log too (type 'crew'), so a rewind carries it out again.
-const sim = new FleetSim({ seed: (Date.now() % 100000) | 0, level, scenario, n: squadSize, hooks: { applyOrder: withCrewHook(applyOrder, transferCrew, crewResult) } });
+const sim = new SquadronSim({ seed: (Date.now() % 100000) | 0, level, scenario, n: squadSize, hooks: { applyOrder: withCrewHook(applyOrder, transferCrew, crewResult) } });
 const feed = new AlertFeed();
 let paused = false;
 let lastOrderText = '';
@@ -302,7 +302,7 @@ function say(text, tone = '', ms = 3200) {
   bannerUntil = ms >= 60000 ? Infinity : performance.now() + ms;
 }
 const alarmEl = document.createElement('div');
-alarmEl.className = 'fleet-alarm';
+alarmEl.className = 'squadron-alarm';
 alarmEl.setAttribute('aria-hidden', 'true');
 document.body.appendChild(alarmEl);
 const flashAlarm = () => { alarmEl.classList.remove('hit'); void alarmEl.offsetWidth; alarmEl.classList.add('hit'); };
@@ -393,7 +393,7 @@ function setView(v) {
   camera.up.set(v === 'map' ? 1 : 0, v === 'map' ? 0 : 1, 0);
   viewButtons.forEach((b) => { const on = b.dataset.view === v; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
   map.setBig(v === 'map');
-  document.body.classList.toggle('fleet-mapview', v === 'map');
+  document.body.classList.toggle('squadron-mapview', v === 'map');
 }
 let frameDt = 1 / 60;
 function updateCamera() {
@@ -424,28 +424,28 @@ function updateCamera() {
 }
 
 // --- The interface: panels -------------------------------------------------------------------------------------------------------------
-document.querySelector('#hud').hidden = true; // the shared readout panel is not used: the fleet has its own below
+document.querySelector('#hud').hidden = true; // the shared readout panel is not used: the squadron has its own below
 const ui = document.createElement('div');
-ui.id = 'fleet-ui';
-ui.className = 'fleet-ui';
-ui.innerHTML = '<div class="fleet-ships" id="fleet-ships"></div><div class="fleet-side"><section class="fleet-mission" id="fleet-mission"></section>'
-  + '<section class="fleet-contacts" id="fleet-contacts"></section><section class="fleet-alerts" id="fleet-alerts"></section></div>';
+ui.id = 'squadron-ui';
+ui.className = 'squadron-ui';
+ui.innerHTML = '<div class="squadron-ships" id="squadron-ships"></div><div class="squadron-side"><section class="squadron-mission" id="squadron-mission"></section>'
+  + '<section class="squadron-contacts" id="squadron-contacts"></section><section class="squadron-alerts" id="squadron-alerts"></section></div>';
 document.body.appendChild(ui);
-const shipsEl = ui.querySelector('#fleet-ships');
-const missionEl = ui.querySelector('#fleet-mission');
-const contactsEl = ui.querySelector('#fleet-contacts');
-const alertsEl = ui.querySelector('#fleet-alerts');
+const shipsEl = ui.querySelector('#squadron-ships');
+const missionEl = ui.querySelector('#squadron-mission');
+const contactsEl = ui.querySelector('#squadron-contacts');
+const alertsEl = ui.querySelector('#squadron-alerts');
 const pauseEl = document.createElement('div');
-pauseEl.className = 'fleet-pause';
+pauseEl.className = 'squadron-pause';
 pauseEl.hidden = true;
 document.body.appendChild(pauseEl);
 const endEl = document.createElement('div');
-endEl.className = 'fleet-end';
+endEl.className = 'squadron-end';
 endEl.hidden = true;
 document.body.appendChild(endEl);
 const keysEl = document.createElement('div');
 keysEl.id = 'fly-keys';
-keysEl.className = 'fly-keys fleet-keys';
+keysEl.className = 'fly-keys squadron-keys';
 document.body.appendChild(keysEl);
 
 const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
@@ -714,7 +714,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('blur', () => { lastTurn = 0; });
 
 // --- The map -------------------------------------------------------------------------------------------------------------------------
-const map = createFleetMap({
+const map = createSquadronMap({
   onPick: (idx) => pick(idx),
   onGround: (x, z, shift) => { give(shift ? courseToOrder(sim, input.sel, x, z) : gotoOrders(sim, input.sel, x, z)); },
 });
@@ -765,7 +765,7 @@ document.querySelector('#btn-ship').addEventListener('click', () => {
 });
 document.querySelector('#btn-home')?.addEventListener('click', () => document.querySelector('#btn-ship')?.click());
 {
-  const t = menuText('fleet');
+  const t = menuText('squadron');
   document.querySelector('.brand b').textContent = t.brand;
   const sub = document.querySelector('#mission-sub');
   if (sub) sub.textContent = `${SCENARIOS[sim.scenario].name} · ${LEVELS[level].name} · ${sim.n} frigates`;
@@ -800,7 +800,7 @@ menuEl.insertBefore(restartButton, menuEl.firstChild);
 restartButton.addEventListener('click', () => restart());
 
 const strip = document.createElement('div');
-strip.className = 'fleet-views';
+strip.className = 'squadron-views';
 strip.innerHTML = VIEWS.map((v) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (V)">${VIEW_LABELS[v]}</button>`).join('');
 document.body.appendChild(strip);
 viewButtons.push(...strip.querySelectorAll('button'));
@@ -830,7 +830,7 @@ soundButton.title = 'This mission has no sound yet';
 
 // --- Tags ------------------------------------------------------------------------------------------------------------------------------
 const labels = new CSS2DRenderer();
-labels.domElement.className = 'labels-layer fleet-labels';
+labels.domElement.className = 'labels-layer squadron-labels';
 document.body.appendChild(labels.domElement);
 const tags = [];
 function tagFor(i) {
@@ -951,4 +951,4 @@ renderer.setAnimationLoop((now) => {
   if (frames++ === 0) loadingEl?.remove();
 });
 
-window.__fleet = { sim, ships, camera, scene, renderer, input, controls, map, fx, DT, act };
+window.__squadron = { sim, ships, camera, scene, renderer, input, controls, map, fx, DT, act };

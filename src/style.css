@@ -1220,7 +1220,7 @@ body.mission-formations .tag::after { height: calc(13px + var(--lift, 0px)); bot
   body.mission-formations .timeline .seg.cam { flex-basis: 100%; justify-content: center; }
 }
 
-/* Fleet command's start-screen choice (the scenario) is one row more than the other missions have: on short windows it loses its heading and
+/* Squadron orders's start-screen choice (the scenario) is one row more than the other missions have: on short windows it loses its heading and
    descriptions so the screen still fits without scrolling. */
 @media (max-height: 820px) and (min-height: 501px) {
   .brief-scenario .pick small { display: none; }

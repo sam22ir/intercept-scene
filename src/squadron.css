@@ -1,0 +1,181 @@
+/* "Squadron orders": the interface pieces of its own (the rest is the manual flight's, body.mission-fly). Every rule is scoped under
+   body.mission-squadron: the whole app ships as one stylesheet. */
+
+body.mission-squadron .brand { display: none; }
+body.mission-squadron #btn-sound { display: none; }
+body.mission-squadron .labels-layer.squadron-labels { display: block; }
+body.mission-squadron.ui-hidden .labels-layer.squadron-labels { display: none; }
+body.mission-squadron .tag { display: flex; align-items: baseline; gap: 6px; padding: 1px 6px 2px; margin-top: -10px; background: rgba(8, 12, 18, 0.34); border: 0; border-left: 2px solid #ff5d61; border-radius: 4px; backdrop-filter: none; font-size: 10px; }
+body.mission-squadron .tag::after { height: 9px; bottom: -10px; background: rgba(255, 255, 255, 0.35); }
+body.mission-squadron .tag .tag-title { font-size: 9px; letter-spacing: 0.04em; }
+body.mission-squadron .tag .tag-body { color: var(--muted); }
+
+/* A hit on one of ours flashes the screen's edge. */
+body.mission-squadron .squadron-alarm { position: fixed; inset: 0; z-index: 3; pointer-events: none; opacity: 0; box-shadow: inset 0 0 90px 10px rgba(255, 50, 50, 0.7); }
+body.mission-squadron .squadron-alarm.hit { animation: squadron-hit 1.1s ease-out 1; }
+@keyframes squadron-hit { 0% { opacity: 1; background: rgba(255, 140, 60, 0.28); } 100% { opacity: 0; background: transparent; } }
+
+/* The camera buttons: a strip under the top bar. */
+body.mission-squadron .squadron-views {
+  position: fixed; z-index: 11; top: calc(var(--bar-h, 34px) + var(--gap) * 2 + var(--safe-t)); left: 50%; transform: translateX(-50%);
+  display: flex; gap: 4px; padding: 4px; border-radius: 999px;
+  background: rgba(11, 17, 25, 0.62); border: 1px solid var(--border); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+body.mission-squadron .squadron-views button { padding: 5px 14px; border-radius: 999px; font-size: 12px; border-color: transparent; background: transparent; }
+body.mission-squadron .squadron-views button.active { background: var(--accent); border-color: var(--accent); color: #1a0d02; font-weight: 700; }
+body.mission-squadron.ui-hidden .squadron-views { display: none; }
+body.mission-squadron .shot-caption { top: calc(var(--bar-h, 34px) + var(--gap) * 2 + var(--safe-t) + 46px); max-width: min(560px, calc(100vw - 32px)); white-space: normal; text-align: center; font-size: 12px; letter-spacing: 0.06em; }
+
+/* The panels: the squadron down the left, the mission, contacts and alerts down the right. */
+body.mission-squadron .squadron-ui { position: fixed; inset: 0; z-index: 11; pointer-events: none; }
+body.mission-squadron .squadron-ui[hidden], body.mission-squadron.ui-hidden .squadron-ui { display: none; }
+body.mission-squadron .squadron-ships, body.mission-squadron .squadron-side { position: absolute; top: calc(var(--bar-h, 34px) + var(--gap) * 2 + var(--safe-t)); display: grid; align-content: start; gap: 6px; pointer-events: none; }
+body.mission-squadron .squadron-ships { left: calc(var(--gap) + var(--safe-l)); width: 252px; max-height: calc(100vh - var(--bar-h, 34px) - var(--keys-h, 56px) - var(--gap) * 5); overflow-y: auto; scrollbar-width: thin; }
+body.mission-squadron .squadron-side { right: calc(var(--gap) + var(--safe-r)); width: 272px; max-height: calc(100vh - var(--bar-h, 34px) - var(--keys-h, 56px) - var(--gap) * 5); overflow-y: auto; scrollbar-width: none; }
+body.mission-squadron:not(.squadron-mapview) .squadron-side { max-height: calc(100vh - var(--bar-h, 34px) - var(--keys-h, 56px) - var(--gap) * 7 - 230px); }
+body.mission-squadron .fs-card, body.mission-squadron .squadron-side section {
+  pointer-events: auto; background: rgba(9, 14, 21, 0.66); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; color: var(--muted);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); font-size: 11px; font-variant-numeric: tabular-nums;
+}
+body.mission-squadron .fs-card { display: grid; gap: 4px; width: 100%; padding: 6px 9px 7px; text-align: left; border-left: 3px solid var(--role); cursor: pointer; font-family: inherit; }
+body.mission-squadron .fs-card:hover { background: rgba(20, 28, 40, 0.8); }
+body.mission-squadron .fs-card.sel { border-color: rgba(255, 255, 255, 0.4); border-left-color: var(--role); }
+body.mission-squadron .fs-card.only { box-shadow: 0 0 0 1px #fff; }
+body.mission-squadron .fs-card.sunk { opacity: 0.5; }
+body.mission-squadron .fs-head { display: flex; align-items: baseline; gap: 6px; color: var(--text); }
+body.mission-squadron .fs-head b { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--role); color: #07110c; font-size: 11px; }
+body.mission-squadron .fs-head span { font-weight: 700; font-size: 11.5px; }
+body.mission-squadron .fs-head em { margin-left: auto; font-style: normal; font-size: 10.5px; color: var(--muted); }
+body.mission-squadron .fs-hull { display: grid; grid-template-columns: minmax(0, 1fr) 34px; align-items: center; gap: 6px; }
+body.mission-squadron .fs-hull em { font-style: normal; text-align: right; color: var(--text); font-size: 10.5px; }
+body.mission-squadron .fs-bar { display: block; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+body.mission-squadron .fs-bar s { display: block; height: 100%; background: #3ddc84; text-decoration: none; transition: width 0.25s; }
+body.mission-squadron .fs-bar.hurt s { background: #f2c94c; }
+body.mission-squadron .fs-bar.bad s, body.mission-squadron .fs-bar s.bad { background: #ff7a1a; }
+body.mission-squadron .fs-comps { display: flex; gap: 3px; }
+body.mission-squadron .fs-comps .cp { position: relative; flex: 1; height: 22px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.16); overflow: hidden; font-style: normal; }
+body.mission-squadron .fs-comps .cp s { position: absolute; left: 0; right: 0; bottom: 0; background: #3ddc84; opacity: 0.8; text-decoration: none; }
+body.mission-squadron .fs-comps .cp.hurt s { background: #f2c94c; } body.mission-squadron .fs-comps .cp.bad s { background: #ff7a1a; } body.mission-squadron .fs-comps .cp.out { border-color: #ff5d61; }
+body.mission-squadron .fs-comps .cp b { position: absolute; left: 0; right: 0; top: 1px; text-align: center; font-size: 8px; letter-spacing: 0.04em; color: #fff; text-shadow: 0 1px 2px #000; z-index: 1; }
+body.mission-squadron .fs-comps .cp em { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; gap: 1px; font-style: normal; font-size: 8px; line-height: 1; z-index: 1; }
+body.mission-squadron .fs-comps u { text-decoration: none; } body.mission-squadron .fs-comps .fire { color: #ff7a1a; } body.mission-squadron .fs-comps .leak { color: #35c8ff; } body.mission-squadron .fs-comps .crew { color: #f2c94c; }
+body.mission-squadron .fs-line { display: flex; align-items: center; gap: 10px; font-size: 10.5px; }
+body.mission-squadron .fs-line b { color: var(--text); font-weight: 600; }
+body.mission-squadron .fs-line small { color: #f2c94c; margin-left: 1px; }
+body.mission-squadron .fs-fuel { display: inline-flex; align-items: center; gap: 4px; flex: 1; min-width: 40px; }
+body.mission-squadron .fs-fuel .fs-bar { flex: 1; height: 5px; }
+body.mission-squadron .fs-fuel.bad { color: #ff8a8d; }
+body.mission-squadron .fs-order { display: flex; justify-content: space-between; gap: 6px; font-size: 10.5px; color: var(--text); }
+body.mission-squadron .fs-order small { color: var(--muted); }
+body.mission-squadron .fs-order.hold { color: #ffb340; }
+
+body.mission-squadron .squadron-side section { padding: 7px 10px 8px; }
+body.mission-squadron .squadron-side h3 { margin: 0 0 4px; display: flex; justify-content: space-between; align-items: baseline; font-size: 10px; letter-spacing: 0.14em; color: var(--muted); }
+body.mission-squadron .squadron-side h3 small { font-size: 9.5px; letter-spacing: 0.08em; color: var(--dim); }
+body.mission-squadron .squadron-side p { margin: 3px 0; font-size: 11px; line-height: 1.35; color: var(--muted); }
+body.mission-squadron .fm-clock { display: grid; grid-template-columns: auto 1fr; align-items: baseline; column-gap: 8px; }
+body.mission-squadron .fm-clock b { font-size: 20px; color: var(--text); }
+body.mission-squadron .fm-clock span { font-size: 11px; }
+body.mission-squadron .fm-clock .fm-prog { grid-column: 1 / -1; display: block; height: 3px; margin-top: 4px; border-radius: 2px; background: var(--accent); text-decoration: none; }
+body.mission-squadron .fm-last { color: var(--text) !important; }
+body.mission-squadron .fm-last b { color: var(--accent); font-weight: 600; margin-right: 4px; }
+body.mission-squadron .fm-kv { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; margin-top: 4px; }
+body.mission-squadron .fm-kv div { display: flex; justify-content: space-between; gap: 6px; }
+body.mission-squadron .fm-kv b { color: var(--text); }
+body.mission-squadron .fm-kv b.bad, body.mission-squadron .fm-kv b.bad { color: #ff8a8d; } body.mission-squadron .fm-kv b.ok { color: #7be9a8; }
+body.mission-squadron .squadron-side ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+body.mission-squadron .squadron-contacts li { display: grid; grid-template-columns: 26px 1fr; grid-template-rows: auto auto; column-gap: 6px; padding: 2px 0; border-top: 1px solid var(--hair); font-size: 11px; }
+body.mission-squadron .squadron-contacts li:first-child { border-top: 0; }
+body.mission-squadron .squadron-contacts li b { grid-row: 1 / 3; align-self: center; text-align: center; border-radius: 4px; padding: 3px 0; font-size: 10.5px; background: rgba(154, 164, 173, 0.25); color: #d6dbe0; }
+body.mission-squadron .squadron-contacts li.hostile b { background: rgba(255, 93, 97, 0.28); color: #ffb0b2; }
+body.mission-squadron .squadron-contacts li span { color: var(--text); }
+body.mission-squadron .squadron-contacts li em { font-style: normal; color: var(--muted); font-size: 10.5px; }
+body.mission-squadron .squadron-contacts li.lost, body.mission-squadron .squadron-contacts li.detected { opacity: 0.7; }
+body.mission-squadron .fc-none { color: var(--dim) !important; }
+body.mission-squadron .squadron-alerts li { display: flex; gap: 8px; font-size: 11px; color: var(--text); }
+body.mission-squadron .squadron-alerts li time { color: var(--dim); min-width: 30px; }
+body.mission-squadron .squadron-alerts li.danger { color: #ff9a9d; } body.mission-squadron .squadron-alerts li.warn { color: #ffd166; } body.mission-squadron .squadron-alerts li.old { opacity: 0.5; }
+
+/* The radar: the main view (a big panel between the columns), or a small corner map in the other cameras. */
+body.mission-squadron .minimap {
+  width: 230px; height: 230px; border-radius: 14px; left: auto; right: calc(var(--gap) + var(--safe-r)); bottom: calc(var(--keys-h, 56px) + var(--gap) * 2 + var(--safe-b));
+  background: rgba(6, 16, 20, 0.5); cursor: crosshair; touch-action: none;
+}
+body.mission-squadron .minimap canvas { width: 100%; height: 100%; }
+body.mission-squadron .minimap.squadron-map-big {
+  left: calc(var(--gap) * 2 + 252px + var(--safe-l)); right: calc(var(--gap) * 2 + 272px + var(--safe-r)); width: auto; height: auto;
+  top: calc(var(--bar-h, 34px) + var(--gap) * 2 + var(--safe-t) + 46px); bottom: calc(var(--keys-h, 56px) + var(--gap) * 2 + var(--safe-b));
+}
+body.mission-squadron .minimap .mm-scale { left: 10px; right: auto; bottom: 8px; text-align: left; font-size: 10px; }
+body.mission-squadron .fm-tools { position: absolute; top: 8px; left: 8px; display: flex; gap: 4px; z-index: 1; }
+body.mission-squadron .fm-tools button { width: 24px; height: 24px; padding: 0; border-radius: 50%; font-size: 14px; line-height: 1; display: grid; place-items: center; background: rgba(9, 14, 21, 0.7); }
+
+/* The keys bar doubles as the touch controls. */
+body.mission-squadron .squadron-keys { pointer-events: auto; gap: 4px 10px; padding: 6px 12px; z-index: 12; font-size: 11.5px; max-width: calc(100vw - 2 * var(--gap)); }
+body.mission-squadron .squadron-keys .fk { background: none; border: 0; border-radius: 6px; padding: 2px 5px; color: var(--muted); cursor: pointer; font-family: inherit; font-size: inherit; }
+body.mission-squadron .squadron-keys .fk:hover { background: rgba(255, 255, 255, 0.08); color: var(--text); }
+body.mission-squadron .squadron-keys .fk-sel { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-weight: 600; white-space: nowrap; }
+body.mission-squadron .squadron-keys .fk.on { background: rgba(255, 179, 64, 0.16); color: #ffd166; }
+body.mission-squadron .squadron-keys .fk.on kbd { background: #ffb340; border-color: #ffb340; color: #1a0d02; }
+body.mission-squadron .squadron-pause {
+  position: fixed; z-index: 12; left: 50%; bottom: calc(var(--keys-h, 56px) + var(--gap) * 2 + var(--safe-b) + 8px); transform: translateX(-50%);
+  padding: 5px 14px; border-radius: 999px; background: rgba(60, 40, 8, 0.82); border: 1px solid rgba(255, 179, 64, 0.8); color: #ffd166; font-size: 12px; font-weight: 700; letter-spacing: 0.1em; pointer-events: none;
+}
+body.mission-squadron .squadron-pause[hidden] { display: none; }
+body.mission-squadron.ui-hidden .squadron-keys, body.mission-squadron.ui-hidden .squadron-pause { display: none; }
+
+/* The debrief at the end. */
+body.mission-squadron .squadron-end { position: fixed; inset: 0; z-index: 13; display: grid; place-items: center; background: rgba(4, 8, 12, 0.5); padding: 16px; }
+body.mission-squadron .squadron-end[hidden] { display: none; }
+body.mission-squadron .fe-card { width: min(420px, 100%); padding: 18px 20px; border-radius: 14px; background: rgba(9, 14, 21, 0.92); border: 1px solid var(--border); backdrop-filter: blur(10px); }
+body.mission-squadron .fe-card.won { border-color: rgba(61, 220, 132, 0.7); } body.mission-squadron .fe-card.lost { border-color: rgba(255, 93, 97, 0.7); }
+body.mission-squadron .fe-card h2 { margin: 0 0 2px; font-size: 20px; }
+body.mission-squadron .fe-card.won h2 { color: #3ddc84; } body.mission-squadron .fe-card.lost h2 { color: #ff5d61; }
+body.mission-squadron .fe-verdict { margin: 0 0 10px; color: var(--muted); font-size: 12.5px; }
+body.mission-squadron .fe-card dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0 0 14px; font-size: 12.5px; }
+body.mission-squadron .fe-card dt { color: var(--muted); } body.mission-squadron .fe-card dd { margin: 0; color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+body.mission-squadron .fe-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+body.mission-squadron .fe-actions button { flex: 1; padding: 8px 12px; border-radius: 8px; }
+body.mission-squadron .fe-actions .primary { background: var(--accent); border-color: var(--accent); color: #1a0d02; font-weight: 700; }
+
+/* Short windows (a laptop, a 1920 px screen at 175 %): the cards and the contact list shrink, nothing is left out. */
+@media (min-width: 901px) and (max-height: 780px) {
+  body.mission-squadron .fs-card { gap: 2px; padding: 4px 8px 5px; }
+  body.mission-squadron .squadron-ships { gap: 4px; scrollbar-width: none; }
+  body.mission-squadron .fs-comps .cp { height: 15px; }
+  body.mission-squadron .fs-comps .cp b { left: 3px; right: auto; top: 2px; text-align: left; font-size: 7.5px; }
+  body.mission-squadron .fs-comps .cp em { left: auto; right: 2px; top: 2px; bottom: auto; }
+  body.mission-squadron .fs-line { font-size: 9.5px; gap: 8px; }
+  body.mission-squadron .fs-order { font-size: 10px; }
+  body.mission-squadron .squadron-contacts li:nth-child(n+5) { display: none; }
+  body.mission-squadron .squadron-side section { padding: 5px 8px 6px; }
+  body.mission-squadron .squadron-side p { font-size: 10.5px; margin: 2px 0; }
+  body.mission-squadron .fm-clock b { font-size: 17px; }
+  body.mission-squadron:not(.squadron-mapview) .minimap { width: 170px; height: 170px; }
+  body.mission-squadron:not(.squadron-mapview) .squadron-side { max-height: calc(100vh - var(--bar-h, 34px) - var(--keys-h, 56px) - var(--gap) * 7 - 170px); }
+}
+
+/* Phones and narrow windows: the squadron is a row of chips under the camera buttons, the side column goes (the banner carries the
+   alerts), the radar fills the middle, and the keys bar wraps into touch buttons at the foot. */
+@media (max-width: 900px) {
+  body.mission-squadron .squadron-views { top: calc(var(--bar-h, 34px) + var(--gap) + var(--safe-t) + 4px); }
+  body.mission-squadron .shot-caption { top: calc(var(--bar-h, 34px) + var(--gap) + var(--safe-t) + 92px); font-size: 11px; }
+  body.mission-squadron .squadron-ships { left: var(--gap); right: var(--gap); width: auto; top: calc(var(--bar-h, 34px) + var(--gap) + var(--safe-t) + 44px); display: flex; overflow-x: auto; overflow-y: hidden; max-height: none; gap: 5px; }
+  body.mission-squadron .fs-card { flex: 0 0 132px; width: 132px; padding: 4px 7px 5px; }
+  body.mission-squadron .fs-comps, body.mission-squadron .fs-line, body.mission-squadron .fs-head em { display: none; }
+  body.mission-squadron .fs-order { font-size: 9.5px; flex-direction: column; gap: 0; }
+  body.mission-squadron .squadron-side { top: calc(var(--bar-h, 34px) + var(--gap) + var(--safe-t) + 8px); right: var(--gap); left: auto; width: auto; max-height: none; overflow: visible; }
+  body.mission-squadron .squadron-contacts, body.mission-squadron .squadron-alerts, body.mission-squadron .squadron-mission h3, body.mission-squadron .squadron-mission p, body.mission-squadron .squadron-mission .fm-kv { display: none; }
+  body.mission-squadron .squadron-mission { padding: 3px 9px; border-radius: 999px; }
+  body.mission-squadron .fm-clock { display: flex; gap: 5px; }
+  body.mission-squadron .fm-clock b { font-size: 14px; }
+  body.mission-squadron .fm-clock span { font-size: 10px; }
+  body.mission-squadron .fm-clock .fm-prog { display: none; }
+  body.mission-squadron .minimap.squadron-map-big { left: var(--gap); right: var(--gap); top: calc(var(--bar-h, 34px) + var(--gap) + var(--safe-t) + 104px); bottom: calc(var(--keys-h, 56px) + var(--gap) * 2 + var(--safe-b)); }
+  body.mission-squadron:not(.squadron-mapview) .minimap { display: none; }
+  body.mission-squadron .squadron-keys { bottom: calc(var(--gap) + var(--safe-b)); left: var(--gap); right: var(--gap); transform: none; width: auto; justify-content: center; gap: 3px 4px; padding: 5px 6px; }
+  body.mission-squadron .squadron-keys .fk span { display: none; }
+  body.mission-squadron .squadron-keys .fk.on span, body.mission-squadron .squadron-keys .fk[data-key=" "] span { display: inline; }
+  body.mission-squadron .squadron-keys .fk-sel { display: none; }
+  body.mission-squadron .squadron-keys .fk kbd { min-width: 30px; min-height: 28px; display: inline-grid; place-items: center; font-size: 12px; }
+}

@@ -1,16 +1,16 @@
-// Fleet command's controls (src/fleetControls.js): what the keys and clicks mean as orders, the rewind target, the logged crew move
+// Squadron orders's controls (src/squadronControls.js): what the keys and clicks mean as orders, the rewind target, the logged crew move
 // that survives a rewind, and the alert feed that never repeats itself.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { FleetSim, DT, hooks } from '../src/fleet.js';
-import { applyOrder } from '../src/fleetOrders.js';
-import { transferCrew, stocksOf } from '../src/fleetResources.js';
+import { SquadronSim, DT, hooks } from '../src/squadron.js';
+import { applyOrder } from '../src/squadronOrders.js';
+import { transferCrew, stocksOf } from '../src/squadronResources.js';
 import {
   FORM_CYCLE, SPEEDS, courseOrder, speedOrder, formOrder, sectorOrders, stanceOrder, gotoOrders, courseToOrder, crewTarget,
   rewindTarget, describeOrder, contactLabel, issue, logCrew, withCrewHook, AlertFeed, hullFrac, hullMax, targets, scopeFor,
-} from '../src/fleetControls.js';
+} from '../src/squadronControls.js';
 
-const quiet = (seed = 1, over = {}) => new FleetSim({ seed, hooks: { planThreats: () => [], ...over } });
+const quiet = (seed = 1, over = {}) => new SquadronSim({ seed, hooks: { planThreats: () => [], ...over } });
 const run = (sim, s) => { for (let i = 0; i < Math.round(s / DT); i++) sim.step(DT); };
 
 describe('course and speed keys', () => {

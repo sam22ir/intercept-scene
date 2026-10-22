@@ -1,11 +1,11 @@
-// Fleet command's controls, as pure functions: what a key or a click means as an order, for the ships selected. The scene (fleetMain.js)
-// only reads keys and clicks and calls these; test/fleetControls.test.mjs drives them against a FleetSim.
+// Squadron orders's controls, as pure functions: what a key or a click means as an order, for the ships selected. The scene (squadronMain.js)
+// only reads keys and clicks and calls these; test/squadronControls.test.mjs drives them against a SquadronSim.
 //
 // A selection is 'all' or one squadron index. A formation or a sector patrol is laid off from the lead (the guide), so while one is ordered
 // a course, speed or goto meant for everybody goes to the lead alone: the others follow her. (Sent to every ship, a course or goto would
 // also clear their formation and send them all to the same point.) A single follower given a course or goto leaves her station.
-import { FORMATIONS, leadOf } from './fleetOrders.js';
-import { ROLES } from './fleetRoles.js';
+import { FORMATIONS, leadOf } from './squadronOrders.js';
+import { ROLES } from './squadronRoles.js';
 import { HULL_HP, DT } from './duel.js';
 
 export const FORM_CYCLE = Object.keys(FORMATIONS); // FORM 1, FORM 3, BOX, FORM D
@@ -145,7 +145,7 @@ export function issue(sim, orders) {
   return list.filter(Boolean).map((o) => sim.order(o)).filter(Boolean);
 }
 
-// An action put in the log so a rewind replays it: a crew moved between ships. FleetSim.order refuses unknown types,
+// An action put in the log so a rewind replays it: a crew moved between ships. SquadronSim.order refuses unknown types,
 // so the entry is stamped here exactly as order() does and applied through applyLogged; the sim needs the hook wrapper below.
 export function logCrew(sim, from, dest) {
   const e = { to: 'all', type: 'crew', from, dest, t: sim.t, n: sim.steps };
@@ -153,7 +153,7 @@ export function logCrew(sim, from, dest) {
   sim.applyLogged(e);
   return e;
 }
-// Wraps the order hook so a logged crew move is carried out by transferCrew (and replayed by a rewind). `base` is fleetOrders.applyOrder.
+// Wraps the order hook so a logged crew move is carried out by transferCrew (and replayed by a rewind). `base` is squadronOrders.applyOrder.
 export function withCrewHook(base, transferCrew, results = null) {
   return (sim, order) => {
     if (order.type === 'crew') {

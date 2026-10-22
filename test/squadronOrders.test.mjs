@@ -1,24 +1,24 @@
-// Fleet orders: course, speed, formations, sector patrols, stance, goto, and the purity and determinism of steerGoal.
+// Squadron orders: course, speed, formations, sector patrols, stance, goto, and the purity and determinism of steerGoal.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyOrder, steerGoal, formationStation, patrolOffset, canonicalForm } from '../src/fleetOrders.js';
-import { FleetSim, DT } from '../src/fleet.js';
+import { applyOrder, steerGoal, formationStation, patrolOffset, canonicalForm } from '../src/squadronOrders.js';
+import { SquadronSim, DT } from '../src/squadron.js';
 
 // Threats off: these tests check the orders, not the fight.
-const quiet = (seed = 1, n = 4) => new FleetSim({ seed, n, hooks: { planThreats: () => [] } });
+const quiet = (seed = 1, n = 4) => new SquadronSim({ seed, n, hooks: { planThreats: () => [] } });
 const runFor = (sim, seconds) => { for (let i = 0; i < Math.round(seconds / DT); i++) sim.step(DT); };
 const distTo = (s, p) => Math.hypot(p.x - s.x, p.z - s.z);
 
 describe('course and speed', () => {
   it('applyOrder changes only the ships the order names', () => {
-    const sim = new FleetSim({ seed: 1 });
+    const sim = new SquadronSim({ seed: 1 });
     applyOrder(sim, { to: [1], type: 'course', course: 450 });
     assert.equal(sim.squad[1].goal.course, 90);
     assert.equal(sim.squad[0].goal.course, 0);
   });
 
   it('steerGoal returns numeric { course, kn } and does not change the ship', () => {
-    const sim = new FleetSim({ seed: 1 });
+    const sim = new SquadronSim({ seed: 1 });
     const before = structuredClone(sim.squad[2].goal);
     const g1 = steerGoal(sim, sim.squad[2]);
     const g2 = steerGoal(sim, sim.squad[2]);
@@ -153,7 +153,7 @@ describe('stance', () => {
   });
 
   it('a ship on hold fires no shells in a fight', () => {
-    const sim = new FleetSim({ seed: 5, hooks: { planThreats: () => [{ t: 1, kind: 'frigate', rel: 0, range: 4000 }] } });
+    const sim = new SquadronSim({ seed: 5, hooks: { planThreats: () => [{ t: 1, kind: 'frigate', rel: 0, range: 4000 }] } });
     sim.order({ to: 1, type: 'stance', stance: 'hold' });
     runFor(sim, 200);
     assert.equal(sim.squad[1].stats.shells + sim.squad[1].stats.bursts, 0);
@@ -181,7 +181,7 @@ describe('determinism', () => {
     runFor(sim, 200);
   };
   it('two sims with the same seed and orders end identical', () => {
-    const a = new FleetSim({ seed: 12 }), b = new FleetSim({ seed: 12 });
+    const a = new SquadronSim({ seed: 12 }), b = new SquadronSim({ seed: 12 });
     script(a);
     script(b);
     assert.equal(a.digest(), b.digest());

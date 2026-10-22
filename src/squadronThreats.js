@@ -1,4 +1,4 @@
-// Fleet command, hook 2: what comes at the squadron. Pure.
+// Squadron orders, hook 2: what comes at the squadron. Pure.
 //   planThreats(sim, rng) -> [{ t, kind, ... }]   sorted by t. kind: 'raider' | 'drone' | 'merchant' | 'wave'.
 //   spawnThreat(sim, w)   -> void   called when sim.t reaches w.t: adds the ship(s) with sim.newShip and pushes 'arrive' events.
 //     Arrive kinds: 'enemy' (raiders and waves), 'drone', 'merchant'.

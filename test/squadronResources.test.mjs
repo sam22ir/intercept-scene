@@ -1,18 +1,18 @@
-// Fleet resources (src/fleetResources.js): fuel and its speed cap, crew transfers, resupply, stocks, determinism. Runs in Node.
+// Squadron resources (src/squadronResources.js): fuel and its speed cap, crew transfers, resupply, stocks, determinism. Runs in Node.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { FleetSim, DT } from '../src/fleet.js';
+import { SquadronSim, DT } from '../src/squadron.js';
 import { KT, TELEGRAPH, CREWS, AMMO_STOCK } from '../src/duel.js';
-import { ROLES } from '../src/fleetRoles.js';
+import { ROLES } from '../src/squadronRoles.js';
 import {
   stepResources, transferCrew, resupply, stocksOf, FUEL_ENDURANCE, LOW_FUEL, CREW_RANGE, TRANSIT_S, RESUPPLY_RANGE,
-} from '../src/fleetResources.js';
+} from '../src/squadronResources.js';
 
 const FULL_KN = TELEGRAPH[4].kn;
 
 describe('fuel', () => {
   it('starts full and drains with speed: about 40 minutes at 12 kn', () => {
-    const sim = new FleetSim({ seed: 1 });
+    const sim = new SquadronSim({ seed: 1 });
     const s = sim.squad[0];
     s.u = 12 * KT;
     for (let i = 0; i < 1200; i++) stepResources(sim, 1); // 20 minutes
@@ -22,7 +22,7 @@ describe('fuel', () => {
   });
 
   it('burns nothing while stopped', () => {
-    const sim = new FleetSim({ seed: 1 });
+    const sim = new SquadronSim({ seed: 1 });
     const s = sim.squad[1];
     s.u = 0;
     for (let i = 0; i < 600; i++) stepResources(sim, 1);
@@ -30,7 +30,7 @@ describe('fuel', () => {
   });
 
   it('caps the speed once low, and leaves it alone above the low mark', () => {
-    const sim = new FleetSim({ seed: 1 });
+    const sim = new SquadronSim({ seed: 1 });
     const s = sim.squad[0];
     s.fuel = LOW_FUEL / 2;
     s.u = FULL_KN * KT;
@@ -39,7 +39,7 @@ describe('fuel', () => {
     assert.ok(s.u <= cap + 1e-9, `speed ${s.u} above the low-fuel cap ${cap}`);
     assert.ok(s.u > 0.5 * cap, 'still making way');
 
-    const t = new FleetSim({ seed: 1 });
+    const t = new SquadronSim({ seed: 1 });
     t.squad[0].fuel = 0.5;
     t.squad[0].u = FULL_KN * KT;
     stepResources(t, 0.01);
@@ -47,7 +47,7 @@ describe('fuel', () => {
   });
 
   it('drifts to a stop when the tanks are dry', () => {
-    const sim = new FleetSim({ seed: 1 });
+    const sim = new SquadronSim({ seed: 1 });
     const s = sim.squad[0];
     s.fuel = 0;
     s.u = FULL_KN * KT;
@@ -62,7 +62,7 @@ describe('fuel', () => {
   });
 
   it('only squadron ships burn fuel; threats keep the full tank', () => {
-    const sim = new FleetSim({ seed: 1 });
+    const sim = new SquadronSim({ seed: 1 });
     const threat = sim.newShip(-3000, 0, 0, 1);
     threat.u = 12 * KT;
     for (let i = 0; i < 100; i++) stepResources(sim, 1);
@@ -72,7 +72,7 @@ describe('fuel', () => {
 
 describe('crew transfer', () => {
   it('moves a free crew between ships in range, and it takes transit time to come aboard', () => {
-    const sim = new FleetSim({ seed: 2 });
+    const sim = new SquadronSim({ seed: 2 });
     const [a, b] = sim.squad;
     assert.ok(Math.hypot(a.x - b.x, a.z - b.z) <= CREW_RANGE);
     assert.equal(a.crews.length, CREWS);
@@ -87,7 +87,7 @@ describe('crew transfer', () => {
   });
 
   it('is refused out of range, from a sunk ship, with one crew left, or with no free crew', () => {
-    const sim = new FleetSim({ seed: 3 });
+    const sim = new SquadronSim({ seed: 3 });
     sim.squad[2].x = -5000;
     assert.equal(transferCrew(sim, 0, 2), false, 'out of range');
     sim.squad[1].tSunk = 5;
@@ -103,7 +103,7 @@ describe('crew transfer', () => {
 
 describe('resupply and stocks', () => {
   it('reports the stocks the duel starts with', () => {
-    const sim = new FleetSim({ seed: 4 });
+    const sim = new SquadronSim({ seed: 4 });
     const s = sim.squad[0];
     const st = stocksOf(s);
     assert.deepEqual(st, { he: s.gun.stock.he, ap: s.gun.stock.ap, missiles: 0, crews: CREWS, fuel: 1 });
@@ -111,7 +111,7 @@ describe('resupply and stocks', () => {
   });
 
   it('refills guns and fuel from a supply ship within range only', () => {
-    const sim = new FleetSim({ seed: 5 });
+    const sim = new SquadronSim({ seed: 5 });
     const s = sim.squad[0];
     const full = { he: Math.round(AMMO_STOCK.he * ROLES[s.role].stock), ap: Math.round(AMMO_STOCK.ap * ROLES[s.role].stock) };
     s.gun.stock = { he: 3, ap: 1 };
@@ -130,7 +130,7 @@ describe('resupply and stocks', () => {
 describe('determinism', () => {
   it('the same seed and the same transfers give the same resource state, bit for bit', () => {
     const play = () => {
-      const sim = new FleetSim({ seed: 9 });
+      const sim = new SquadronSim({ seed: 9 });
       for (let i = 0; i < 4000; i++) {
         if (i === 500) transferCrew(sim, 0, 1);
         if (i === 900) sim.squad[1].fuel = 0.1;

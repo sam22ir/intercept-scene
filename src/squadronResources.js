@@ -1,4 +1,4 @@
-// Fleet command, hook 3: the things a ship runs out of. Pure.
+// Squadron orders, hook 3: the things a ship runs out of. Pure.
 //   stepResources(sim, dt) -> void   called once per fixed step after the physics: fuel (squadron ships, 0..1), the speed
 //   cap and drift that go with it, and the arrival of crews transferred between ships.
 //   transferCrew(sim, fromIdx, toIdx) -> bool   a free repair crew leaves one squadron ship for another (within CREW_RANGE, takes TRANSIT_S)
@@ -9,7 +9,7 @@
 // ship (`inbound`, the seconds left per crew), so a rewind (a fresh ship set) clears it with the rest of the state.
 // Deterministic: no clock other than the step's dt, no randomness.
 import { AMMO_STOCK, TELEGRAPH, KT } from './duel.js';
-import { ROLES } from './fleetRoles.js';
+import { ROLES } from './squadronRoles.js';
 
 export const FUEL_KN = 12; // the speed the endurance is quoted at
 export const FUEL_ENDURANCE = 40 * 60; // s at FUEL_KN from full to empty

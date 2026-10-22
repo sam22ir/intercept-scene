@@ -1,4 +1,4 @@
-// Fleet command, hook 5: what the player is told. Reads the sim; its only write is its own memory on the sim (`sim._info`),
+// Squadron orders, hook 5: what the player is told. Reads the sim; its only write is its own memory on the sim (`sim._info`),
 // which never enters the digest, so the info layer cannot change a run.
 //   contactsFor(sim, t) -> [{ idx, team, kind, state, conf, x, z, psi, u, bearing, range }]
 //     A hostile or neutral ship appears gradually. Inside the radar range of any living squadron ship (9 km times that

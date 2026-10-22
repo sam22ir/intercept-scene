@@ -1,9 +1,9 @@
-// Ship roles (src/fleetRoles.js): each role changes the stat it claims, applying twice does not compound, the same seed gives the
+// Ship roles (src/squadronRoles.js): each role changes the stat it claims, applying twice does not compound, the same seed gives the
 // same result, and a seeded gun ship vs picket comparison shows the intended difference.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { ROLES, applyRole } from '../src/fleetRoles.js';
-import { FleetSim } from '../src/fleet.js';
+import { ROLES, applyRole } from '../src/squadronRoles.js';
+import { SquadronSim } from '../src/squadron.js';
 import { makeShip, HULL_HP } from '../src/duel.js';
 
 // A fresh frigate with the squadron helmsman's profile, built the way duel.js builds one.
@@ -79,33 +79,33 @@ describe('each role changes the stat it claims', () => {
   });
 });
 
-describe('seeded fleets with roles', () => {
+describe('seeded squadrons with roles', () => {
   it('the same seed gives the same result (digest and role stats)', () => {
-    const a = new FleetSim({ seed: 7, n: 3 });
-    const b = new FleetSim({ seed: 7, n: 3 });
+    const a = new SquadronSim({ seed: 7, n: 3 });
+    const b = new SquadronSim({ seed: 7, n: 3 });
     for (let i = 0; i < 300; i++) { a.advance(0.1); b.advance(0.1); }
     assert.equal(a.digest(), b.digest());
     assert.deepEqual(a.squad.map((s) => s.role), ['picket', 'gun', 'escort']);
     assert.deepEqual(a.squad.map((s) => total(s)), b.squad.map((s) => total(s)));
   });
 
-  it('the gun ship starts with more 76 mm rounds than the picket in the same fleet', () => {
-    const sim = new FleetSim({ seed: 3, n: 3 });
+  it('the gun ship starts with more 76 mm rounds than the picket in the same squadron', () => {
+    const sim = new SquadronSim({ seed: 3, n: 3 });
     const [picket, gun] = sim.squad;
     assert.equal(picket.role, 'picket');
     assert.equal(gun.role, 'gun');
     assert.ok(total(gun) > total(picket), `gun ${total(gun)} vs picket ${total(picket)}`);
   });
 
-  it('the gun ship reloads faster than the picket (FleetSim.fireMain)', () => {
-    const sim = new FleetSim({ seed: 3, level: 'normal', scenario: 'defend' });
+  it('the gun ship reloads faster than the picket (SquadronSim.fireMain)', () => {
+    const sim = new SquadronSim({ seed: 3, level: 'normal', scenario: 'defend' });
     const pick = sim.squad.find((x) => x.role === 'picket'), gun = sim.squad.find((x) => x.role === 'gun');
     sim.fireMain(pick);
     sim.fireMain(gun);
     assert.ok(gun.gun.cool < pick.gun.cool, `gun ${gun.gun.cool} vs picket ${pick.gun.cool}`);
   });
   it('the escort is capped below full speed', () => {
-    const sim = new FleetSim({ seed: 3, level: 'normal', scenario: 'defend' });
+    const sim = new SquadronSim({ seed: 3, level: 'normal', scenario: 'defend' });
     const esc = sim.squad.find((x) => x.role === 'escort');
     esc.u = 100;
     sim.step(1 / 120);

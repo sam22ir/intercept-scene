@@ -1,5 +1,5 @@
-// Fleet command, hook 6: scenarios and how a run is judged. Reads the sim; its memory (`sim._score`, keyed to the ships
-// array like fleetInfo's) only remembers which merchants have crossed and how long the lead has been out of the zone.
+// Squadron orders, hook 6: scenarios and how a run is judged. Reads the sim; its memory (`sim._score`, keyed to the ships
+// array like squadronInfo's) only remembers which merchants have crossed and how long the lead has been out of the zone.
 //   SCENARIOS            { escort, defend } -> { name, duration (s), text, ... }
 //                        escort: `gate` (m ahead of the start, along +X): merchants must get past it.
 //                        defend: `zone` { x, z, r }: the lead ship must stay inside it.
@@ -7,7 +7,7 @@
 //   LEVEL_RULES          per level: `allowed` merchants that may be lost (escort; 0 means any loss loses), `outLimit` s the lead
 //                        may be out of the zone (defend)
 //   scoreOf(sim)         -> { status: 'running' | 'won' | 'lost', reason }. Also calls the next raider wave in once the last
-//                        one is down (as DuelSim.judge does), so FleetSim.judge's call is the only one that moves the waves.
+//                        one is down (as DuelSim.judge does), so SquadronSim.judge's call is the only one that moves the waves.
 //   debriefOf(sim)       -> { scenario, status, reason, verdict, time, losses [idx], shots, hits, merchantsSaved, merchantsCrossed,
 //                        merchantsLost, enemiesSunk, score }. Reads only; never moves a wave or changes the sim.
 import { LEVELS } from './duel.js';
@@ -22,7 +22,7 @@ export const LEVEL_RULES = {
   normal: { allowed: 0, outLimit: 60 },
   hard: { allowed: 0, outLimit: 40 },
 };
-// The pending kinds fleetThreats plans: raiders come in waves; drones and merchants are not raiders.
+// The pending kinds squadronThreats plans: raiders come in waves; drones and merchants are not raiders.
 const RAIDER_KINDS = ['raider', 'wave', 'enemy'];
 const GRACE = 120; // s past the duration after which a defence is decided by who is left
 const CALL_IN = 12; // s before the next raider wave arrives once the last is down (as DuelSim.judge)

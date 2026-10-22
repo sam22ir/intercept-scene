@@ -139,9 +139,9 @@ function duel(animate) {
     + burst(360, 72, 0.88, animate, 24);
 }
 
-// Fleet command: four frigates in plan view change from a column into a line abreast, shoot a raider and a drone as they close, with the
+// Squadron orders: four frigates in plan view change from a column into a line abreast, shoot a raider and a drone as they close, with the
 // selected ship's sector shaded. Everything is drawn from the same two layouts, as the drills are.
-function fleet(animate) {
+function squadron(animate) {
   const A = [[205, 110], [165, 110], [125, 110], [85, 110]];
   const B = [[205, 58], [205, 94], [205, 130], [205, 166]];
   const ships = A.map(([ax, ay], i) => {
@@ -173,7 +173,7 @@ const SCENES = {
   fly: (_s, a) => fly(a),
   helm: (_s, a) => helm(a),
   duel: (_s, a) => duel(a),
-  fleet: (_s, a) => fleet(a),
+  squadron: (_s, a) => squadron(a),
   maneuvers2: (_s, a) => drill(2, a),
   maneuvers: (_s, a) => drill(3, a),
   formations: (_s, a) => drill(4, a),

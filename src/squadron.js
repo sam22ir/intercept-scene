@@ -1,43 +1,43 @@
-// "Fleet command": you command a squadron of 3 or 4 frigates; the hulls steer and fight themselves and you give orders.
+// "Squadron orders": you command a squadron of 3 or 4 frigates; the hulls steer and fight themselves and you give orders.
 // A pure, seeded, deterministic real-time simulation on top of the ship duel (duel.js): same physics, same guns, same
-// damage. Imports only duel.js and the hook modules; tested in Node by test/fleet.test.mjs.
+// damage. Imports only duel.js and the hook modules; tested in Node by test/squadron.test.mjs.
 //
 // ===== FROZEN CONTRACTS (other modules and the scene build on these) ================================================
 // Ships: squadron = ships idx 0..N-1 (team 0, N = 3..4, default 4), always first in sim.ships; later indexes are threats
 //   (team 1 enemy, 2 neutral merchants, 0 allies). Every squadron ship runs on the AI helmsman (s.ai set); the player never
 //   steers a hull. Extras on a DuelSim ship:
-//     role    'picket' | 'gun' | 'escort'          (fleetRoles.applyRole sets it and its stat tweaks; also s.radar)
+//     role    'picket' | 'gun' | 'escort'          (squadronRoles.applyRole sets it and its stat tweaks; also s.radar)
 //     goal    { course (deg true, 0 = +X, cw), kn, to: [x, z] | null }   what the helmsman steers for (via hooks.steerGoal)
 //     stance  'engage' | 'hold'                    hold = 76 mm and 30 mm do not fire (s.cmd.fire/gat false, s.auto false)
-//     form    string | null                        the formation ordered (meaning belongs to fleetOrders)
-//     sector  object | null                        the screen sector ordered (fleetOrders)
-//     fuel    0..1                                 (fleetResources)
+//     form    string | null                        the formation ordered (meaning belongs to squadronOrders)
+//     sector  object | null                        the screen sector ordered (squadronOrders)
+//     fuel    0..1                                 (squadronResources)
 // Orders: { t, to: 'all' | idx | [idx], type: 'course'|'speed'|'form'|'sector'|'stance'|'goto', ...args }
 //     args: course {course: deg}, speed {kn}, form {form}, sector {sector}, stance {stance: 'engage'|'hold'}, goto {x, z}.
 //   sim.order(o) stamps it (t = sim.t, n = sim.steps; any t in `o` is ignored), appends it to sim.log, applies it through
 //   hooks.applyOrder, and returns the stamped entry (false for an unknown type). Orders act between two fixed steps.
 // Rewind: sim.rewindTo(t) = reset() + replay of the log entries with t <= target through step(), then the log is cut there
 //   (a rewind is a branch point). Same seed + same log => identical state, bit for bit (sim.digest() compares).
-// Hooks (one object, assembled below; FleetSim reads this.hooks, `new FleetSim({ hooks: {...} })` overrides single entries):
-//   fleetOrders     applyOrder(sim, order) -> void            steerGoal(sim, ship) -> { course, kn }
-//   fleetThreats    planThreats(sim, rng) -> [{t, kind, ...}]  spawnThreat(sim, w) -> void   (pending list like DuelSim.pending)
-//   fleetResources  stepResources(sim, dt) -> void             (after every physics step)
-//   fleetRoles      ROLES table, applyRole(ship, role) -> void
-//   fleetInfo       contactsFor(sim, t) -> [contact]           alertsOf(sim) -> [alert]
-//   fleetScoring    SCENARIOS {escort, defend}, LEVELS, scoreOf(sim) -> {status:'running'|'won'|'lost', reason},
+// Hooks (one object, assembled below; SquadronSim reads this.hooks, `new SquadronSim({ hooks: {...} })` overrides single entries):
+//   squadronOrders     applyOrder(sim, order) -> void            steerGoal(sim, ship) -> { course, kn }
+//   squadronThreats    planThreats(sim, rng) -> [{t, kind, ...}]  spawnThreat(sim, w) -> void   (pending list like DuelSim.pending)
+//   squadronResources  stepResources(sim, dt) -> void             (after every physics step)
+//   squadronRoles      ROLES table, applyRole(ship, role) -> void
+//   squadronInfo       contactsFor(sim, t) -> [contact]           alertsOf(sim) -> [alert]
+//   squadronScoring    SCENARIOS {escort, defend}, LEVELS, scoreOf(sim) -> {status:'running'|'won'|'lost', reason},
 //                   debriefOf(sim) -> {...}
 //   Hook modules import only pure code (duel.js, hull.js, formations.js) and reach everything else through the sim object:
 //   sim.squad, sim.targetsOf(to), sim.centroid(), sim.newShip(x, z, psi, team, kind), sim.rngW, sim.makeAi(level), sim.events.
-// Judging: FleetSim.judge() loses when one of ours sinks a merchant ('merchant') or every squadron ship is sunk ('sunk'),
+// Judging: SquadronSim.judge() loses when one of ours sinks a merchant ('merchant') or every squadron ship is sunk ('sunk'),
 //   otherwise asks hooks.scoreOf. winner is 0 (won) or 1 (lost), over is the reason, as in DuelSim.
 // ====================================================================================================================
 import { DuelSim, DT, LEVELS, TELEGRAPH, KT, makeShip, mulberry32 } from './duel.js';
-import { applyOrder, steerGoal, formationStation, leadOf } from './fleetOrders.js';
-import { planThreats, spawnThreat } from './fleetThreats.js';
-import { stepResources } from './fleetResources.js';
-import { applyRole } from './fleetRoles.js';
-import { contactsFor, alertsOf } from './fleetInfo.js';
-import { scoreOf, debriefOf, SCENARIOS } from './fleetScoring.js';
+import { applyOrder, steerGoal, formationStation, leadOf } from './squadronOrders.js';
+import { planThreats, spawnThreat } from './squadronThreats.js';
+import { stepResources } from './squadronResources.js';
+import { applyRole } from './squadronRoles.js';
+import { contactsFor, alertsOf } from './squadronInfo.js';
+import { scoreOf, debriefOf, SCENARIOS } from './squadronScoring.js';
 
 export { DT };
 export const hooks = { applyOrder, steerGoal, planThreats, spawnThreat, stepResources, applyRole, contactsFor, alertsOf, scoreOf, debriefOf };
@@ -52,7 +52,7 @@ const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 // The helmsman's profile: the duel's Normal fire-control, tuned like the player's own (aim factor 1, 3 s tracker).
 const SQUAD_AI = { ...LEVELS.normal, aim: 1.0, track: 3, think: THINK, crews: 2 };
 
-export class FleetSim extends DuelSim {
+export class SquadronSim extends DuelSim {
   constructor({ seed = 11, level = 'normal', n = 4, scenario = 'defend', hooks: over = null } = {}) {
     super({ seed, level, waves: false });
     this.n = clamp(Math.round(n) || 4, 3, 4);
@@ -100,7 +100,7 @@ export class FleetSim extends DuelSim {
   // The player gives no steering input: `input` is ignored, the whole state is a function of the seed and the order log.
   step(dt) {
     super.step(dt, {});
-    for (const s of this.squad) { // role top-speed cap: only the fleet reads s.topSpeed, duel.js is untouched
+    for (const s of this.squad) { // role top-speed cap: only the squadron reads s.topSpeed, duel.js is untouched
       if (s.topSpeed && s.topSpeed < 1 && s.tSunk === null) s.u = Math.min(s.u, TELEGRAPH[TELEGRAPH.length - 1].kn * KT * s.topSpeed);
     }
     this.steps += 1;
