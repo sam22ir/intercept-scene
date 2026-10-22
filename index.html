@@ -64,6 +64,11 @@
                 <span class="m-txt"><b>Surface battle</b><small>Frigate against frigate: sink her first</small></span>
                 <em class="m-kind">Manual</em>
               </button>
+              <button class="mission" role="radio" aria-checked="false" data-group="play" data-mode="squadron">
+                <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M14 4 L17 10 L20 4Z M4 18 L7 24 L10 18Z M24 18 L27 24 L30 18Z M14 30 L17 36 L20 30Z"/><path class="i-line" d="M17 10 L7 18 M17 10 L27 18 M7 24 L17 30 M27 24 L17 30"/><circle class="i-burst" cx="33" cy="9" r="3.5"/></svg>
+                <span class="m-txt"><b>Squadron orders</b><small>Command four frigates: escort or defend</small></span>
+                <em class="m-kind">Manual</em>
+              </button>
               <button class="mission" role="radio" aria-checked="false" data-group="command" data-mode="fleet">
                 <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M3 30 H14 L18 32.5 L14 35 H3Z"/><path class="i-ship" d="M3 21 H14 L18 23.5 L14 26 H3Z"/><path class="i-ship" d="M26 9 H37 L33 11.5 L37 14 H26Z"/><path class="i-arc" d="M20 24 Q26 18 30 12"/><circle class="i-burst" cx="30" cy="11" r="2.6"/></svg>
                 <span class="m-txt"><b>Fleet command</b><small>Command a squadron from above with the mouse</small></span>
@@ -159,6 +164,19 @@
                 <button class="pick" role="radio" aria-checked="false" data-level="hard">
                   <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-bar on" d="M8 30 V24"/><path class="i-bar on" d="M17 30 V18"/><path class="i-bar on" d="M26 30 V12"/></svg>
                   <span class="m-txt"><b><kbd>3</kbd>Hard</b><small>Shoots straight, jinks and runs when hurt</small></span>
+                </button>
+              </div>
+            </div>
+            <div class="brief-scenario variant" aria-labelledby="ch-step5" hidden>
+              <h2 id="ch-step5">Scenario</h2>
+              <div class="picks" role="radiogroup" aria-label="Scenario">
+                <button class="pick" role="radio" aria-checked="false" data-scenario="escort">
+                  <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-line" d="M6 8 H34"/><path class="i-ship" d="M12 32 L15 25 L18 32Z"/><path class="i-ship" d="M23 32 L26 25 L29 32Z"/></svg>
+                  <span class="m-txt"><b>Escort</b><small>Bring the merchant ships past the gate</small></span>
+                </button>
+                <button class="pick" role="radio" aria-checked="false" data-scenario="defend">
+                  <svg viewBox="0 0 40 40" aria-hidden="true"><circle class="i-line" cx="20" cy="20" r="13"/><path class="i-ship" d="M17 24 L20 16 L23 24Z"/></svg>
+                  <span class="m-txt"><b>Defend</b><small>Hold a zone against raiders and drones</small></span>
                 </button>
               </div>
             </div>

@@ -8,7 +8,8 @@
 // to scrub), Play (take the controls) and Drill (the naval exercises). A tab lists its entries (`entriesOf`):
 // each mission is one, except the three drills, which are one entry ("Tactical maneuvers", `FAMILIES`) whose
 // variants are chosen by the number of ships (`ships`, `tile`, `tileSub`). A mission with `level: true` (the ship
-// duel) lets the player pick the enemy's level (`ENEMY_LEVELS`).
+// duel and the squadron mission) lets the player pick the enemy's level (`ENEMY_LEVELS`); a mission with `scenario: true` (the squadron
+// mission) also picks its scenario (`SQUADRON_SCENARIOS`).
 
 export const GROUPS = [
   { id: 'watch', name: 'Watch', hint: 'Replays you can scrub both ways' },
@@ -156,6 +157,24 @@ export const MISSIONS = [
     button: 'Open fire',
   },
   {
+    id: 'squadron',
+    group: 'play',
+    name: 'Squadron orders',
+    kind: 'Manual',
+    blurb: 'Command four frigates: escort or defend',
+    tagline: 'You command four frigates that steer and fight themselves: give orders on the radar, pause to plan, rewind with Z. Escort merchant ships past a gate or defend a zone.',
+    facts: ['4 frigates', 'Escort or defend', 'Pause and rewind'],
+    keys: [['0 – 4', 'pick a frigate, 0 is all'], ['← →', 'turn 10°'], ['↑ ↓', 'speed'], ['F', 'formation'], ['P', 'sector patrol'], ['E', 'engage / hold fire'], ['X', 'send a repair crew'], ['Space', 'pause and plan'], ['Z', 'rewind to the last order']],
+    ship: false,
+    level: true,
+    scenario: true,
+    fixed: 'you command',
+    fixedNote: 'Four frigates, fixed: a picket, two gun ships and an escort.',
+    brand: 'Squadron orders',
+    sub: 'four frigates',
+    button: 'Give orders',
+  },
+  {
     id: 'fleet',
     group: 'command',
     name: 'Fleet command',
@@ -186,6 +205,13 @@ export const ENEMY_LEVELS = [
   { id: 'hard', name: 'Hard', desc: 'Shoots straight, jinks and runs when hurt' },
 ];
 export const DEFAULT_LEVEL = 'normal';
+// The squadron mission's scenario (a choice on the start screen like the level; the scene reads it once). test/menu.test.mjs checks the
+// ids against squadronScoring.js's SCENARIOS, so this pure list stays true.
+export const SQUADRON_SCENARIOS = [
+  { id: 'escort', name: 'Escort', desc: 'Bring the merchant ships past the gate' },
+  { id: 'defend', name: 'Defend', desc: 'Hold a zone against raiders and drones' },
+];
+export const DEFAULT_SCENARIO = 'defend';
 export const FIXED_SHIP = 'fwd'; // what a mission without a choice uses
 const SUFFIX = 'Simulation';
 
@@ -218,6 +244,7 @@ export function menuText(missionId, shipId = FIXED_SHIP) {
     keys: m.keys,
     hasShip: m.ship,
     hasLevel: !!m.level,
+    hasScenario: !!m.scenario,
     ship: m.ship ? s.name : null,
     summary: m.ship ? `${m.name} · ${s.name}` : `${m.name} · ${m.fixed}`,
     note: m.ship ? s.desc : m.fixedNote,

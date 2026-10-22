@@ -139,6 +139,34 @@ function duel(animate) {
     + burst(360, 72, 0.88, animate, 24);
 }
 
+// Squadron orders: four frigates in plan view change from a column into a line abreast, shoot a raider and a drone as they close, with the
+// selected ship's sector shaded. Everything is drawn from the same two layouts, as the drills are.
+function squadron(animate) {
+  const A = [[205, 110], [165, 110], [125, 110], [85, 110]];
+  const B = [[205, 58], [205, 94], [205, 130], [205, 166]];
+  const ships = A.map(([ax, ay], i) => {
+    const [bx, by] = B[i];
+    const body = `<path class="a-ship" d="M-14 -4.5H7L15 0L7 4.5H-14Z"/><path class="a-wake" d="M-18 0H-48"/><text class="a-label" x="-4" y="-8" text-anchor="middle">${i + 1}</text>`;
+    if (!animate) return `<g transform="translate(${bx} ${by})">${body}</g>`;
+    const v = `${ax} ${ay};${ax} ${ay};${bx} ${by};${bx} ${by};${ax} ${ay};${ax} ${ay}`;
+    return `<g><animateTransform attributeName="transform" type="translate" values="${v}" keyTimes="0;0.1;0.3;0.7;0.9;1" calcMode="spline" keySplines=".5 0 .5 1;.5 0 .5 1;0 0 1 1;.5 0 .5 1;0 0 1 1" dur="${DUR}" ${FOREVER}/>${body}</g>`;
+  }).join('');
+  const grid = '<path class="a-line" d="M0 55H480M0 110H480M0 165H480M80 0V220M160 0V220M240 0V220M320 0V220M400 0V220"/>';
+  const rings = '<circle class="a-ring" cx="205" cy="110" r="60"/><circle class="a-ring" cx="205" cy="110" r="110"/>';
+  const wedge = '<path class="a-arc" d="M205 94 L292 44 A100 100 0 0 1 292 144Z"/>';
+  const foePath = 'M472 30 C410 56 340 84 296 96';
+  const dronePath = 'M472 196 C400 170 320 140 236 132';
+  const shot = 'M222 96 L296 96';
+  const foe = '<path class="a-foe" d="M-9 -4H5L11 0L5 4H-9Z"/>';
+  const blip = '<path class="a-blip" d="M-5 0L5 0M0 -5V5"/>';
+  return `<rect class="a-water" width="480" height="220"/>${grid}${rings}${wedge}${trail(foePath)}${trail(dronePath)}${ships}`
+    + mover(foe, { path: foePath, kt: [0.12, 0.5], still: [380, 62, 160] }, animate)
+    + mover(missile, { path: shot, kt: [0.42, 0.5], still: [258, 96] }, animate)
+    + burst(296, 96, 0.5, animate, 20)
+    + mover(blip, { path: dronePath, kt: [0.55, 0.84], still: [330, 158], rotate: '0' }, animate)
+    + burst(236, 132, 0.84, animate, 14);
+}
+
 // Fleet command: three of your frigates (green) are selected, a right-click sends them across the sea (the order pulse
 // and the dashed path), and a shell from their side sinks one of the enemy's.
 function fleet(animate) {
@@ -163,6 +191,7 @@ const SCENES = {
   fly: (_s, a) => fly(a),
   helm: (_s, a) => helm(a),
   duel: (_s, a) => duel(a),
+  squadron: (_s, a) => squadron(a),
   fleet: (_s, a) => fleet(a),
   maneuvers2: (_s, a) => drill(2, a),
   maneuvers: (_s, a) => drill(3, a),

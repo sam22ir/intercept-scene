@@ -895,3 +895,6 @@ function segmentBox(a, b) {
   return [lerp(a[0], b[0], t0), lerp(a[1], b[1], t0), lerp(a[2], b[2], t0)];
 }
 export { segmentBox, segSeg };
+
+// For SquadronSim (squadron.js): the ship factory and the seeded generator, so it builds its own squadron without copying them.
+export { makeShip, mulberry32 };
