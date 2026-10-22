@@ -169,6 +169,7 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
     },
     // With the real sea: how a hull sits on the water at (x, z) heading psi at scene time t: { heave, pitch, roll, hs }, or null for the flat sea.
     seaRide(x, z, psi, t, len, beam) { return real ? { ...seaTilt(seaTable, x, z, psi, t, len, beam), hs: seaTable.Hs } : null; },
+    seaInfo() { return real ? { hs: seaTable.Hs, dir: ocean.userData.windDir } : null; },
     seaHeightAt(x, z, t) { return real ? seaHeight(seaTable, x, z, t) : 0; },
     // For a camera that travels far from the origin (the manual-flight mission): the sky dome and the WebGL
     // sea plane ride along with it, and the clouds wrap around it, so the world never ends.

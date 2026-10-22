@@ -90,7 +90,8 @@ const REAL_SPEED_T = 14; // s
 const SWAY_T = 3.5; // s: the skid builds to about (3.5 s × the turn rate) of her speed
 const REAL_HEEL = 0.09;
 
-export function stepHullReal(s, dt, { want = 0, orderKn = 0, rudderLimit = RUDDER_MAX, speedCap = 1, radius = REAL_RADIUS } = {}) {
+// `yaw` is an extra yaw acceleration (rad/s², the sea knocking her bow about).
+export function stepHullReal(s, dt, { want = 0, orderKn = 0, rudderLimit = RUDDER_MAX, speedCap = 1, radius = REAL_RADIUS, yaw = 0 } = {}) {
   const goal = want * rudderLimit;
   const rate = want === 0 ? REAL_RUDDER_RETURN : REAL_RUDDER_RATE;
   s.rudder += clamp(goal - s.rudder, -rate * dt, rate * dt);
@@ -101,7 +102,7 @@ export function stepHullReal(s, dt, { want = 0, orderKn = 0, rudderLimit = RUDDE
   s.u += clamp(dv / REAL_SPEED_T, -REAL_COAST, up) * dt;
   const T = clamp((0.9 * REAL_LENGTH) / Math.max(Math.abs(s.u), 3), 5, 25);
   const rSteady = (s.u / radius) * (s.rudder / RUDDER_MAX) * (s.u < 0 ? 0.5 : 1);
-  s.r += ((rSteady - s.r) / T) * dt;
+  s.r += ((rSteady - s.r) / T) * dt + yaw * dt;
   s.psi = wrapPi(s.psi + s.r * dt);
   s.sway = s.sway ?? 0;
   s.sway += (-s.u * s.r - s.sway / SWAY_T) * dt;

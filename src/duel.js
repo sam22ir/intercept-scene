@@ -234,6 +234,7 @@ export class DuelSim {
   // `level` is the enemy's; `auto` ('easy' | 'normal' | 'hard') hands the player's ship to the same kind of helmsman (tests).
   constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false } = {}) {
     this.seed = seed;
+    this.sea = null; // { hs, dir }: the waves' height and the direction they travel (the scene sets it; see setSea)
     this.realHandling = !!realHandling; // heavy handling (hull.js stepHullReal): slow rudder, a long swing, weight, a skid in turns (the scene turns it on)
     this.wavesOn = !!waves; // more ships arrive (the scene turns it on)
     this.level = LEVELS[level] ? level : 'normal';
@@ -404,6 +405,11 @@ export class DuelSim {
     out[2] = lx * sn + lz * c;
     return out;
   }
+  // The sea the ships sail in (real handling only): its significant wave height (m) and the direction the waves travel (radians from +X toward
+  // +Z). Heading into it costs speed, a quartering sea knocks her bow about and the guns scatter more, for both ships alike.
+  setSea(hs, dir) { this.sea = hs > 0.05 ? { hs, dir } : null; }
+  // A bow slam: the stem drove into a wave and she lost a little way (the scene calls it).
+  slam(i, strength) { const s = this.ships[i]; if (s && s.tSunk === null) s.u *= 1 - 0.022 * strength; }
   velOf(s) {
     const w = s.sway ?? 0; // the skid of a heavy hull in a turn (realHandling only)
     return [Math.cos(s.psi) * s.u - Math.sin(s.psi) * w, 0, Math.sin(s.psi) * s.u + Math.cos(s.psi) * w];
@@ -530,19 +536,30 @@ export class DuelSim {
   stepShip(s, dt) {
     const sunk = s.tSunk !== null;
     const engine = s.comp.engine / COMPARTMENTS.engine.hp;
+    // The sea against her: heading into it costs speed (about 12 % in a 3 m sea, 35 % in a very high one, much less running before it), and a
+    // sea on the quarter yaws her bow to and fro, which the helm must catch.
+    let seaK = 1, seaYaw = 0;
+    if (this.sea && this.realHandling && !sunk) {
+      const rel = Math.atan2(Math.sin(this.sea.dir - s.psi), Math.cos(this.sea.dir - s.psi));
+      const head = -Math.cos(rel); // 1 heading into it, -1 running before it
+      seaK = Math.min(1, Math.max(0.45, 1 - 0.026 * this.sea.hs ** 1.25 * (0.6 + 0.4 * head)));
+      seaYaw = 0.0004 * this.sea.hs * Math.sin(2 * rel) * Math.sin(1.1 * this.t + s.idx * 2.1);
+    }
     (this.realHandling ? stepHullReal : stepHull)(s, dt, {
       want: sunk ? 0 : s.cmd.want,
       orderKn: sunk ? 0 : s.merchant ? MERCHANT_KN : TELEGRAPH[s.order].kn,
       radius: this.realHandling ? REAL_RADIUS : TURN_RADIUS,
       rudderLimit: RUDDER_MAX * (0.25 + 0.75 * s.comp.steering / COMPARTMENTS.steering.hp),
-      speedCap: s.comp.engine <= 0 ? 5 / TELEGRAPH[s.order].kn : 0.35 + 0.65 * engine,
+      speedCap: (s.comp.engine <= 0 ? 5 / TELEGRAPH[s.order].kn : 0.35 + 0.65 * engine) * seaK,
+      yaw: seaYaw,
     });
   }
 
   // The scatter of a ship's 76 mm (radians, one standard deviation).
   scatter(s) {
     const hurt = 1 - s.comp.bridge / COMPARTMENTS.bridge.hp;
-    return (SCATTER_BASE * (s.manual ? MANUAL_SCATTER : 1) + SCATTER_TURN * Math.abs(s.r)) * (1 + 1.5 * hurt) * (s.ai ? s.ai.p.aim : 1);
+    const rough = this.sea && this.realHandling ? 1 + 0.05 * this.sea.hs : 1; // a ship that pitches and rolls shoots wider
+    return (SCATTER_BASE * (s.manual ? MANUAL_SCATTER : 1) + SCATTER_TURN * Math.abs(s.r)) * (1 + 1.5 * hurt) * (s.ai ? s.ai.p.aim : 1) * rough;
   }
 
   // The 76 mm's solution on the other ship: yaw, pitch and the time of flight, with the target assumed to go on

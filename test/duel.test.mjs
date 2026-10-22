@@ -613,3 +613,35 @@ describe('heavy handling (realHandling)', () => {
     assert.equal(sim.player.sway, undefined);
   });
 });
+
+describe('the sea against the ship (realHandling + setSea)', () => {
+  const runTo = (hs, dir) => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', realHandling: true });
+    sim.setSea(hs, dir);
+    sim.player.u = 16 * KT;
+    for (let i = 0; i < 600; i++) sim.advance(0.1, {});
+    return sim.player;
+  };
+  it('heading into a high sea costs a lot of speed, running before it costs little, a calm costs none', () => {
+    const calm = runTo(0, 0).u, head = runTo(8.5, Math.PI).u, following = runTo(8.5, 0).u; // she heads +X (psi 0): waves travelling toward -X come at her bow
+    assert.ok(head < calm * 0.75, `head sea ${(head / KT).toFixed(1)} kn against ${(calm / KT).toFixed(1)}`);
+    assert.ok(following > head * 1.2, 'a following sea is kinder');
+  });
+  it('the guns scatter wider in a high sea, and a slam costs way', () => {
+    const a = new DuelSim({ seed: 3, level: 'easy', realHandling: true }), b = new DuelSim({ seed: 3, level: 'easy', realHandling: true });
+    b.setSea(8.5, 0);
+    assert.ok(b.scatter(b.player) > a.scatter(a.player) * 1.3);
+    const u0 = b.player.u;
+    b.slam(0, 2);
+    assert.ok(b.player.u < u0 && b.player.u > u0 * 0.9);
+  });
+  it('a quartering sea yaws her bow to and fro, a calm does not, and the plain duel ignores setSea', () => {
+    const swing = (hs) => { const sim = new DuelSim({ seed: 3, level: 'easy', realHandling: true }); sim.setSea(hs, 0.8); let lo = 9, hi = -9; for (let i = 0; i < 900; i++) { sim.advance(0.1, {}); if (i > 100) { lo = Math.min(lo, sim.player.psi); hi = Math.max(hi, sim.player.psi); } } return hi - lo; };
+    assert.ok(swing(8.5) > swing(0) + 0.01, 'the bow wanders in a high sea');
+    const plain = new DuelSim({ seed: 3, level: 'easy' });
+    plain.setSea(8.5, 0);
+    const base = new DuelSim({ seed: 3, level: 'easy' });
+    for (let i = 0; i < 100; i++) { plain.advance(0.1, {}); base.advance(0.1, {}); }
+    assert.equal(plain.player.u, base.player.u);
+  });
+});

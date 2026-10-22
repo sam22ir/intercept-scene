@@ -73,11 +73,13 @@ let seaV = 41; // about the mission's own sea (1.7)
 try { const v = Number(localStorage.getItem('intercept.duel.sea2')); if (localStorage.getItem('intercept.duel.sea2') !== null && v >= 0 && v <= 100) seaV = v; } catch { /* storage unavailable */ }
 let seaK = seaOf(seaV);
 const seaRange = document.querySelector('#sea-range');
+let seaHook = null; // set once the simulation exists: gives it the sea's height and direction
 function applySea() {
   seaK = seaOf(seaV);
   env.setSea(seaK, THREE.MathUtils.clamp((seaK - 0.5) / 1.5, 0, 1.2));
   const n = document.querySelector('#sea-name');
   if (n) n.textContent = SEA_NAMES.find(([lim]) => seaK < lim)[1];
+  if (seaHook) seaHook();
 }
 if (seaRange) {
   document.querySelector('#sea-row').hidden = false;
@@ -100,6 +102,8 @@ let level = 'normal';
 try { level = globalThis.__DUEL_LEVEL ?? new URLSearchParams(location.search).get('level') ?? 'normal'; } catch { /* no address */ }
 if (!DUEL_LEVELS.includes(level)) level = 'normal';
 const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true });
+seaHook = () => { const i = env.seaInfo(); if (i) sim.setSea(i.hs, i.dir); };
+seaHook();
 
 // --- The ships --------------------------------------------------------------------------------------------------------
 // A picture for each ship the simulation has: yours, the enemy's, then whoever arrives (more enemy frigates, a friendly one, merchants).
@@ -125,7 +129,7 @@ function makeVisual(s) {
     scene.add(flashSprite);
     v = { ...m, key, gats, wake: createWake(scene), plume: new ShipPlume(fx), flashSprite };
   }
-  v.smokeT = 0; v.flash = 0; v.gunClock = [0, 0]; v.plume.last = null;
+  v.smokeT = 0; v.flash = 0; v.gunClock = [0, 0]; v.mot = null; v.plume.last = null;
   v.group.visible = true;
   return v;
 }
@@ -191,6 +195,8 @@ ships[0].group.add(bridge.group);
 // 30 mm mounts and the stern over the rudder. The radar view's marks sit here, a locked shell is sent here, and fires burn here.
 const ZONE_POS = { gun: [32, 7.5, 0], bridge: [11, 11.5, 0], engine: [-13.5, 10, 0], guns: [-33.6, 13, 0], steering: [-52, 4, 0] };
 const ZONE_X = Object.fromEntries(Object.entries(ZONE_POS).map(([id, p]) => [id, p[0]]));
+const MOT = { heave: [(2 * Math.PI) / 6.5, 0.35], pitch: [(2 * Math.PI) / 6.0, 0.3], roll: [(2 * Math.PI) / 11, 0.13] }; // [w, damping ratio]
+let slamShake = 0; // the jolt of the player's bow slam, 0 to 2, dying away
 function poseShip(i, dt) {
   const s = sim.ships[i];
   const v = ships[i];
@@ -199,10 +205,42 @@ function poseShip(i, dt) {
   v.group.visible = !sink?.gone;
   // Every ship afloat rides the real waves (the ocean's own table): she heaves with the water under her middle and takes the pitch and roll of
   // its surface under her bow, stern and sides (a hull this long follows the swell, not the chop, so most but not all of it).
+  // The hull does not follow the surface instantly: heave, pitch and roll are damped oscillators (periods of about 6.5, 6 and 11 s, the roll
+  // lightly damped) driven by the waves' own heave, slope along her and slope across her, so a beam sea sets her rolling, she hangs on a crest
+  // and drops after it, and the bow digs in and slams.
   const ride = sink ? null : env.seaRide(s.x, s.z, s.psi, sim.t, s.merchant ? 120 : 110, 14);
-  v.group.position.set(s.x, (sink ? sink.depth : 0) + (ride ? ride.heave : 0), s.z);
-  const rollSea = ride ? -ride.roll * 0.85 : 0;
-  const pitchSea = ride ? ride.pitch * 0.85 : 0;
+  let heaveSea = 0, rollSea = 0, pitchSea = 0;
+  if (ride) {
+    const m = (v.mot ??= { h: ride.heave, hv: 0, p: ride.pitch, pv: 0, r: -ride.roll, rv: 0, wet: false, cool: 0 });
+    if (!(dt > 0 && dt < 0.5)) { m.h = ride.heave; m.hv = 0; m.p = ride.pitch; m.pv = 0; m.r = -ride.roll; m.rv = 0; } // a stall or a restart: just snap
+    else {
+      const n = Math.max(1, Math.ceil(dt / 0.02)), h = dt / n;
+      for (let k = 0; k < n; k++) {
+        m.hv += (MOT.heave[0] ** 2 * (ride.heave - m.h) - 2 * MOT.heave[1] * MOT.heave[0] * m.hv) * h; m.h += m.hv * h;
+        m.pv += (MOT.pitch[0] ** 2 * (ride.pitch - m.p) - 2 * MOT.pitch[1] * MOT.pitch[0] * m.pv) * h; m.p += m.pv * h;
+        m.rv += (MOT.roll[0] ** 2 * (-ride.roll - m.r) - 2 * MOT.roll[1] * MOT.roll[0] * m.rv) * h; m.r += m.rv * h;
+      }
+    }
+    m.r = clamp(m.r, -0.42, 0.42); m.p = clamp(m.p, -0.25, 0.25);
+    heaveSea = m.h; rollSea = m.r * 0.9; pitchSea = m.p * 0.9;
+    // Slam: the bow, at the end of her pitch, meets a wave that stands well above her stem: spray over the forecastle, a jolt through the hull
+    // (and the camera), and a little way lost.
+    m.cool = Math.max(0, m.cool - dt);
+    const fx0 = Math.cos(s.psi), fz0 = Math.sin(s.psi);
+    const water = env.seaHeightAt(s.x + fx0 * 50, s.z + fz0 * 50, sim.t);
+    const over = water - (m.h + Math.sin(m.p) * 50) - 4.2; // metres of water above the stem's usual freeboard
+    if (over > 0 && !m.wet && m.cool <= 0 && !s.merchant && ride.hs > 1.2) {
+      const str = clamp(0.4 + over * 0.5, 0.3, 2);
+      m.cool = 1.4;
+      _vel.x = Math.cos(s.psi) * s.u; _vel.z = Math.sin(s.psi) * s.u;
+      const fwdv = { x: fx0, z: fz0 };
+      for (const side of [-1, 1]) for (let q = 0; q < 10; q++) v.plume.fx.bowSpray(v.group.localToWorld(_c.set(50, 2.5, side * 2.6)), _vel, side, 2 + str * 2.5, sim.t, fwdv);
+      sim.slam(i, str);
+      if (i === 0) slamShake = Math.max(slamShake, str);
+    }
+    m.wet = over > 0;
+  }
+  v.group.position.set(s.x, (sink ? sink.depth : 0) + heaveSea, s.z);
   v.group.rotation.set(s.heel + list + rollSea + (sink?.roll ?? 0), -s.psi, pitchSea + (sink?.trim ?? 0));
   v.group.updateMatrixWorld(true);
   if (!s.merchant) {
@@ -396,6 +434,7 @@ function setView(v) {
 let frameDt = 1 / 60;
 let behindHead = 0, behindT = 0, behindOn = false; // the behind camera's own heading, which trails the ship's
 function updateCamera() {
+  slamShake *= Math.exp(-4 * frameDt);
   if (view !== 'behind') behindOn = false;
   const me = ships[0].group;
   const foe = sim.enemy;
@@ -417,6 +456,7 @@ function updateCamera() {
     camera.position.set(p.x - hx * 110 - hz * sway, 34 + bob, p.z - hz * 110 + hx * sway);
     camera.lookAt(p.x + Math.cos(p.psi) * 45, 6 + bob * 0.3, p.z + Math.sin(p.psi) * 45);
     camera.rotateZ(wrapAngle(p.psi - behindHead) * -0.3 + Math.sin(sim.t * 0.8) * 0.012 * swell);
+    if (slamShake > 0.01) { camera.position.y += Math.sin(sim.t * 38) * 0.7 * slamShake; camera.rotateX(Math.sin(sim.t * 29) * 0.012 * slamShake); }
   } else if (view === 'bridge') {
     // The wheelhouse, as in Solo Air Defense: the wheel turns with the rudder and the telegraph levers follow the order; drag looks round.
     bridge.update(clamp(sim.player.rudder / RUDDER_MAX, -1, 1), sim.player.order / (TELEGRAPH.length - 1));
