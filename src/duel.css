@@ -109,7 +109,6 @@ body.duel-radarview canvas#scene { filter: saturate(0.6) contrast(1.12); }
 .duel-radar[hidden], body:not(.mission-duel) .duel-radar, body:not(.mission-duel) .duel-sight { display: none; }
 .duel-radar .hr-pad { max-width: calc(100vw - 2 * var(--map-d, 150px) - 40px); }
 
-body.duel-radarview .duel-root { display: none; }
 
 /* The ship's instruments, as Solo Air Defense's strip: hull and compartments, the dome (heading tape, rudder, speed), the guns. */
 .duel-ship { position: fixed; z-index: 5; left: 50%; bottom: calc(var(--keys-h, 56px) + var(--gap, 14px) + var(--safe-b, 0px) - 1px); transform: translateX(-50%); display: flex; gap: 6px; align-items: flex-end; max-width: calc(100vw - 2 * var(--map-d, 150px) - 40px); pointer-events: none; }

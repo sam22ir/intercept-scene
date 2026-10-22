@@ -145,7 +145,7 @@ export const MISSIONS = [
     blurb: 'Frigate against frigate: sink her first',
     tagline: 'You sail a frigate against one that sails herself. The 76 mm trains itself and fires while you hold F, HE to start fires or AP to wreck a compartment (Q), or, in the radar view (7), aim the sight at any part of her hull while the helm is locked. Two 30 mm guns aft only reach astern and abeam. Three repair crews (Z, X) fight fires and floods until one ship sinks.',
     facts: ['HE and AP rounds', 'radar sight aims at any part of her hull', '3 repair crews'],
-    keys: [['← →', 'rudder'], ['↑ ↓', 'engine telegraph'], ['F', 'fire the 76 mm (hold)'], ['Q', 'HE or AP round'], ['G', 'fire the 30 mm (hold)'], ['A', '30 mm guns automatic on / off'], ['Z X', 'pick a compartment, send a crew'], ['1 – 7', 'views, 7 is the radar'], ['R', 'fight again'], ['N', 'map']],
+    keys: [['← →', 'rudder'], ['↑ ↓', 'engine telegraph'], ['F', 'fire the 76 mm (hold)'], ['Q', 'HE or AP round'], ['G', 'fire the 30 mm (hold)'], ['A', '30 mm guns automatic on / off'], ['Z X', 'pick a compartment, send a crew'], ['1 – 5', 'views, 5 is the radar'], ['R', 'fight again'], ['N', 'map']],
     ship: false,
     level: true,
     fixed: 'you steer',

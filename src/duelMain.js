@@ -25,7 +25,7 @@ import './duel.css';
 // is a function of a clock: the keys drive a real-time simulation and this file draws it. start.js imports it when
 // that mission is picked, with the enemy's level in globalThis.__DUEL_LEVEL.
 //
-// Views (1 to 6, V cycles): behind the ship, the bridge (looking at the enemy), the gun sight (a long lens on her),
+// Views (1 to 5, V cycles): behind the ship, the bridge (the wheelhouse),
 // straight above (both ships in frame), riding your last shell, and a free orbit round the ship.
 
 const canvas = document.querySelector('#scene');
@@ -254,8 +254,6 @@ alarmEl.className = 'duel-alarm';
 alarmEl.setAttribute('aria-hidden', 'true');
 document.body.appendChild(alarmEl);
 const who = (i) => (i === 0 ? 'Your' : 'Enemy');
-let lastShell = null; // the player's latest shell, for the gun camera
-let shellHold = 0;
 const eventHooks = []; // the audio listens here
 function handleEvents() {
   for (const e of sim.takeEvents()) {
@@ -267,7 +265,6 @@ function handleEvents() {
       v.flashSprite.visible = true;
       v.flash = 0.09;
       for (let k = 0; k < 7; k++) fx.gunSmoke(_c, _b.set(e.dir[0] * 9, e.dir[1] * 9, e.dir[2] * 9), sim.t);
-      if (e.owner === 0) { lastShell = sim.shells[sim.shells.length - 1]?.id ?? null; shellHold = 0; }
     } else if (e.type === 'hit') {
       fx.shellBurst(_c.set(...e.pos), sim.t);
       if (e.ship === 0) {
@@ -307,9 +304,9 @@ function handleEvents() {
 }
 
 // --- Views --------------------------------------------------------------------------------------------------------------
-const VIEWS = ['behind', 'bridge', 'sight', 'above', 'shell', 'orbit', 'radar'];
-const VIEW_LABELS = ['Behind', 'Bridge', 'Sight', 'Above', 'Shell', 'Orbit', 'Radar'];
-const VIEW_NAMES = { behind: 'Behind the ship', bridge: 'The bridge', sight: 'The gun sight', above: 'Straight above', shell: 'Riding your shell', orbit: 'Free orbit', radar: 'Radar (the fire-control sight: aim it at any part of her hull; the helm is locked)' };
+const VIEWS = ['behind', 'bridge', 'above', 'orbit', 'radar'];
+const VIEW_LABELS = ['Behind', 'Bridge', 'Above', 'Orbit', 'Radar'];
+const VIEW_NAMES = { behind: 'Behind the ship', bridge: 'The bridge', above: 'Straight above', orbit: 'Free orbit', radar: 'Radar (the fire-control sight: aim it at any part of her hull; the helm is locked)' };
 let view = 'behind';
 function setFov(f) {
   if (Math.abs(camera.fov - f) < 0.01) return;
@@ -346,7 +343,6 @@ function setView(v) {
   camera.up.set(0, 1, 0);
   viewButtons.forEach((b) => { const on = b.dataset.view === v; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
 }
-const enemyPoint = (out) => out.set(sim.enemy.x, 9, sim.enemy.z);
 let frameDt = 1 / 60;
 function updateCamera() {
   const me = ships[0].group;
@@ -365,12 +361,6 @@ function updateCamera() {
     _a.set(Math.cos(yaw) * Math.cos(lookPitch), Math.sin(lookPitch), Math.sin(yaw) * Math.cos(lookPitch)).transformDirection(me.matrixWorld);
     camera.lookAt(_b.copy(camera.position).add(_a));
     setFov(55);
-  } else if (view === 'sight') {
-    me.localToWorld(camera.position.copy(BRIDGE_EYE));
-    const inView = Math.abs(sim.relBearing(sim.player)) < rad(110);
-    if (inView) camera.lookAt(enemyPoint(_b)); else camera.lookAt(me.localToWorld(_b.set(100, 10, 0)));
-    const r = sim.range();
-    setFov(clamp((Math.atan(70 / r) * 2 * 180) / Math.PI * 2.4, 3.5, 30));
   } else if (view === 'radar') {
     aimSight(frameDt);
   } else if (view === 'above') {
@@ -380,18 +370,6 @@ function updateCamera() {
     camera.up.set(Math.cos(sim.player.psi), 0, Math.sin(sim.player.psi));
     camera.position.set(mx, h, mz);
     camera.lookAt(mx, 0, mz);
-  } else { // shell: ride the player's last shell, then hold where it landed; with none, a chase view
-    setFov(55);
-    const sh = sim.shells.find((x) => x.id === lastShell);
-    if (sh) {
-      shellHold = 1.6;
-      _b.set(sh.v[0], sh.v[1], sh.v[2]).normalize();
-      camera.position.set(sh.p[0] - _b.x * 26, sh.p[1] - _b.y * 26 + 5, sh.p[2] - _b.z * 26);
-      camera.lookAt(sh.p[0] + _b.x * 60, sh.p[1] + _b.y * 60, sh.p[2] + _b.z * 60);
-    } else if (shellHold > 0) { shellHold -= 1 / 60; } else {
-      camera.position.copy(me.localToWorld(_a.set(-110, 34, 0)));
-      camera.lookAt(me.localToWorld(_b.set(45, 6, 0)));
-    }
   }
 }
 
@@ -593,9 +571,9 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>A</kbd>', 'The 30 mm guns on automatic'],
   ['<kbd>Q</kbd>', `Change the 76 mm round, HE or AP: HE starts fires and floods, AP hits one compartment harder; changing costs a ${SWITCH_TIME} s reload`],
   ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
-  ['<kbd>1</kbd> to <kbd>7</kbd>', 'Behind, bridge, sight, above, shell, orbit, radar'],
+  ['<kbd>1</kbd> to <kbd>5</kbd>', 'Behind, bridge, above, orbit, radar'],
   ['<kbd>2</kbd>', 'The wheelhouse, as in Solo Air Defense: the wheel turns with the rudder, the telegraph levers follow the engine order, and a drag looks round (double click looks ahead)'],
-  ['<kbd>7</kbd>', 'Radar view: the fire-control sight. Arrows, a drag or the on-screen pad aim it. <kbd>wheel</kbd>, <kbd>+</kbd> <kbd>-</kbd> or the Zoom buttons close the lens until a compartment fills it (<kbd>0</kbd> resets); every enemy hull shows its compartments as marks, and a click lays the sight on one. F fires there: the shell goes to the point under the crosshair, so you choose what to break. Space returns the sight to auto. A merchant or a friendly ship in the sight is not fired on. The helm is locked until Esc'],
+  ['<kbd>5</kbd>', 'Radar view: the fire-control sight. Arrows, a drag or the on-screen pad aim it. <kbd>wheel</kbd>, <kbd>+</kbd> <kbd>-</kbd> or the Zoom buttons close the lens until a compartment fills it (<kbd>0</kbd> resets); every enemy hull shows its compartments as marks, and a click lays the sight on one. F fires there: the shell goes to the point under the crosshair, so you choose what to break. Space returns the sight to auto. A merchant or a friendly ship in the sight is not fired on. The helm is locked until Esc'],
   ['<kbd>Tab</kbd>', 'Next enemy to fight (locked until she sinks). More enemy frigates arrive, a friendly frigate joins you, and merchant ships cross the fight: sinking one yourself loses the duel'],
   ['<kbd>V</kbd>', 'Next view · drag looks round in the orbit view, the wheel zooms'],
   ['<kbd>R</kbd>', 'Fight again'],
@@ -636,7 +614,7 @@ function keysHtml() {
   }
   return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', `thrust ${TELEGRAPH[sim.player.order].name}`)}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}${k('Tab', 'target')}`
     + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}`
-    + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–7', 'views')}${k('R', 'again')}`;
+    + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–5', 'views')}${k('R', 'again')}`;
 }
 let lastKeys = '';
 
@@ -687,7 +665,6 @@ function restart() {
   syncShips(); // the ones that arrived go back to the pool
   for (const v of ships) v.wake.clear();
   tracers.forEach((t) => { t.on = false; });
-  lastShell = null;
   banner.hidden = true;
   alarmEl.classList.remove('hit');
   if (view === 'radar') setView(viewBeforeRadar);
@@ -740,7 +717,7 @@ window.addEventListener('keydown', (e) => {
     case 'x': sim.assignCrew(0, COMP_IDS[selComp]); break;
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
-    case '1': case '2': case '3': case '4': case '5': case '6': case '7': setView(VIEWS[Number(key) - 1]); break;
+    case '1': case '2': case '3': case '4': case '5': setView(VIEWS[Number(key) - 1]); break;
     case 'h': setHud(!hudOn); break;
     case 'n': setMap(!mapOn); break;
     case 'l': tagsOn = !tagsOn; break;
