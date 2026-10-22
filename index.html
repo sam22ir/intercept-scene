@@ -24,6 +24,10 @@
               <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="14"/><path d="M20 6 V34 M6 20 H34"/><circle cx="20" cy="20" r="3.5"/></svg>
               <span class="tab-txt"><b>Play</b><small>You take the controls</small></span>
             </button>
+            <button class="tab" role="radio" aria-checked="false" data-tab="command" title="Lead a fleet from above">
+              <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M5 28 H15 L19 30.5 L15 33 H5Z"/><path d="M5 18 H15 L19 20.5 L15 23 H5Z"/><path d="M24 8 H35 L31 10.5 L35 13 H24Z"/><path d="M20 21 Q26 16 29 11"/></svg>
+              <span class="tab-txt"><b>Command</b><small>Lead a fleet from above</small></span>
+            </button>
             <button class="tab" role="radio" aria-checked="false" data-tab="drill" title="Naval exercises run on orders">
               <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M6 12 H22 L28 16 L22 20 H6Z"/><path d="M6 26 H22 L28 30 L22 34 H6Z"/></svg>
               <span class="tab-txt"><b>Drill</b><small>Naval exercises run on orders</small></span>
@@ -58,6 +62,11 @@
               <button class="mission" role="radio" aria-checked="false" data-group="play" data-mode="duel">
                 <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M3 28 H17 L22 31 L17 34 H3Z"/><path class="i-ship" d="M37 12 H23 L18 9 L23 6 H37Z"/><path class="i-arc" d="M18 26 Q26 10 31 14"/><circle class="i-burst" cx="31" cy="14" r="3.5"/></svg>
                 <span class="m-txt"><b>Surface battle</b><small>Frigate against frigate: sink her first</small></span>
+                <em class="m-kind">Manual</em>
+              </button>
+              <button class="mission" role="radio" aria-checked="false" data-group="command" data-mode="fleet">
+                <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M3 30 H14 L18 32.5 L14 35 H3Z"/><path class="i-ship" d="M3 21 H14 L18 23.5 L14 26 H3Z"/><path class="i-ship" d="M26 9 H37 L33 11.5 L37 14 H26Z"/><path class="i-arc" d="M20 24 Q26 18 30 12"/><circle class="i-burst" cx="30" cy="11" r="2.6"/></svg>
+                <span class="m-txt"><b>Fleet command</b><small>Command a squadron from above with the mouse</small></span>
                 <em class="m-kind">Manual</em>
               </button>
               <button class="mission" role="radio" aria-checked="false" data-group="drill" data-family="drill" hidden>

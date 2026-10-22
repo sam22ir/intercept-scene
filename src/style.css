@@ -586,7 +586,7 @@ body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels
 .menu-sub { margin: 0 0 8px; color: var(--muted); font-size: 12px; }
 
 /* The tabs: three wide cards. */
-.tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; width: 100%; }
+.tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; width: 100%; }
 .tab {
   display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 12px; padding: 9px 16px; text-align: left; border-radius: 14px; color: var(--text);
   background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); transition: border-color 0.15s, background 0.15s;
