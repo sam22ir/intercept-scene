@@ -3,6 +3,8 @@ import { Sky } from 'three/addons/objects/Sky.js';
 import { mulberry32 } from './rng.js';
 import { resolveLook, fromDisplay, srgbToLinear, WEATHERS } from './looks.js';
 import { WORLD_PERIOD } from './terrain.js';
+import { createRealOcean } from './realOcean.js';
+import { seaTilt, seaHeight } from './seaWaves.js';
 import { createIslands, createBuoys, createFarShips, createWeatherSprites } from './scenery.js';
 
 const SUN_ELEVATION = 24; // degrees
@@ -34,7 +36,7 @@ function readWeather() {
 // `look` (a name from looks.js, e.g. 'intercept') gives a mission its own time of day, sky, sea state, scenery and weather;
 // the weather can be overridden with ?weather= or localStorage['intercept.weather'] (read once). Without `look` the original
 // default or `calm` look is used, unchanged.
-export function createEnvironment(renderer, scene, { calm = false, tallMountains = false, look: lookName = null } = {}) {
+export function createEnvironment(renderer, scene, { calm = false, tallMountains = false, look: lookName = null, realSea = false } = {}) {
   const look = !calm && lookName ? resolveLook(lookName, readWeather()) : null;
   const horizon = look ? new THREE.Color(...fromDisplay(look.horizon)) : calm ? CALM_HORIZON : HORIZON;
   const zenith = look ? new THREE.Color(...fromDisplay(look.zenith)) : calm ? CALM_ZENITH : ZENITH;
@@ -133,7 +135,10 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
   scene.add(sun, sun.target);
   scene.add(look ? new THREE.HemisphereLight(rgbHex(look.hemi), 0x203040, look.hemiI) : new THREE.HemisphereLight(0xcfe0ff, 0x203040, 0.6));
 
-  const ocean = createOcean(sunDir, calm, horizon, look, zenith);
+  // `realSea` (a mission look only): real waves, displaced geometry and shading from the same table the ships ride (realOcean.js).
+  const real = !!(realSea && look);
+  const ocean = real ? createRealOcean(sunDir, horizon, look, zenith) : createOcean(sunDir, calm, horizon, look, zenith);
+  let seaTable = real ? ocean.userData.makeSea(look.sea.state) : null;
   scene.add(ocean);
   const clouds = createClouds(calm, look);
   const mountains = calm ? (tallMountains ? createTallMountains() : createMountains()) : null;
@@ -158,7 +163,13 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
     ocean,
     look, // the resolved look (null for the original default and the calm look)
     // A mission that lets the player pick the sea state: the waves' steepness (1 = the original sea) and the whitecaps (0 to 1.2), live.
-    setSea(state, caps) { ocean.material.uniforms.uSea.value = state; ocean.material.uniforms.uCaps.value = caps; },
+    setSea(state, caps) {
+      if (real) { seaTable = ocean.userData.makeSea(state); ocean.userData.setTable(seaTable); } else ocean.material.uniforms.uSea.value = state;
+      ocean.material.uniforms.uCaps.value = caps;
+    },
+    // With the real sea: how a hull sits on the water at (x, z) heading psi at scene time t: { heave, pitch, roll, hs }, or null for the flat sea.
+    seaRide(x, z, psi, t, len, beam) { return real ? { ...seaTilt(seaTable, x, z, psi, t, len, beam), hs: seaTable.Hs } : null; },
+    seaHeightAt(x, z, t) { return real ? seaHeight(seaTable, x, z, t) : 0; },
     // For a camera that travels far from the origin (the manual-flight mission): the sky dome and the WebGL
     // sea plane ride along with it, and the clouds wrap around it, so the world never ends.
     follow(camPos) {

@@ -50,7 +50,7 @@ controls.maxPolarAngle = Math.PI * 0.495;
 controls.enabled = false;
 const rig = new CameraRig(camera, controls);
 
-const env = createEnvironment(renderer, scene, { look: 'duel' });
+const env = createEnvironment(renderer, scene, { look: 'duel', realSea: true });
 env.setShadowSize(1024);
 env.ocean.material.uniforms.uShipX.value = 1e7; // the shader's straight-line wake: these ships turn, each has her own
 const fx = createLiveFx(scene);
@@ -197,11 +197,12 @@ function poseShip(i, dt) {
   const sink = s.tSunk !== null ? sinkState(sim.t - s.tSunk, s.listSide) : null;
   const list = s.listSide * rad(9) * (1 - s.hp / HULL_HP) ** 2; // the hurt ship settles to the side she was hit on
   v.group.visible = !sink?.gone;
-  v.group.position.set(s.x, sink ? sink.depth : 0, s.z);
-  // A little of the sea's motion on every ship afloat: a slow roll and pitch that grow with the sea state, each ship on her own phase.
-  const rock = sink ? 0 : Math.min(seaK, SEA_MAX);
-  const rollSea = rock * (0.016 * Math.sin(0.72 * sim.t + i * 1.9) + 0.007 * Math.sin(1.63 * sim.t + i));
-  const pitchSea = rock * (0.007 * Math.sin(0.58 * sim.t + i * 2.3) + 0.003 * Math.sin(1.4 * sim.t));
+  // Every ship afloat rides the real waves (the ocean's own table): she heaves with the water under her middle and takes the pitch and roll of
+  // its surface under her bow, stern and sides (a hull this long follows the swell, not the chop, so most but not all of it).
+  const ride = sink ? null : env.seaRide(s.x, s.z, s.psi, sim.t, s.merchant ? 120 : 110, 14);
+  v.group.position.set(s.x, (sink ? sink.depth : 0) + (ride ? ride.heave : 0), s.z);
+  const rollSea = ride ? -ride.roll * 0.85 : 0;
+  const pitchSea = ride ? ride.pitch * 0.85 : 0;
   v.group.rotation.set(s.heel + list + rollSea + (sink?.roll ?? 0), -s.psi, pitchSea + (sink?.trim ?? 0));
   v.group.updateMatrixWorld(true);
   if (!s.merchant) {
@@ -409,8 +410,9 @@ function updateCamera() {
     behindOn = true; behindT = sim.t;
     behindHead += wrapAngle(p.psi - behindHead) * (1 - Math.exp(-frameDt / 0.9));
     const swell = Math.min(seaK, SEA_MAX);
-    const bob = (Math.sin(sim.t * 0.9) * 1.0 + Math.sin(sim.t * 1.7 + 1) * 0.5) * swell;
-    const sway = Math.sin(sim.t * 0.55 + 2) * 1.3 * swell;
+    const ride = env.seaRide(p.x, p.z, p.psi, sim.t); // the camera rises and falls with the swell under the ship
+    const bob = ride ? ride.heave * 0.85 : (Math.sin(sim.t * 0.9) * 1.0 + Math.sin(sim.t * 1.7 + 1) * 0.5) * swell;
+    const sway = Math.sin(sim.t * 0.55 + 2) * 0.6 * swell;
     const hx = Math.cos(behindHead), hz = Math.sin(behindHead);
     camera.position.set(p.x - hx * 110 - hz * sway, 34 + bob, p.z - hz * 110 + hx * sway);
     camera.lookAt(p.x + Math.cos(p.psi) * 45, 6 + bob * 0.3, p.z + Math.sin(p.psi) * 45);
