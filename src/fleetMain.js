@@ -21,7 +21,9 @@ const canvas = document.querySelector('#scene');
 const loadingEl = document.querySelector('#loading');
 document.body.classList.add('mission-fly', 'mission-fleet');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+// Drawn at 70 % of the usual resolution (the sea shader costs per pixel; the overlay's rings and bars stay sharp on their own canvas).
+const RENDER_SCALE = 0.7;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5) * RENDER_SCALE);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.75;
 renderer.shadowMap.enabled = true;
@@ -30,10 +32,24 @@ renderer.shadowMap.type = THREE.PCFShadowMap;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, 1, 20, 60000);
 const env = createEnvironment(renderer, scene, { look: 'fly' });
-env.setShadowSize(1024);
+env.setShadowSize(720); // 70 % of the usual 1024
 env.ocean.material.uniforms.uShipX.value = 1e7; // the shader's straight wake: each ship has her own ribbon
 wireWeather({ look: env.look });
 const fx = createLiveFx(scene);
+scene.traverse((o) => { if (o.isParticleField) o.setDensity(0.7); }); // 30 % fewer smoke and spray particles
+// Where a ship is drawn this frame: her state carried forward by the part of a step the clock has not run yet, so motion
+// is smooth at any frame rate (the sim itself steps at a fixed 1/60 s).
+const view = [];
+const P = (s) => view[s.id] ?? s;
+function updateView() {
+  const a = sim.acc;
+  for (const s of sim.ships) {
+    const v = (view[s.id] ??= {});
+    v.x = s.x + Math.cos(s.psi) * s.u * a;
+    v.z = s.z + Math.sin(s.psi) * s.u * a;
+    v.psi = s.psi + s.r * a;
+  }
+}
 const rad = THREE.MathUtils.degToRad;
 const clamp = THREE.MathUtils.clamp;
 const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -75,14 +91,15 @@ function poseShip(i) {
   const v = visuals[i];
   const sink = s.tSunk >= 0 ? sinkState(sim.t - s.tSunk, s.side) : null;
   v.group.visible = !sink?.gone;
-  v.group.position.set(s.x, sink ? sink.depth : 0, s.z);
-  v.group.rotation.set(s.heel + (sink?.roll ?? 0), -s.psi, sink?.trim ?? 0);
+  const q = P(s);
+  v.group.position.set(q.x, sink ? sink.depth : 0, q.z);
+  v.group.rotation.set(s.heel + (sink?.roll ?? 0), -q.psi, sink?.trim ?? 0);
   v.group.updateMatrixWorld(true);
   const tg = s.target >= 0 && s.hp > 0 ? sim.ships[s.target] : null;
   const rel = tg ? wrapPi(Math.atan2(tg.z - s.z, tg.x - s.x) - s.psi) : 0;
   v.mainGun.pose(-rel, tg ? 0.09 : 0.0); // yaw is + toward port; clockwise (starboard) is the sim's sign
   v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0 }); // the radar turns; the launcher stays stowed
-  v.wake.update({ t: sim.t, x: s.x, z: s.z, psi: s.psi, r: s.r, u: s.u });
+  v.wake.update({ t: sim.t, x: q.x, z: q.z, psi: q.psi, r: s.r, u: s.u });
   // Smoke from a hurt ship, thicker as she sinks.
   if (sim.t >= v.smokeT && (s.hp < 55 || sink) && !sink?.gone) {
     v.smokeT = sim.t + 0.12;
@@ -143,7 +160,7 @@ function handleEvents() {
 }
 
 // --- The camera: straight down, north up (+x), east right (+z) -------------------------------------------------------
-const cam = { x: 0, z: 0, h: 3800 };
+const cam = { x: 0, z: 0, h: 3800, hT: 3800 }; // h eases toward hT, so the wheel zooms smoothly
 // Start high enough for both squadrons (6,200 m apart across the sea, side by side) to fit the width of the window.
 const fitHeight = () => clamp(6400 / (2 * Math.tan(rad(camera.fov / 2)) * camera.aspect), 2600, 7000);
 const H_MIN = 450;
@@ -187,7 +204,7 @@ function shipAt(px, py, team) {
   let best = null, bd = Infinity;
   for (const s of sim.ships) {
     if (s.hp <= 0 || (team !== undefined && s.team !== team)) continue;
-    const p = toScreen(s.x, s.z);
+    const p = toScreen(P(s).x, P(s).z);
     const d = Math.hypot(p.x - px, p.y - py);
     if (d < Math.max(shipPx(s) * 1.3, 22) && d < bd) { bd = d; best = s; }
   }
@@ -240,7 +257,7 @@ function drawOverlay() {
     }
     ctx.stroke();
     ctx.setLineDash([]);
-    let from = toScreen(s.x, s.z);
+    let from = toScreen(P(s).x, P(s).z);
     ctx.strokeStyle = 'rgba(159,232,112,0.55)';
     for (const o of s.orders) {
       if (o.type === 'move') {
@@ -262,7 +279,7 @@ function drawOverlay() {
   // Ships.
   for (const s of sim.ships) {
     if (s.hp <= 0) continue;
-    const p = toScreen(s.x, s.z);
+    const p = toScreen(P(s).x, P(s).z);
     if (p.behind) continue;
     const r = shipPx(s);
     const mine = s.team === 0;
@@ -314,7 +331,7 @@ function drawMap() {
   ctx.closePath(); ctx.stroke();
   for (const s of sim.ships) {
     if (s.hp <= 0) continue;
-    const p = mapPt(r, s.x, s.z);
+    const p = mapPt(r, P(s).x, P(s).z);
     ctx.fillStyle = s.team === 0 ? COL.mine : COL.foe;
     const a = s.psi, dx = Math.sin(a), dy = -Math.cos(a);
     ctx.beginPath();
@@ -373,7 +390,7 @@ window.addEventListener('pointerup', (e) => {
     const x0 = Math.min(d.x0, d.x1), x1 = Math.max(d.x0, d.x1), y0 = Math.min(d.y0, d.y1), y1 = Math.max(d.y0, d.y1);
     if (!d.shift) selected.clear();
     for (const s of sim.team(0)) {
-      const p = toScreen(s.x, s.z);
+      const p = toScreen(P(s).x, P(s).z);
       if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1) selected.add(s.id);
     }
   } else {
@@ -390,10 +407,10 @@ window.addEventListener('wheel', (e) => {
   if (e.target !== canvas) return;
   e.preventDefault();
   const g = groundAt(e.clientX, e.clientY);
-  const before = cam.h;
-  cam.h = clamp(cam.h * Math.exp(e.deltaY * 0.0012), H_MIN, H_MAX);
+  const before = cam.hT;
+  cam.hT = clamp(cam.hT * Math.exp(e.deltaY * 0.0012), H_MIN, H_MAX);
   if (g && e.deltaY < 0) { // zoom in toward the cursor
-    const k = 1 - cam.h / before;
+    const k = 1 - cam.hT / before;
     cam.x += (g.x - cam.x) * k * 0.6;
     cam.z += (g.z - cam.z) * k * 0.6;
   }
@@ -478,7 +495,7 @@ function restart() {
   pulses.length = 0;
   for (const v of visuals) v.smokeT = 0; // the clock starts again, so the smoke timers must too
   resultEl.hidden = true;
-  cam.x = 0; cam.z = 0; cam.h = fitHeight();
+  cam.x = 0; cam.z = 0; cam.h = cam.hT = fitHeight();
   say('Fight!', 'ok', 1500);
 }
 
@@ -553,19 +570,21 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 resize();
-cam.h = fitHeight();
+cam.h = cam.hT = fitHeight();
 syncShips();
 say('Select your ships and right-click the sea to move them', 'warn', 5000);
 
 let last = performance.now();
 let frames = 0;
 renderer.setAnimationLoop((now) => {
-  const dt = Math.max(0, Math.min((now - last) / 1000, 0.1));
+  const dt = Math.max(0, Math.min((now - last) / 1000, 0.05));
   last = now;
+  cam.h += (cam.hT - cam.h) * (1 - Math.exp(-dt * 10));
   movePan(dt);
   if (!paused) sim.advance(dt * speed);
   handleEvents();
   syncShips();
+  updateView();
   env.ocean.material.uniforms.uTime.value = sim.t;
   for (let i = 0; i < visuals.length; i++) poseShip(i);
   updateCamera();
