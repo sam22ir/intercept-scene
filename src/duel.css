@@ -189,9 +189,6 @@ body.mission-duel .tag.tag-neutral { border-left-color: #9aa4ad; }
 .rc-fire.weak::before { background: radial-gradient(circle at 40% 30%, #c98a8c, #8a3a3f 70%); }
 
 /* In the radar view your ship's status is a small card in the empty space down the left, under the top bar (the dome and the guns stay hidden there). */
-body.duel-radarview .duel-ship { left: 14px; right: auto; top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 82px); bottom: auto; transform: none; flex-direction: column; align-items: stretch; width: 178px; max-width: none; }
-body.duel-radarview .duel-ship .hs-dome, body.duel-radarview .duel-ship .hs-wpn { display: none; }
-body.duel-radarview .duel-ship .hs-rect { flex: none; width: auto; min-width: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; }
 .rc-fire.sea::before { background: radial-gradient(circle at 40% 30%, #6b7680, #343b42 70%); }
 
 /* The weapon-sector switches under the radar map: the map rises to make room. */
@@ -203,3 +200,39 @@ body.mission-duel .mm-opt[aria-pressed="true"] { color: #fff; }
 body.mission-duel .mm-opt-main[aria-pressed="true"] { border-color: rgba(255, 122, 26, 0.8); }
 body.mission-duel .mm-opt-gat[aria-pressed="true"] { border-color: rgba(80, 200, 255, 0.8); }
 @media (max-width: 640px) { body.mission-duel .minimap { bottom: calc(var(--tl-h, 150px) + var(--gap) * 2 + var(--safe-b) + 26px); } body.mission-duel .mm-opts { bottom: calc(var(--tl-h, 150px) + var(--gap) * 2 + var(--safe-b)); } }
+
+/* The damage board: your ship drawn from above in the radar view, down the left under the top bar (it replaces the strip there). */
+body.duel-radarview .duel-ship { display: none; }
+.duel-board { display: none; }
+body.duel-radarview .duel-board:not([hidden]) { display: block; position: fixed; z-index: 6; left: 14px; top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 82px); width: 186px; padding: 8px 9px 9px; border-radius: 12px; background: rgba(9, 14, 21, 0.58); border: 1px solid rgba(255, 255, 255, 0.12); backdrop-filter: blur(4px); color: var(--text); font-variant-numeric: tabular-nums; }
+body.ui-hidden .duel-board { display: none !important; }
+.duel-board .bd-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 10px; letter-spacing: 0.08em; color: var(--muted); }
+.duel-board .bd-head b { color: var(--text); }
+.duel-board .bd-head .hurt { color: #f2c94c; } .duel-board .bd-head .bad { color: #ff5d61; }
+.duel-board .bd-bar, .duel-board .bd-prog { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); overflow: hidden; margin: 4px 0 6px; }
+.duel-board .bd-bar s, .duel-board .bd-prog s { display: block; height: 100%; text-decoration: none; background: #3ddc84; }
+.duel-board .bd-prog { height: 3px; margin: 1px 0 4px; } .duel-board .bd-prog s { background: #ff7a1a; }
+.duel-board .bd-main { display: flex; gap: 8px; align-items: stretch; }
+.duel-board .bsvg { width: 64px; height: 188px; flex: none; }
+.duel-board .bh { fill: none; stroke: rgba(255, 255, 255, 0.55); stroke-width: 1.2; } .duel-board .bh.sunk { stroke: #ff5d61; }
+.duel-board .bs { stroke: rgba(255, 255, 255, 0.35); stroke-width: 0.6; }
+.duel-board .bz { cursor: pointer; pointer-events: auto; } .duel-board .bz.sel rect { stroke: #fff; stroke-width: 1.4; }
+.duel-board .bl, .duel-board .bp, .duel-board .bi { text-anchor: middle; pointer-events: none; fill: #fff; paint-order: stroke; stroke: rgba(0, 0, 0, 0.7); stroke-width: 1.6px; }
+.duel-board .bl { font: 700 6.5px system-ui, sans-serif; } .duel-board .bp { font: 600 6px system-ui, sans-serif; } .duel-board .bi { font-size: 6px; }
+.duel-board .fire { fill: #ff7a1a; } .duel-board .leak { fill: #35c8ff; } .duel-board .crew { fill: #f2c94c; } .duel-board .crew.going { opacity: 0.5; }
+.duel-board .bd-side { flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-width: 0; padding: 2px 0; }
+.duel-board .bd-kv { display: flex; flex-direction: column; font-size: 9px; line-height: 1.2; } .duel-board .bd-kv i { font-style: normal; color: var(--muted); letter-spacing: 0.08em; font-size: 8px; } .duel-board .bd-kv b { font-size: 12px; }
+.duel-board .bd-flood { margin-top: 6px; font-size: 10px; color: var(--muted); text-align: center; } .duel-board .bd-flood.bad { color: #35c8ff; }
+.duel-board .bd-repair { position: relative; overflow: hidden; display: block; width: 100%; margin-top: 6px; padding: 7px 0; border-radius: 8px; border: 1px solid rgba(61, 220, 132, 0.7); background: rgba(61, 220, 132, 0.12); color: #fff; font: 700 11px system-ui, sans-serif; letter-spacing: 0.06em; cursor: pointer; pointer-events: auto; }
+.duel-board .bd-repair s { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(61, 220, 132, 0.35); } .duel-board .bd-repair span { position: relative; }
+.duel-board .bd-repair:disabled { cursor: default; border-color: rgba(255, 255, 255, 0.2); color: var(--muted); }
+.duel-board .bd-repair.busy { border-color: #f2c94c; } .duel-board .bd-repair.busy s { background: rgba(242, 201, 76, 0.4); }
+@media (max-height: 760px) {
+  body.duel-radarview .duel-board:not([hidden]) { width: 170px; padding: 6px 8px 7px; }
+  .duel-board .bsvg { width: 42px; height: 122px; }
+  .duel-board .bd-kv:nth-child(n+5) { display: none; }
+  .duel-board .bd-kv b { font-size: 11px; }
+  .duel-board .bd-bar { margin: 3px 0 4px; }
+  .duel-board .bd-flood { margin-top: 3px; }
+  .duel-board .bd-repair { margin-top: 4px; padding: 5px 0; }
+}

@@ -140,7 +140,7 @@ export const MISSIONS = [
   {
     id: 'duel',
     group: 'play',
-    name: 'Ship duel',
+    name: 'Surface battle',
     kind: 'Manual',
     blurb: 'Frigate against frigate: sink her first',
     tagline: 'You sail a frigate against one that sails herself. The 76 mm trains itself and fires while you hold F, HE to start fires or AP to wreck a compartment (Q), or, in the radar view (7), aim the sight at any part of her hull while the helm is locked. Two 30 mm guns aft only reach astern and abeam. Three repair crews (Z, X) fight fires and floods until one ship sinks.',
@@ -150,7 +150,7 @@ export const MISSIONS = [
     level: true,
     fixed: 'you steer',
     fixedNote: 'One frigate with the forward 76 mm: you steer her.',
-    brand: 'Ship duel',
+    brand: 'Surface battle',
     sub: 'frigate duel',
     button: 'Open fire',
   },

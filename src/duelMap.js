@@ -63,7 +63,7 @@ export function createDuelMap() {
   let lastTrack = -Infinity;
   root.addEventListener('click', () => { zoom = (zoom + 1) % ZOOMS.length; lastKey = ''; });
   root.title = 'Radar, heading up: the 76 mm arc. Click to change the range (N hides it)';
-  root.setAttribute('aria-label', 'Ship duel radar: enemy and gun arcs, bow up');
+  root.setAttribute('aria-label', 'Surface battle radar: enemy and gun arcs, bow up');
 
   function draw(sim) {
     measure();
