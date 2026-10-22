@@ -4,7 +4,7 @@
 // real scenario, flight model and key bindings, so a title can never describe something a mission does not do.
 //
 // A mission with `ship: true` lets the player pick the launcher; the others fix it (`fixed` says what is
-// fixed, for the summary line). The screen has three tabs (`GROUPS`, by what the player does): Watch (replays
+// fixed, for the summary line). The screen has four tabs (`GROUPS`, by what the player does): Watch (replays
 // to scrub), Play (take the controls) and Drill (the naval exercises). A tab lists its entries (`entriesOf`):
 // each mission is one, except the three drills, which are one entry ("Tactical maneuvers", `FAMILIES`) whose
 // variants are chosen by the number of ships (`ships`, `tile`, `tileSub`). A mission with `level: true` (the ship
@@ -14,6 +14,7 @@
 export const GROUPS = [
   { id: 'watch', name: 'Watch', hint: 'Replays you can scrub both ways' },
   { id: 'play', name: 'Play', hint: 'You take the controls' },
+  { id: 'command', name: 'Command', hint: 'Lead a fleet from above' },
   { id: 'drill', name: 'Drill', hint: 'Naval exercises run on orders' },
 ];
 
@@ -171,6 +172,23 @@ export const MISSIONS = [
     fixedNote: 'Four frigates, fixed: a picket, two gun ships and an escort.',
     brand: 'Squadron orders',
     sub: 'four frigates',
+    button: 'Give orders',
+  },
+  {
+    id: 'fleet',
+    group: 'command',
+    name: 'Fleet command',
+    kind: 'Manual',
+    blurb: 'Command a squadron from above with the mouse',
+    tagline: 'A strategy game from above. Select your frigates with a click or a dragged box, right-click the sea to send them there, right-click an enemy to attack her. Shift queues orders. A squadron given one move order sails in line abreast, and every ship fires at what comes in range by herself. Sink the enemy squadron before she sinks yours.',
+    facts: ['3 frigates against 3', 'mouse orders, Shift queues them', 'pause and speed up the fight'],
+    keys: [['click · drag', 'select ships, or a box'], ['right-click', 'move, or attack an enemy'], ['Shift', 'queue orders'], ['Space', 'pause'], ['E · X · F', 'all ships, stop, find'], ['WASD · wheel', 'pan and zoom'], ['+ −', 'game speed'], ['R', 'fight again']],
+    ship: false,
+    level: true,
+    fixed: 'you command',
+    fixedNote: 'Three frigates: you give the orders.',
+    brand: 'Fleet command',
+    sub: 'squadron battle',
     button: 'Take command',
   },
 ];
