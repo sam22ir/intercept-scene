@@ -165,7 +165,7 @@ body.mission-duel .tag.tag-neutral { border-left-color: #9aa4ad; }
 .rc-ticks { position: absolute; left: 0; right: 0; top: 5px; height: 16px; opacity: 0.55; background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.5) 0 1px, transparent 1px 12.5%); }
 .rc-fill { position: absolute; left: 0; top: 11px; height: 4px; border-radius: 2px; background: linear-gradient(90deg, #3ddc84, #c8ff5a); }
 .rc-thumb { position: absolute; top: 3px; width: 14px; height: 20px; margin-left: -7px; border-radius: 5px; background: #eafff2; box-shadow: 0 0 10px rgba(61, 220, 132, 0.8), 0 1px 3px #000; }
-.rc-pills { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.rc-pills { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .rc-pills button { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 4px 5px; border-radius: 10px; font: 700 11px system-ui, sans-serif; color: var(--text); background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.12); cursor: pointer; }
 .rc-pills button:hover { background: rgba(255, 255, 255, 0.16); }
 .rc-pills button i { font-style: normal; font-size: 15px; line-height: 1; }
