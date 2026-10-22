@@ -887,7 +887,7 @@ const zoomSight = (f) => { sightZoomGoal = clamp(sightZoomGoal * f, 0.1, 8); };
 const sightEl = document.createElement('div');
 sightEl.className = 'duel-sight';
 sightEl.hidden = true;
-sightEl.innerHTML = '<i class="hs-h"></i><i class="hs-v"></i><i class="hs-box"></i><b class="hs-txt"></b>';
+sightEl.innerHTML = '<svg class="hs-ret" viewBox="-110 -110 220 220" aria-hidden="true"><circle r="84"/><circle r="36" class="thin"/><path d="M0,-108V-90M0,90V108M-108,0H-90M90,0H108"/><path d="M-84,0H-14M14,0H84M0,-84V-14M0,14V84"/><path class="thin" d="M-60,-5V5M-48,-5V5M-36,-5V5M-24,-5V5M24,-5V5M36,-5V5M48,-5V5M60,-5V5M-5,-60H5M-5,-48H5M-5,-36H5M-5,-24H5"/><path d="M-10,30H10M-16,50H16M-10,66H10M-16,80H16"/><circle r="2.2" class="dot"/><circle r="7" class="thin"/></svg><b class="hs-txt"></b>';
 document.body.appendChild(sightEl);
 const sightTxt = sightEl.querySelector('.hs-txt');
 const radarEl = document.createElement('div');

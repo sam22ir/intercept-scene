@@ -74,11 +74,10 @@ body.mission-duel .hud { overflow-y: auto; scrollbar-width: thin; }
 body.duel-radarview canvas#scene { filter: saturate(0.6) contrast(1.12); }
 .duel-sight { position: fixed; inset: 0; z-index: 4; pointer-events: none; }
 .duel-sight[hidden] { display: none; }
-.duel-sight i { position: absolute; left: 50%; top: 50%; background: rgba(120, 255, 170, 0.75); }
-.duel-sight .hs-h { width: 34vmin; height: 1px; transform: translate(-50%, -50%); background: linear-gradient(90deg, rgba(120, 255, 170, 0.75) 40%, transparent 40% 60%, rgba(120, 255, 170, 0.75) 60%); }
-.duel-sight .hs-v { width: 1px; height: 34vmin; transform: translate(-50%, -50%); background: linear-gradient(180deg, rgba(120, 255, 170, 0.75) 40%, transparent 40% 60%, rgba(120, 255, 170, 0.75) 60%); }
-.duel-sight .hs-box { width: 9vmin; height: 9vmin; transform: translate(-50%, -50%); background: transparent; border: 1px solid rgba(120, 255, 170, 0.5); }
-.duel-sight.lock .hs-box { border: 2px solid #3ddc84; box-shadow: 0 0 12px rgba(61, 220, 132, 0.6); }
+.duel-sight .hs-ret { position: absolute; left: 50%; top: 50%; width: 36vmin; height: 36vmin; transform: translate(-50%, -50%); color: rgba(120, 255, 170, 0.8); overflow: visible; }
+.duel-sight .hs-ret * { fill: none; stroke: currentColor; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.duel-sight .hs-ret .thin { stroke-width: 1; opacity: 0.65; } .duel-sight .hs-ret .dot { fill: currentColor; stroke: none; }
+.duel-sight.lock .hs-ret { color: #3ddc84; filter: drop-shadow(0 0 5px rgba(61, 220, 132, 0.7)); }
 .duel-sight .hs-txt {
   position: absolute; left: 50%; top: calc(50% - 21vmin); transform: translate(-50%, -100%);
   font: 700 12px/1.3 ui-monospace, Consolas, monospace; letter-spacing: 0.08em; color: #9dffc0; text-shadow: 0 1px 2px #000; white-space: nowrap;
@@ -145,7 +144,7 @@ body.duel-radarview canvas#scene { filter: saturate(0.6) contrast(1.12); }
 .duel-radar .hr-mark.bad i { border-color: #ff7a1a; background: rgba(255, 122, 26, 0.25); }
 .duel-radar .hr-mark.out i { border-color: #ff5d61; background: rgba(255, 93, 97, 0.35); }
 .duel-radar .hr-mark.hurt span { color: #f2c94c; } .duel-radar .hr-mark.bad span { color: #ffab6b; } .duel-radar .hr-mark.out span { color: #ff8a8d; }
-.duel-sight.warn .hs-box { border: 2px solid #ff5d61; box-shadow: 0 0 12px rgba(255, 93, 97, 0.6); }
+.duel-sight.warn .hs-ret { color: #ff5d61; filter: drop-shadow(0 0 5px rgba(255, 93, 97, 0.7)); }
 .duel-sight.warn .hs-txt { color: #ff9a9d; }
 body.mission-duel .tag.tag-ally { border-left-color: #35c8ff; }
 body.mission-duel .tag.tag-neutral { border-left-color: #9aa4ad; }
