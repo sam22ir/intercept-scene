@@ -33,6 +33,13 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, 1, 20, 60000);
 const env = createEnvironment(renderer, scene, { look: 'fly' });
 env.setShadowSize(720); // 70 % of the usual 1024
+// The sea's shader cost: its chop is five octaves of noise; this view keeps the three biggest (from this height the two
+// finest are faded out by their pixel footprint anyway), so the sea costs about half of what it did.
+{
+  const m = env.ocean.material;
+  m.fragmentShader = m.fragmentShader.replace('#define CHOP_OCTAVES 5', '#define CHOP_OCTAVES 3');
+  m.needsUpdate = true;
+}
 env.ocean.material.uniforms.uShipX.value = 1e7; // the shader's straight wake: each ship has her own ribbon
 wireWeather({ look: env.look });
 const fx = createLiveFx(scene);
