@@ -122,5 +122,15 @@ export function createWake(scene) {
       r.geo.attributes.uv.needsUpdate = true;
     }
   }
-  return { update, clear };
+  // Wipes the track and hides the ribbons (a ship that has gone, until update() draws her wake again).
+  const hide = () => {
+    clear();
+    for (let i = 0; i < WAKE_N; i++) { hideSection(core, i); hideSection(slick, i); }
+    for (const r of [core, slick]) {
+      r.geo.attributes.position.needsUpdate = true;
+      r.geo.attributes.color.needsUpdate = true;
+      r.geo.attributes.uv.needsUpdate = true;
+    }
+  };
+  return { update, clear, hide };
 }

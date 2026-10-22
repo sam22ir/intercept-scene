@@ -74,6 +74,8 @@ body.helm-threat-3 .helm-alarm { animation: helm-pulse 0.55s ease-in-out infinit
 .helm-pip.searching { border-color: rgba(255, 196, 84, 0.85); }
 .helm-pip.lock { border-color: #3ddc84; }
 .helm-pip i { position: absolute; left: 50%; top: 50%; background: rgba(120, 255, 170, 0.55); }
+.helm-pip .hp-h { -webkit-mask: linear-gradient(90deg, #000 0 34%, transparent 34% 66%, #000 66%); mask: linear-gradient(90deg, #000 0 34%, transparent 34% 66%, #000 66%); }
+.helm-pip .hp-v { -webkit-mask: linear-gradient(180deg, #000 0 34%, transparent 34% 66%, #000 66%); mask: linear-gradient(180deg, #000 0 34%, transparent 34% 66%, #000 66%); }
 .helm-pip .hp-h { width: 100%; height: 1px; transform: translate(-50%, -50%); }
 .helm-pip .hp-v { width: 1px; height: 100%; transform: translate(-50%, -50%); }
 .helm-pip .hp-box { width: 30%; height: 30%; transform: translate(-50%, -50%); background: transparent; border: 1px solid rgba(120, 255, 170, 0.5); }
@@ -206,24 +208,25 @@ body.mission-helm .fly-keys .fk-btn:hover { background: rgba(255, 255, 255, 0.12
 body.mission-helm .fly-keys .fk-btn:active { background: rgba(255, 255, 255, 0.22); }
 
 /* The weapons card: missiles as little missiles, the guns' ammunition as a bar, empty slots for what comes next. */
-.helm-ship .hs-wpn { flex: 1 1 0; min-width: 210px; max-width: 290px; padding: 7px 12px 8px; border-radius: 14px 14px 0 0; background: linear-gradient(180deg, rgba(14, 24, 38, 0.62), rgba(9, 14, 21, 0.5)); border: 1px solid rgba(255, 255, 255, 0.12); border-bottom: 0; color: var(--text); backdrop-filter: blur(3px); display: grid; gap: 6px; font-variant-numeric: tabular-nums; }
+.helm-ship .hs-wpn { flex: 1 1 0; min-width: 210px; max-width: 290px; padding: 7px 12px 8px; border-radius: 14px 14px 0 0; background: linear-gradient(180deg, rgba(16, 28, 44, 0.7), rgba(8, 13, 20, 0.55)); border: 1px solid rgba(120, 190, 255, 0.22); border-bottom: 0; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 -4px 18px rgba(0, 0, 0, 0.25); color: var(--text); backdrop-filter: blur(4px); display: grid; gap: 6px; font-variant-numeric: tabular-nums; }
 .helm-ship .hw-head span { font: 800 9px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.22em; color: rgba(255, 255, 255, 0.5); }
-.helm-ship .hw-row { display: grid; grid-template-columns: 58px 1fr auto; align-items: center; gap: 8px; }
-.helm-ship .hw-row b { font: 700 9px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.1em; color: rgba(255, 255, 255, 0.8); }
-.helm-ship .hw-row em { font: 700 9.5px/1 ui-monospace, Consolas, monospace; font-style: normal; letter-spacing: 0.04em; color: #ffc454; white-space: nowrap; text-align: right; }
-.helm-ship .hw-msl.lock em, .helm-ship .hw-gun.auto em { color: #3ddc84; }
-.helm-ship .hw-gun.fire em { color: #ff7a59; text-shadow: 0 0 8px rgba(255, 122, 89, 0.8); }
-.helm-ship .hw-cells { display: flex; align-items: center; gap: 6px; }
+.helm-ship .hw-row { display: grid; grid-template-columns: 58px 1fr auto; align-items: center; gap: 8px; min-height: 24px; }
+.helm-ship .hw-row b { font: 800 9px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.18em; color: rgba(160, 205, 255, 0.6); }
+.helm-ship .hw-row em { font: 800 9px/1 ui-monospace, Consolas, monospace; font-style: normal; letter-spacing: 0.08em; color: #ffc454; white-space: nowrap; text-align: right; padding: 4px 7px; border-radius: 999px; background: rgba(255, 196, 84, 0.12); border: 1px solid rgba(255, 196, 84, 0.35); }
+.helm-ship .hw-msl.lock em, .helm-ship .hw-gun.auto em { color: #3ddc84; background: rgba(61, 220, 132, 0.12); border-color: rgba(61, 220, 132, 0.4); }
+.helm-ship .hw-gun.fire em { color: #ff7a59; background: rgba(255, 122, 89, 0.14); border-color: rgba(255, 122, 89, 0.5); text-shadow: 0 0 8px rgba(255, 122, 89, 0.8); }
+.helm-ship .hw-cells { display: flex; align-items: center; gap: 9px; }
+.helm-ship .hw-pips { flex: 1; display: flex; gap: 3px; }
 .helm-ship .hw-n { font: 800 15px/1 ui-monospace, Consolas, monospace; color: var(--text); }
-.helm-ship .hw-cells i { display: block; width: 11px; height: 24px; }
-.helm-ship .hw-cells svg { width: 100%; height: 100%; display: block; fill: rgba(255, 255, 255, 0.1); stroke: rgba(255, 255, 255, 0.2); stroke-width: 0.6; }
-.helm-ship .hw-cells i.on svg { fill: #ffc454; stroke: #ffe3a0; filter: drop-shadow(0 0 3px rgba(255, 196, 84, 0.65)); }
-.helm-ship .hw-cells i.arm svg { fill: #ff9f43; stroke: #fff; animation: hw-blink 0.5s steps(2) infinite; }
-.helm-ship .hw-cells i.arm.lock svg { fill: #3ddc84; animation: none; filter: drop-shadow(0 0 5px rgba(61, 220, 132, 0.9)); }
+.helm-ship .hw-pips i { flex: 1; height: 16px; transform: skewX(-22deg); border-radius: 2px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.14); }
+.helm-ship .hw-pips i.on { background: linear-gradient(180deg, #ffd56a, #e8931a); border-color: transparent; box-shadow: 0 0 6px rgba(255, 196, 84, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.4); }
+.helm-ship .hw-pips i.arm { background: #ff9f43; border-color: #fff; animation: hw-blink 0.5s steps(2) infinite; }
+.helm-ship .hw-pips i.arm.lock { background: #3ddc84; animation: none; box-shadow: 0 0 8px rgba(61, 220, 132, 0.9); }
 @keyframes hw-blink { 50% { opacity: 0.35; } }
-.helm-ship .hw-bar { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
-.helm-ship .hw-bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #ffc454, #ffe08a); }
-.helm-ship .hw-gun.fire .hw-bar i { background: linear-gradient(90deg, #ff5d3b, #ffb35a); }
+.helm-ship .hw-bar { position: relative; height: 16px; border-radius: 8px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.14); overflow: hidden; }
+.helm-ship .hw-bar s { position: absolute; inset: 0; display: grid; place-items: center; text-decoration: none; font: 800 10px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.08em; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85); }
+.helm-ship .hw-bar i { display: block; height: 100%; border-radius: 8px; background: linear-gradient(180deg, #ffd56a, #e8931a); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4); }
+.helm-ship .hw-gun.fire .hw-bar i { background: linear-gradient(180deg, #ff9a5a, #e8431f); }
 .helm-ship .hw-slots { display: flex; gap: 6px; }
 .helm-ship .hw-slots span { flex: 1; text-align: center; padding: 4px 0; border: 1px dashed rgba(255, 255, 255, 0.22); border-radius: 6px; font: 700 8.5px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.12em; color: rgba(255, 255, 255, 0.3); text-transform: uppercase; }
 @media (max-width: 1100px) { .helm-ship .hs-wpn { min-width: 170px; } .helm-ship .hw-row { grid-template-columns: 1fr auto; } .helm-ship .hw-row b { display: none; } }
@@ -345,17 +348,20 @@ body.mission-helm .fly-keys .fk-btn:active { background: rgba(255, 255, 255, 0.2
 .hud .ct-rg strong small { margin-left: 2px; font-size: 8px; font-weight: 700; color: rgba(255, 255, 255, 0.55); }
 
 /* The ship's status card: hull damage and the drones shot down. */
-.helm-ship .hs-stat { display: flex; align-items: stretch; gap: 14px; min-width: 190px; padding: 8px 14px 9px; border-radius: 14px 14px 0 0; background: linear-gradient(180deg, rgba(14, 24, 38, 0.62), rgba(9, 14, 21, 0.5)); border: 1px solid rgba(255, 255, 255, 0.12); border-bottom: 0; color: var(--text); backdrop-filter: blur(3px); font-variant-numeric: tabular-nums; }
+.helm-ship .hs-stat { display: flex; align-items: stretch; gap: 0; min-width: 190px; padding: 0; border-radius: 14px 14px 0 0; background: linear-gradient(180deg, rgba(16, 28, 44, 0.7), rgba(8, 13, 20, 0.55)); border: 1px solid rgba(120, 190, 255, 0.22); border-bottom: 0; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 -4px 18px rgba(0, 0, 0, 0.25); color: var(--text); backdrop-filter: blur(4px); font-variant-numeric: tabular-nums; overflow: hidden; }
 .helm-ship .hs-stat.hurt { border-color: rgba(255, 93, 97, 0.6); }
-.helm-ship .st-hull { display: grid; gap: 5px; align-content: center; flex: 1; }
-.helm-ship .st-hull span, .helm-ship .st-kills span { font: 800 9px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.18em; color: rgba(255, 255, 255, 0.55); }
-.helm-ship .st-segs { display: flex; gap: 4px; }
-.helm-ship .st-segs i { flex: 1; height: 10px; border-radius: 3px; background: #3ddc84; box-shadow: 0 0 6px rgba(61, 220, 132, 0.5); }
-.helm-ship .st-segs i.hit { background: #ff5d61; box-shadow: 0 0 6px rgba(255, 93, 97, 0.6); }
-.helm-ship .st-hull em { font: 700 9.5px/1 ui-monospace, Consolas, monospace; font-style: normal; letter-spacing: 0.06em; color: #3ddc84; }
+.helm-ship .st-hull { display: grid; gap: 5px; align-content: center; flex: 1; padding: 8px 14px 9px; }
+.helm-ship .st-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.helm-ship .st-hull span, .helm-ship .st-kills span { font: 800 9px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.2em; color: rgba(160, 205, 255, 0.6); }
+.helm-ship .st-hull em { display: inline-flex; align-items: center; gap: 5px; font: 800 9px/1 ui-monospace, Consolas, monospace; font-style: normal; letter-spacing: 0.1em; color: #3ddc84; }
+.helm-ship .st-hull em::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 7px currentColor; }
 .helm-ship .hs-stat.hurt .st-hull em { color: #ff8a8d; }
-.helm-ship .st-kills { display: grid; justify-items: center; align-content: center; gap: 2px; padding-left: 14px; border-left: 1px solid rgba(255, 255, 255, 0.15); }
-.helm-ship .st-kills b { font: 800 26px/1 ui-monospace, Consolas, monospace; color: #ffc454; }
+.helm-ship .st-segs { display: flex; gap: 5px; }
+.helm-ship .st-segs i { flex: 1; height: 10px; transform: skewX(-22deg); border-radius: 2px; background: linear-gradient(180deg, #6df0a6, #27b868); box-shadow: 0 0 8px rgba(61, 220, 132, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.45); }
+.helm-ship .st-segs i.hit { background: repeating-linear-gradient(135deg, rgba(255, 93, 97, 0.5) 0 3px, rgba(60, 14, 18, 0.7) 3px 6px); box-shadow: inset 0 0 0 1px rgba(255, 93, 97, 0.75); }
+.helm-ship .st-kills { display: grid; justify-items: center; align-content: center; gap: 4px; min-width: 62px; padding: 8px 14px; background: linear-gradient(180deg, rgba(255, 196, 84, 0.1), rgba(255, 196, 84, 0.02)); border-left: 1px solid rgba(255, 255, 255, 0.1); }
+.helm-ship .st-kills span { color: rgba(255, 210, 130, 0.65); }
+.helm-ship .st-kills b { font: 800 26px/1 ui-monospace, Consolas, monospace; color: #ffc454; text-shadow: 0 0 12px rgba(255, 196, 84, 0.45); }
 /* Short windows: the card has to leave room for the contact list, so the strip of speed, closing and altitude steps aside. */
 @media (max-height: 640px) { .hud .tk-cells { display: none; } .hud .tk-dial { width: 76px; height: 76px; } .hud .tg-range { font-size: 26px; } }
 

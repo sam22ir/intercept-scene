@@ -173,6 +173,7 @@ export function createDuelAudio() {
       if (e.type === 'shot') shot('gun', e.pos, { level: 1.1, ref: 220, rate: 1 });
       else if (e.type === 'hit') shot('hit', e.pos, { level: 1.3, ref: 200, rate: 1 });
       else if (e.type === 'splash') shot('splash', e.pos, { level: 0.8, ref: 90, rate: 0.9 });
+      else if (e.type === 'collision') shot('hit', e.pos, { level: 1.8, ref: 260, rate: 0.55 });
       else if (e.type === 'out' && e.ship === 0) beep();
       else if (e.type === 'sunk') shot('sink', e.pos, { level: 1.5, ref: 500, rate: 1 });
     },
@@ -184,6 +185,7 @@ export function createDuelAudio() {
       right.set(1, 0, 0).applyQuaternion(camQuat);
       for (const s of sim.ships) {
         const i = s.idx;
+        if (!voices[`hum${i}`]) continue; // the beds are for the first two ships; the others are heard through their guns' shots and hits
         const { d, pan } = listen([s.x, 8, s.z]);
         const sunk = s.tSunk !== null;
         const speed = clamp(Math.abs(s.u) / 14, 0, 1.4);

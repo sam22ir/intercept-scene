@@ -470,7 +470,7 @@ function newCine(mid, did, phase) {
 }
 // F has been pressed and the launcher is turning: the camera goes close to it, from the side of the way it will fire.
 function startLauncherCine() {
-  if (!cineOn || cine || view === 'orbit' || sim.out || !sim.shot) return;
+  if (!cineOn || cine || view === 'orbit' || view === 'sight' || sim.out || !sim.shot) return; // the radar view stays on its locked target through the shot
   const aim = sim.shot.aim;
   const px = Math.sin(aim.yaw); // across the line of fire, in the ship's frame (x ahead, z to starboard)
   const pz = Math.cos(aim.yaw);
@@ -501,7 +501,7 @@ function frameLaunchWide(c, k) {
 // The launcher is on: the camera goes through the director's sight to the drone. The director starts where the launcher
 // points, hunts about the target for a moment (a short search) and locks; the sign comes with the lock.
 function startSightCine() {
-  if (!cine && cineOn && view !== 'orbit' && !sim.out && sim.shot) { // the launcher close-up did not start: the lock still goes through the sight
+  if (!cine && cineOn && view !== 'orbit' && view !== 'sight' && !sim.out && sim.shot) { // the launcher close-up did not start: the lock still goes through the sight
     cine = newCine(null, sim.shot.droneId, 'slew');
     cine.camLocal.set(LAUNCHER_PIVOT.x + 22, LAUNCHER_PIVOT.y + 3.5, LAUNCHER_PIVOT.z);
   }
@@ -523,7 +523,7 @@ function startSightCine() {
   document.body.classList.add('helm-sighting');
 }
 function startCine(missileId, droneId = null) {
-  if (!cineOn || cine || view === 'orbit' || sim.out) return;
+  if (!cineOn || cine || view === 'orbit' || (view === 'sight' && missileId !== null) || sim.out) return;
   if (missileId !== null) { // a missile leaves
     const m = sim.missiles.find((x) => x.id === missileId);
     if (!m || !sim.drones.some((d) => d.id === m.targetId && d.alive)) return;
@@ -1049,7 +1049,7 @@ const radarEl = document.createElement('div');
 radarEl.className = 'helm-radar';
 radarEl.hidden = true;
 radarEl.innerHTML = '<div class="hr-marks"></div><div class="hr-pad">'
-  + '<div class="hr-acts"><button type="button" data-act="auto">Release / auto<kbd>Space</kbd></button><button type="button" data-act="next">Next target<kbd>Tab</kbd></button></div>'
+  + '<div class="hr-acts"><button type="button" data-act="auto">Release / auto<kbd>Space</kbd></button><button type="button" data-act="next">Next target<kbd>Tab</kbd></button><button type="button" data-act="pick" class="hr-pick">Lock nearest to<kbd></kbd></button></div>'
   + '<div class="hr-mid"><div class="hr-read"><b class="hr-mode">AUTO</b><span class="hr-brg"></span></div>'
   + '<div class="hr-dpad"><button type="button" data-dir="u" aria-label="Aim up">▲</button><button type="button" data-dir="l" aria-label="Aim left">◀</button>'
   + '<button type="button" data-act="lock" class="hr-lock">LOCK</button><button type="button" data-dir="r" aria-label="Aim right">▶</button><button type="button" data-dir="d" aria-label="Aim down">▼</button></div></div>'
@@ -1058,6 +1058,7 @@ document.body.appendChild(radarEl);
 const radarMarks = radarEl.querySelector('.hr-marks');
 const radarMode = radarEl.querySelector('.hr-mode');
 const radarBrg = radarEl.querySelector('.hr-brg');
+const radarPickKbd = radarEl.querySelector('.hr-pick kbd');
 const pressKey = (key) => { window.dispatchEvent(new KeyboardEvent('keydown', { key })); window.dispatchEvent(new KeyboardEvent('keyup', { key })); };
 function lockOn(d) {
   sim.targetId = d.id;
@@ -1078,8 +1079,11 @@ function nearestToAim(cone) {
   }
   return best;
 }
+// What LOCK / Enter catches: the drone nearest the line of sight (the view) or the one nearest the ship, as chosen on the pad.
+let pickMode = 'view';
+try { pickMode = localStorage.getItem('intercept.radarpick') === 'ship' ? 'ship' : 'view'; } catch { /* storage unavailable */ }
 function lockHover() {
-  const d = sight.hover ?? nearestToAim(10) ?? sim.target ?? sim.nearest();
+  const d = pickMode === 'ship' ? sim.nearest() : sight.hover ?? nearestToAim(180) ?? sim.nearest();
   if (d) lockOn(d);
   else say('Nothing on the radar to lock', 'warn');
 }
@@ -1095,6 +1099,11 @@ radarEl.addEventListener('pointerdown', (e) => {
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
   } else if (b.dataset.act === 'lock') lockHover();
+  else if (b.dataset.act === 'pick') {
+    pickMode = pickMode === 'ship' ? 'view' : 'ship';
+    try { localStorage.setItem('intercept.radarpick', pickMode); } catch { /* storage unavailable */ }
+    say(pickMode === 'ship' ? 'LOCK catches the drone nearest the ship' : 'LOCK catches the drone nearest the view', '');
+  }
   else if (b.dataset.act === 'auto') { sight.manual = false; sight.locked = false; }
   else if (b.dataset.act === 'next') { sight.manual = false; pressKey('Tab'); }
   else if (b.dataset.act === 'arm') pressKey('m');
@@ -1138,6 +1147,7 @@ function updateRadarUi() {
   const manual = sight.manual || !sim.target;
   radarMode.textContent = sight.locked ? (sight.phase === 'lock' ? 'LOCKED' : 'LOCKING') : sight.manual ? 'MANUAL' : sim.target ? 'AUTO' : 'SCAN';
   radarMode.classList.toggle('manual', manual);
+  radarPickKbd.textContent = pickMode === 'ship' ? 'SHIP' : 'VIEW';
   radarEl.classList.toggle('locked', sight.locked);
   const rel = THREE.MathUtils.radToDeg(Math.atan2(Math.sin(Math.atan2(sight.aim.z, sight.aim.x) - sim.psi), Math.cos(Math.atan2(sight.aim.z, sight.aim.x) - sim.psi)));
   radarBrg.textContent = `${relName(THREE.MathUtils.degToRad(rel))} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${Math.round(fov)}°`;
@@ -1248,7 +1258,6 @@ function domeSvg() {
     + `<line x1="${p0[0]}" y1="${(Number(p0[1]) - 5).toFixed(1)}" x2="${p0[0]}" y2="${(Number(p0[1]) + 5).toFixed(1)}" class="rm"/>`
     + `<text x="${cx}" y="94" class="sp">${f(sim.knots, 1)}<tspan> kn</tspan></text></svg>`;
 }
-const MSL_SVG = '<svg viewBox="0 0 10 24"><path d="M5 0C7 3 7.5 6 7.5 9V17L10 21V24H7L6.4 22H3.6L3 24H0V21L2.5 17V9C2.5 6 3 3 5 0Z"/></svg>';
 // The weapons card: one row per weapon (the missile cells as little missiles, the guns' ammunition as a bar), and empty slots
 // kept for the weapons still to come.
 function weaponsHtml() {
@@ -1256,21 +1265,22 @@ function weaponsHtml() {
   if (sim.shot) mState = sim.shot.locked ? 'LOCKED' : sim.shot.acquiring ? 'ACQUIRING' : 'TURNING';
   else if (sim.missiles.length) mState = `${sim.missiles.length} AWAY`;
   const cls = sim.shot ? (sim.shot.locked ? 'arm lock' : 'arm') : sim.cellsLeft > 0 ? 'on' : '';
-  const cells = `<i class="${cls}">${MSL_SVG}</i><span class="hw-n">×${sim.cellsLeft}</span>`;
+  const pips = Array.from({ length: CELLS }, (_, i) => `<i class="${i === sim.cellsLeft - 1 ? cls : i < sim.cellsLeft ? 'on' : ''}"></i>`).join('');
+  const cells = `<div class="hw-pips">${pips}</div><span class="hw-n">${sim.cellsLeft}</span>`;
   const firing = sim.guns.some((g) => g.firing);
   const gState = firing ? 'FIRING' : sim.gunRounds <= 0 ? 'EMPTY' : sim.gunsAuto ? 'AUTO' : 'HOLD G';
   const gMax = GUN_ROUNDS * sim.guns.length;
   const gPct = Math.max(0, Math.min(100, sim.gunRounds / gMax * 100)).toFixed(1);
   return `<div class="hs-wpn">`
     + `<div class="hw-row hw-msl${sim.shot?.locked ? ' lock' : ''}"><b>MISSILES</b><div class="hw-cells">${cells}</div><em>${mState}</em></div>`
-    + `<div class="hw-row hw-gun${firing ? ' fire' : sim.gunsAuto ? ' auto' : ''}"><b>GUNS</b><div class="hw-bar"><i style="width:${gPct}%"></i></div><em>${sim.gunRounds} · ${gState}</em></div>`
+    + `<div class="hw-row hw-gun${firing ? ' fire' : sim.gunsAuto ? ' auto' : ''}"><b>GUNS</b><div class="hw-bar"><i style="width:${gPct}%"></i><s>${sim.gunRounds}</s></div><em>${gState}</em></div>`
     + '</div>';
 }
 function shipHtml() {
   const hits = Array.from({ length: 3 }, (_, i) => `<i class="${i < sim.strikes ? 'hit' : ''}"></i>`).join('');
   const dmg = sim.out ? 'out of action' : sim.strikes ? `${sim.strikes} of 3 hits` : 'no damage';
   const hull = Array.from({ length: 3 }, (_, i) => `<i class="${i < sim.strikes ? 'hit' : ''}"></i>`).join('');
-  return `<div class="hs-stat${sim.strikes ? ' hurt' : ''}"><div class="st-hull"><span>HULL</span><div class="st-segs">${hull}</div><em>${sim.out ? 'OUT OF ACTION' : sim.strikes ? `${sim.strikes} OF 3 HITS` : 'INTACT'}</em></div>`
+  return `<div class="hs-stat${sim.strikes ? ' hurt' : ''}"><div class="st-hull"><div class="st-head"><span>HULL</span><em>${sim.out ? 'OUT OF ACTION' : sim.strikes ? `${sim.strikes} OF 3 HITS` : 'INTACT'}</em></div><div class="st-segs">${hull}</div></div>`
     + `<div class="st-kills"><span>KILLS</span><b>${sim.kills}</b></div></div>`
     + `<div class="hs-dome">${domeSvg()}</div>`
     + weaponsHtml();
