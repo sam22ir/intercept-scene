@@ -308,7 +308,7 @@ function handleEvents() {
     } else if (e.type === 'ammo') {
       if (e.ship === 0) say(`${AMMO_TYPES[e.kind].name} loaded`, '', 1400);
     } else if (e.type === 'repair') {
-      if (e.ship === 0) say(e.phase === 'start' ? `Repairing: ${REPAIR_TIME} s` : 'Repair done: fires out, leaks stopped', e.phase === 'start' ? 'warn' : 'ok', 2200);
+      if (e.ship === 0) say(e.phase === 'start' ? `Repairing the ${COMPARTMENTS[e.comp].name.toLowerCase()}: ${REPAIR_TIME} s` : `${COMPARTMENTS[e.comp].name} repaired`, e.phase === 'start' ? 'warn' : 'ok', 2000);
     } else if (e.type === 'fire') {
       if (e.ship === 0) say(`Fire in the ${COMPARTMENTS[e.comp].name.toLowerCase()}: send a crew`, 'warn', 2400);
     } else if (e.type === 'over') {
@@ -322,6 +322,8 @@ const VIEWS = ['behind', 'bridge', 'above', 'orbit', 'radar'];
 const VIEW_LABELS = ['Behind', 'Bridge', 'Above', 'Orbit', 'Radar'];
 const VIEW_NAMES = { behind: 'Behind the ship', bridge: 'The bridge', above: 'Straight above', orbit: 'Free orbit', radar: 'Radar (the fire-control sight: aim it at any part of her hull; the helm is locked)' };
 let view = 'behind';
+let attackReady = false; // the attack question is built further down
+function closeAttackSafe() { if (attackReady) closeAttack(); }
 function setFov(f) {
   if (Math.abs(camera.fov - f) < 0.01) return;
   camera.fov = f;
@@ -332,12 +334,13 @@ const viewButtons = [];
 let viewBeforeRadar = 'behind';
 let radarPrevManual = false;
 function setView(v) {
+  closeAttackSafe();
   if (v === 'radar' && view !== 'radar') {
     viewBeforeRadar = view;
     radarPrevManual = sim.player.manual;
     input.left = input.right = 0;
     setManual(true);
-    say('Radar: arrows, drag or the pad aim the sight, F fires. The helm is locked: Esc goes back', 'warn', 4200);
+    say('Radar: arrows or a drag aim the sight, Space locks, Enter fires. The helm is locked: Esc goes back', 'warn', 4200);
   } else if (v !== 'radar' && view === 'radar') {
     input.fire = 0;
     setManual(radarPrevManual);
@@ -492,63 +495,94 @@ function shipHtml() {
   return `<div class="hs-rect hs-hull${p.hp < HULL_HP ? ' hurt' : ''}"><span>HULL <b>${Math.round(p.hp)}</b>${p.tSunk !== null ? ' · SINKING' : ''}</span><div class="hs-cells">${cells}</div></div>`
     + `<div class="hs-dome">${domeSvg()}</div>`
     + `<div class="hs-rect hs-wpn"><span>76 mm <b>${AMMO_TYPES[g.type].name}</b> · HE ${g.stock.he} AP ${g.stock.ap} · ${gunStatus(p)}</span>`
-    + `<span>30 mm <b>${dry ? 'DRY' : p.auto ? 'AUTO' : 'HOLD G'}</b> · crews <b>${p.crews.filter((c) => c.to).length}/${CREWS}</b> · ${COMPARTMENTS[COMP_IDS[selComp]].name} · repair <b>${p.repair > 0 ? `${p.repair.toFixed(1)} s` : p.repairWait > 0 ? `wait ${Math.ceil(p.repairWait)} s` : 'READY (E)'}</b></span></div>`;
+    + `<span>30 mm <b>${dry ? 'DRY' : p.auto ? 'AUTO' : 'HOLD G'}</b> · crews <b>${p.crews.filter((c) => c.to).length}/${CREWS}</b> · ${COMPARTMENTS[COMP_IDS[selComp]].name}</span></div>`;
 }
 
-// --- The damage board (radar view) --------------------------------------------------------------------------------------------
-// In the radar view the strip is replaced by one card down the left: your ship drawn from above, bow up, with her five compartments laid
-// where they really are (colour = health, with the fires, leaks and crews on them; click one to send a crew), the hull, how long she has
-// if the flooding goes on, the speed and heading, the 76 mm (round, stocks, reload bar), the 30 mm and the repair button.
+// --- The status boards (radar view) ---------------------------------------------------------------------------------------------
+// Two cards of horizontal bars, one for each part of a ship (no navigation data): yours down the left, with a FIX button on every part
+// (each part is repaired alone) and one for all; the enemy you aim at down the right. A click on one of your bars sends a crew there.
 const boardEl = document.createElement('div');
 boardEl.id = 'duel-board';
 boardEl.className = 'duel-board';
 document.body.appendChild(boardEl);
 let lastBoard = '';
-const BOARD_Y = (x) => 92 - x * 1.4; // metres along the hull (+ bow) to the drawing
-const BOARD_ZONES = [['gun', 58, 22], ['bridge', 22, 6], ['engine', 6, -24], ['guns', -24, -42], ['steering', -42, -58]];
 const healthColour = (f) => (f <= 0 ? '#ff5d61' : f < 0.5 ? '#ff7a1a' : f < 0.99 ? '#f2c94c' : '#3ddc84');
+// How long a ship has if her flooding goes on, as text.
+function floodText(p) {
+  const left = p.flood > 0.02 && p.tSunk === null ? p.hp / p.flood : Infinity;
+  return p.tSunk !== null ? 'SINKING' : Number.isFinite(left) ? `flooding: ${left > 600 ? '10+ min' : left > 90 ? `${Math.round(left / 60)} min` : `${Math.round(left)} s`} left` : 'watertight';
+}
+// Does her 76 mm bear on the other ship (working, in range, the other ship in her arc)?
+function bears(s) {
+  if (s.tSunk !== null || s.comp.gun <= 0) return 'OUT';
+  if (sim.range() > MAIN_RANGE) return 'out of range';
+  return Math.abs(sim.relBearing(s)) <= MAIN_ARC ? 'BEARS' : 'out of arc';
+}
+// One bar for each part of a ship: name, health bar, the number, fire / leak / crew marks, and (yours) the FIX button with its progress.
+function partRows(s, mine, aim = null) {
+  return COMP_IDS.map((id) => {
+    const f = clamp(s.comp[id] / COMPARTMENTS[id].hp, 0, 1);
+    const fix = s.fix[id];
+    const crew = s.crews.filter((c) => c.to === id);
+    const marks = `${s.fire[id] > 0 ? '<u class="fire">▲</u>' : ''}${s.leak[id] > 0.005 ? '<u class="leak">≈</u>' : ''}${crew.map((c) => `<u class="crew${c.eta > 0 ? ' going' : ''}">⛑</u>`).join('')}`;
+    let btn = '';
+    if (mine) {
+      const busy = fix.left > 0, wait = fix.wait > 0;
+      const label = busy ? `${fix.left.toFixed(1)}s` : wait ? `${Math.ceil(fix.wait)}s` : 'FIX';
+      const prog = busy ? 1 - fix.left / REPAIR_TIME : wait ? 1 - fix.wait / REPAIR_WAIT : 1;
+      btn = `<button type="button" class="bp-fix${busy ? ' busy' : ''}" data-fix="${id}"${busy || wait || s.tSunk !== null ? ' disabled' : ''} title="Repair the ${COMPARTMENTS[id].name.toLowerCase()} alone"><s style="width:${Math.round(prog * 100)}%"></s><span>${label}</span></button>`;
+    }
+    const cls = f <= 0 ? ' out' : f < 0.5 ? ' bad' : f < 0.99 ? ' hurt' : '';
+    return `<div class="br${cls}${mine && COMP_IDS[selComp] === id ? ' sel' : ''}${aim === id ? ' aim' : ''}" data-comp="${mine ? id : ''}" title="${COMPARTMENTS[id].name}${mine ? ': click to send a crew' : ''}">`
+      + `<span class="bn">${COMPARTMENTS[id].name}</span><i class="bb"><s style="width:${Math.round(f * 100)}%;background:${healthColour(f)}"></s></i><em>${f <= 0 ? 'OUT' : Math.round(f * 100)}</em><u class="bm">${marks}</u>${btn}</div>`;
+  }).join('');
+}
 function boardHtml() {
   const p = sim.player;
-  const hull = 'M30,8 C40,30 46,52 46,70 L46,168 L14,168 L14,70 C14,52 20,30 30,8 Z';
-  let zones = '', marks = '';
-  for (const [id, xa, xb] of BOARD_ZONES) {
-    const f = clamp(p.comp[id] / COMPARTMENTS[id].hp, 0, 1);
-    const y0 = BOARD_Y(xa), y1 = BOARD_Y(xb), mid = (y0 + y1) / 2;
-    const crew = p.crews.filter((c) => c.to === id);
-    zones += `<g class="bz${COMP_IDS[selComp] === id ? ' sel' : ''}" data-comp="${id}"><title>${COMPARTMENTS[id].name} ${Math.round(f * 100)} %: click to send a crew</title>`
-      + `<rect x="10" y="${y0.toFixed(1)}" width="40" height="${(y1 - y0).toFixed(1)}" fill="${healthColour(f)}" fill-opacity="${(0.2 + 0.5 * f).toFixed(2)}"/></g>`;
-    marks += `<text x="30" y="${(mid - 1).toFixed(1)}" class="bl">${COMP_ABBR[id]}</text><text x="30" y="${(mid + 8).toFixed(1)}" class="bp">${Math.round(f * 100)}</text>`
-      + `<text x="30" y="${(y0 + 9).toFixed(1)}" class="bi">${p.fire[id] > 0 ? '<tspan class="fire">▲</tspan>' : ''}${p.leak[id] > 0.005 ? '<tspan class="leak">≈</tspan>' : ''}${crew.map((c) => `<tspan class="crew${c.eta > 0 ? ' going' : ''}">⛑</tspan>`).join('')}</text>`;
-  }
-  const lines = BOARD_ZONES.slice(1).map(([, xa]) => `<line x1="10" x2="50" y1="${BOARD_Y(xa).toFixed(1)}" y2="${BOARD_Y(xa).toFixed(1)}" class="bs"/>`).join('');
-  const svg = `<svg viewBox="0 0 60 176" class="bsvg"><defs><clipPath id="bhull"><path d="${hull}"/></clipPath></defs>`
-    + `<g clip-path="url(#bhull)">${zones}${lines}</g><path d="${hull}" class="bh${p.tSunk !== null ? ' sunk' : ''}"/>${marks}</svg>`;
   const hullF = clamp(p.hp / HULL_HP, 0, 1);
-  const leftS = p.flood > 0.02 && p.tSunk === null ? p.hp / p.flood : Infinity;
-  const flood = p.tSunk !== null ? 'SINKING' : Number.isFinite(leftS) ? `flooding: ${leftS > 600 ? '10+ min' : leftS > 90 ? `${Math.round(leftS / 60)} min` : `${Math.round(leftS)} s`} left` : 'dry';
   const g = p.gun;
   const dry = p.gats.every((x) => x.ammo <= 0);
   const reload = g.cool > 0 ? clamp(1 - g.cool / MAIN_RELOAD, 0, 1) : 1;
-  const rep = p.repair > 0 ? `REPAIRING ${p.repair.toFixed(1)} s` : p.repairWait > 0 ? `READY IN ${Math.ceil(p.repairWait)} s` : 'REPAIR (E)';
-  const repF = p.repair > 0 ? 1 - p.repair / REPAIR_TIME : p.repairWait > 0 ? 1 - p.repairWait / REPAIR_WAIT : 1;
+  const any = COMP_IDS.some((id) => p.fix[id].left <= 0 && p.fix[id].wait <= 0 && (p.comp[id] < COMPARTMENTS[id].hp || p.fire[id] > 0 || p.leak[id] > 0.005));
   return `<div class="bd-head"><b>YOUR SHIP</b><span class="${hullF < 0.35 ? 'bad' : hullF < 0.7 ? 'hurt' : ''}">HULL ${Math.round(p.hp)}</span></div>`
     + `<div class="bd-bar"><s style="width:${Math.round(hullF * 100)}%;background:${healthColour(hullF >= 0.99 ? 1 : hullF < 0.35 ? 0.2 : 0.7)}"></s></div>`
-    + `<div class="bd-main">${svg}<div class="bd-side">`
-    + `<div class="bd-kv"><i>SPEED</i><b>${sim.knots(p).toFixed(1)} kn</b></div>`
-    + `<div class="bd-kv"><i>HEADING</i><b>${String(Math.round(sim.headingDeg(p)) % 360).padStart(3, '0')}°</b></div>`
-    + `<div class="bd-kv"><i>76 mm</i><b>${AMMO_TYPES[g.type].name} ${g.stock[g.type]}</b></div>`
-    + `<div class="bd-prog" title="76 mm reload"><s style="width:${Math.round(reload * 100)}%"></s></div>`
-    + `<div class="bd-kv"><i>30 mm</i><b>${dry ? 'DRY' : p.auto ? 'AUTO' : 'HOLD G'}</b></div>`
-    + `<div class="bd-kv"><i>CREWS</i><b>${p.crews.filter((c) => c.to).length}/${CREWS}</b></div>`
-    + `</div></div>`
-    + `<div class="bd-flood ${p.flood > 0.02 ? 'bad' : ''}">${flood}</div>`
-    + `<button type="button" class="bd-repair${p.repair > 0 ? ' busy' : ''}" data-act="repair"${p.repair > 0 || p.repairWait > 0 ? ' disabled' : ''}><s style="width:${Math.round(repF * 100)}%"></s><span>${rep}</span></button>`;
+    + `<div class="bd-rows">${partRows(p, true)}</div>`
+    + `<button type="button" class="bd-repair" data-act="repair"${any && p.tSunk === null ? '' : ' disabled'}><span>REPAIR ALL DAMAGED</span></button>`
+    + `<div class="bd-flood ${p.flood > 0.02 ? 'bad' : ''}">${floodText(p)}</div>`
+    + `<div class="bd-wpn"><span>76 mm <b>${AMMO_TYPES[g.type].name} ${g.stock[g.type]}</b></span><div class="bd-prog" title="76 mm reload"><s style="width:${Math.round(reload * 100)}%"></s></div>`
+    + `<span>30 mm <b>${dry ? 'DRY' : p.auto ? 'AUTO' : 'HOLD G'}</b> · crews <b>${p.crews.filter((c) => c.to).length}/${CREWS}</b></span></div>`
+    + `<div class="bd-threat ${bears(sim.enemy) === 'BEARS' ? 'on' : ''}">her 76 mm: ${bears(sim.enemy) === 'BEARS' ? 'BEARS ON YOU' : bears(sim.enemy)}</div>`;
 }
 boardEl.addEventListener('click', (e) => {
+  const fx = e.target.closest?.('[data-fix]');
+  if (fx) { sim.startRepair(0, fx.dataset.fix); lastBoard = ''; return; }
+  if (e.target.closest?.('[data-act="repair"]')) { sim.startRepair(0); lastBoard = ''; return; }
   const z = e.target.closest?.('[data-comp]');
-  if (z) { selComp = COMP_IDS.indexOf(z.dataset.comp); sim.assignCrew(0, z.dataset.comp); lastBoard = ''; return; }
-  if (e.target.closest?.('[data-act="repair"]')) { sim.startRepair(0); lastBoard = ''; }
+  if (z && z.dataset.comp) { selComp = COMP_IDS.indexOf(z.dataset.comp); sim.assignCrew(0, z.dataset.comp); lastBoard = ''; }
 });
+
+// The enemy you are aiming at, in the same style.
+const targetEl = document.createElement('div');
+targetEl.id = 'duel-target';
+targetEl.className = 'duel-board duel-target';
+document.body.appendChild(targetEl);
+let lastTarget = '';
+function targetHtml() {
+  const e = sim.enemy;
+  if (!e) return '';
+  const foes = sim.ships.filter((o) => o.team === 1);
+  const which = foes.length > 1 ? ` ${foes.indexOf(e) + 1}/${foes.length}` : '';
+  const locked = sight.lock && sight.lock.ship === e.idx;
+  const aim = locked ? sight.lock.comp : sight.snap;
+  const aimNote = locked ? `LOCKED · ${COMPARTMENTS[sight.lock.comp].name}` : sight.snap ? `FOCUS · ${COMPARTMENTS[sight.snap].name}` : 'NO FOCUS · shells fall in the sea';
+  const hullF = clamp(e.hp / HULL_HP, 0, 1);
+  return `<div class="bd-head"><b>ENEMY${which}</b><span>HULL ${Math.round(e.hp)} · ${LEVELS[sim.level].name}</span></div>`
+    + `<div class="bd-bar foe"><s style="width:${Math.round(hullF * 100)}%"></s></div>`
+    + `<div class="bd-rows">${partRows(e, false, aim)}</div>`
+    + `<div class="bd-flood ${e.flood > 0.02 ? 'good' : ''}">${floodText(e)}</div>`
+    + `<div class="bd-threat ${bears(e) === 'BEARS' ? 'on' : ''}">her 76 mm: ${bears(e) === 'BEARS' ? 'BEARS ON YOU' : bears(e)}</div>`
+    + `<div class="bd-aim ${locked ? 'lock' : sight.snap ? 'focus' : ''}">${aimNote}</div>`;
+}
 
 const map = createDuelMap();
 const drawMap = () => map.update(sim);
@@ -613,6 +647,7 @@ function setHud(on) {
   root.hidden = !on;
   shipEl.hidden = !on;
   boardEl.hidden = !on;
+  targetEl.hidden = !on;
   hudButton.classList.toggle('active', on);
   hudButton.setAttribute('aria-pressed', String(on));
 }
@@ -641,10 +676,10 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>A</kbd>', 'The 30 mm guns on automatic'],
   ['<kbd>Q</kbd>', `Change the 76 mm round, HE or AP: HE starts fires and floods, AP hits one compartment harder; changing costs a ${SWITCH_TIME} s reload`],
   ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
-  ['<kbd>E</kbd>', `Quick repair: ${REPAIR_TIME} s, then every fire is out, the leaks are stopped and each compartment gets a third of its points back; ready again after ${REPAIR_WAIT} s`],
+  ['<kbd>E</kbd>', `Repair the compartment Z has picked (or press FIX on its bar in the radar view): ${REPAIR_TIME} s, then its fire is out, its leak is stopped and it gets 40 % of its points back; that part can be repaired again after ${REPAIR_WAIT} s`],
   ['<kbd>1</kbd> to <kbd>5</kbd>', 'Behind, bridge, above, orbit, radar'],
   ['<kbd>2</kbd>', 'The wheelhouse, as in Solo Air Defense: the wheel turns with the rudder, the telegraph levers follow the engine order, and a drag looks round (double click looks ahead)'],
-  ['<kbd>5</kbd>', 'Radar view: the fire-control sight. Arrows, a drag or the on-screen pad aim it. hold <kbd>Shift</kbd> to zoom in and <kbd>Ctrl</kbd> to zoom out (the wheel, <kbd>+</kbd> <kbd>-</kbd> and the lens track work too) to close the lens until a compartment fills it (<kbd>0</kbd> resets); every enemy hull shows its compartments as marks, and a click lays the sight on one. F fires there: the shell goes to the point under the crosshair, so you choose what to break. Space returns the sight to auto. A merchant or a friendly ship in the sight is not fired on. The helm is locked until Esc'],
+  ['<kbd>5</kbd>', 'Radar view: the fire-control sight. Arrows, a drag or the on-screen pad aim it. hold <kbd>Shift</kbd> to zoom in and <kbd>Ctrl</kbd> to zoom out (the wheel, <kbd>+</kbd> <kbd>-</kbd> and the lens track work too) to close the lens until a compartment fills it (<kbd>0</kbd> resets); every enemy hull shows its compartments as marks, and a click lays the sight on one. F fires there: the shell goes to the point under the crosshair, so you choose what to break. Space locks the point under the crosshair (and lets the lock go); Enter fires like F. A merchant or a friendly ship in the sight is not fired on. The helm is locked until Esc'],
   ['<kbd>Tab</kbd>', 'Next enemy to fight (locked until she sinks). More enemy frigates arrive, a friendly frigate joins you, and merchant ships cross the fight: sinking one yourself loses the duel'],
   ['<kbd>V</kbd>', 'Next view · drag looks round in the orbit view, the wheel zooms'],
   ['<kbd>R</kbd>', 'Fight again'],
@@ -680,11 +715,11 @@ const input = { left: 0, right: 0, fire: 0, gat: 0, aim: null };
 const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`;
 function keysHtml() {
   if (view === 'radar') {
-    return `${k('← → ↑ ↓', 'aim the sight')}${k('Shift Ctrl', 'zoom in / out')}${k('click', 'lock a compartment')}${k('Enter', 'lock the point', !!sight.lock)}${k('F', 'fire 76 mm (hold)', input.fire)}`
-      + `${k('Tab', 'next target')}${k('Space', 'auto')}${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Esc', 'helm')}`;
+    return `${k('← → ↑ ↓', 'aim the sight')}${k('Shift Ctrl', 'zoom in / out')}${k('click', 'lock a compartment')}${k('Space', 'lock / release', !!sight.lock)}${k('Enter', 'fire 76 mm (hold)', input.fire)}`
+      + `${k('Tab', 'next target')}${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Esc', 'helm')}`;
   }
   return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', `thrust ${TELEGRAPH[sim.player.order].name}`)}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}${k('Tab', 'target')}`
-    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}${k('E', 'repair', sim.player.repair > 0)}`
+    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}${k('E', 'repair', sim.player.fix[COMP_IDS[selComp]].left > 0)}`
     + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–5', 'views')}${k('R', 'again')}`;
 }
 let lastKeys = '';
@@ -760,7 +795,7 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     return;
   }
-  if (view === 'radar' && e.key === 'Enter') { lockSight(); e.preventDefault(); return; }
+  if (view === 'radar' && e.key === 'Enter') { input.fire = 1; e.preventDefault(); return; } // Enter fires, like F
   if (view === 'radar' && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_')) { // zoom the lens while held
     radarKeys[e.key === '-' || e.key === '_' ? 'zo' : 'zi'] = 1;
     e.preventDefault();
@@ -786,7 +821,7 @@ window.addEventListener('keydown', (e) => {
     case 'a': sim.toggleAuto(0); break;
     case 'q': sim.switchAmmo(0); break;
     case 'z': selComp = (selComp + 1) % COMP_IDS.length; break;
-    case 'e': sim.startRepair(0); break;
+    case 'e': sim.startRepair(0, COMP_IDS[selComp]); break;
     case 'x': sim.assignCrew(0, COMP_IDS[selComp]); break;
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
@@ -798,7 +833,7 @@ window.addEventListener('keydown', (e) => {
     case '?': setKeys(keysSheet.hidden); break;
     case 'Escape': if (!closePopovers() && view === 'radar') setView(viewBeforeRadar); break;
     case 's': setSound(!audio.enabled); break;
-    case ' ': if (view === 'radar') { sight.manual = false; sight.lock = null; } break;
+    case ' ': if (view === 'radar') toggleLock(); break;
     case '0': if (view === 'radar') sightZoomGoal = SIGHT_ZOOM0; break;
     default: return;
   }
@@ -810,7 +845,7 @@ window.addEventListener('keyup', (e) => {
   if (e.key.startsWith('Arrow')) radarKeys[{ ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd' }[e.key]] = 0;
   if (e.key === 'ArrowLeft') input.left = 0;
   if (e.key === 'ArrowRight') input.right = 0;
-  if (e.key === 'f' || e.key === 'F') input.fire = 0;
+  if (e.key === 'f' || e.key === 'F' || (e.key === 'Enter' && view === 'radar')) input.fire = 0;
   if (e.key === 'g' || e.key === 'G') input.gat = 0;
 });
 window.addEventListener('blur', () => { radarKeys.zi = radarKeys.zo = 0; input.left = 0; input.right = 0; input.fire = 0; input.gat = 0; });
@@ -837,6 +872,10 @@ const SIGHT_ZOOM0 = 1.5; // the lens multiplier you start at (smaller is closer)
 // `lock` holds the sight on a point of a hull ({ ship, local }, in her frame) as she sails: a compartment you clicked, or the point under the
 // crosshair when you press Enter. Aiming by hand, or Space, lets it go.
 const sight = { aim: new THREE.Vector3(1, 0.03, 0), manual: false, fresh: true, omega: 0, dragYaw: 0, dragPitch: 0, zone: null, ship: null, warn: null, lock: null, hit: null, snap: null };
+// Space and the Lock button: lock the point the sight is on, or let a lock go (the sight is automatic again).
+function toggleLock() {
+  if (sight.lock) { sight.manual = false; sight.lock = null; } else lockSight();
+}
 function lockSight() { // Enter: lock the compartment the sight has snapped to, or the one under the crosshair
   let ship = null, comp = null;
   if (sight.snap) { ship = sim.enemy.idx; comp = sight.snap; }
@@ -852,7 +891,7 @@ const zoomSight = (f) => { sightZoomGoal = clamp(sightZoomGoal * f, 0.1, 8); };
 const sightEl = document.createElement('div');
 sightEl.className = 'duel-sight';
 sightEl.hidden = true;
-sightEl.innerHTML = '<i class="hs-h"></i><i class="hs-v"></i><i class="hs-box"></i><b class="hs-txt"></b>';
+sightEl.innerHTML = '<svg class="hs-ret" viewBox="-110 -110 220 220" aria-hidden="true"><circle r="84"/><circle r="36" class="thin"/><path d="M0,-108V-90M0,90V108M-108,0H-90M90,0H108"/><path d="M-84,0H-14M14,0H84M0,-84V-14M0,14V84"/><path class="thin" d="M-60,-5V5M-48,-5V5M-36,-5V5M-24,-5V5M24,-5V5M36,-5V5M48,-5V5M60,-5V5M-5,-60H5M-5,-48H5M-5,-36H5M-5,-24H5"/><path d="M-10,30H10M-16,50H16M-10,66H10M-16,80H16"/><circle r="2.2" class="dot"/><circle r="7" class="thin"/></svg><b class="hs-txt"></b>';
 document.body.appendChild(sightEl);
 const sightTxt = sightEl.querySelector('.hs-txt');
 const radarEl = document.createElement('div');
@@ -861,9 +900,7 @@ radarEl.hidden = true;
 radarEl.innerHTML = '<div class="hr-marks"></div><div class="rc">'
   + '<div class="rc-main"><div class="rc-top"><b class="hr-mode">AUTO</b><span class="hr-brg"></span></div>'
   + '<div class="rc-zoom"><span>WIDE</span><div class="rc-track" aria-label="Zoom"><i class="rc-ticks"></i><i class="rc-fill"></i><i class="rc-thumb"></i></div><span>CLOSE</span><b class="hr-zv"></b></div>'
-  + '<div class="rc-pills"><button type="button" data-act="lock"><i>⌖</i>Hold<kbd>Enter</kbd></button><button type="button" data-act="auto"><i>◎</i>Auto<kbd>Space</kbd></button>'
-  + '<button type="button" data-act="next"><i>⇥</i>Target<kbd>Tab</kbd></button><button type="button" data-act="back"><i>⏏</i>Helm<kbd>Esc</kbd></button></div></div>'
-  + '<div class="rc-stick" aria-label="Aim stick: drag"><s class="u">▲</s><s class="d">▼</s><s class="l">◀</s><s class="r">▶</s><i class="rc-knob"></i></div>'
+  + '<div class="rc-pills"><button type="button" data-act="lock"><i>⌖</i>Lock<kbd>Space</kbd></button><button type="button" data-act="fire"><i>✹</i>Fire<kbd>Enter</kbd></button></div></div>'
   + '<div class="rc-gun"><button type="button" class="rc-fire" data-act="fire"><span>FIRE</span><kbd>F</kbd></button><button type="button" class="rc-ammo" data-act="ammo"><b class="rc-am"></b><kbd>Q</kbd></button></div></div>';
 document.body.appendChild(radarEl);
 const radarMode = radarEl.querySelector('.hr-mode');
@@ -873,12 +910,11 @@ const marksEl = radarEl.querySelector('.hr-marks');
 const trackEl = radarEl.querySelector('.rc-track');
 const thumbEl = radarEl.querySelector('.rc-thumb');
 const fillEl = radarEl.querySelector('.rc-fill');
-const stickEl = radarEl.querySelector('.rc-stick');
 const fireEl = radarEl.querySelector('.rc-fire');
 const ammoEl = radarEl.querySelector('.rc-am');
 const ZOOM_SPAN = Math.log(80); // the zoom goal runs from 8 (wide) to 0.1 (close) along the track
 const zoomFrac = () => 1 - Math.log(sightZoomGoal / 0.1) / ZOOM_SPAN;
-const radarStick = { x: 0, y: 0 }; // the aim stick, -1 to 1 (x to starboard, y up)
+const radarStick = { x: 0, y: 0 }; // (the on-screen aim stick was removed: always 0; arrows and a drag aim the sight)
 // Drag on a control until the pointer lets go.
 function dragOn(e, move) {
   const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); move(null); };
@@ -907,28 +943,13 @@ radarEl.addEventListener('pointerdown', (e) => {
     });
     return;
   }
-  if (e.target.closest('.rc-stick')) { // the aim stick: the farther you push it the faster the sight turns
-    e.preventDefault();
-    const r = stickEl.getBoundingClientRect(), R = r.width / 2 - 14;
-    dragOn(e, (ev) => {
-      if (!ev) { radarStick.x = radarStick.y = 0; stickEl.style.setProperty('--kx', '0px'); stickEl.style.setProperty('--ky', '0px'); return; }
-      let dx = ev.clientX - (r.left + r.width / 2), dy = ev.clientY - (r.top + r.height / 2);
-      const d = Math.hypot(dx, dy);
-      if (d > R) { dx *= R / d; dy *= R / d; }
-      radarStick.x = dx / R; radarStick.y = -dy / R;
-      stickEl.style.setProperty('--kx', `${dx}px`);
-      stickEl.style.setProperty('--ky', `${dy}px`);
-      if (Math.hypot(radarStick.x, radarStick.y) > 0.06) { sight.manual = true; sight.lock = null; }
-    });
-    return;
-  }
   const b = e.target.closest('button');
   if (!b) return;
   e.preventDefault();
   const release = (fn) => { const up = () => { fn(); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); }; window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up); };
   if (b.dataset.act === 'fire') { input.fire = 1; release(() => { input.fire = 0; }); }
   else if (b.dataset.act === 'auto') { sight.manual = false; sight.lock = null; }
-  else if (b.dataset.act === 'lock') lockSight();
+  else if (b.dataset.act === 'lock') toggleLock();
   else if (b.dataset.act === 'next') pickNextTarget();
   else if (b.dataset.act === 'ammo') sim.switchAmmo(0);
   else if (b.dataset.act === 'back') setView(viewBeforeRadar);
@@ -939,6 +960,45 @@ function pickNextTarget() {
   if (to) say(`Target: enemy ${relName(wrapAngle(Math.atan2(to.z - sim.player.z, to.x - sim.player.x) - sim.player.psi))}, ${kmText(sim.distance(sim.player, to))}`, '', 1800);
   return to;
 }
+// In the sailing views, a click on an enemy ship (or near her) asks whether to attack her: yes turns the target to her and opens the radar view.
+const attackEl = document.createElement('div');
+attackEl.className = 'duel-attack';
+attackEl.hidden = true;
+document.body.appendChild(attackEl);
+let attackFor = -1, attackTimer = 0;
+function closeAttack() { attackEl.hidden = true; attackFor = -1; clearTimeout(attackTimer); }
+function askAttack(i, x, y) {
+  const s = sim.ships[i];
+  attackFor = i;
+  attackEl.innerHTML = `<b>Attack this ship?</b><small>ENEMY · ${kmText(sim.distance(sim.player, s))} · hull ${Math.round(s.hp)}</small>`
+    + '<div><button type="button" data-yes>Attack</button><button type="button" data-no>Not now</button></div>';
+  attackEl.hidden = false;
+  attackEl.style.left = `${clamp(x, 100, innerWidth - 100)}px`;
+  attackEl.style.top = `${clamp(y - 20, 90, innerHeight - 140)}px`;
+  clearTimeout(attackTimer);
+  attackTimer = setTimeout(closeAttack, 8000);
+}
+attackEl.addEventListener('click', (e) => {
+  if (e.target.closest('[data-yes]') && attackFor >= 0 && sim.setTarget(0, attackFor)) { closeAttack(); setView('radar'); return; }
+  if (e.target.closest('button')) closeAttack();
+});
+attackReady = true;
+const _pick = new THREE.Vector3();
+let downAt = null;
+canvas.addEventListener('pointerdown', (e) => { downAt = e.button === 0 ? { x: e.clientX, y: e.clientY } : null; });
+canvas.addEventListener('pointerup', (e) => {
+  const d = downAt; downAt = null;
+  if (!d || view === 'radar' || sim.winner !== null || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) return;
+  let best = -1, bestD = 70; // pixels: on her or near her
+  for (const o of sim.ships) {
+    if (o.team !== 1 || o.tSunk !== null || !ships[o.idx]?.group.visible) continue;
+    _pick.set(o.x, 10, o.z).project(camera);
+    if (_pick.z > 1) continue;
+    const dist = Math.hypot((_pick.x * 0.5 + 0.5) * innerWidth - e.clientX, (-_pick.y * 0.5 + 0.5) * innerHeight - e.clientY);
+    if (dist < bestD) { bestD = dist; best = o.idx; }
+  }
+  if (best >= 0) askAttack(best, e.clientX, e.clientY); else closeAttack();
+});
 let sightDrag = null;
 canvas.addEventListener('pointerdown', (e) => { if (e.button === 0 && view === 'radar') sightDrag = { x: e.clientX, y: e.clientY }; });
 window.addEventListener('pointerup', () => { sightDrag = null; });
@@ -1176,7 +1236,7 @@ function updateRadarUi() {
   sightEl.classList.toggle('searching', !sight.zone);
   sightEl.classList.toggle('warn', !!sight.warn);
   const pct = (f) => Math.round(f * 100);
-  const aim = sight.zone ? `${sight.lock ? `LOCKED: ${COMPARTMENTS[sight.zone].name.toUpperCase()} · ${pct(LOCK_FRACTION)}% a hit` : sight.snap ? `FOCUS: ${COMPARTMENTS[sight.zone].name.toUpperCase()} · ${pct(FOCUS_FRACTION)}% a hit, Enter locks` : 'NO FOCUS: the shell falls in the sea'}` : sight.warn ?? 'NO FOCUS: the shell falls in the sea';
+  const aim = sight.zone ? `${sight.lock ? `LOCKED: ${COMPARTMENTS[sight.zone].name.toUpperCase()} · ${pct(LOCK_FRACTION)}% a hit` : sight.snap ? `FOCUS: ${COMPARTMENTS[sight.zone].name.toUpperCase()} · ${pct(FOCUS_FRACTION)}% a hit, Space locks` : 'NO FOCUS: the shell falls in the sea'}` : sight.warn ?? 'NO FOCUS: the shell falls in the sea';
   sightTxt.textContent = `${aim} · enemy${which} ${kmText(sim.range())} · ${AMMO_TYPES[g.type].name} ${g.stock[g.type]} · ${gunStatus(sim.player)}`;
   map.sight = { yaw, locked: !!sight.zone };
 }
@@ -1219,7 +1279,10 @@ renderer.setAnimationLoop((now) => {
     updateHud();
     const sh = shipHtml();
     if (sh !== lastShip) { shipEl.innerHTML = sh; lastShip = sh; }
-    if (view === 'radar') { const bh = boardHtml(); if (bh !== lastBoard) { boardEl.innerHTML = bh; lastBoard = bh; } }
+    if (view === 'radar') {
+      const bh = boardHtml(); if (bh !== lastBoard) { boardEl.innerHTML = bh; lastBoard = bh; }
+      const th = targetHtml(); if (th !== lastTarget) { targetEl.innerHTML = th; lastTarget = th; }
+    }
   }
   if (mapOn) drawMap();
   updateTag();
