@@ -127,7 +127,7 @@ function showChooser(preselect, preselectLevel = null) {
   // The address names a launcher for its own mission only: launch() writes ?ship= even for the missions with none.
   if (validShip(preselect) && missionById(mode).ship) shipFor[mode] = preselect;
   const drills = ENTRIES.find((e) => e.family).members;
-  const lastIn = { watch: 'intercept', play: 'fly', drill: drills.includes(read('localStorage', 'intercept.drill')) ? read('localStorage', 'intercept.drill') : drills[0] };
+  const lastIn = { watch: 'intercept', play: 'fly', command: 'fleet', drill: drills.includes(read('localStorage', 'intercept.drill')) ? read('localStorage', 'intercept.drill') : drills[0] };
   lastIn[groupOf(mode)] = mode;
   level = validLevel(preselectLevel) ?? validLevel(read('localStorage', 'intercept.level.duel')) ?? DEFAULT_LEVEL;
   const lastPlayed = MISSION_IDS.includes(rememberedMode) ? rememberedMode : null;
@@ -152,7 +152,7 @@ function showChooser(preselect, preselectLevel = null) {
     titleEl.textContent = t.title;
     tagEl.textContent = t.tagline;
     factsEl.replaceChildren(...t.facts.map(li));
-    const all = group === 'play' || t.keys.length <= 5;
+    const all = group === 'play' || group === 'command' || t.keys.length <= 5;
     const shown = all ? t.keys : t.keys.slice(0, 4);
     keysEl.replaceChildren(...shown.map(([k, label]) => {
       const item = li('');

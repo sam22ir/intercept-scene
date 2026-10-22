@@ -64,10 +64,11 @@ describe('the menu data', () => {
   });
 
   it('has three tabs by what the player does, each with real missions', () => {
-    assert.deepEqual(GROUPS.map((g) => g.id), ['watch', 'play', 'drill']);
-    assert.deepEqual(GROUPS.map((g) => g.name), ['Watch', 'Play', 'Drill']);
+    assert.deepEqual(GROUPS.map((g) => g.id), ['watch', 'play', 'command', 'drill']);
+    assert.deepEqual(GROUPS.map((g) => g.name), ['Watch', 'Play', 'Command', 'Drill']);
     assert.deepEqual(MISSIONS.filter((m) => m.group === 'watch').map((m) => m.id), ['intercept', 'chute']);
-    assert.deepEqual(MISSIONS.filter((m) => m.group === 'play').map((m) => m.id), ['fly', 'helm', 'duel', 'fleet']);
+    assert.deepEqual(MISSIONS.filter((m) => m.group === 'play').map((m) => m.id), ['fly', 'helm', 'duel']);
+    assert.deepEqual(MISSIONS.filter((m) => m.group === 'command').map((m) => m.id), ['fleet']);
     assert.deepEqual(MISSIONS.filter((m) => m.group === 'drill').map((m) => m.id), ['maneuvers2', 'maneuvers', 'formations']);
     assert.ok(MISSIONS.every((m) => GROUPS.some((g) => g.id === m.group)), 'every mission is on a tab');
     for (const g of GROUPS) assert.ok(g.hint && entriesOf(g.id).length > 0, `${g.id} lists something`);

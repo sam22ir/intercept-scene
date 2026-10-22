@@ -4,7 +4,7 @@
 // real scenario, flight model and key bindings, so a title can never describe something a mission does not do.
 //
 // A mission with `ship: true` lets the player pick the launcher; the others fix it (`fixed` says what is
-// fixed, for the summary line). The screen has three tabs (`GROUPS`, by what the player does): Watch (replays
+// fixed, for the summary line). The screen has four tabs (`GROUPS`, by what the player does): Watch (replays
 // to scrub), Play (take the controls) and Drill (the naval exercises). A tab lists its entries (`entriesOf`):
 // each mission is one, except the three drills, which are one entry ("Tactical maneuvers", `FAMILIES`) whose
 // variants are chosen by the number of ships (`ships`, `tile`, `tileSub`). A mission with `level: true` (the ship
@@ -13,6 +13,7 @@
 export const GROUPS = [
   { id: 'watch', name: 'Watch', hint: 'Replays you can scrub both ways' },
   { id: 'play', name: 'Play', hint: 'You take the controls' },
+  { id: 'command', name: 'Command', hint: 'Lead a fleet from above' },
   { id: 'drill', name: 'Drill', hint: 'Naval exercises run on orders' },
 ];
 
@@ -156,7 +157,7 @@ export const MISSIONS = [
   },
   {
     id: 'fleet',
-    group: 'play',
+    group: 'command',
     name: 'Fleet command',
     kind: 'Manual',
     blurb: 'Command a squadron from above with the mouse',
