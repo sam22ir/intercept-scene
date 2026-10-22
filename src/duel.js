@@ -158,14 +158,14 @@ export const CREW_FIGHT = 0.12; // intensity put out a second
 export const CREW_FLOOD = 0.4; // the flooding that is left with a crew in the compartment
 export const CREW_REPAIR = 0.5; // compartment points a second
 export const REPAIR_CAP = 0.6;
-// The quick repair (your ship's own option): the whole crew drops everything for REPAIR_TIME s, then every fire is out, the leaks are
-// stopped, each compartment gets REPAIR_GAIN of its points back (up to REPAIR_TOP, one that was out comes back) and the hull REPAIR_HULL points.
-// It can be used again after REPAIR_WAIT s.
-export const REPAIR_TIME = 4;
-export const REPAIR_WAIT = 40;
-export const REPAIR_GAIN = 0.35;
+// The repair of one part (yours, from the board): the crew drops everything for REPAIR_TIME s on that compartment, then its fire is out, its
+// leak is stopped and it gets REPAIR_GAIN of its points back (up to REPAIR_TOP; one that was out comes back) and the hull REPAIR_HULL points.
+// The same part can be repaired again after REPAIR_WAIT s; the other parts are not held up by it.
+export const REPAIR_TIME = 3;
+export const REPAIR_WAIT = 20;
+export const REPAIR_GAIN = 0.4;
 export const REPAIR_TOP = 0.9;
-export const REPAIR_HULL = 8;
+export const REPAIR_HULL = 2;
 const NEXT_TO = { gun: ['bridge'], bridge: ['gun', 'engine'], engine: ['bridge', 'guns'], guns: ['engine', 'steering'], steering: ['guns'] };
 export const neighbours = (id) => NEXT_TO[id];
 
@@ -216,7 +216,7 @@ function makeShip(idx, x, z, psi, team = idx === 0 ? 0 : 1, kind = 'frigate') {
     hp: kind === 'merchant' ? MERCHANT_HP : HULL_HP, comp, flood: 0, tSunk: null, listSide: 1,
     fire: Object.fromEntries(COMP_IDS.map((id) => [id, 0])), // intensity 0..1 in each compartment
     leak: Object.fromEntries(COMP_IDS.map((id) => [id, 0])), // hull points a second from holes in it
-    repair: 0, repairWait: 0, // s left of the quick repair under way, and until it can be used again
+    fix: Object.fromEntries(COMP_IDS.map((id) => [id, { left: 0, wait: 0 }])), // each part's repair: s left, and s until it can be used again
     crews: Array.from({ length: CREWS }, () => ({ to: null, eta: 0 })), // sent to `to`, working once eta has run out
     // The 76 mm: yaw (+ toward port), pitch, the time until it is loaded, the rounds, and whether it is on the solution.
     gun: { yaw: 0, pitch: rad(2), cool: 1.5, ammo: MAIN_ROUNDS, stock: { ...AMMO_STOCK }, type: 'he', onTarget: false, engaged: false },
@@ -695,32 +695,39 @@ export class DuelSim {
     free.to = comp; free.eta = CREW_MOVE;
     return true;
   }
-  // Start the quick repair. Returns whether it began (not while one runs, during the wait, or on a ship that is sinking).
-  startRepair(i) {
+  // Start the repair of one part, or (no part) of every damaged part that is free. Returns whether any began (not for a part that is being
+  // repaired or waiting, or on a ship that is sinking).
+  startRepair(i, comp = null) {
     const s = this.ships[i];
-    if (!s || s.tSunk !== null || s.repair > 0 || s.repairWait > 0) return false;
-    s.repair = REPAIR_TIME;
-    this.events.push({ type: 'repair', ship: s.idx, phase: 'start' });
-    return true;
+    if (!s || s.tSunk !== null || (comp !== null && !COMPARTMENTS[comp])) return false;
+    let began = false;
+    for (const id of comp ? [comp] : COMP_IDS) {
+      const f = s.fix[id];
+      if (f.left > 0 || f.wait > 0) continue;
+      if (!comp && s.comp[id] >= COMPARTMENTS[id].hp && s.fire[id] <= 0 && s.leak[id] <= 0.005) continue;
+      f.left = REPAIR_TIME;
+      began = true;
+      this.events.push({ type: 'repair', ship: s.idx, comp: id, phase: 'start' });
+    }
+    return began;
   }
   crewIn(s, comp) { return s.crews.some((c) => c.to === comp && c.eta <= 0); }
 
   stepDamage(s, dt) {
     if (s.tSunk !== null) return;
     for (const c of s.crews) if (c.to !== null && c.eta > 0) c.eta = Math.max(0, c.eta - dt);
-    s.repairWait = Math.max(0, s.repairWait - dt);
-    if (s.repair > 0) {
-      s.repair = Math.max(0, s.repair - dt);
-      if (s.repair === 0) {
-        for (const id of COMP_IDS) {
-          s.fire[id] = 0; s.leak[id] = 0;
-          const hp = COMPARTMENTS[id].hp;
-          s.comp[id] = Math.max(s.comp[id], Math.min(hp * REPAIR_TOP, s.comp[id] + hp * REPAIR_GAIN));
-        }
-        s.hp = Math.min(HULL_HP, s.hp + REPAIR_HULL);
-        s.repairWait = REPAIR_WAIT;
-        this.events.push({ type: 'repair', ship: s.idx, phase: 'done' });
-      }
+    for (const id of COMP_IDS) {
+      const f = s.fix[id];
+      f.wait = Math.max(0, f.wait - dt);
+      if (f.left <= 0) continue;
+      f.left = Math.max(0, f.left - dt);
+      if (f.left > 0) continue;
+      s.fire[id] = 0; s.leak[id] = 0;
+      const hp = COMPARTMENTS[id].hp;
+      s.comp[id] = Math.max(s.comp[id], Math.min(hp * REPAIR_TOP, s.comp[id] + hp * REPAIR_GAIN));
+      s.hp = Math.min(HULL_HP, s.hp + REPAIR_HULL);
+      f.wait = REPAIR_WAIT;
+      this.events.push({ type: 'repair', ship: s.idx, comp: id, phase: 'done' });
     }
     let flood = 0;
     for (const id of COMP_IDS) {

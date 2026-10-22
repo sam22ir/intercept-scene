@@ -243,3 +243,32 @@ body.duel-radarview .duel-target:not([hidden]) { left: auto; right: 14px; top: c
 .duel-board .bd-aim { margin-top: 6px; padding: 5px 6px; border-radius: 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-align: center; color: var(--muted); background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1); }
 .duel-board .bd-aim.focus { color: #f2c94c; border-color: rgba(242, 201, 76, 0.6); } .duel-board .bd-aim.lock { color: #3ddc84; border-color: rgba(61, 220, 132, 0.7); background: rgba(61, 220, 132, 0.12); }
 @media (max-height: 760px) { body.duel-radarview .duel-target:not([hidden]) { width: 180px; } }
+
+/* The status boards are rows of horizontal bars (no navigation data); the FIX button repairs one part alone. */
+.duel-board .bd-rows { display: grid; gap: 4px; margin: 2px 0 6px; }
+.duel-board .br { display: grid; grid-template-columns: 58px 1fr 24px 22px 36px; align-items: center; gap: 5px; font-size: 9.5px; cursor: pointer; pointer-events: auto; border-radius: 5px; padding: 1px 2px; }
+.duel-target .br { cursor: default; }
+.duel-board .br.sel { outline: 1px solid rgba(255, 255, 255, 0.6); }
+.duel-board .br.aim { outline: 1px dashed #f2c94c; background: rgba(242, 201, 76, 0.1); }
+.duel-board .br .bn { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.duel-board .br .bb { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.duel-board .br .bb s { display: block; height: 100%; text-decoration: none; transition: width 0.2s; }
+.duel-board .br em { font-style: normal; font-weight: 700; text-align: right; font-size: 10px; }
+.duel-board .br.out em { color: #ff5d61; } .duel-board .br.bad em { color: #ff7a1a; } .duel-board .br.hurt em { color: #f2c94c; }
+.duel-board .br .bm { display: inline-flex; gap: 1px; text-decoration: none; font-size: 9px; min-width: 0; }
+.duel-board .bp-fix { position: relative; overflow: hidden; min-width: 32px; padding: 2px 5px; border-radius: 6px; border: 1px solid rgba(61, 220, 132, 0.7); background: rgba(61, 220, 132, 0.12); color: #fff; font: 700 9px system-ui, sans-serif; cursor: pointer; }
+.duel-board .bp-fix s { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(61, 220, 132, 0.35); } .duel-board .bp-fix span { position: relative; }
+.duel-board .bp-fix:disabled { cursor: default; border-color: rgba(255, 255, 255, 0.2); color: var(--muted); } .duel-board .bp-fix.busy { border-color: #f2c94c; } .duel-board .bp-fix.busy s { background: rgba(242, 201, 76, 0.4); }
+.duel-target .br { grid-template-columns: 58px 1fr 24px 22px; }
+.duel-board .bd-wpn { display: grid; gap: 2px; margin-top: 6px; font-size: 10px; color: var(--muted); } .duel-board .bd-wpn b { color: var(--text); } .duel-board .bd-wpn .bd-prog { margin: 0 0 2px; }
+body.duel-radarview .duel-board:not([hidden]) { width: 224px; }
+body.duel-radarview .duel-target:not([hidden]) { width: 212px; }
+@media (max-height: 760px) { body.duel-radarview .duel-board:not([hidden]) { width: 214px; } .duel-board .bd-wpn { display: none; } }
+
+/* The question when you click an enemy ship in the sailing views. */
+.duel-attack { position: fixed; z-index: 20; transform: translateX(-50%); display: grid; gap: 4px; min-width: 190px; padding: 10px 12px; border-radius: 12px; background: rgba(9, 14, 21, 0.9); border: 1px solid rgba(255, 93, 97, 0.7); color: var(--text); box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45); text-align: center; }
+.duel-attack[hidden] { display: none; }
+.duel-attack b { font-size: 13px; } .duel-attack small { color: var(--muted); font-size: 10px; letter-spacing: 0.04em; }
+.duel-attack div { display: flex; gap: 6px; margin-top: 4px; }
+.duel-attack button { flex: 1; padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.08); color: #fff; font: 700 11px system-ui, sans-serif; cursor: pointer; }
+.duel-attack button[data-yes] { background: #e5484d; border-color: #ff7a7d; }

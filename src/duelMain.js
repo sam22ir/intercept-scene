@@ -308,7 +308,7 @@ function handleEvents() {
     } else if (e.type === 'ammo') {
       if (e.ship === 0) say(`${AMMO_TYPES[e.kind].name} loaded`, '', 1400);
     } else if (e.type === 'repair') {
-      if (e.ship === 0) say(e.phase === 'start' ? `Repairing: ${REPAIR_TIME} s` : 'Repair done: fires out, leaks stopped', e.phase === 'start' ? 'warn' : 'ok', 2200);
+      if (e.ship === 0) say(e.phase === 'start' ? `Repairing the ${COMPARTMENTS[e.comp].name.toLowerCase()}: ${REPAIR_TIME} s` : `${COMPARTMENTS[e.comp].name} repaired`, e.phase === 'start' ? 'warn' : 'ok', 2000);
     } else if (e.type === 'fire') {
       if (e.ship === 0) say(`Fire in the ${COMPARTMENTS[e.comp].name.toLowerCase()}: send a crew`, 'warn', 2400);
     } else if (e.type === 'over') {
@@ -322,6 +322,8 @@ const VIEWS = ['behind', 'bridge', 'above', 'orbit', 'radar'];
 const VIEW_LABELS = ['Behind', 'Bridge', 'Above', 'Orbit', 'Radar'];
 const VIEW_NAMES = { behind: 'Behind the ship', bridge: 'The bridge', above: 'Straight above', orbit: 'Free orbit', radar: 'Radar (the fire-control sight: aim it at any part of her hull; the helm is locked)' };
 let view = 'behind';
+let attackReady = false; // the attack question is built further down
+function closeAttackSafe() { if (attackReady) closeAttack(); }
 function setFov(f) {
   if (Math.abs(camera.fov - f) < 0.01) return;
   camera.fov = f;
@@ -332,6 +334,7 @@ const viewButtons = [];
 let viewBeforeRadar = 'behind';
 let radarPrevManual = false;
 function setView(v) {
+  closeAttackSafe();
   if (v === 'radar' && view !== 'radar') {
     viewBeforeRadar = view;
     radarPrevManual = sim.player.manual;
@@ -492,47 +495,22 @@ function shipHtml() {
   return `<div class="hs-rect hs-hull${p.hp < HULL_HP ? ' hurt' : ''}"><span>HULL <b>${Math.round(p.hp)}</b>${p.tSunk !== null ? ' · SINKING' : ''}</span><div class="hs-cells">${cells}</div></div>`
     + `<div class="hs-dome">${domeSvg()}</div>`
     + `<div class="hs-rect hs-wpn"><span>76 mm <b>${AMMO_TYPES[g.type].name}</b> · HE ${g.stock.he} AP ${g.stock.ap} · ${gunStatus(p)}</span>`
-    + `<span>30 mm <b>${dry ? 'DRY' : p.auto ? 'AUTO' : 'HOLD G'}</b> · crews <b>${p.crews.filter((c) => c.to).length}/${CREWS}</b> · ${COMPARTMENTS[COMP_IDS[selComp]].name} · repair <b>${p.repair > 0 ? `${p.repair.toFixed(1)} s` : p.repairWait > 0 ? `wait ${Math.ceil(p.repairWait)} s` : 'READY (E)'}</b></span></div>`;
+    + `<span>30 mm <b>${dry ? 'DRY' : p.auto ? 'AUTO' : 'HOLD G'}</b> · crews <b>${p.crews.filter((c) => c.to).length}/${CREWS}</b> · ${COMPARTMENTS[COMP_IDS[selComp]].name}</span></div>`;
 }
 
-// --- The damage board (radar view) --------------------------------------------------------------------------------------------
-// In the radar view the strip is replaced by one card down the left: your ship drawn from above, bow up, with her five compartments laid
-// where they really are (colour = health, with the fires, leaks and crews on them; click one to send a crew), the hull, how long she has
-// if the flooding goes on, the speed and heading, the 76 mm (round, stocks, reload bar), the 30 mm and the repair button.
+// --- The status boards (radar view) ---------------------------------------------------------------------------------------------
+// Two cards of horizontal bars, one for each part of a ship (no navigation data): yours down the left, with a FIX button on every part
+// (each part is repaired alone) and one for all; the enemy you aim at down the right. A click on one of your bars sends a crew there.
 const boardEl = document.createElement('div');
 boardEl.id = 'duel-board';
 boardEl.className = 'duel-board';
 document.body.appendChild(boardEl);
 let lastBoard = '';
-const BOARD_Y = (x) => 92 - x * 1.4; // metres along the hull (+ bow) to the drawing
-const BOARD_ZONES = [['gun', 58, 22], ['bridge', 22, 6], ['engine', 6, -24], ['guns', -24, -42], ['steering', -42, -58]];
 const healthColour = (f) => (f <= 0 ? '#ff5d61' : f < 0.5 ? '#ff7a1a' : f < 0.99 ? '#f2c94c' : '#3ddc84');
-// A ship drawn from above, bow up, her compartments coloured by health (marks: fire, leak, crew; `mark` is a compartment ringed as the aim).
-function hullSvg(p, { mark = null, mine = true } = {}) {
-  const hull = 'M30,8 C40,30 46,52 46,70 L46,168 L14,168 L14,70 C14,52 20,30 30,8 Z';
-  const cid = mine ? 'bhullm' : 'bhullf';
-  let zones = '', marks = '';
-  for (const [id, xa, xb] of BOARD_ZONES) {
-    const f = clamp(p.comp[id] / COMPARTMENTS[id].hp, 0, 1);
-    const y0 = BOARD_Y(xa), y1 = BOARD_Y(xb), mid = (y0 + y1) / 2;
-    const crew = p.crews.filter((c) => c.to === id);
-    zones += `<g class="bz${mine && COMP_IDS[selComp] === id ? ' sel' : ''}${mine ? '' : ' foe'}" data-comp="${mine ? id : ''}"><title>${COMPARTMENTS[id].name} ${Math.round(f * 100)} %${mine ? ': click to send a crew' : ''}</title>`
-      + `<rect x="10" y="${y0.toFixed(1)}" width="40" height="${(y1 - y0).toFixed(1)}" fill="${healthColour(f)}" fill-opacity="${(0.2 + 0.5 * f).toFixed(2)}"/></g>`;
-    marks += `<text x="30" y="${(mid - 1).toFixed(1)}" class="bl">${COMP_ABBR[id]}</text><text x="30" y="${(mid + 8).toFixed(1)}" class="bp">${Math.round(f * 100)}</text>`
-      + `<text x="30" y="${(y0 + 9).toFixed(1)}" class="bi">${p.fire[id] > 0 ? '<tspan class="fire">▲</tspan>' : ''}${p.leak[id] > 0.005 ? '<tspan class="leak">≈</tspan>' : ''}${crew.map((c) => `<tspan class="crew${c.eta > 0 ? ' going' : ''}">⛑</tspan>`).join('')}</text>`;
-    if (mark === id) {
-      const r = Math.min(15, (y1 - y0) / 2 - 1);
-      marks += `<g class="bt"><circle cx="30" cy="${mid.toFixed(1)}" r="${r.toFixed(1)}"/><path d="M30,${(mid - r - 3).toFixed(1)}v6M30,${(mid + r - 3).toFixed(1)}v6M${(30 - r - 3).toFixed(1)},${mid.toFixed(1)}h6M${(30 + r - 3).toFixed(1)},${mid.toFixed(1)}h6"/></g>`;
-    }
-  }
-  const lines = BOARD_ZONES.slice(1).map(([, xa]) => `<line x1="10" x2="50" y1="${BOARD_Y(xa).toFixed(1)}" y2="${BOARD_Y(xa).toFixed(1)}" class="bs"/>`).join('');
-  return `<svg viewBox="0 0 60 176" class="bsvg"><defs><clipPath id="${cid}"><path d="${hull}"/></clipPath></defs>`
-    + `<g clip-path="url(#${cid})">${zones}${lines}</g><path d="${hull}" class="bh${p.tSunk !== null ? ' sunk' : ''}"/>${marks}</svg>`;
-}
 // How long a ship has if her flooding goes on, as text.
 function floodText(p) {
   const left = p.flood > 0.02 && p.tSunk === null ? p.hp / p.flood : Infinity;
-  return p.tSunk !== null ? 'SINKING' : Number.isFinite(left) ? `flooding: ${left > 600 ? '10+ min' : left > 90 ? `${Math.round(left / 60)} min` : `${Math.round(left)} s`} left` : 'dry';
+  return p.tSunk !== null ? 'SINKING' : Number.isFinite(left) ? `flooding: ${left > 600 ? '10+ min' : left > 90 ? `${Math.round(left / 60)} min` : `${Math.round(left)} s`} left` : 'watertight';
 }
 // Does her 76 mm bear on the other ship (working, in range, the other ship in her arc)?
 function bears(s) {
@@ -540,44 +518,57 @@ function bears(s) {
   if (sim.range() > MAIN_RANGE) return 'out of range';
   return Math.abs(sim.relBearing(s)) <= MAIN_ARC ? 'BEARS' : 'out of arc';
 }
+// One bar for each part of a ship: name, health bar, the number, fire / leak / crew marks, and (yours) the FIX button with its progress.
+function partRows(s, mine, aim = null) {
+  return COMP_IDS.map((id) => {
+    const f = clamp(s.comp[id] / COMPARTMENTS[id].hp, 0, 1);
+    const fix = s.fix[id];
+    const crew = s.crews.filter((c) => c.to === id);
+    const marks = `${s.fire[id] > 0 ? '<u class="fire">▲</u>' : ''}${s.leak[id] > 0.005 ? '<u class="leak">≈</u>' : ''}${crew.map((c) => `<u class="crew${c.eta > 0 ? ' going' : ''}">⛑</u>`).join('')}`;
+    let btn = '';
+    if (mine) {
+      const busy = fix.left > 0, wait = fix.wait > 0;
+      const label = busy ? `${fix.left.toFixed(1)}s` : wait ? `${Math.ceil(fix.wait)}s` : 'FIX';
+      const prog = busy ? 1 - fix.left / REPAIR_TIME : wait ? 1 - fix.wait / REPAIR_WAIT : 1;
+      btn = `<button type="button" class="bp-fix${busy ? ' busy' : ''}" data-fix="${id}"${busy || wait || s.tSunk !== null ? ' disabled' : ''} title="Repair the ${COMPARTMENTS[id].name.toLowerCase()} alone"><s style="width:${Math.round(prog * 100)}%"></s><span>${label}</span></button>`;
+    }
+    const cls = f <= 0 ? ' out' : f < 0.5 ? ' bad' : f < 0.99 ? ' hurt' : '';
+    return `<div class="br${cls}${mine && COMP_IDS[selComp] === id ? ' sel' : ''}${aim === id ? ' aim' : ''}" data-comp="${mine ? id : ''}" title="${COMPARTMENTS[id].name}${mine ? ': click to send a crew' : ''}">`
+      + `<span class="bn">${COMPARTMENTS[id].name}</span><i class="bb"><s style="width:${Math.round(f * 100)}%;background:${healthColour(f)}"></s></i><em>${f <= 0 ? 'OUT' : Math.round(f * 100)}</em><u class="bm">${marks}</u>${btn}</div>`;
+  }).join('');
+}
 function boardHtml() {
   const p = sim.player;
-  const svg = hullSvg(p);
   const hullF = clamp(p.hp / HULL_HP, 0, 1);
-  const flood = floodText(p);
   const g = p.gun;
   const dry = p.gats.every((x) => x.ammo <= 0);
   const reload = g.cool > 0 ? clamp(1 - g.cool / MAIN_RELOAD, 0, 1) : 1;
-  const rep = p.repair > 0 ? `REPAIRING ${p.repair.toFixed(1)} s` : p.repairWait > 0 ? `READY IN ${Math.ceil(p.repairWait)} s` : 'REPAIR (E)';
-  const repF = p.repair > 0 ? 1 - p.repair / REPAIR_TIME : p.repairWait > 0 ? 1 - p.repairWait / REPAIR_WAIT : 1;
+  const any = COMP_IDS.some((id) => p.fix[id].left <= 0 && p.fix[id].wait <= 0 && (p.comp[id] < COMPARTMENTS[id].hp || p.fire[id] > 0 || p.leak[id] > 0.005));
   return `<div class="bd-head"><b>YOUR SHIP</b><span class="${hullF < 0.35 ? 'bad' : hullF < 0.7 ? 'hurt' : ''}">HULL ${Math.round(p.hp)}</span></div>`
     + `<div class="bd-bar"><s style="width:${Math.round(hullF * 100)}%;background:${healthColour(hullF >= 0.99 ? 1 : hullF < 0.35 ? 0.2 : 0.7)}"></s></div>`
-    + `<div class="bd-main">${svg}<div class="bd-side">`
-    + `<div class="bd-kv"><i>SPEED</i><b>${sim.knots(p).toFixed(1)} kn</b></div>`
-    + `<div class="bd-kv"><i>HEADING</i><b>${String(Math.round(sim.headingDeg(p)) % 360).padStart(3, '0')}°</b></div>`
-    + `<div class="bd-kv"><i>76 mm</i><b>${AMMO_TYPES[g.type].name} ${g.stock[g.type]}</b></div>`
-    + `<div class="bd-prog" title="76 mm reload"><s style="width:${Math.round(reload * 100)}%"></s></div>`
-    + `<div class="bd-kv"><i>30 mm</i><b>${dry ? 'DRY' : p.auto ? 'AUTO' : 'HOLD G'}</b></div>`
-    + `<div class="bd-kv"><i>CREWS</i><b>${p.crews.filter((c) => c.to).length}/${CREWS}</b></div>`
-    + `</div></div>`
-    + `<div class="bd-flood ${p.flood > 0.02 ? 'bad' : ''}">${flood}</div>`
-    + `<div class="bd-threat ${bears(sim.enemy) === 'BEARS' ? 'on' : ''}">her 76 mm: ${bears(sim.enemy) === 'BEARS' ? 'BEARS ON YOU' : bears(sim.enemy)}</div>`
-    + `<button type="button" class="bd-repair${p.repair > 0 ? ' busy' : ''}" data-act="repair"${p.repair > 0 || p.repairWait > 0 ? ' disabled' : ''}><s style="width:${Math.round(repF * 100)}%"></s><span>${rep}</span></button>`;
+    + `<div class="bd-rows">${partRows(p, true)}</div>`
+    + `<button type="button" class="bd-repair" data-act="repair"${any && p.tSunk === null ? '' : ' disabled'}><span>REPAIR ALL DAMAGED</span></button>`
+    + `<div class="bd-flood ${p.flood > 0.02 ? 'bad' : ''}">${floodText(p)}</div>`
+    + `<div class="bd-wpn"><span>76 mm <b>${AMMO_TYPES[g.type].name} ${g.stock[g.type]}</b></span><div class="bd-prog" title="76 mm reload"><s style="width:${Math.round(reload * 100)}%"></s></div>`
+    + `<span>30 mm <b>${dry ? 'DRY' : p.auto ? 'AUTO' : 'HOLD G'}</b> · crews <b>${p.crews.filter((c) => c.to).length}/${CREWS}</b></span></div>`
+    + `<div class="bd-threat ${bears(sim.enemy) === 'BEARS' ? 'on' : ''}">her 76 mm: ${bears(sim.enemy) === 'BEARS' ? 'BEARS ON YOU' : bears(sim.enemy)}</div>`;
 }
 boardEl.addEventListener('click', (e) => {
+  const fx = e.target.closest?.('[data-fix]');
+  if (fx) { sim.startRepair(0, fx.dataset.fix); lastBoard = ''; return; }
+  if (e.target.closest?.('[data-act="repair"]')) { sim.startRepair(0); lastBoard = ''; return; }
   const z = e.target.closest?.('[data-comp]');
-  if (z) { selComp = COMP_IDS.indexOf(z.dataset.comp); sim.assignCrew(0, z.dataset.comp); lastBoard = ''; return; }
-  if (e.target.closest?.('[data-act="repair"]')) { sim.startRepair(0); lastBoard = ''; }
+  if (z && z.dataset.comp) { selComp = COMP_IDS.indexOf(z.dataset.comp); sim.assignCrew(0, z.dataset.comp); lastBoard = ''; }
 });
 
-// --- The target board (radar view): the enemy you are aiming at, in the same style, down the right ---------------------------------
+// The enemy you are aiming at, in the same style.
 const targetEl = document.createElement('div');
 targetEl.id = 'duel-target';
 targetEl.className = 'duel-board duel-target';
 document.body.appendChild(targetEl);
 let lastTarget = '';
 function targetHtml() {
-  const e = sim.enemy, p = sim.player;
+  const e = sim.enemy;
   if (!e) return '';
   const foes = sim.ships.filter((o) => o.team === 1);
   const which = foes.length > 1 ? ` ${foes.indexOf(e) + 1}/${foes.length}` : '';
@@ -585,25 +576,11 @@ function targetHtml() {
   const aim = locked ? sight.lock.comp : sight.snap;
   const aimNote = locked ? `LOCKED · ${COMPARTMENTS[sight.lock.comp].name}` : sight.snap ? `FOCUS · ${COMPARTMENTS[sight.snap].name}` : 'NO FOCUS · shells fall in the sea';
   const hullF = clamp(e.hp / HULL_HP, 0, 1);
-  const dx = e.x - p.x, dz = e.z - p.z, d = Math.hypot(dx, dz) || 1;
-  const pv = sim.velOf(p), ev = sim.velOf(e);
-  const closing = -((ev[0] - pv[0]) * dx + (ev[2] - pv[2]) * dz) / d / 0.5144; // knots, + closing
-  const off = Math.abs(sim.relBearing(e)); // where you are off her bow
-  const aspect = off < rad(35) ? 'BOW-ON' : off > rad(145) ? 'STERN' : 'BROADSIDE';
-  const hint = aspect === 'BROADSIDE' ? 'broadside: every compartment is open' : aspect === 'BOW-ON' ? 'bow-on: the 76 mm and bridge face you' : 'stern-on: steering and aft guns face you';
-  const out = COMP_IDS.filter((id) => e.comp[id] <= 0).map((id) => COMP_ABBR[id]).join(' ');
-  const fl = floodText(e);
   return `<div class="bd-head"><b>ENEMY${which}</b><span>HULL ${Math.round(e.hp)} · ${LEVELS[sim.level].name}</span></div>`
     + `<div class="bd-bar foe"><s style="width:${Math.round(hullF * 100)}%"></s></div>`
-    + `<div class="bd-main">${hullSvg(e, { mark: aim, mine: false })}<div class="bd-side">`
-    + `<div class="bd-kv"><i>RANGE</i><b>${kmText(sim.range())}</b></div>`
-    + `<div class="bd-kv"><i>BEARING</i><b>${relName(sim.relBearing(p))}</b></div>`
-    + `<div class="bd-kv"><i>${closing >= 0 ? 'CLOSING' : 'OPENING'}</i><b>${Math.abs(closing).toFixed(1)} kn</b></div>`
-    + `<div class="bd-kv"><i>HER SPEED</i><b>${sim.knots(e).toFixed(1)} kn</b></div>`
-    + `<div class="bd-kv"><i>SHOWS YOU</i><b>${aspect}</b></div>`
-    + `</div></div>`
-    + `<div class="bd-flood ${e.flood > 0.02 ? 'good' : ''}">${fl === 'dry' ? hint : fl}</div>`
-    + `<div class="bd-threat ${bears(e) === 'BEARS' ? 'on' : ''}">her 76 mm: ${bears(e) === 'BEARS' ? 'BEARS ON YOU' : bears(e)}${out ? ` · out: ${out}` : ''}</div>`
+    + `<div class="bd-rows">${partRows(e, false, aim)}</div>`
+    + `<div class="bd-flood ${e.flood > 0.02 ? 'good' : ''}">${floodText(e)}</div>`
+    + `<div class="bd-threat ${bears(e) === 'BEARS' ? 'on' : ''}">her 76 mm: ${bears(e) === 'BEARS' ? 'BEARS ON YOU' : bears(e)}</div>`
     + `<div class="bd-aim ${locked ? 'lock' : sight.snap ? 'focus' : ''}">${aimNote}</div>`;
 }
 
@@ -699,7 +676,7 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>A</kbd>', 'The 30 mm guns on automatic'],
   ['<kbd>Q</kbd>', `Change the 76 mm round, HE or AP: HE starts fires and floods, AP hits one compartment harder; changing costs a ${SWITCH_TIME} s reload`],
   ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
-  ['<kbd>E</kbd>', `Quick repair: ${REPAIR_TIME} s, then every fire is out, the leaks are stopped and each compartment gets a third of its points back; ready again after ${REPAIR_WAIT} s`],
+  ['<kbd>E</kbd>', `Repair the compartment Z has picked (or press FIX on its bar in the radar view): ${REPAIR_TIME} s, then its fire is out, its leak is stopped and it gets 40 % of its points back; that part can be repaired again after ${REPAIR_WAIT} s`],
   ['<kbd>1</kbd> to <kbd>5</kbd>', 'Behind, bridge, above, orbit, radar'],
   ['<kbd>2</kbd>', 'The wheelhouse, as in Solo Air Defense: the wheel turns with the rudder, the telegraph levers follow the engine order, and a drag looks round (double click looks ahead)'],
   ['<kbd>5</kbd>', 'Radar view: the fire-control sight. Arrows, a drag or the on-screen pad aim it. hold <kbd>Shift</kbd> to zoom in and <kbd>Ctrl</kbd> to zoom out (the wheel, <kbd>+</kbd> <kbd>-</kbd> and the lens track work too) to close the lens until a compartment fills it (<kbd>0</kbd> resets); every enemy hull shows its compartments as marks, and a click lays the sight on one. F fires there: the shell goes to the point under the crosshair, so you choose what to break. Space returns the sight to auto. A merchant or a friendly ship in the sight is not fired on. The helm is locked until Esc'],
@@ -742,7 +719,7 @@ function keysHtml() {
       + `${k('Tab', 'next target')}${k('Space', 'auto')}${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Esc', 'helm')}`;
   }
   return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', `thrust ${TELEGRAPH[sim.player.order].name}`)}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}${k('Tab', 'target')}`
-    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}${k('E', 'repair', sim.player.repair > 0)}`
+    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}${k('E', 'repair', sim.player.fix[COMP_IDS[selComp]].left > 0)}`
     + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–5', 'views')}${k('R', 'again')}`;
 }
 let lastKeys = '';
@@ -844,7 +821,7 @@ window.addEventListener('keydown', (e) => {
     case 'a': sim.toggleAuto(0); break;
     case 'q': sim.switchAmmo(0); break;
     case 'z': selComp = (selComp + 1) % COMP_IDS.length; break;
-    case 'e': sim.startRepair(0); break;
+    case 'e': sim.startRepair(0, COMP_IDS[selComp]); break;
     case 'x': sim.assignCrew(0, COMP_IDS[selComp]); break;
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
@@ -980,6 +957,45 @@ function pickNextTarget() {
   if (to) say(`Target: enemy ${relName(wrapAngle(Math.atan2(to.z - sim.player.z, to.x - sim.player.x) - sim.player.psi))}, ${kmText(sim.distance(sim.player, to))}`, '', 1800);
   return to;
 }
+// In the sailing views, a click on an enemy ship (or near her) asks whether to attack her: yes turns the target to her and opens the radar view.
+const attackEl = document.createElement('div');
+attackEl.className = 'duel-attack';
+attackEl.hidden = true;
+document.body.appendChild(attackEl);
+let attackFor = -1, attackTimer = 0;
+function closeAttack() { attackEl.hidden = true; attackFor = -1; clearTimeout(attackTimer); }
+function askAttack(i, x, y) {
+  const s = sim.ships[i];
+  attackFor = i;
+  attackEl.innerHTML = `<b>Attack this ship?</b><small>ENEMY · ${kmText(sim.distance(sim.player, s))} · hull ${Math.round(s.hp)}</small>`
+    + '<div><button type="button" data-yes>Attack</button><button type="button" data-no>Not now</button></div>';
+  attackEl.hidden = false;
+  attackEl.style.left = `${clamp(x, 100, innerWidth - 100)}px`;
+  attackEl.style.top = `${clamp(y - 20, 90, innerHeight - 140)}px`;
+  clearTimeout(attackTimer);
+  attackTimer = setTimeout(closeAttack, 8000);
+}
+attackEl.addEventListener('click', (e) => {
+  if (e.target.closest('[data-yes]') && attackFor >= 0 && sim.setTarget(0, attackFor)) { closeAttack(); setView('radar'); return; }
+  if (e.target.closest('button')) closeAttack();
+});
+attackReady = true;
+const _pick = new THREE.Vector3();
+let downAt = null;
+canvas.addEventListener('pointerdown', (e) => { downAt = e.button === 0 ? { x: e.clientX, y: e.clientY } : null; });
+canvas.addEventListener('pointerup', (e) => {
+  const d = downAt; downAt = null;
+  if (!d || view === 'radar' || sim.winner !== null || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) return;
+  let best = -1, bestD = 70; // pixels: on her or near her
+  for (const o of sim.ships) {
+    if (o.team !== 1 || o.tSunk !== null || !ships[o.idx]?.group.visible) continue;
+    _pick.set(o.x, 10, o.z).project(camera);
+    if (_pick.z > 1) continue;
+    const dist = Math.hypot((_pick.x * 0.5 + 0.5) * innerWidth - e.clientX, (-_pick.y * 0.5 + 0.5) * innerHeight - e.clientY);
+    if (dist < bestD) { bestD = dist; best = o.idx; }
+  }
+  if (best >= 0) askAttack(best, e.clientX, e.clientY); else closeAttack();
+});
 let sightDrag = null;
 canvas.addEventListener('pointerdown', (e) => { if (e.button === 0 && view === 'radar') sightDrag = { x: e.clientX, y: e.clientY }; });
 window.addEventListener('pointerup', () => { sightDrag = null; });

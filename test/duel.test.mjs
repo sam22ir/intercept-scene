@@ -545,20 +545,28 @@ describe('Easy shields your ship', () => {
   });
 });
 
-describe('the quick repair', () => {
-  it('takes a few seconds, then puts out fires, stops leaks and mends, and waits before the next', () => {
+describe('the repair of each part', () => {
+  it('mends one part alone in a few seconds, then waits before that part can be repaired again', () => {
     const sim = new DuelSim({ seed: 2 });
     const p = sim.player;
-    p.comp.engine = 0; p.hp = 60; sim.ignite(p, 'bridge'); p.leak.gun = 0.2;
-    assert.ok(sim.startRepair(0));
-    assert.ok(!sim.startRepair(0), 'not twice at once');
+    p.comp.engine = 0; p.comp.bridge = 10; p.hp = 60; sim.ignite(p, 'engine'); p.leak.engine = 0.2;
+    assert.ok(sim.startRepair(0, 'engine'));
+    assert.ok(!sim.startRepair(0, 'engine'), 'not twice at once');
     run(sim, REPAIR_TIME - 1);
     assert.equal(p.comp.engine, 0, 'nothing yet');
     run(sim, 2);
-    assert.ok(p.comp.engine > 10 && p.fire.bridge === 0 && p.leak.gun === 0 && p.hp > 60);
-    assert.ok(!sim.startRepair(0), 'it has to wait');
+    assert.ok(p.comp.engine > 10 && p.fire.engine === 0 && p.leak.engine === 0 && p.hp > 60);
+    assert.equal(p.comp.bridge, 10, 'the other part was not touched');
+    assert.ok(!sim.startRepair(0, 'engine'), 'that part has to wait');
+    assert.ok(sim.startRepair(0, 'bridge'), 'another part is free');
     run(sim, REPAIR_WAIT);
+    assert.ok(sim.startRepair(0, 'engine'));
+  });
+  it('repair all starts every damaged part and skips the sound ones', () => {
+    const sim = new DuelSim({ seed: 2 });
+    sim.player.comp.gun = 5;
     assert.ok(sim.startRepair(0));
+    assert.ok(sim.player.fix.gun.left > 0 && sim.player.fix.bridge.left === 0);
   });
   it('the frigates start about three kilometres apart', () => {
     const sim = new DuelSim({ seed: 3 });
