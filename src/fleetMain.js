@@ -21,7 +21,7 @@ import { transferCrew, stocksOf, CREW_RANGE } from './fleetResources.js';
 import { SCENARIOS, LEVEL_RULES } from './fleetScoring.js';
 import { createFleetMap, ROLE_COLOUR } from './fleetMap.js';
 import {
-  FORM_LABEL, TURN_STEP, ROLE_NAME, courseOrder, speedOrder, formOrder, sectorOrders, stanceOrder, gotoOrder, courseToOrder, crewTarget,
+  FORM_LABEL, TURN_STEP, ROLE_NAME, courseOrder, speedOrder, formOrder, sectorOrders, stanceOrder, gotoOrders, courseToOrder, crewTarget,
   rewindTarget, describeOrder, issue, logCrew, withCrewHook, AlertFeed, hullFrac, headingDeg, pad3, shipName, contactLabel, targets,
 } from './fleetControls.js';
 import './fleet.css';
@@ -716,7 +716,7 @@ window.addEventListener('blur', () => { lastTurn = 0; });
 // --- The map -------------------------------------------------------------------------------------------------------------------------
 const map = createFleetMap({
   onPick: (idx) => pick(idx),
-  onGround: (x, z, shift) => { give(shift ? courseToOrder(sim, input.sel, x, z) : gotoOrder(sim, input.sel, x, z)); },
+  onGround: (x, z, shift) => { give(shift ? courseToOrder(sim, input.sel, x, z) : gotoOrders(sim, input.sel, x, z)); },
 });
 const mapButton = document.querySelector('#btn-map');
 let mapOn = true;

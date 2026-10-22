@@ -6,7 +6,7 @@ import { FleetSim, DT, hooks } from '../src/fleet.js';
 import { applyOrder } from '../src/fleetOrders.js';
 import { transferCrew, stocksOf } from '../src/fleetResources.js';
 import {
-  FORM_CYCLE, SPEEDS, courseOrder, speedOrder, formOrder, sectorOrders, stanceOrder, gotoOrder, courseToOrder, crewTarget,
+  FORM_CYCLE, SPEEDS, courseOrder, speedOrder, formOrder, sectorOrders, stanceOrder, gotoOrders, courseToOrder, crewTarget,
   rewindTarget, describeOrder, contactLabel, issue, logCrew, withCrewHook, AlertFeed, hullFrac, hullMax, targets, scopeFor,
 } from '../src/fleetControls.js';
 
@@ -44,7 +44,7 @@ describe('course and speed keys', () => {
     assert.equal(scopeFor(sim, 'all'), 0);
     assert.equal(courseOrder(sim, 'all', 10).to, 0);
     assert.equal(speedOrder(sim, 'all', 1).to, 0);
-    assert.equal(gotoOrder(sim, 'all', 100, 200).to, 0);
+    assert.deepEqual(gotoOrders(sim, 'all', 100, 200).map((o) => o.to), [0]);
     assert.equal(scopeFor(sim, 2), 2, 'a ship picked by herself is ordered by herself');
     issue(sim, courseOrder(sim, 'all', 10));
     assert.ok(sim.squad.slice(1).every((s) => s.form === 'FORM 1'), 'the others keep their stations');
@@ -104,9 +104,24 @@ describe('formations, sector patrol and hold fire', () => {
     assert.equal(sim.squad[1].stance, 'engage', 'one engaged ship makes the next press hold again for all, but alone she toggles');
   });
 
+  it('a click with all picked sends each ship to the point plus her own offset, so none share a spot', () => {
+    const sim = quiet();
+    const orders = gotoOrders(sim, 'all', 1000, 500);
+    assert.equal(orders.length, 4);
+    const c = sim.centroid();
+    for (const o of orders) {
+      const s = sim.squad[o.to];
+      assert.equal(o.x, Math.round(1000 + s.x - c.x));
+      assert.equal(o.z, Math.round(500 + s.z - c.z));
+    }
+    assert.equal(new Set(orders.map((o) => `${o.x},${o.z}`)).size, 4);
+    issue(sim, formOrder(sim, 'all'));
+    assert.equal(gotoOrders(sim, 'all', 1000, 500).length, 1, 'bound to the lead: she alone goes');
+  });
+
   it('a click is a goto, a shift click a bearing', () => {
     const sim = quiet();
-    const g = gotoOrder(sim, 1, 1000.4, -250.6);
+    const [g] = gotoOrders(sim, 1, 1000.4, -250.6);
     assert.deepEqual([g.type, g.x, g.z, g.to], ['goto', 1000, -251, 1]);
     issue(sim, g);
     assert.deepEqual(sim.squad[1].goal.to, [1000, -251]);
@@ -228,7 +243,7 @@ describe('the information the scene shows', () => {
 
   it('every order has a readable line', () => {
     const sim = quiet();
-    const lines = issue(sim, [courseOrder(sim, 'all', 10), speedOrder(sim, 1, 1), formOrder(sim, 'all'), stanceOrder(sim, 2), gotoOrder(sim, 1, 5, 6)]).map(describeOrder);
+    const lines = issue(sim, [courseOrder(sim, 'all', 10), speedOrder(sim, 1, 1), formOrder(sim, 'all'), stanceOrder(sim, 2), ...gotoOrders(sim, 1, 5, 6)]).map(describeOrder);
     assert.deepEqual(lines, ['All ships: course 010', 'Ship 2: speed 22 kn', 'Ships 2, 3, 4: Column', 'Ship 3: hold fire', 'Ship 2: go to 5, 6']);
     assert.equal(describeOrder({ type: 'sector', to: 1, sector: { from: 300, to: 60 } }), 'Ship 2: patrol 300-060');
   });

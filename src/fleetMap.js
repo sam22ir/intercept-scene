@@ -17,7 +17,7 @@ const AMBER = '#ffb340';
 const SCALES = [1500, 3000, 6000, 12000, 24000]; // metres from the centre to the nearer edge
 const TRACK_STEP = 3; // s between track samples
 const TRACK_MAX = 50;
-const PICK_PX = 18;
+const PICK_PX = 24;
 
 export function createFleetMap({ onPick, onGround }) {
   const root = document.querySelector('#minimap');
@@ -124,7 +124,7 @@ export function createFleetMap({ onPick, onGround }) {
   function draw(sim, ui) {
     if (!enabled) return;
     measure();
-    if (!W || !H) return;
+    if (W < 60 || H < 60) return; // squeezed away (a tiny window): nothing to draw, and the radii below would go negative
     // The tracks restart with a rewind or a restart.
     if (sim.t < lastT - 0.5) { tracks.clear(); lastTrack = -Infinity; }
     lastT = sim.t;
@@ -151,7 +151,7 @@ export function createFleetMap({ onPick, onGround }) {
     const fit = Math.min(SCALES[SCALES.length - 1], Math.max(1500, far * 1.25));
     scaleNow = scaleNow > 0 && Number.isFinite(scaleNow) ? scaleNow + (fit - scaleNow) * 0.06 : fit; // eased: the view never jumps
     const scale = zoom === 'auto' ? scaleNow : SCALES[zoom];
-    const k = (edge - 8) / scale;
+    const k = Math.max(0.0005, (edge - 8) / scale);
     view = { cx, cz, k };
     const sx = (z) => W / 2 + (z - cz) * k;
     const sy = (x) => H / 2 - (x - cx) * k;

@@ -90,8 +90,14 @@ export function stanceOrder(sim, sel) {
   if (!t.length) return null;
   return { to: sel === 'all' ? 'all' : sel, type: 'stance', stance: t.every((s) => s.stance === 'hold') ? 'engage' : 'hold' };
 }
-export function gotoOrder(sim, sel, x, z) {
-  return { to: scopeFor(sim, sel), type: 'goto', x: Math.round(x), z: Math.round(z) };
+// A click on the sea. One ship (or the lead, while a formation or patrol is ordered) goes to the point itself; every ship picked together
+// and not bound to the lead goes to the point plus her own offset from the group's centre, so the group keeps its shape and no two
+// ships are sent to the same spot.
+export function gotoOrders(sim, sel, x, z) {
+  const to = scopeFor(sim, sel);
+  if (to !== 'all') return [{ to, type: 'goto', x: Math.round(x), z: Math.round(z) }];
+  const c = sim.centroid();
+  return sim.squad.filter(alive).map((s) => ({ to: s.idx, type: 'goto', x: Math.round(x + s.x - c.x), z: Math.round(z + s.z - c.z) }));
 }
 // Shift-click: steer for the bearing of a point (no destination).
 export function courseToOrder(sim, sel, x, z) {
