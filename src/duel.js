@@ -35,6 +35,7 @@
 // loses the duel. Hulls that touch collide (damage by the closing speed where they meet).
 //
 // Coordinates are the scene's (see hull.js): metres, +Y up, the sea is y = 0. +X is north and +Z east.
+import { HeliFlight, PAD } from './heliFlight.js';
 import { TELEGRAPH, START_ORDER, RUDDER_MAX, KT, HALF_LENGTH, HALF_BEAM, GUN_MOUNT_LOCAL, GUN_DEAD, gunBlind, stepHull, stepHullReal, REAL_RADIUS } from './hull.js';
 
 export { TELEGRAPH, START_ORDER, KT, HALF_LENGTH, HALF_BEAM, GUN_MOUNT_LOCAL, gunBlind };
@@ -142,6 +143,8 @@ const ENEMY_WAVES = { easy: [110], normal: [80, 175], hard: [70, 140, 215] };
 const ALLY_WAVE = 95;
 const MERCHANT_WAVES = [30, 125, 210];
 const START_RANGE = 3200; // m between the two frigates at the start
+export const HELI_RADAR = 7500; // m: how far the helicopter's radar sees (from the ship), over the islands
+const HELI_STAND_DOWN = 1800; // m: an enemy this close and the helicopter stays on deck (or comes in)
 const ARRIVE_RANGE = 4800; // m from you where a warship appears
 
 // --- Damage control -------------------------------------------------------------------------------------------------
@@ -232,8 +235,13 @@ function makeShip(idx, x, z, psi, team = idx === 0 ? 0 : 1, kind = 'frigate') {
 
 export class DuelSim {
   // `level` is the enemy's; `auto` ('easy' | 'normal' | 'hard') hands the player's ship to the same kind of helmsman (tests).
-  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false } = {}) {
+  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, scouting = false } = {}) {
     this.seed = seed;
+    // Scouting (the scene turns it on; see contacts, islands and the helicopter below): the enemy shows only once the radar has her, islands
+    // hide ships and stop shells, and the deck helicopter extends the radar.
+    this.scouting = !!scouting;
+    this.islands = [];
+    this.heli = null;
     this.sea = null; // { hs, dir }: the waves' height and the direction they travel (the scene sets it; see setSea)
     this.realHandling = !!realHandling; // heavy handling (hull.js stepHullReal): slow rudder, a long swing, weight, a skid in turns (the scene turns it on)
     this.wavesOn = !!waves; // more ships arrive (the scene turns it on)
@@ -267,6 +275,97 @@ export class DuelSim {
     this.merchantsSunk = 0; // by your guns
     this.rngW = mulberry32((this.seed ^ 0x3a7e) >>> 0); // where the others come from: a stream of its own
     this.pending = this.wavesOn ? this.planWaves() : [];
+    this.islands = this.scouting ? this.planIslands(this.ships[1].z) : [];
+    this.heli = this.scouting ? new HeliFlight((this.seed ^ 0x2718) >>> 0) : null;
+    if (this.heli) this.heli.wait = 1e9; // it flies only when the player asks (heliRequest), not by itself as in Solo Air Defense
+    if (this.scouting) this.updateContacts(0.1);
+  }
+
+  // --- scouting: radar contacts, islands, the helicopter ---------------------------------------------------------------
+  // One or two islands in the way (a stream of their own, so the gunnery draws are untouched): the first beside the line between the ships, so a
+  // ship can use it for cover, the second out beyond the enemy, where more of them come from.
+  planIslands(enemyZ) {
+    const r = mulberry32((this.seed ^ 0x15e7) >>> 0);
+    const side = enemyZ >= 0 ? 1 : -1;
+    return [
+      { x: START_RANGE * 0.5 + (r() - 0.5) * 700, z: -side * (520 + r() * 380), r: 200 + r() * 160, h: 60 + r() * 40 },
+      { x: START_RANGE * (1.15 + r() * 0.35), z: side * (950 + r() * 500), r: 240 + r() * 200, h: 70 + r() * 50 },
+    ];
+  }
+  // Is the straight line between two points hidden by an island?
+  blocked(ax, az, bx, bz) {
+    for (const isl of this.islands) {
+      const dx = bx - ax, dz = bz - az, len2 = dx * dx + dz * dz || 1;
+      const t = clamp(((isl.x - ax) * dx + (isl.z - az) * dz) / len2, 0, 1);
+      if (Math.hypot(ax + dx * t - isl.x, az + dz * t - isl.z) < isl.r * 0.8) return true;
+    }
+    return false;
+  }
+  // The search radar's reach: the sea's clutter eats it (about 5.2 km in a calm, 1.6 km in a very high sea).
+  radarRange() { return Math.max(1600, 5200 - 420 * (this.sea?.hs ?? 0)); }
+  // The helicopter's radar sees farther and over the islands.
+  get heliUp() { return !!this.heli && this.heli.state.flying && this.heli.state.y - PAD.y > 14; }
+  // Why the helicopter will not fly now, or '' (a gun fight under way, or too rough a sea).
+  heliStandDown() {
+    const me = this.ships[0];
+    if (me.tSunk !== null) return 'the ship is sinking';
+    if ((this.sea?.hs ?? 0) > 5.5) return 'the sea is too rough';
+    for (const o of this.hostiles(me)) if (o.det !== false && this.distance(me, o) < HELI_STAND_DOWN) return 'the enemy is close';
+    return '';
+  }
+  // The E key's cousin: take off or land, or why not.
+  heliRequest() {
+    if (!this.heli) return 'No helicopter';
+    const why = this.heliStandDown();
+    if (this.heli.action === 'takeoff' && why) return `Helicopter stays on deck: ${why}`;
+    return this.heli.request();
+  }
+  // Who the radar has: an enemy comes in as a contact (an event with her range and bearing) and is lost again only after 3 s unseen.
+  updateContacts(dt) {
+    const me = this.ships[0];
+    const R = this.radarRange(), up = this.heliUp;
+    for (const o of this.ships) {
+      if (o.team !== 1 || o.tSunk !== null) continue;
+      if (o.det === undefined) o.det = false;
+      const d = this.distance(me, o);
+      const seen = (d <= R && !this.blocked(me.x, me.z, o.x, o.z)) || (up && d <= HELI_RADAR);
+      if (seen) {
+        o.unseen = 0;
+        if (!o.det) { o.det = true; this.events.push({ type: 'contact', ship: o.idx, range: d, rel: wrapPi(Math.atan2(o.z - me.z, o.x - me.x) - me.psi), heli: up && d > R }); }
+      } else {
+        o.unseen = (o.unseen ?? 0) + dt;
+        if (o.det && o.unseen > 3) { o.det = false; this.events.push({ type: 'lost', ship: o.idx }); }
+      }
+    }
+  }
+  // Which way to turn to keep off an island ahead (1 to starboard, -1 to port), or 0.
+  islandAvoid(s) {
+    for (const isl of this.islands) {
+      const dx = isl.x - s.x, dz = isl.z - s.z;
+      const clear = Math.hypot(dx, dz) - isl.r;
+      if (clear > Math.max(380, Math.abs(s.u) * 20)) continue;
+      const rel = wrapPi(Math.atan2(dz, dx) - s.psi);
+      if (Math.abs(rel) < rad(75)) return rel > 0 ? -1 : 1;
+    }
+    return 0;
+  }
+  // A ship that runs on an island: a hole in her, her way gone, and she is pushed back out.
+  stepGround(dt) {
+    for (const s of this.ships) {
+      if (s.tSunk !== null) continue;
+      for (const isl of this.islands) {
+        const dx = s.x - isl.x, dz = s.z - isl.z, d = Math.hypot(dx, dz);
+        if (d >= isl.r + 30) continue;
+        const nx = dx / (d || 1), nz = dz / (d || 1);
+        s.x = isl.x + nx * (isl.r + 32); s.z = isl.z + nz * (isl.r + 32);
+        if (this.t - (s.groundT ?? -9) > 3) {
+          s.groundT = this.t;
+          this.damage(s, 'engine', 14 + Math.min(20, Math.abs(s.u) * 1.5), 0.6, 0);
+          this.events.push({ type: 'ground', ship: s.idx, pos: [s.x, 2, s.z] });
+        }
+        s.u = Math.min(s.u, 0.5);
+      }
+    }
   }
 
   planWaves() {
@@ -343,7 +442,11 @@ export class DuelSim {
       const curOk = !!cur && cur.tSunk === null && this.hostile(s, cur);
       if (curOk && s.lock) continue;
       let best = null, bd = Infinity;
-      for (const o of this.hostiles(s)) { const d = this.distance(s, o); if (d < bd) { bd = d; best = o; } }
+      for (const o of this.hostiles(s)) {
+        if (this.scouting && s.team === 0 && o.det === false) continue; // the picture is the radar's: a ship it has not got cannot be picked
+        const d = this.distance(s, o);
+        if (d < bd) { bd = d; best = o; }
+      }
       if (curOk && (!best || bd >= 0.75 * this.distance(s, cur))) continue;
       this.retarget(s, best ?? (cur ?? this.ships.find((o) => this.hostile(s, o)))?.idx ?? -1);
     }
@@ -360,7 +463,7 @@ export class DuelSim {
   // The player's Tab: the next living enemy by range, locked until it sinks. Returns the ship, or null.
   cycleTarget(i = 0) {
     const s = this.ships[i];
-    const list = this.hostiles(s).sort((a, b) => this.distance(s, a) - this.distance(s, b));
+    const list = this.hostiles(s).filter((o) => !this.scouting || o.det !== false).sort((a, b) => this.distance(s, a) - this.distance(s, b));
     if (!list.length) return null;
     const at = list.findIndex((o) => o.idx === s.target);
     const next = list[(at + 1) % list.length];
@@ -370,7 +473,7 @@ export class DuelSim {
   }
   setTarget(i, idx) {
     const s = this.ships[i], o = this.ships[idx];
-    if (!o || o.tSunk !== null || !this.hostile(s, o)) return false;
+    if (!o || o.tSunk !== null || !this.hostile(s, o) || (this.scouting && s.team === 0 && o.det === false)) return false;
     this.retarget(s, idx);
     s.lock = true;
     return true;
@@ -426,7 +529,13 @@ export class DuelSim {
       if (s.ai && this.t >= s.ai.next) this.think(s);
       this.stepShip(s, dt);
     }
+    if (this.islands.length) this.stepGround(dt);
     if (this.ships.length > 2) this.stepCollisions();
+    if (this.scouting) {
+      this.updateContacts(dt);
+      const steady = me.tSunk === null && Math.abs(me.r) < rad(0.4) && Math.abs(me.rudder) < rad(2); // a fixed course: no rudder, no turn
+      this.heli.step(dt, steady, me.r, this.heliStandDown() !== '');
+    }
     for (const s of this.ships) {
       if (s.merchant) continue;
       const k = Math.min(1, dt / (s.ai ? s.ai.p.track : TRACK_PLAYER));
@@ -595,7 +704,8 @@ export class DuelSim {
     g.onTarget = false;
     if (g.stock[g.type] <= 0 && g.ammo > 0) this.switchAmmo(s.idx); // the loaded kind ran out: the other is loaded
     const tgt = this.foe(s);
-    const alive = !sunk && s.comp.gun > 0 && g.ammo > 0 && tgt.tSunk === null;
+    const blind = this.scouting && s.team === 0 && tgt.team === 1 && tgt.det === false; // no radar contact: the fire control has nothing to lay on
+    const alive = !sunk && !blind && s.comp.gun > 0 && g.ammo > 0 && tgt.tSunk === null;
     const aim = s.manual && !s.ai ? s.cmd.aim : null;
     if (alive && aim) {
       // by hand: the gun goes where it is pointed, inside its arc and elevation, and fires when the trigger is down and it is there
@@ -653,6 +763,14 @@ export class DuelSim {
     const p0 = sh.p.slice();
     sh.v[1] -= G * dt;
     for (let k = 0; k < 3; k++) sh.p[k] += sh.v[k] * dt;
+    for (const isl of this.islands) { // an island stops the shell: it bursts on the slope
+      const dd = Math.hypot(sh.p[0] - isl.x, sh.p[2] - isl.z);
+      if (dd < isl.r && sh.p[1] < isl.h * (1 - (dd / isl.r) ** 2) ** 1.2) {
+        this.events.push({ type: 'impact', owner: sh.owner, pos: sh.p.slice() });
+        this.shells.splice(this.shells.indexOf(sh), 1);
+        return;
+      }
+    }
     const owner = this.ships[sh.owner];
     const tgt = this.foe(owner);
     let struck = null, at = null, nearest = Infinity;
@@ -787,7 +905,7 @@ export class DuelSim {
   // --- the aft guns -----------------------------------------------------------------------------------------------------
   stepGats(s, dt) {
     const o = this.foe(s);
-    const sunk = s.tSunk !== null || o.tSunk !== null;
+    const sunk = s.tSunk !== null || o.tSunk !== null || (this.scouting && s.team === 0 && o.team === 1 && o.det === false);
     const trigger = !sunk && (s.auto || s.cmd.gat);
     const gunsHp = s.comp.guns / COMPARTMENTS.guns.hp;
     for (let i = 0; i < s.gats.length; i++) {
@@ -879,6 +997,8 @@ export class DuelSim {
     else if (range > p.range * 1.15) { wantRel = ai.side * p.base * 0.3 + ai.jink * 0.5; order = Math.min(order + 1, TELEGRAPH.length - 1); }
     const err = wrapPi(rel - wantRel);
     s.cmd.want = Math.abs(err) < rad(3) ? 0 : Math.sign(err);
+    const off = this.islandAvoid(s); // an island ahead: turn away from it and ease off
+    if (off) { s.cmd.want = off; order = Math.min(order, 3); }
     if (s.order < order) s.order += 1; else if (s.order > order) s.order -= 1;
     this.chooseAmmo(s, o);
     this.dispatchCrews(s);

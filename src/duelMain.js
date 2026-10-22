@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { createEnvironment } from './environment.js';
 import { createShip } from './models/ship.js';
+import { createIslet } from './islet.js';
 import { createMerchant } from './models/merchant.js';
 import { createBridge } from './models/bridge.js';
 import { createGatling } from './models/gatling.js';
@@ -101,7 +102,7 @@ const clamp = THREE.MathUtils.clamp;
 let level = 'normal';
 try { level = globalThis.__DUEL_LEVEL ?? new URLSearchParams(location.search).get('level') ?? 'normal'; } catch { /* no address */ }
 if (!DUEL_LEVELS.includes(level)) level = 'normal';
-const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true });
+const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, scouting: true });
 seaHook = () => { const i = env.seaInfo(); if (i) sim.setSea(i.hs, i.dir); };
 seaHook();
 
@@ -111,10 +112,10 @@ seaHook();
 // gun's way); the enemy has her own ensign and a bluer hull.
 const shipPool = {};
 function makeVisual(s) {
-  const key = s.merchant ? 'merchant' : s.team === 1 ? 'rus' : 'alg';
+  const key = s.merchant ? 'merchant' : s.team === 1 ? 'rus' : s.idx === 0 ? 'me' : 'alg';
   let v = shipPool[key]?.pop();
   if (!v) {
-    const m = s.merchant ? createMerchant() : createShip({ ensign: key, crew: false });
+    const m = s.merchant ? createMerchant() : createShip({ ensign: s.team === 1 ? 'rus' : 'alg', crew: false, ...(s.idx === 0 ? { catapult: false, helicopter: true } : {}) });
     m.group.rotation.order = 'YXZ'; // heading, then heel, then trim
     scene.add(m.group);
     const gats = s.merchant ? [] : GUN_MOUNT_LOCAL.map(([x, y, z]) => {
@@ -144,6 +145,18 @@ const ships = [];
 function syncShips() {
   while (ships.length < sim.ships.length) ships.push(makeVisual(sim.ships[ships.length]));
   while (ships.length > sim.ships.length) releaseVisual(ships.pop());
+  syncIslands();
+}
+// The islands the simulation has, as meshes (rebuilt when a new battle plans new ones).
+const isletGroup = new THREE.Group();
+scene.add(isletGroup);
+let isletKey = '';
+function syncIslands() {
+  const key = sim.islands.map((i) => `${i.x | 0},${i.z | 0},${i.r | 0}`).join('|');
+  if (key === isletKey) return;
+  isletKey = key;
+  for (const m of [...isletGroup.children]) { isletGroup.remove(m); m.geometry.dispose(); m.material.dispose(); }
+  for (const isl of sim.islands) isletGroup.add(createIslet(isl));
 }
 
 // --- Shells and tracers ---------------------------------------------------------------------------------------------
@@ -246,7 +259,7 @@ function poseShip(i, dt) {
   if (!s.merchant) {
     v.mainGun.pose(s.gun.yaw, s.gun.pitch);
     v.gats.forEach((g, k) => g.pose(s.gats[k].yaw, s.gats[k].pitch, s.gats[k].spin, s.gats[k].firing, sim.t));
-    v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0 }); // the radar turns; the launcher box stays stowed
+    v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0, heli: i === 0 && sim.heli ? sim.heli.state : undefined }); // the radar turns; the launcher box stays stowed; the helicopter flies as the sim says
   }
   v.wake.update({ t: sim.t, x: s.x, z: s.z, psi: s.psi, r: s.r, u: s.u });
   if (!sink?.gone && s.tSunk === null) { // the funnel's haze and the bow's spray, while she is afloat
@@ -348,6 +361,15 @@ function handleEvents() {
       v.flashSprite.visible = true;
       v.flash = 0.09;
       for (let k = 0; k < 7; k++) fx.gunSmoke(_c, _b.set(e.dir[0] * 9, e.dir[1] * 9, e.dir[2] * 9), sim.t);
+    } else if (e.type === 'contact') {
+      say(`Contact: enemy ${relName(e.rel)}, ${kmText(e.range)}${e.heli ? ' (the helicopter has her)' : ''}`, 'warn', 3600);
+    } else if (e.type === 'lost') {
+      say('Contact lost', '', 2400);
+    } else if (e.type === 'impact') {
+      fx.shellBurst(_c.set(...e.pos), sim.t);
+    } else if (e.type === 'ground') {
+      for (let k = 0; k < 3; k++) fx.explosion(_c.set(e.pos[0] + (k - 1) * 10, 4, e.pos[2]), sim.t + k * 0.25);
+      if (e.ship === 0) { say('Aground: the engine room is holed, back her off', 'bad', 3600); slamShake = Math.max(slamShake, 2); }
     } else if (e.type === 'hit') {
       fx.shellBurst(_c.set(...e.pos), sim.t);
       if (e.ship === 0) {
@@ -486,6 +508,7 @@ const bar = (frac, cls = '') => `<i class="${cls}" style="width:${Math.round(cla
 let selComp = 0; // the compartment Z has picked for X to send a crew to
 function cardHtml(i) {
   const s = sim.ships[i];
+  if (i && s.det === false && s.tSunk === null) return `<section class="dh-ship foe"><h3>ENEMY<small>NO CONTACT</small></h3><p class="dh-nc">Not on the radar. Close the range, or send up the helicopter (B)</p></section>`;
   const comps = COMP_IDS.map((id) => {
     const f = s.comp[id] / COMPARTMENTS[id].hp;
     const crew = s.crews.filter((c) => c.to === id);
@@ -511,6 +534,7 @@ function gunStatus(s) {
   return g.onTarget ? 'ON TARGET' : 'TRAINING';
 }
 function rangeHtml() {
+  if (sim.enemy.det === false && sim.enemy.tSunk === null) return '<div class="dh-range"><span>ENEMY</span><b>—</b><small>no radar contact</small></div>';
   const live = sim.ships.filter((o) => o.team === 1 && o.tSunk === null).length;
   const friends = sim.ships.filter((o) => o.team === 0 && o.idx > 0 && o.tSunk === null).length;
   const traffic = sim.ships.filter((o) => o.merchant && o.tSunk === null).length;
@@ -657,6 +681,7 @@ let lastTarget = '';
 function targetHtml() {
   const e = sim.enemy;
   if (!e) return '';
+  if (e.det === false && e.tSunk === null) return '<div class="bd-head"><b>ENEMY</b><span>NO CONTACT</span></div><div class="bd-flood">The radar does not have her.<br>Close the range, or send up the helicopter (B).</div>';
   const foes = sim.ships.filter((o) => o.team === 1);
   const which = foes.length > 1 ? ` ${foes.indexOf(e) + 1}/${foes.length}` : '';
   const locked = sight.lock && sight.lock.ship === e.idx;
@@ -764,6 +789,7 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>Q</kbd>', `Change the 76 mm round, HE or AP: HE starts fires and floods, AP hits one compartment harder; changing costs a ${SWITCH_TIME} s reload`],
   ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
   ['<kbd>E</kbd>', `Repair the compartment Z has picked (or press FIX on its bar in the radar view): ${REPAIR_TIME} s, then its fire is out, its leak is stopped and it gets 40 % of its points back; that part can be repaired again after ${REPAIR_WAIT} s`],
+  ['<kbd>B</kbd>', 'The helicopter: take off, or land (only on a steady course: no rudder, no turn). Up, its radar reaches 7.5 km and sees over the islands; it stays on deck with the enemy close or in a very rough sea'],
   ['<kbd>1</kbd> to <kbd>5</kbd>', 'Behind, bridge, above, orbit, radar'],
   ['<kbd>2</kbd>', 'The wheelhouse, as in Solo Air Defense: the wheel turns with the rudder, the telegraph levers follow the engine order, and a drag looks round (double click looks ahead)'],
   ['<kbd>5</kbd>', 'Radar view: the fire-control sight. Arrows, a drag or the on-screen pad aim it. hold <kbd>Shift</kbd> to zoom in and <kbd>Ctrl</kbd> to zoom out (the wheel, <kbd>+</kbd> <kbd>-</kbd> and the lens track work too) to close the lens until a compartment fills it (<kbd>0</kbd> resets); every enemy hull shows its compartments as marks, and a click lays the sight on one. F fires there: the shell goes to the point under the crosshair, so you choose what to break. Space locks the point under the crosshair (and lets the lock go); Enter fires like F. A merchant or a friendly ship in the sight is not fired on. The helm is locked until Esc'],
@@ -806,7 +832,7 @@ function keysHtml() {
       + `${k('Tab', 'next target')}${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Esc', 'helm')}`;
   }
   return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', `thrust ${TELEGRAPH[sim.player.order].name}`)}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}${k('Tab', 'target')}`
-    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}${k('E', 'repair', sim.player.fix[COMP_IDS[selComp]].left > 0)}`
+    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}${k('E', 'repair', sim.player.fix[COMP_IDS[selComp]].left > 0)}${k('B', sim.heliUp ? 'heli: land' : 'heli: scout', sim.heliUp)}`
     + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–5', 'views')}${k('R', 'again')}`;
 }
 let lastKeys = '';
@@ -834,7 +860,7 @@ function updateTag() {
     const s = sim.ships[i];
     if (!s) { if (tags[i]) tags[i].obj.visible = false; continue; }
     const t = tagFor(i);
-    t.obj.visible = tagsOn && !!ships[i]?.group.visible;
+    t.obj.visible = tagsOn && !!ships[i]?.group.visible && !(s.team === 1 && s.det === false && s.tSunk === null);
     t.obj.position.set(s.x, 36, s.z);
     const foe = s.team === 1;
     const title = s.merchant ? 'MERCHANT' : foe ? (sim.player.target === i ? '▶ ENEMY' : 'ENEMY') : 'ALLY';
@@ -909,6 +935,7 @@ window.addEventListener('keydown', (e) => {
     case 'q': sim.switchAmmo(0); break;
     case 'z': selComp = (selComp + 1) % COMP_IDS.length; break;
     case 'e': sim.startRepair(0, COMP_IDS[selComp]); break;
+    case 'b': say(sim.heliRequest(), ''); break; // the helicopter: take off or land
     case 'x': sim.assignCrew(0, COMP_IDS[selComp]); break;
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
@@ -1078,7 +1105,7 @@ canvas.addEventListener('pointerup', (e) => {
   if (!d || view === 'radar' || sim.winner !== null || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) return;
   let best = -1, bestD = 70; // pixels: on her or near her
   for (const o of sim.ships) {
-    if (o.team !== 1 || o.tSunk !== null || !ships[o.idx]?.group.visible) continue;
+    if (o.team !== 1 || o.tSunk !== null || o.det === false || !ships[o.idx]?.group.visible) continue;
     _pick.set(o.x, 10, o.z).project(camera);
     if (_pick.z > 1) continue;
     const dist = Math.hypot((_pick.x * 0.5 + 0.5) * innerWidth - e.clientX, (-_pick.y * 0.5 + 0.5) * innerHeight - e.clientY);
@@ -1267,7 +1294,7 @@ function updateMarks() {
     const W = window.innerWidth, H = window.innerHeight;
     for (let i = 1; i < sim.ships.length; i++) {
       const s = sim.ships[i], g = ships[i]?.group;
-      if (!g || s.team !== 1 || s.tSunk !== null || !g.visible) continue;
+      if (!g || s.team !== 1 || s.tSunk !== null || !g.visible || s.det === false) continue;
       const dist = Math.max(1, sim.distance(sim.player, s));
       const ppm = H / (2 * dist * Math.tan(rad(camera.fov / 2))); // pixels to a metre at her range
       const spacing = 24 * ppm; // between the two nearest compartments

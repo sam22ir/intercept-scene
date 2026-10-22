@@ -72,7 +72,7 @@ export function createDuelMap() {
     let scale = ZOOMS[zoom];
     if (scale === 'auto') {
       let far = sim.range();
-      for (const o of sim.ships) if (o.idx > 0 && o.tSunk === null) far = Math.max(far, Math.min(sim.distance(sim.player, o), 16000)); // everyone afloat
+      for (const o of sim.ships) if (o.idx > 0 && o.tSunk === null && o.det !== false) far = Math.max(far, Math.min(sim.distance(sim.player, o), 16000)); // everyone afloat
       scale = SCALES.find((s) => s >= Math.max(far * 1.12, GUN_RANGE * 1.1)) ?? SCALES[SCALES.length - 1];
     }
     const k = (R - 6) / scale;
@@ -169,6 +169,18 @@ export function createDuelMap() {
       ctx.fill();
     }
 
+    // Islands: the chart is known, so they are always there (the radar's sweep would show them anyway).
+    for (const isl of sim.islands ?? []) {
+      const [ix, iy] = xy(isl.x, isl.z);
+      ctx.fillStyle = 'rgba(88, 126, 72, 0.55)';
+      ctx.strokeStyle = 'rgba(176, 210, 150, 0.7)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(ix, iy, Math.max(2, isl.r * k), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
     // Own track.
     if (sim.t - lastTrack >= TRACK_STEP || sim.t < lastTrack) {
       if (sim.t < lastTrack) track.length = 0;
@@ -186,6 +198,7 @@ export function createDuelMap() {
     const target = sim.enemy;
     for (const foe of sim.ships) {
       if (foe.idx === 0) continue;
+      if (foe.team === 1 && foe.det === false && foe.tSunk === null) continue; // not on the radar
       const [x, y] = xy(foe.x, foe.z);
       if (foe.tSunk !== null) {
         if (foe.merchant && sim.t - foe.tSunk > 60) continue;
