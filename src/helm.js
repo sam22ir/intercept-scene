@@ -36,7 +36,7 @@
 import * as THREE from 'three';
 import { G, LAUNCHER_PIVOT, TUBE_MOUTH, launcherQuat } from './scenario.js';
 import { attitude } from './fly.js';
-import { HeliFlight } from './heliFlight.js';
+import { HeliFlight, PAD } from './heliFlight.js';
 import { TELEGRAPH, START_ORDER, RUDDER_MAX, KT, HALF_LENGTH, HALF_BEAM, GUN_MOUNT_LOCAL, GUN_BLOCK, GUN_DEAD, gunBlind, stepHull, compass, relName, kmText } from './hull.js';
 
 const rad = THREE.MathUtils.degToRad;
@@ -68,6 +68,22 @@ const DRONE_CLIMB = 6; // m/s
 const CLOSE_CALL = 2000; // m: "drone closing"
 const PASSES_BEFORE_ATTACK = 1; // the first approach is a pass; the second one is the attack
 const STRIKES_TO_LOSE = 3;
+
+// --- The helicopter at war ---------------------------------------------------------------------------------
+// It stands down while a drone is within STAND_DOWN_RANGE (or has made its first pass: it comes back for the attack), keeps
+// standing down STAND_DOWN_HOLD s after the last one, spots for the ship while it is up (its eye clears the ridges, its own
+// radar reaches HELI_RADAR) and, before the drone is close, fires its two light missiles: each takes HELI_DAMAGE of a drone's six hit points.
+export const STAND_DOWN_RANGE = 2000; // m from the ship
+const STAND_DOWN_HOLD = 15; // s
+export const HELI_RADAR = 7500; // m
+export const HELI_ROUNDS = 2;
+export const HELI_DAMAGE = 2; // hit points of DRONE_HP
+const HELI_MISSILE_RANGE = [2200, 4200]; // m from the helicopter
+const HELI_CONE = rad(50); // off its nose
+const HELI_COOL = 9; // s between rounds
+const HELI_MISSILE_SPEED = 300; // m/s at most
+const HELI_RIDGE_DROP = rad(0.3); // how much further over a ridge line it sees from its height
+const HELI_AIRBORNE = 14; // m above the pad before it counts as up
 
 // --- The missile ------------------------------------------------------------------------------------------
 export const CELLS = 8;
@@ -161,7 +177,11 @@ export class HelmSim {
     this.gunsAuto = false;
     this.guns = GUN_MOUNTS.map(() => ({ yaw: GUN_STOW.yaw, pitch: GUN_STOW.pitch, ammo: GUN_ROUNDS, firing: false, rounds: 0, spin: 0, spinRate: 0, burst: 0, cool: 0 }));
     this.events = [];
-    this.heli = new HeliFlight((this.seed ^ 0x2718) >>> 0); // the deck helicopter, only for the look: it never flies while she turns
+    this.heli = new HeliFlight((this.seed ^ 0x2718) >>> 0); // the deck helicopter: it never flies while she turns, and stands down when a drone is close
+    this.heliAmmo = HELI_ROUNDS;
+    this.heliCool = 0;
+    this.heliShots = 0;
+    this.standUntil = -Infinity;
   }
 
   say(text, tone = '') { this.events.push({ type: 'say', text, tone }); }
@@ -185,6 +205,26 @@ export class HelmSim {
   get knots() { return this.u / KT; }
   get rateOfTurn() { return deg(this.r) * 60; } // deg per minute, + = to starboard
   get cellsLeft() { return CELLS - this.cellsUsed; }
+  get shipMissiles() { return this.missiles.filter((m) => !m.heli); }
+  // The helicopter's eye: where it is now in the world, and whether it is up (a hover over the pad does not count at once).
+  get heliUp() { return this.heli.state.flying && this.heli.state.y - PAD.y > HELI_AIRBORNE; }
+  heliWorld(out) { const st = this.heli.state; return this.toWorld(out.set(st.x, st.y, st.z), out); }
+  // A drone that is close, or has made its pass and is coming back: the helicopter stands down. Held a while after the last.
+  get standDown() {
+    for (const d of this.drones) {
+      if (!d.alive || !d.detected || d.hidden) continue;
+      if (this.rangeTo(d.pos) < STAND_DOWN_RANGE || d.phase !== 'inbound') { this.standUntil = this.t + STAND_DOWN_HOLD; break; }
+    }
+    return this.t < this.standUntil;
+  }
+  // The E key: what the helicopter does, or why it will not.
+  heliRequest() {
+    if (this.heli.action === 'takeoff' && this.standDown) {
+      const d = this.nearest();
+      return d ? `Helicopter stays on deck: drone ${d.name} ${kmText(this.rangeTo(d.pos))} out` : 'Helicopter stays on deck: a drone is about';
+    }
+    return this.heli.request();
+  }
   // Range and relative bearing (rad, + = starboard) of a world point from the ship.
   rangeTo(p) { return Math.hypot(p.x - this.x, p.z - this.z); }
   relBearing(p) { return wrapPi(Math.atan2(p.z - this.z, p.x - this.x) - this.psi); }
@@ -275,7 +315,7 @@ export class HelmSim {
     if (this.out) return;
     if (this.cellsLeft <= 0) { this.say('No missiles left', 'warn'); return; }
     if (this.shot) { this.say('The launcher is still turning', 'warn'); return; }
-    if (this.missiles.length >= MAX_IN_FLIGHT) { this.say(`${MAX_IN_FLIGHT} missiles already in the air`, 'warn'); return; }
+    if (this.shipMissiles.length >= MAX_IN_FLIGHT) { this.say(`${MAX_IN_FLIGHT} missiles already in the air`, 'warn'); return; }
     const d = this.target ?? this.nearest();
     if (!d) { this.say('No target on the radar', 'warn'); return; }
     this.targetId = d.id;
@@ -300,9 +340,11 @@ export class HelmSim {
   step(dt, input) {
     this.t += dt;
     this.stepShip(dt, input);
-    this.heli.step(dt, !this.out && Math.abs(this.r) < rad(0.4) && Math.abs(this.rudder) < rad(2), this.r); // a fixed course: no rudder, no turn
+    this.heli.step(dt, !this.out && Math.abs(this.r) < rad(0.4) && Math.abs(this.rudder) < rad(2), this.r, this.standDown); // a fixed course: no rudder, no turn
+    if (this.heli.phase === 'parked') this.heliAmmo = HELI_ROUNDS; // rearmed on deck
     this.stepSpawn();
     for (const d of this.drones) this.stepDrone(d, dt);
+    this.stepHeliWeapon(dt);
     this.stepLauncher();
     this.stepGuns(dt, input);
     for (const m of [...this.missiles]) this.stepMissile(m, dt);
@@ -422,14 +464,19 @@ export class HelmSim {
     const range = this.rangeTo(d.pos);
     // Behind the mountains: a far drone that sits lower than the ridge line in its direction is lost to the radar and the scope
     // until it comes out above it (a near one is in front of the ridges, whatever the angle).
-    d.hidden = !!this.skyline && range > MASK_RANGE
-      && Math.atan2(d.pos.y - SKY_EYE, Math.hypot(d.pos.x - this.x, d.pos.z - this.z)) < this.skyline(d.pos.x - this.x, d.pos.z - this.z, SKY_EYE);
+    // With the helicopter up it is a second sensor: it looks over the crest a little (HELI_RIDGE_DROP), so it never hides what the deck sees.
+    const up = this.heliUp;
+    const dx = d.pos.x - this.x;
+    const dz = d.pos.z - this.z;
+    const angle = Math.atan2(d.pos.y - SKY_EYE, Math.hypot(dx, dz));
+    d.hidden = !!this.skyline && range > MASK_RANGE && angle < this.skyline(dx, dz, SKY_EYE)
+      && !(up && angle >= this.skyline(dx, dz, SKY_EYE) - HELI_RIDGE_DROP);
     // Radar contact, and the calls.
-    if (!d.detected && !d.hidden && range < RADAR_RANGE) {
+    if (!d.detected && !d.hidden && (range < RADAR_RANGE || (up && range < HELI_RADAR))) {
       d.detected = true;
       if (this.targetId === null || !this.target) this.targetId = d.id;
       this.events.push({ type: 'alarm', level: 1, id: d.id });
-      this.say(`Radar: drone ${d.name} detected, ${relName(this.relBearing(d.pos))}, ${kmText(range)}`, 'warn');
+      this.say(`${range < RADAR_RANGE ? 'Radar' : 'Helicopter'}: drone ${d.name} detected, ${relName(this.relBearing(d.pos))}, ${kmText(range)}`, 'warn');
     }
     if (d.detected && !d.called && range < CLOSE_CALL) {
       d.called = true;
@@ -685,9 +732,9 @@ export class HelmSim {
       m.targetId = d.id;
     }
     const r = _a.subVectors(d.pos, m.pos);
-    if (r.length() < FUZE) { this.removeMissile(m); this.down(d, 'missile', m.pos.clone()); return; }
+    if (r.length() < FUZE) { this.removeMissile(m); this.missileHit(m, d, m.pos.clone()); return; }
     if (age > MISSILE_LIFE) { this.loseMissile(m, 'The missile ran out of time'); return; }
-    const speed = age < 0.5 ? 40 + age * 360 : Math.min(420, 220 + (age - 0.5) * 160);
+    const speed = age < 0.5 ? 40 + age * 360 : Math.min(m.heli ? HELI_MISSILE_SPEED : 420, 220 + (age - 0.5) * 160);
     if (age > 0.3) {
       const off = m.vel.angleTo(r);
       if (off > 0.6) {
@@ -709,7 +756,7 @@ export class HelmSim {
     if (_c.copy(m.pos).addScaledVector(step, tc).distanceTo(d.pos) < FUZE) {
       m.pos.addScaledVector(step, tc);
       this.removeMissile(m);
-      this.down(d, 'missile', m.pos.clone());
+      this.missileHit(m, d, m.pos.clone());
       return;
     }
     m.pos.add(step);
@@ -717,12 +764,54 @@ export class HelmSim {
     if (m.pos.y < 0.5 && age > 1) this.loseMissile(m, 'The missile fell into the sea');
   }
 
+  // A ship's missile destroys the drone; the helicopter's only takes some of its hit points.
+  missileHit(m, d, pos) {
+    if (!m.heli) { this.down(d, 'missile', pos); return; }
+    d.hp -= HELI_DAMAGE;
+    if (d.hp <= 0) { this.down(d, 'missile', pos); return; }
+    this.events.push({ type: 'heli-hit', id: d.id, pos: pos.clone() });
+    this.say(`Helicopter missile hit drone ${d.name}: damaged, still flying`, 'ok');
+  }
+
+  // The helicopter's missile: only when it is up and flying free (not standing down, not coming in), at a drone that is not
+  // yet close, ahead of its nose so the round never crosses the ship. One in the air at a time.
+  stepHeliWeapon(dt) {
+    this.heliCool = Math.max(0, this.heliCool - dt);
+    if (this.out || this.heliCool > 0 || this.heliAmmo <= 0 || !this.heliUp || this.standDown) return;
+    if (this.heli.phase !== 'circuit' || this.missiles.some((m) => m.heli)) return;
+    const hp = this.heliWorld(_d);
+    const st = this.heli.state;
+    const nx = Math.cos(st.yaw); // the nose in the ship's frame (x ahead, z to starboard), turned into the world by her heading
+    const nz = -Math.sin(st.yaw);
+    const fwd = _a.set(nx * Math.cos(this.psi) - nz * Math.sin(this.psi), 0, nx * Math.sin(this.psi) + nz * Math.cos(this.psi));
+    let best = null;
+    for (const d of this.drones) {
+      if (!d.alive || !d.detected || d.hidden) continue;
+      const rng = hp.distanceTo(d.pos);
+      if (rng < HELI_MISSILE_RANGE[0] || rng > HELI_MISSILE_RANGE[1]) continue;
+      if (this.rangeTo(d.pos) < STAND_DOWN_RANGE) continue;
+      _c.subVectors(d.pos, hp).setY(0);
+      if (fwd.angleTo(_c) > HELI_CONE) continue;
+      if (!best || rng < best.rng) best = { d, rng };
+    }
+    if (!best) return;
+    this.heliAmmo -= 1;
+    this.heliCool = HELI_COOL;
+    this.heliShots += 1;
+    const dir = new THREE.Vector3().subVectors(best.d.pos, hp).normalize();
+    const pos = hp.clone().addScaledVector(dir, 3);
+    const m = { id: 1000 + this.heliShots, heli: true, pos, vel: dir.clone().multiplyScalar(40).add(this.shipVel(_b)), dir, tFire: this.t, targetId: best.d.id, start: pos.clone() };
+    this.missiles.push(m);
+    this.events.push({ type: 'heli-fire', pos: pos.clone(), dir: dir.clone(), id: m.id });
+    this.say(`Helicopter: missile away at drone ${best.d.name}`, 'warn');
+  }
+
   removeMissile(m) { this.missiles = this.missiles.filter((x) => x !== m); }
 
   loseMissile(m, text) {
     this.removeMissile(m);
     this.events.push({ type: 'missile-lost', pos: m.pos.clone(), id: m.id });
-    this.say(text, 'warn');
+    this.say(m.heli ? 'Helicopter missile lost' : text, 'warn');
   }
 
   // The worst threat now, for the alarm and the readouts: 0 none, 1 detected, 2 inside 2 km or passing, 3 attacking.

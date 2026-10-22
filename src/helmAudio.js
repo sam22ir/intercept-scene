@@ -461,7 +461,8 @@ export function createHelmAudio() {
 
   function event(e) {
     switch (e.type) {
-      case 'fire': shot('launch', e.pos); break;
+      case 'fire': case 'heli-fire': shot('launch', e.pos); break;
+      case 'heli-hit': shot('hit', e.pos); break;
       case 'explosion': shot('hit', e.pos); break; // the missile bursting on the drone
       case 'struck': shot('boom', e.pos); break;
       case 'splash': shot('splash', e.pos); break;

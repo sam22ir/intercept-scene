@@ -60,6 +60,7 @@ export class HeliFlight {
     this.turn = 0; // the ship's rate of turn now, rad/s
     this.u = 0; // progress round the circuit
     this.steadyFor = 0;
+    this.combat = false; // a drone is close: stand down
     this.landReq = false; // the player has asked it to land: the circuit is cut short and it comes in
     this.circuit = { D: 18, A: 180, B: 110, len: 700, fly: 28, side: 1, peak: 48 };
     this.state = { x: PAD.x, y: PAD.y, z: PAD.z, yaw: 0, pitch: 0, roll: 0, rpm: 0, spin: 0, flying: false, phase: 'parked' };
@@ -98,24 +99,30 @@ export class HeliFlight {
   }
 
   // Advance dt seconds; `steady`: the ship is on a fixed course now (no rudder, no turn).
-  step(dt, steady, turn = 0) {
+  // `combat`: a drone is close enough that it stands down (the deck stays shut, an airborne one comes in).
+  step(dt, steady, turn = 0, combat = false) {
+    this.combat = combat;
+    if (combat && this.alt > 0 && this.phase !== 'descend' && this.phase !== 'waveoff') this.landReq = true;
     this.steadyFor = steady ? this.steadyFor + dt : 0;
     this.turn = turn;
     this.yawLag += (-turn - this.yawLag / 2.2) * dt; // the ship turns, the helicopter's heading follows with a lag of about 2 s
     this.yawLag = Math.max(-0.6, Math.min(0.6, this.yawLag));
     switch (this.phase) {
       case 'parked':
-        if (steady) this.wait -= dt;
-        if (this.wait <= 0 && this.steadyFor >= LIFT_STEADY) this.phase = 'spinup';
+        if (steady && !combat) this.wait -= dt;
+        if (!combat && this.wait <= 0 && this.steadyFor >= LIFT_STEADY) this.phase = 'spinup';
         break;
       case 'spinup':
+        if (combat) { this.phase = 'spindown'; break; }
         this.rpm = Math.min(1, this.rpm + dt / T_SPINUP);
         if (this.rpm >= 1) this.phase = 'ready';
         break;
       case 'ready': // the rotor turning, waiting for a steady course
+        if (combat) { this.phase = 'spindown'; break; }
         if (this.steadyFor >= LIFT_STEADY) this.phase = 'lift';
         break;
       case 'lift':
+        if (combat) { this.landReq = false; this.phase = 'descend'; break; } // not with a drone about: straight back down
         this.prog = Math.min(1, this.prog + dt / T_LIFT);
         this.alt = HOVER * smooth(this.prog);
         if (this.prog >= 1) { this.newCircuit(); this.phase = this.landReq ? 'hold' : 'circuit'; }

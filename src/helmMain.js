@@ -218,6 +218,8 @@ function handleEvents() {
           cine.tLaunch = sim.t;
         } else startCine(e.id);
         break;
+      case 'heli-fire': fx.launchBillow(e.pos, e.dir, sim.t); break; // the helicopter's round: no cut to the launcher
+      case 'heli-hit': for (let i = 0; i < 4; i++) fx.missileTrail(e.pos, sim.t); break; // a puff of smoke: it is damaged, not destroyed
       case 'explosion': {
         fx.explosion(e.pos, sim.t);
         const d = sim.drones.find((x) => x.id === e.id);
@@ -306,6 +308,7 @@ function applyState(dt) {
     let v = mvis.get(m.id);
     if (!v) {
       const model = createMissile();
+      if (m.heli) model.group.scale.setScalar(0.6); // a light air-launched round
       scene.add(model.group);
       v = { model, trailLast: m.pos.clone() };
       mvis.set(m.id, v);
@@ -430,7 +433,7 @@ function setView(v, quiet = false) {
   sightEl.hidden = v !== 'sight';
   document.body.classList.toggle('helm-sighting', v === 'sight');
   viewButtons.forEach((b) => b.classList.toggle('active', b.dataset.view === v));
-  if (v === 'missile' && !sim.missiles.length) say('Riding the missile: no missile in flight yet, the view takes the next one', '', 2600);
+  if (v === 'missile' && !sim.shipMissiles.length) say('Riding the missile: no missile in flight yet, the view takes the next one', '', 2600);
   else if (!quiet) say(VIEW_NAMES[v], '', 1500);
 }
 
@@ -836,8 +839,8 @@ function updateCamera(dt) {
     camera.position.set(sim.x, aboveH, sim.z);
     camera.up.set(Math.cos(sim.psi), 0, Math.sin(sim.psi));
     camera.lookAt(sim.x, 0, sim.z);
-  } else if (view === 'missile' && sim.missiles.length) {
-    const m = sim.missiles[sim.missiles.length - 1];
+  } else if (view === 'missile' && sim.shipMissiles.length) {
+    const m = sim.shipMissiles[sim.shipMissiles.length - 1];
     camera.position.copy(m.pos).addScaledVector(m.dir, -10).y += 1.6;
     const tgt = sim.drones.find((d) => d.id === m.targetId);
     lookAt.copy(m.pos).addScaledVector(m.dir, 40);
@@ -919,7 +922,7 @@ const pipV3 = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), ne
 const pipFocus = { key: null, pos: new THREE.Vector3(), size: 4.5, name: '', kind: 'drone' };
 const pipWatch = { did: null };
 function pipPick() {
-  const m = pipMode === 'target' ? null : sim.missiles[sim.missiles.length - 1];
+  const m = pipMode === 'target' ? null : sim.shipMissiles[sim.shipMissiles.length - 1];
   if (m) {
     pipWatch.did = m.targetId;
     pipFocus.key = `m${m.id}`; pipFocus.pos.copy(m.pos); pipFocus.size = 6; pipFocus.name = 'MISSILE'; pipFocus.kind = 'missile';
@@ -1263,7 +1266,7 @@ function domeSvg() {
 function weaponsHtml() {
   let mState = sim.cellsLeft > 0 ? 'READY' : 'EMPTY';
   if (sim.shot) mState = sim.shot.locked ? 'LOCKED' : sim.shot.acquiring ? 'ACQUIRING' : 'TURNING';
-  else if (sim.missiles.length) mState = `${sim.missiles.length} AWAY`;
+  else if (sim.shipMissiles.length) mState = `${sim.shipMissiles.length} AWAY`;
   const cls = sim.shot ? (sim.shot.locked ? 'arm lock' : 'arm') : sim.cellsLeft > 0 ? 'on' : '';
   const pips = Array.from({ length: CELLS }, (_, i) => `<i class="${i === sim.cellsLeft - 1 ? cls : i < sim.cellsLeft ? 'on' : ''}"></i>`).join('');
   const cells = `<div class="hw-pips">${pips}</div><span class="hw-n">${sim.cellsLeft}</span>`;
@@ -1461,7 +1464,7 @@ function keysHtml() {
   const t = sim.target;
   const ready = t && !sim.engageable(t) && !sim.shot && sim.cellsLeft > 0;
   return `${radarKeysHtml}${sim.shot?.hold ? `${k('M', 'stand down')}${k('F', 'launch', sim.shot.locked)}` : k('M', 'ready missile', ready)}${k('G', 'guns (hold)', input.gun === 1)}${k('A', 'auto guns', sim.gunsAuto)}`
-    + `${k('E', sim.heli.action === 'takeoff' ? 'heli take off' : sim.heli.action === 'land' ? 'heli land' : 'heli landing', sim.heli.action === null)}${k('D', 'add drone')}${k('Tab', 'target', sim.detected.length > 1)}${k('1–7', 'views')}${k('V', 'next view')}`;
+    + `${k('E', sim.heli.action === 'takeoff' ? (sim.standDown ? 'heli stays: drone near' : 'heli take off') : sim.heli.action === 'land' ? 'heli land' : 'heli landing', sim.heli.action === null || (sim.standDown && sim.heli.action === 'takeoff'))}${k('D', 'add drone')}${k('Tab', 'target', sim.detected.length > 1)}${k('1–7', 'views')}${k('V', 'next view')}`;
 }
 
 // --- Interface: the top bar, menu, keys sheet, sound, map ---------------------------------------------------------------
@@ -1624,7 +1627,7 @@ window.addEventListener('keydown', (e) => {
     case 'f': sim.launchReady(); break; // launch the ready missile
     case 'a': sim.toggleAutoGuns(); break;
     case 'd': sim.summon(); break; // send in a drone
-    case 'e': say(sim.heli.request(), ''); break; // the helicopter: take off, or land
+    case 'e': say(sim.heliRequest(), ''); break; // the helicopter: take off, or land
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
     case '1': case '2': case '3': case '4': case '5': case '6': case '7': setView(VIEWS[Number(key) - 1]); break;
