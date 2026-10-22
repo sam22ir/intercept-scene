@@ -20,7 +20,7 @@ describe('the role table', () => {
     assert.deepEqual(Object.keys(ROLES).sort(), ['escort', 'gun', 'picket']);
     for (const r of Object.values(ROLES)) {
       assert.equal(typeof r.name, 'string');
-      for (const k of ['radar', 'stock', 'gats', 'gatRange', 'reload', 'hp', 'crews', 'topSpeed']) assert.equal(typeof r[k], 'number', k);
+      for (const k of ['radar', 'stock', 'gats', 'reload', 'hp', 'crews', 'topSpeed']) assert.equal(typeof r[k], 'number', k);
     }
   });
 
@@ -43,7 +43,6 @@ describe('each role changes the stat it claims', () => {
     assert.ok(total(s) < total(base), '76 mm stock smaller');
     assert.equal(s.gun.ammo, total(s), 'the loaded total follows the stock');
     assert.ok(gats(s).every((a, i) => a > gats(base)[i]), '30 mm rounds up');
-    assert.ok(s.gatRange > 1);
   });
 
   it('gun ship: more 76 mm rounds and a faster reload; 30 mm and radar as they were', () => {
@@ -57,12 +56,11 @@ describe('each role changes the stat it claims', () => {
     assert.equal(s.radar, 1);
   });
 
-  it('escort: more hull points, one more repair crew (in the helmsman and in the ship), a lower top speed cap', () => {
+  it('escort: one more repair crew (in the helmsman and in the ship), a lower top speed cap', () => {
     const base = freshShip();
     const s = freshShip();
     applyRole(s, 'escort');
-    assert.equal(s.hp, HULL_HP * ROLES.escort.hp);
-    assert.ok(s.hp > base.hp);
+    assert.equal(s.hp, HULL_HP, 'no hull bonus: duel repair would cap it');
     assert.equal(s.ai.p.crews, base.ai.p.crews + 1);
     assert.equal(s.crews.length, base.crews.length + 1);
     assert.ok(s.topSpeed < 1);
@@ -99,7 +97,18 @@ describe('seeded fleets with roles', () => {
     assert.ok(total(gun) > total(picket), `gun ${total(gun)} vs picket ${total(picket)}`);
   });
 
-  // Not runnable yet: in 60 s both ships fire about 10 to 13 rounds, far from the stock, and duel.js reloads every ship at
-  // MAIN_RELOAD, so `ship.reload` (the gun ship's 1.2) changes nothing until duel.js reads it.
-  it.todo('the gun ship fires more 76 mm rounds than the picket in 60 s (needs a duel.js hook: `ship.reload` on MAIN_RELOAD)');
+  it('the gun ship reloads faster than the picket (FleetSim.fireMain)', () => {
+    const sim = new FleetSim({ seed: 3, level: 'normal', scenario: 'defend' });
+    const pick = sim.squad.find((x) => x.role === 'picket'), gun = sim.squad.find((x) => x.role === 'gun');
+    sim.fireMain(pick);
+    sim.fireMain(gun);
+    assert.ok(gun.gun.cool < pick.gun.cool, `gun ${gun.gun.cool} vs picket ${pick.gun.cool}`);
+  });
+  it('the escort is capped below full speed', () => {
+    const sim = new FleetSim({ seed: 3, level: 'normal', scenario: 'defend' });
+    const esc = sim.squad.find((x) => x.role === 'escort');
+    esc.u = 100;
+    sim.step(1 / 120);
+    assert.ok(esc.u < 100 && esc.u > 0);
+  });
 });

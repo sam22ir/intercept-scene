@@ -170,4 +170,14 @@ describe('drones in a fight', () => {
     };
     assert.equal(run(), run());
   });
+
+  it('rewinding repeatedly does not stack the drone mover (digest and drone track match a fresh run)', () => {
+    const mk = () => new FleetSim({ seed: 5, level: 'normal', scenario: 'defend' });
+    const run = (sim, t) => { while (sim.t < t) sim.advance(1 / 30); };
+    const a = mk(); a.order({ to: 'all', type: 'course', course: 20 }); run(a, 200);
+    for (let i = 0; i < 3; i++) a.rewindTo(100);
+    run(a, 200);
+    const b = mk(); b.order({ to: 'all', type: 'course', course: 20 }); run(b, 200);
+    assert.equal(a.digest(), b.digest());
+  });
 });
