@@ -52,6 +52,7 @@ export function createDuelMap() {
     let scale = ZOOMS[zoom];
     if (scale === 'auto') {
       let far = sim.range();
+      for (const o of sim.ships) if (o.idx > 0 && o.tSunk === null) far = Math.max(far, Math.min(sim.distance(sim.player, o), 16000)); // everyone afloat
       scale = SCALES.find((s) => s >= Math.max(far * 1.12, GUN_RANGE * 1.1)) ?? SCALES[SCALES.length - 1];
     }
     const k = (R - 6) / scale;
@@ -165,25 +166,37 @@ export function createDuelMap() {
     track.forEach((p, i) => { const [x, y] = xy(p.x, p.z); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
     ctx.stroke();
 
-    // The enemy: an arrow along her heading, her range, or a cross once she is down.
-    const foe = sim.enemy;
-    if (foe.tSunk === null) {
+    // The other ships: an arrow along each one's heading (red an enemy, blue a friend, grey a merchant), the range of the one you are on, or
+    // a cross once one is down. The ship your guns are on has a ring round her.
+    const target = sim.enemy;
+    for (const foe of sim.ships) {
+      if (foe.idx === 0) continue;
       const [x, y] = xy(foe.x, foe.z);
+      if (foe.tSunk !== null) {
+        if (foe.merchant && sim.t - foe.tSunk > 60) continue;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.beginPath();
+        ctx.moveTo(x - 3, y - 3); ctx.lineTo(x + 3, y + 3);
+        ctx.moveTo(x + 3, y - 3); ctx.lineTo(x - 3, y + 3);
+        ctx.stroke();
+        continue;
+      }
       const [x2, y2] = xy(foe.x + Math.cos(foe.psi) * 200, foe.z + Math.sin(foe.psi) * 200);
-      arrow(x, y, x2 - x, y2 - y, 7, RED, false);
-      ctx.fillStyle = 'rgba(255, 138, 141, 0.9)';
-      ctx.font = '600 9px system-ui, sans-serif';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      const tx = x + 7, ty = y - 7;
-      if (Math.hypot(tx - R, ty - R) < R - 34) ctx.fillText(kmText(sim.range()), tx, ty);
-    } else {
-      const [x, y] = xy(foe.x, foe.z);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-      ctx.beginPath();
-      ctx.moveTo(x - 3, y - 3); ctx.lineTo(x + 3, y + 3);
-      ctx.moveTo(x + 3, y - 3); ctx.lineTo(x - 3, y + 3);
-      ctx.stroke();
+      const [cx, cy, edge] = clampTo(x, y);
+      arrow(cx, cy, x2 - x, y2 - y, foe.merchant ? 5.5 : 7, foe.merchant ? '#9aa4ad' : foe.team === 0 ? CYAN : RED, edge);
+      if (foe === target && foe.team === 1) {
+        ctx.strokeStyle = 'rgba(255, 138, 141, 0.9)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 11, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255, 138, 141, 0.9)';
+        ctx.font = '600 9px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const tx = cx + 13, ty = cy - 7;
+        if (Math.hypot(tx - R, ty - R) < R - 34) ctx.fillText(kmText(sim.range()), tx, ty);
+      }
     }
 
     // Where the radar view is looking: a thin line out to the rim, a pointer on the rim and the true bearing (no sector).

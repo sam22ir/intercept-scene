@@ -156,3 +156,24 @@ body.duel-radarview .duel-root { display: none; }
   body.mission-duel .fly-keys { max-width: calc(100vw - 540px); overflow: hidden; }
   .duel-ship .hs-rect { width: 270px; }
 }
+
+/* The radar view: the lens zoom, the compartment marks on every enemy hull, and the warning over a hull we do not fire on. */
+.duel-radar .hr-zoom { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; font-size: 11px; color: var(--muted); }
+.duel-radar .hr-zoom button { width: 40px; height: 28px; font-size: 18px; line-height: 1; padding: 0; }
+.duel-radar .hr-zoom span { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.duel-radar .hr-zoom b { color: var(--text); font-size: 13px; min-width: 3.2em; text-align: center; font-variant-numeric: tabular-nums; }
+.duel-radar .hr-zoom kbd { font-size: 9.5px; opacity: 0.6; }
+.duel-radar .hr-mark[hidden] { display: none; }
+.duel-radar .hr-mark i { position: absolute; left: -6px; top: -6px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #3ddc84; background: rgba(61, 220, 132, 0.18); box-shadow: 0 0 6px rgba(0, 0, 0, 0.7); }
+.duel-radar .hr-mark:hover i, .duel-radar .hr-mark.aim i { background: rgba(61, 220, 132, 0.6); transform: scale(1.35); }
+.duel-radar .hr-mark span { position: absolute; left: 11px; top: -8px; padding: 1px 5px; border-radius: 4px; background: rgba(8, 12, 18, 0.55); font-size: 10.5px; letter-spacing: 0.03em; }
+.duel-radar .hr-mark span:empty { display: none; }
+.duel-radar .hr-mark.hurt i { border-color: #f2c94c; background: rgba(242, 201, 76, 0.2); }
+.duel-radar .hr-mark.bad i { border-color: #ff7a1a; background: rgba(255, 122, 26, 0.25); }
+.duel-radar .hr-mark.out i { border-color: #ff5d61; background: rgba(255, 93, 97, 0.35); }
+.duel-radar .hr-mark.hurt span { color: #f2c94c; } .duel-radar .hr-mark.bad span { color: #ffab6b; } .duel-radar .hr-mark.out span { color: #ff8a8d; }
+.duel-sight.warn .hs-box { border: 2px solid #ff5d61; box-shadow: 0 0 12px rgba(255, 93, 97, 0.6); }
+.duel-sight.warn .hs-txt { color: #ff9a9d; }
+body.mission-duel .tag.tag-ally { border-left-color: #35c8ff; }
+body.mission-duel .tag.tag-neutral { border-left-color: #9aa4ad; }
+.duel-radar .hr-mode.locked { background: #c0392b; }

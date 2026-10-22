@@ -3,6 +3,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { createEnvironment } from './environment.js';
 import { createShip } from './models/ship.js';
+import { createMerchant } from './models/merchant.js';
+import { createBridge } from './models/bridge.js';
 import { createGatling } from './models/gatling.js';
 import { createLiveFx } from './fx/liveFx.js';
 import { createWake } from './fx/wake.js';
@@ -51,7 +53,10 @@ env.setShadowSize(1024);
 env.ocean.material.uniforms.uShipX.value = 1e7; // the shader's straight-line wake: these ships turn, each has her own
 const fx = createLiveFx(scene);
 
-const BRIDGE_EYE = new THREE.Vector3(16.9, 11.4, 0); // where the officer of the watch stands, in the ship's frame
+const BRIDGE_EYE = new THREE.Vector3(16.9, 11.4, 0); // the long-lens sight on the bridge roof, in the ship's frame
+const HELM_EYE = new THREE.Vector3(11.7, 11.0, 0); // inside the wheelhouse, behind the helm wheel (models/bridge.js; as in Solo Air Defense)
+let lookYaw = 0; // bridge: degrees off the bow, + to starboard
+let lookPitch = -0.03;
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 const _c = new THREE.Vector3();
@@ -62,21 +67,48 @@ const clamp = THREE.MathUtils.clamp;
 let level = 'normal';
 try { level = globalThis.__DUEL_LEVEL ?? new URLSearchParams(location.search).get('level') ?? 'normal'; } catch { /* no address */ }
 if (!DUEL_LEVELS.includes(level)) level = 'normal';
-const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level });
+const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true });
 
-// --- The two ships --------------------------------------------------------------------------------------------------
-// Both with the deck crew left out (it stands in the gun's way). The enemy has her own ensign and a bluer hull.
-const ships = [createShip({ crew: false }), createShip({ ensign: 'rus', crew: false })].map((m, i) => {
-  m.group.rotation.order = 'YXZ'; // heading, then heel, then trim
-  scene.add(m.group);
-  const gats = GUN_MOUNT_LOCAL.map(([x, y, z]) => {
-    const g = createGatling();
-    g.group.position.set(x, y - 1.3, z); // the mount's pivot is the gun's centre; its base stands on the roof
-    m.group.add(g.group);
-    return g;
-  });
-  return { ...m, gats, wake: createWake(scene), smokeT: 0, flash: 0 };
-});
+// --- The ships --------------------------------------------------------------------------------------------------------
+// A picture for each ship the simulation has: yours, the enemy's, then whoever arrives (more enemy frigates, a friendly one, merchants).
+// Pictures are pooled, so a ship that is gone, or a fight started again, gives hers back. Frigates have no deck crew (it stands in the
+// gun's way); the enemy has her own ensign and a bluer hull.
+const shipPool = {};
+function makeVisual(s) {
+  const key = s.merchant ? 'merchant' : s.team === 1 ? 'rus' : 'alg';
+  let v = shipPool[key]?.pop();
+  if (!v) {
+    const m = s.merchant ? createMerchant() : createShip({ ensign: key, crew: false });
+    m.group.rotation.order = 'YXZ'; // heading, then heel, then trim
+    scene.add(m.group);
+    const gats = s.merchant ? [] : GUN_MOUNT_LOCAL.map(([x, y, z]) => {
+      const g = createGatling();
+      g.group.position.set(x, y - 1.3, z); // the mount's pivot is the gun's centre; its base stands on the roof
+      m.group.add(g.group);
+      return g;
+    });
+    const flashSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false }));
+    flashSprite.scale.setScalar(11);
+    flashSprite.visible = false;
+    scene.add(flashSprite);
+    v = { ...m, key, gats, wake: createWake(scene), flashSprite };
+  }
+  v.smokeT = 0; v.flash = 0; v.gunClock = [0, 0];
+  v.group.visible = true;
+  return v;
+}
+function releaseVisual(v) {
+  v.group.visible = false;
+  v.flashSprite.visible = false;
+  v.wake.hide();
+  (shipPool[v.key] ??= []).push(v);
+}
+const ships = [];
+// Keeps the pictures in step with the ships the simulation has (called every frame and after a restart).
+function syncShips() {
+  while (ships.length < sim.ships.length) ships.push(makeVisual(sim.ships[ships.length]));
+  while (ships.length > sim.ships.length) releaseVisual(ships.pop());
+}
 
 // --- Shells and tracers ---------------------------------------------------------------------------------------------
 const glowTex = (() => {
@@ -113,17 +145,14 @@ function streaks(n, size, color, len) {
     done() { lineGeo.attributes.position.needsUpdate = true; headGeo.attributes.position.needsUpdate = true; },
   };
 }
-const shellVis = streaks(48, 3.2, 0xffd9a0, 22); // the 76 mm shells: a bright streak with a glowing head
-const tracerVis = streaks(260, 1.1, 0xff6a1f, 34); // the 30 mm tracers
-const tracers = Array.from({ length: 260 }, () => ({ on: false, p: new THREE.Vector3(), v: new THREE.Vector3(), t0: 0 }));
+const shellVis = streaks(96, 3.2, 0xffd9a0, 22); // the 76 mm shells: a bright streak with a glowing head
+const tracerVis = streaks(400, 1.1, 0xff6a1f, 34); // the 30 mm tracers
+const tracers = Array.from({ length: 400 }, () => ({ on: false, p: new THREE.Vector3(), v: new THREE.Vector3(), t0: 0 }));
 let tracerNext = 0;
-const flashSprites = ships.map(() => {
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false }));
-  sp.scale.setScalar(11);
-  sp.visible = false;
-  scene.add(sp);
-  return sp;
-});
+syncShips(); // the two ships to start with (more are added as they arrive)
+const bridge = createBridge(); // the wheelhouse's inside, shown only in the bridge view (as in Solo Air Defense)
+bridge.group.visible = false;
+ships[0].group.add(bridge.group);
 
 // --- The sea picture: each ship's pose from the simulation -------------------------------------------------------------
 const ZONE_X = { gun: 32, bridge: 14, engine: -9, guns: -33, steering: -50 }; // where each compartment's fire burns
@@ -136,9 +165,11 @@ function poseShip(i, dt) {
   v.group.position.set(s.x, sink ? sink.depth : 0, s.z);
   v.group.rotation.set(s.heel + list + (sink?.roll ?? 0), -s.psi, sink?.trim ?? 0);
   v.group.updateMatrixWorld(true);
-  v.mainGun.pose(s.gun.yaw, s.gun.pitch);
-  v.gats.forEach((g, k) => g.pose(s.gats[k].yaw, s.gats[k].pitch, s.gats[k].spin, s.gats[k].firing, sim.t));
-  v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0 }); // the radar turns; the launcher box stays stowed
+  if (!s.merchant) {
+    v.mainGun.pose(s.gun.yaw, s.gun.pitch);
+    v.gats.forEach((g, k) => g.pose(s.gats[k].yaw, s.gats[k].pitch, s.gats[k].spin, s.gats[k].firing, sim.t));
+    v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0 }); // the radar turns; the launcher box stays stowed
+  }
   v.wake.update({ t: sim.t, x: s.x, z: s.z, psi: s.psi, r: s.r, u: s.u });
   // Smoke and fire: a hurt compartment smokes, one that is out burns; a sinking ship pours it out.
   v.smokeT += dt;
@@ -160,7 +191,7 @@ function poseShip(i, dt) {
       fx.fireSmoke(v.group.localToWorld(_a), sim.t, 2 * sink.smoke);
     }
   }
-  if (v.flash > 0) { v.flash -= dt; flashSprites[i].visible = v.flash > 0; }
+  if (v.flash > 0) { v.flash -= dt; v.flashSprite.visible = v.flash > 0; }
 }
 
 function updateWeapons(dt) {
@@ -172,7 +203,6 @@ function updateWeapons(dt) {
     const s = sim.ships[i];
     s.gats.forEach((g, k) => {
       if (!g.firing) return;
-      v.gunClock = (v.gunClock ?? [0, 0]);
       v.gunClock[k] += dt;
       v.gats[k].muzzle.getWorldQuaternion(_q);
       _a.set(1, 0, 0).applyQuaternion(_q);
@@ -233,8 +263,8 @@ function handleEvents() {
     if (e.type === 'shot') {
       const v = ships[e.owner];
       v.mainGun.muzzle.getWorldPosition(_c);
-      flashSprites[e.owner].position.copy(_c);
-      flashSprites[e.owner].visible = true;
+      v.flashSprite.position.copy(_c);
+      v.flashSprite.visible = true;
       v.flash = 0.09;
       for (let k = 0; k < 7; k++) fx.gunSmoke(_c, _b.set(e.dir[0] * 9, e.dir[1] * 9, e.dir[2] * 9), sim.t);
       if (e.owner === 0) { lastShell = sim.shells[sim.shells.length - 1]?.id ?? null; shellHold = 0; }
@@ -243,7 +273,20 @@ function handleEvents() {
       if (e.ship === 0) {
         alarmEl.classList.remove('hit'); void alarmEl.offsetWidth; alarmEl.classList.add('hit');
         say(`Hit: ${COMPARTMENTS[e.comp].name}${e.out ? ' out' : ''}`, 'bad', 2200);
-      } else say(`Hit on her ${COMPARTMENTS[e.comp].name.toLowerCase()}${e.out ? ': out' : ''}`, 'ok', 2200);
+      } else if (e.neutral) {
+        if (e.owner === 0) say('You hit a merchant ship: hold fire, sinking her loses the duel', 'bad', 3600);
+      } else if (e.owner === 0) say(`Hit on her ${COMPARTMENTS[e.comp].name.toLowerCase()}${e.out ? ': out' : ''}`, 'ok', 2200);
+    } else if (e.type === 'arrive') {
+      const where = relName(e.rel);
+      if (e.kind === 'enemy') say(`Another enemy frigate ${where}, ${kmText(e.range)}`, 'warn', 4200);
+      else if (e.kind === 'ally') say(`A friendly frigate joins you, ${where}`, 'ok', 4200);
+      else say(`Merchant ship crossing ${where}: do not fire on her`, '', 4200);
+    } else if (e.type === 'collision') {
+      for (let k = 0; k < 4; k++) fx.shellBurst(_c.set(e.pos[0] + (Math.random() - 0.5) * 10, e.pos[1] + Math.random() * 4, e.pos[2] + (Math.random() - 0.5) * 10), sim.t);
+      if (e.a === 0 || e.b === 0) {
+        alarmEl.classList.remove('hit'); void alarmEl.offsetWidth; alarmEl.classList.add('hit');
+        say(`Collision at ${e.impact.toFixed(0)} m/s`, 'bad', 2600);
+      }
     } else if (e.type === 'gunhit') {
       if (e.ship === 0) { alarmEl.classList.remove('hit'); void alarmEl.offsetWidth; alarmEl.classList.add('hit'); }
     } else if (e.type === 'splash') {
@@ -258,7 +301,7 @@ function handleEvents() {
     } else if (e.type === 'fire') {
       if (e.ship === 0) say(`Fire in the ${COMPARTMENTS[e.comp].name.toLowerCase()}: send a crew`, 'warn', 2400);
     } else if (e.type === 'over') {
-      say(e.winner === 0 ? 'The enemy frigate is going down: you win' : 'Your ship is sinking: you lose', e.winner === 0 ? 'ok' : 'bad', 60000);
+      say(e.reason === 'merchant' ? 'You sank a merchant ship: you lose' : e.winner === 0 ? 'The enemy is going down: you win' : 'Your ship is sinking: you lose', e.winner === 0 ? 'ok' : 'bad', 60000);
     }
   }
 }
@@ -289,8 +332,9 @@ function setView(v) {
     setManual(radarPrevManual);
   }
   view = v;
-  radarKeys.l = radarKeys.r = radarKeys.u = radarKeys.d = 0;
+  radarKeys.l = radarKeys.r = radarKeys.u = radarKeys.d = radarKeys.zi = radarKeys.zo = 0;
   sight.manual = false; // the radar's own controls start on automatic every time
+  sight.lock = null;
   sight.fresh = true;
   radarEl.hidden = v !== 'radar';
   sightEl.hidden = v !== 'radar';
@@ -307,17 +351,26 @@ let frameDt = 1 / 60;
 function updateCamera() {
   const me = ships[0].group;
   const foe = sim.enemy;
+  bridge.group.visible = view === 'bridge';
   if (view === 'orbit') { setFov(50); rig.update(); controls.update(); return; }
   if (view === 'behind') {
     setFov(55);
     camera.position.copy(me.localToWorld(_a.set(-110, 34, 0)));
     camera.lookAt(me.localToWorld(_b.set(45, 6, 0)));
-  } else if (view === 'bridge' || view === 'sight') {
+  } else if (view === 'bridge') {
+    // The wheelhouse, as in Solo Air Defense: the wheel turns with the rudder and the telegraph levers follow the order; drag looks round.
+    bridge.update(clamp(sim.player.rudder / RUDDER_MAX, -1, 1), sim.player.order / (TELEGRAPH.length - 1));
+    me.localToWorld(camera.position.copy(HELM_EYE));
+    const yaw = rad(lookYaw);
+    _a.set(Math.cos(yaw) * Math.cos(lookPitch), Math.sin(lookPitch), Math.sin(yaw) * Math.cos(lookPitch)).transformDirection(me.matrixWorld);
+    camera.lookAt(_b.copy(camera.position).add(_a));
+    setFov(55);
+  } else if (view === 'sight') {
     me.localToWorld(camera.position.copy(BRIDGE_EYE));
     const inView = Math.abs(sim.relBearing(sim.player)) < rad(110);
     if (inView) camera.lookAt(enemyPoint(_b)); else camera.lookAt(me.localToWorld(_b.set(100, 10, 0)));
     const r = sim.range();
-    setFov(view === 'sight' ? clamp((Math.atan(70 / r) * 2 * 180) / Math.PI * 2.4, 3.5, 30) : 55);
+    setFov(clamp((Math.atan(70 / r) * 2 * 180) / Math.PI * 2.4, 3.5, 30));
   } else if (view === 'radar') {
     aimSight(frameDt);
   } else if (view === 'above') {
@@ -358,7 +411,9 @@ function cardHtml(i) {
     return `<div class="dh-row ${f <= 0 ? 'out' : f < 0.5 ? 'bad' : f < 0.99 ? 'hurt' : ''}${i === 0 && COMP_IDS[selComp] === id ? ' sel' : ''}"><span>${COMPARTMENTS[id].name}</span><b>${bar(f)}</b><em>${f <= 0 ? 'OUT' : `${Math.round(f * 100)}`}</em>${tags ? `<div class="dh-tags">${tags}</div>` : ''}</div>`;
   }).join('');
   const hp = s.hp / HULL_HP;
-  return `<section class="dh-ship ${i ? 'foe' : 'you'}${s.tSunk !== null ? ' sunk' : ''}"><h3>${i ? 'ENEMY' : 'YOUR SHIP'}<small>${i ? LEVELS[sim.level].name : ''}${s.tSunk !== null ? 'SINKING' : ''}</small></h3>`
+  const foes = sim.ships.filter((o) => o.team === 1);
+  const which = foes.length > 1 ? ` ${foes.indexOf(s) + 1}/${foes.length}` : '';
+  return `<section class="dh-ship ${i ? 'foe' : 'you'}${s.tSunk !== null ? ' sunk' : ''}"><h3>${i ? `ENEMY${which}` : 'YOUR SHIP'}<small>${i ? LEVELS[sim.level].name : ''}${s.tSunk !== null ? 'SINKING' : ''}</small></h3>`
     + `<div class="dh-row hull"><span>Hull</span><b>${bar(hp, hp < 0.3 ? 'bad' : '')}</b><em>${Math.round(s.hp)}</em></div>${comps}</section>`;
 }
 function gunStatus(s) {
@@ -374,19 +429,25 @@ function gunStatus(s) {
   return g.onTarget ? 'ON TARGET' : 'TRAINING';
 }
 function rangeHtml() {
-  return `<div class="dh-range"><span>ENEMY</span><b>${kmText(sim.range())}</b><small>${relName(sim.relBearing(sim.player))}</small></div>`;
+  const live = sim.ships.filter((o) => o.team === 1 && o.tSunk === null).length;
+  const friends = sim.ships.filter((o) => o.team === 0 && o.idx > 0 && o.tSunk === null).length;
+  const traffic = sim.ships.filter((o) => o.merchant && o.tSunk === null).length;
+  const extra = `${live > 1 ? ` · <kbd>Tab</kbd> next of ${live}` : ''}${friends ? ' · ally' : ''}${traffic ? ` · ${traffic} merchant${traffic > 1 ? 's' : ''}` : ''}`;
+  return `<div class="dh-range"><span>ENEMY</span><b>${kmText(sim.range())}</b><small>${relName(sim.relBearing(sim.player))}${extra}</small></div>`;
 }
 function endHtml() {
   if (sim.winner === null) return '';
   const w = sim.winner === 0;
-  const st = sim.player.stats, es = sim.enemy.stats;
-  return `<section class="dh-end ${w ? 'won' : 'lost'}"><h2>${w ? 'You win' : 'You lose'}</h2>`
-    + `<p>${Math.round(sim.t)} s · your 76 mm: ${st.hits} of ${st.shells} hit · hers: ${es.hits} of ${es.shells}</p><p><kbd>R</kbd> to fight again</p></section>`;
+  const st = sim.player.stats;
+  const es = sim.ships.filter((o) => o.team === 1).reduce((a, o) => ({ hits: a.hits + o.stats.hits, shells: a.shells + o.stats.shells }), { hits: 0, shells: 0 });
+  const why = sim.over === 'merchant' ? '<p>You sank a merchant ship</p>' : '';
+  return `<section class="dh-end ${w ? 'won' : 'lost'}"><h2>${w ? 'You win' : 'You lose'}</h2>${why}`
+    + `<p>${Math.round(sim.t)} s · your 76 mm: ${st.hits} of ${st.shells} hit · theirs: ${es.hits} of ${es.shells}</p><p><kbd>R</kbd> to fight again</p></section>`;
 }
 let lastHtml = '';
 let hudOn = true;
 function updateHud() {
-  const html = cardHtml(1) + rangeHtml() + endHtml();
+  const html = cardHtml(sim.enemy.idx) + rangeHtml() + endHtml();
   if (html !== lastHtml) { hud.innerHTML = html; lastHtml = html; }
 }
 
@@ -526,14 +587,16 @@ viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.v
 
 keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>←</kbd> <kbd>→</kbd>', 'Rudder to port / starboard while held; let go and it comes back amidships'],
-  ['<kbd>↑</kbd> <kbd>↓</kbd>', 'Engine telegraph, one step: slow astern, stop, dead slow, slow, half, full, flank'],
+  ['<kbd>↑</kbd> <kbd>↓</kbd>', 'Engine telegraph (thrust), one step: slow astern, stop, dead slow, slow, half, full, flank. Hulls that touch collide: damage by the closing speed, where they meet'],
   ['<kbd>F</kbd>', `Fire the 76 mm (hold): the gun trains on the enemy by itself within ${Math.round((MAIN_ARC * 180) / Math.PI)}° of the bow and ${kmText(MAIN_RANGE)}, and fires once it is on the aim and loaded`],
   ['<kbd>G</kbd>', `Fire the two 30 mm guns aft (hold): ${kmText(GUN_RANGE)}, astern and abeam only`],
   ['<kbd>A</kbd>', 'The 30 mm guns on automatic'],
   ['<kbd>Q</kbd>', `Change the 76 mm round, HE or AP: HE starts fires and floods, AP hits one compartment harder; changing costs a ${SWITCH_TIME} s reload`],
   ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
   ['<kbd>1</kbd> to <kbd>7</kbd>', 'Behind, bridge, sight, above, shell, orbit, radar'],
-  ['<kbd>7</kbd>', 'Radar view, like Solo Air Defense: the fire-control sight on the enemy. Arrows, a drag or the on-screen pad aim it over any part of her hull (the label names the compartment), F fires there, Space returns it to auto. The helm is locked until Esc'],
+  ['<kbd>2</kbd>', 'The wheelhouse, as in Solo Air Defense: the wheel turns with the rudder, the telegraph levers follow the engine order, and a drag looks round (double click looks ahead)'],
+  ['<kbd>7</kbd>', 'Radar view: the fire-control sight. Arrows, a drag or the on-screen pad aim it. <kbd>wheel</kbd>, <kbd>+</kbd> <kbd>-</kbd> or the Zoom buttons close the lens until a compartment fills it (<kbd>0</kbd> resets); every enemy hull shows its compartments as marks, and a click lays the sight on one. F fires there: the shell goes to the point under the crosshair, so you choose what to break. Space returns the sight to auto. A merchant or a friendly ship in the sight is not fired on. The helm is locked until Esc'],
+  ['<kbd>Tab</kbd>', 'Next enemy to fight (locked until she sinks). More enemy frigates arrive, a friendly frigate joins you, and merchant ships cross the fight: sinking one yourself loses the duel'],
   ['<kbd>V</kbd>', 'Next view · drag looks round in the orbit view, the wheel zooms'],
   ['<kbd>R</kbd>', 'Fight again'],
   ['<kbd>N</kbd>', 'Map'],
@@ -567,7 +630,11 @@ document.body.appendChild(keysEl);
 const input = { left: 0, right: 0, fire: 0, gat: 0, aim: null };
 const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`;
 function keysHtml() {
-  return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', 'speed')}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}`
+  if (view === 'radar') {
+    return `${k('← → ↑ ↓', 'aim the sight')}${k('wheel + −', 'zoom')}${k('click', 'lock a compartment')}${k('Enter', 'lock the point', !!sight.lock)}${k('F', 'fire 76 mm (hold)', input.fire)}`
+      + `${k('Tab', 'next target')}${k('Space', 'auto')}${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Esc', 'helm')}`;
+  }
+  return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', `thrust ${TELEGRAPH[sim.player.order].name}`)}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}${k('Tab', 'target')}`
     + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}`
     + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–7', 'views')}${k('R', 'again')}`;
 }
@@ -577,26 +644,47 @@ let lastKeys = '';
 const labels = new CSS2DRenderer();
 labels.domElement.className = 'labels-layer duel-labels';
 document.body.appendChild(labels.domElement);
-const tagEl = document.createElement('div');
-tagEl.className = 'tag tag-ship';
-tagEl.style.pointerEvents = 'none';
-tagEl.innerHTML = '<div class="tag-title"></div><div class="tag-body"></div>';
-const tagObj = new CSS2DObject(tagEl);
-tagObj.center.set(0.5, 1);
-scene.add(tagObj);
+// A tag over every other ship: ENEMY (the one your guns are on is marked), ALLY, MERCHANT.
+const tags = [];
+function tagFor(i) {
+  if (tags[i]) return tags[i];
+  const el = document.createElement('div');
+  el.className = 'tag tag-ship';
+  el.style.pointerEvents = 'none';
+  el.innerHTML = '<div class="tag-title"></div><div class="tag-body"></div>';
+  const obj = new CSS2DObject(el);
+  obj.center.set(0.5, 1);
+  scene.add(obj);
+  return (tags[i] = { el, obj, title: el.querySelector('.tag-title'), body: el.querySelector('.tag-body'), text: '' });
+}
 let tagsOn = true;
 function updateTag() {
-  tagObj.visible = tagsOn && ships[1].group.visible;
-  tagObj.position.set(sim.enemy.x, 36, sim.enemy.z);
-  tagEl.querySelector('.tag-title').textContent = 'ENEMY';
-  tagEl.querySelector('.tag-body').textContent = `${kmText(sim.range())} · ${relName(sim.relBearing(sim.player))}`;
+  for (let i = 1; i < Math.max(sim.ships.length, tags.length); i++) {
+    const s = sim.ships[i];
+    if (!s) { if (tags[i]) tags[i].obj.visible = false; continue; }
+    const t = tagFor(i);
+    t.obj.visible = tagsOn && !!ships[i]?.group.visible;
+    t.obj.position.set(s.x, 36, s.z);
+    const foe = s.team === 1;
+    const title = s.merchant ? 'MERCHANT' : foe ? (sim.player.target === i ? '▶ ENEMY' : 'ENEMY') : 'ALLY';
+    const body = `${kmText(sim.distance(sim.player, s))} · ${relName(wrapAngle(Math.atan2(s.z - sim.player.z, s.x - sim.player.x) - sim.player.psi))}${s.merchant ? ' · hold fire' : ''}`;
+    if (t.text !== title + body) {
+      t.title.textContent = title;
+      t.body.textContent = body;
+      t.el.classList.toggle('tag-ally', s.team === 0);
+      t.el.classList.toggle('tag-neutral', s.merchant);
+      t.text = title + body;
+    }
+  }
 }
+const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
 // --- Keys --------------------------------------------------------------------------------------------------------------------
 function restart() {
   sim.seed = (Date.now() % 100000) | 0;
   sim.reset();
   fx.clear();
+  syncShips(); // the ones that arrived go back to the pool
   for (const v of ships) v.wake.clear();
   tracers.forEach((t) => { t.on = false; });
   lastShell = null;
@@ -619,7 +707,19 @@ window.addEventListener('keydown', (e) => {
     const k = { ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd' }[e.key];
     radarKeys[k] = 1;
     sight.manual = true;
+    sight.lock = null;
     e.preventDefault();
+    return;
+  }
+  if (view === 'radar' && e.key === 'Enter') { lockSight(); e.preventDefault(); return; }
+  if (view === 'radar' && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_')) { // zoom the lens while held
+    radarKeys[e.key === '-' || e.key === '_' ? 'zo' : 'zi'] = 1;
+    e.preventDefault();
+    return;
+  }
+  if (e.key === 'Tab') { // the next enemy to fight, locked until she sinks
+    e.preventDefault();
+    if (!e.repeat) pickNextTarget();
     return;
   }
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
@@ -648,12 +748,15 @@ window.addEventListener('keydown', (e) => {
     case '?': setKeys(keysSheet.hidden); break;
     case 'Escape': if (!closePopovers() && view === 'radar') setView(viewBeforeRadar); break;
     case 's': setSound(!audio.enabled); break;
-    case ' ': if (view === 'radar') sight.manual = false; break;
+    case ' ': if (view === 'radar') { sight.manual = false; sight.lock = null; } break;
+    case '0': if (view === 'radar') sightZoomGoal = SIGHT_ZOOM0; break;
     default: return;
   }
   if (key !== 'Escape') e.preventDefault();
 });
 window.addEventListener('keyup', (e) => {
+  if (e.key === '+' || e.key === '=') radarKeys.zi = 0;
+  if (e.key === '-' || e.key === '_') radarKeys.zo = 0;
   if (e.key.startsWith('Arrow')) radarKeys[{ ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd' }[e.key]] = 0;
   if (e.key === 'ArrowLeft') input.left = 0;
   if (e.key === 'ArrowRight') input.right = 0;
@@ -674,13 +777,25 @@ function updateAim() {
 }
 
 // --- The radar view (the Solo Air Defense one) ----------------------------------------------------------------------------------
-// The fire-control sight on the bridge roof: a mount that turns at a limited rate. In AUTO it swings onto the enemy and holds her; the
-// arrows, a drag or the pad turn it by hand (MANUAL) over any part of her hull. The shell is aimed at the hull point under the
-// crosshair (the fire control leads that point), F or the Fire button shoots. The helm is locked until you go back.
+// The fire-control sight on the bridge roof: a mount that turns at a limited rate. In AUTO it swings onto the enemy you have targeted and holds
+// her; the arrows, a drag or the pad turn it by hand (MANUAL) over any part of any ship. The lens zooms (wheel, + and -, the pad's buttons)
+// until a compartment fills the view, and each enemy hull carries its compartments as marks you can click to lay the sight on. The shell is
+// aimed at the hull point under the crosshair (the fire control leads that point), F or the Fire button shoots. A merchant or a friendly ship
+// under the crosshair is not fired on. The helm is locked until you go back.
 const SIGHT_RATE = THREE.MathUtils.degToRad(55);
-const sight = { aim: new THREE.Vector3(1, 0.03, 0), manual: false, fresh: true, omega: 0, dragYaw: 0, dragPitch: 0, zone: null };
-const radarKeys = { l: 0, r: 0, u: 0, d: 0 };
-let sightZoom = 1.5;
+const SIGHT_ZOOM0 = 1.5; // the lens multiplier you start at (smaller is closer)
+// `lock` holds the sight on a point of a hull ({ ship, local }, in her frame) as she sails: a compartment you clicked, or the point under the
+// crosshair when you press Enter. Aiming by hand, or Space, lets it go.
+const sight = { aim: new THREE.Vector3(1, 0.03, 0), manual: false, fresh: true, omega: 0, dragYaw: 0, dragPitch: 0, zone: null, ship: null, warn: null, lock: null, hit: null };
+function lockSight() { // Enter: the point under the crosshair
+  if (!sight.hit) return;
+  sight.lock = { ship: sight.hit.ship, local: sight.hit.local.clone() };
+  sight.manual = false;
+}
+const radarKeys = { l: 0, r: 0, u: 0, d: 0, zi: 0, zo: 0 };
+let sightZoom = SIGHT_ZOOM0;
+let sightZoomGoal = SIGHT_ZOOM0;
+const zoomSight = (f) => { sightZoomGoal = clamp(sightZoomGoal * f, 0.1, 8); };
 const sightEl = document.createElement('div');
 sightEl.className = 'duel-sight';
 sightEl.hidden = true;
@@ -690,26 +805,48 @@ const sightTxt = sightEl.querySelector('.hs-txt');
 const radarEl = document.createElement('div');
 radarEl.className = 'duel-radar';
 radarEl.hidden = true;
-radarEl.innerHTML = '<div class="hr-pad">'
-  + '<div class="hr-acts"><button type="button" data-act="auto">Release / auto<kbd>Space</kbd></button><button type="button" data-act="back">Back to the helm<kbd>Esc</kbd></button></div>'
+radarEl.innerHTML = '<div class="hr-marks"></div><div class="hr-pad">'
+  + '<div class="hr-acts"><button type="button" data-act="lock">Hold this point<kbd>Enter</kbd></button><button type="button" data-act="auto">Release / auto<kbd>Space</kbd></button><button type="button" data-act="next">Next target<kbd>Tab</kbd></button><button type="button" data-act="back">Back to the helm<kbd>Esc</kbd></button></div>'
   + '<div class="hr-mid"><div class="hr-read"><b class="hr-mode">AUTO</b><span class="hr-brg"></span></div>'
+  + '<div class="hr-zoom"><button type="button" data-zoom="zo" aria-label="Zoom out">&minus;</button><span>Zoom <b class="hr-zv"></b><kbd>wheel / + -</kbd></span><button type="button" data-zoom="zi" aria-label="Zoom in">+</button></div>'
   + '<div class="hr-dpad"><button type="button" data-dir="u" aria-label="Aim up">▲</button><button type="button" data-dir="l" aria-label="Aim left">◀</button>'
   + '<i class="hr-hub"></i><button type="button" data-dir="r" aria-label="Aim right">▶</button><button type="button" data-dir="d" aria-label="Aim down">▼</button></div></div>'
   + '<div class="hr-acts"><button type="button" data-act="fire" class="hr-fire">Fire<kbd>F</kbd></button><button type="button" data-act="ammo">Change round<kbd>Q</kbd></button></div></div>';
 document.body.appendChild(radarEl);
 const radarMode = radarEl.querySelector('.hr-mode');
 const radarBrg = radarEl.querySelector('.hr-brg');
+const radarZoom = radarEl.querySelector('.hr-zv');
+const marksEl = radarEl.querySelector('.hr-marks');
 radarEl.addEventListener('pointerdown', (e) => {
+  const mark = e.target.closest('.hr-mark');
+  if (mark) { // a compartment on a hull: lay the sight on it
+    e.preventDefault();
+    const i = Number(mark.dataset.ship);
+    const g = ships[i]?.group;
+    if (!g) return;
+    sight.lock = { ship: i, local: new THREE.Vector3(ZONE_X[mark.dataset.comp], 7, 0), near: true };
+    sight.manual = false;
+    return;
+  }
   const b = e.target.closest('button');
   if (!b) return;
   e.preventDefault();
   const release = (fn) => { const up = () => { fn(); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); }; window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up); };
-  if (b.dataset.dir) { radarKeys[b.dataset.dir] = 1; sight.manual = true; release(() => { radarKeys[b.dataset.dir] = 0; }); }
+  if (b.dataset.dir) { radarKeys[b.dataset.dir] = 1; sight.manual = true; sight.lock = null; release(() => { radarKeys[b.dataset.dir] = 0; }); }
+  else if (b.dataset.zoom) { radarKeys[b.dataset.zoom] = 1; release(() => { radarKeys[b.dataset.zoom] = 0; }); }
   else if (b.dataset.act === 'fire') { input.fire = 1; release(() => { input.fire = 0; }); }
-  else if (b.dataset.act === 'auto') sight.manual = false;
+  else if (b.dataset.act === 'auto') { sight.manual = false; sight.lock = null; }
+  else if (b.dataset.act === 'lock') lockSight();
+  else if (b.dataset.act === 'next') pickNextTarget();
   else if (b.dataset.act === 'ammo') sim.switchAmmo(0);
   else if (b.dataset.act === 'back') setView(viewBeforeRadar);
 });
+function pickNextTarget() {
+  sight.lock = null; // a lock is on one ship's hull: a new target lets it go
+  const to = sim.cycleTarget(0);
+  if (to) say(`Target: enemy ${relName(wrapAngle(Math.atan2(to.z - sim.player.z, to.x - sim.player.x) - sim.player.psi))}, ${kmText(sim.distance(sim.player, to))}`, '', 1800);
+  return to;
+}
 let sightDrag = null;
 canvas.addEventListener('pointerdown', (e) => { if (e.button === 0 && view === 'radar') sightDrag = { x: e.clientX, y: e.clientY }; });
 window.addEventListener('pointerup', () => { sightDrag = null; });
@@ -718,11 +855,29 @@ window.addEventListener('pointermove', (e) => {
   const dx = e.clientX - sightDrag.x, dy = e.clientY - sightDrag.y;
   sightDrag = { x: e.clientX, y: e.clientY };
   sight.manual = true;
+  sight.lock = null;
   sight.dragYaw += dx * THREE.MathUtils.degToRad(camera.fov) / window.innerHeight;
   sight.dragPitch -= dy * THREE.MathUtils.degToRad(camera.fov) / window.innerHeight;
 });
-canvas.addEventListener('wheel', (e) => { if (view === 'radar') sightZoom = clamp(sightZoom * Math.exp(e.deltaY * 0.001), 0.4, 6); }, { passive: true });
-canvas.addEventListener('dblclick', () => { sightZoom = 1.5; });
+canvas.addEventListener('wheel', (e) => { if (view === 'radar') zoomSight(Math.exp(e.deltaY * 0.0012)); }, { passive: true });
+canvas.addEventListener('dblclick', () => { sightZoomGoal = SIGHT_ZOOM0; lookYaw = 0; lookPitch = -0.03; });
+// On the bridge a drag looks round the wheelhouse (as in Solo Air Defense): drag left and it turns left.
+let lookDrag = null;
+canvas.addEventListener('pointerdown', (e) => { if (e.button === 0 && view === 'bridge') lookDrag = { x: e.clientX, y: e.clientY }; });
+window.addEventListener('pointerup', () => { lookDrag = null; });
+window.addEventListener('pointermove', (e) => {
+  if (!lookDrag || view !== 'bridge') return;
+  const dx = e.clientX - lookDrag.x, dy = e.clientY - lookDrag.y;
+  lookDrag = { x: e.clientX, y: e.clientY };
+  lookYaw = ((lookYaw + dx * 0.25 + 540) % 360) - 180;
+  lookPitch = clamp(lookPitch - dy * 0.004, -0.9, 0.6);
+});
+// Which side of a hull faces the sight: +1 starboard, -1 port, in her frame.
+function nearSide(group) {
+  _c.copy(camera.position);
+  group.worldToLocal(_c);
+  return _c.z >= 0 ? 1 : -1;
+}
 const _sm = new THREE.Matrix4();
 const hullBox = new THREE.Box3(new THREE.Vector3(-HALF_LENGTH, 0, -HALF_BEAM), new THREE.Vector3(HALF_LENGTH, 18, HALF_BEAM));
 const sightRay = new THREE.Ray();
@@ -735,9 +890,22 @@ function aimSight(dt) {
   const r = _a.length() || 1;
   _a.divideScalar(r); // the way to the enemy
   if (sight.fresh) { sight.aim.set(Math.cos(sim.player.psi), 0.03, Math.sin(sim.player.psi)).normalize(); sight.fresh = false; sight.omega = 0; }
-  const lens = clamp((Math.atan(80 / r) * 2 * 180) / Math.PI * sightZoom, 1.2, 30);
-  if (sight.manual) {
-    const rate = THREE.MathUtils.degToRad(50) * clamp(lens / 40, 0.03, 1);
+  sightZoomGoal = clamp(sightZoomGoal * Math.exp((radarKeys.zo - radarKeys.zi) * dt * 1.3), 0.1, 8);
+  sightZoom += (sightZoomGoal - sightZoom) * (1 - Math.exp(-dt / 0.1));
+  const lens = clamp((Math.atan(80 / r) * 2 * 180) / Math.PI * sightZoom, 0.3, 30);
+  if (sight.lock) { // held on its point of her hull as she sails
+    const ls = sim.ships[sight.lock.ship], lg = ships[sight.lock.ship]?.group;
+    if (!ls || !lg || ls.tSunk !== null) sight.lock = null;
+    else {
+      lg.updateMatrixWorld(true);
+      const lp = _b.copy(sight.lock.local);
+      if (sight.lock.near) lp.z = nearSide(lg) * (HALF_BEAM - 0.3); // a compartment is hit on the side of the hull that faces you
+      _a.copy(lg.localToWorld(lp)).sub(camera.position).normalize();
+      if (sim.player.target !== sight.lock.ship) sim.setTarget(0, sight.lock.ship);
+    }
+  }
+  if (sight.manual && !sight.lock) {
+    const rate = THREE.MathUtils.degToRad(50) * clamp(lens / 40, 0.004, 1);
     let yaw = Math.atan2(sight.aim.z, sight.aim.x) + (radarKeys.r - radarKeys.l) * rate * dt + sight.dragYaw;
     const pitch = clamp(Math.asin(clamp(sight.aim.y, -1, 1)) + (radarKeys.u - radarKeys.d) * rate * dt + sight.dragPitch, -0.25, 0.6);
     yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
@@ -752,44 +920,128 @@ function aimSight(dt) {
   camera.lookAt(_b.copy(camera.position).add(sight.aim));
   setFov(lens);
 }
-// The shell goes where the crosshair is: the hull point the sight's ray meets (the fire control leads it), else the sea beside her.
+// The shell goes where the crosshair is: the hull point the sight's ray meets on the nearest ship (the fire control leads it), else the sea
+// beside the ship you are targeting. A hull that is not an enemy's (a merchant, a friend) is not fired on: the gun holds.
 function radarAimShell() {
   const p = sim.player;
-  sight.zone = null;
-  if (p.tSunk !== null || sim.enemy.tSunk !== null) { input.aim = null; return; }
-  const g = ships[1].group;
-  g.updateMatrixWorld(true);
+  sight.zone = null; sight.ship = null; sight.warn = null; sight.hit = null;
+  if (p.tSunk !== null || sim.winner !== null) { input.aim = null; return; }
   ships[0].group.localToWorld(_c.copy(BRIDGE_EYE));
   sightRay.origin.copy(_c);
   sightRay.direction.copy(sight.aim);
-  const local = sightRay.clone().applyMatrix4(_sm.copy(g.matrixWorld).invert());
-  const hit = local.intersectBox(hullBox, _a);
-  let P;
-  if (hit) { sight.zone = zoneAt(_a.x); P = g.localToWorld(_a.clone()); }
-  else { // off her hull: the point on the vertical plane through her, square to the line of sight
-    const d = _b.set(sim.enemy.x - _c.x, 0, sim.enemy.z - _c.z);
-    const dist = d.length() || 1;
-    const n = d.divideScalar(dist);
-    const denom = sight.aim.dot(n);
-    if (denom < 1e-4) { input.aim = null; return; }
-    const tt = (new THREE.Vector3(sim.enemy.x, 0, sim.enemy.z).sub(_c).dot(n)) / denom;
-    P = _c.clone().addScaledVector(sight.aim, tt);
-    P.y = Math.max(0, P.y);
+  let best = -1, bestD = Infinity;
+  const bestLocal = new THREE.Vector3();
+  for (let i = 1; i < sim.ships.length; i++) {
+    const s = sim.ships[i], g = ships[i]?.group;
+    if (!g || !g.visible || (s.tSunk !== null && sim.t - s.tSunk > 6)) continue;
+    g.updateMatrixWorld(true);
+    const local = sightRay.clone().applyMatrix4(_sm.copy(g.matrixWorld).invert());
+    if (!local.intersectBox(hullBox, _a)) continue;
+    const d = local.origin.distanceTo(_a);
+    if (d < bestD) { bestD = d; best = i; bestLocal.copy(_a); }
   }
-  const sol = sim.solve(p, MAIN_MOUNT, MUZZLE_V, true, {}, { p: [P.x, P.y, P.z], v: [p.est[0], 0, p.est[1]] });
-  input.aim = { yaw: sol.yaw, pitch: sol.pitch };
+  if (best >= 0) {
+    const s = sim.ships[best];
+    if (s.team === 1 && s.tSunk === null) {
+      const P = ships[best].group.localToWorld(bestLocal.clone());
+      sight.zone = zoneAt(bestLocal.x);
+      sight.ship = best;
+      sight.hit = { ship: best, local: bestLocal.clone() };
+      if (sim.player.target !== best && sight.manual) sim.setTarget(0, best);
+      const e = sim.estOf(p, s);
+      const sol = sim.solve(p, MAIN_MOUNT, MUZZLE_V, true, {}, { p: [P.x, P.y, P.z], v: [e[0], 0, e[1]] });
+      input.aim = { yaw: sol.yaw, pitch: sol.pitch, ship: best };
+    } else {
+      sight.warn = s.tSunk !== null ? 'SINKING' : s.merchant ? 'MERCHANT: HOLD FIRE' : 'FRIENDLY: HOLD FIRE';
+      input.aim = null;
+    }
+    return;
+  }
+  const tgt = sim.enemy;
+  if (tgt.tSunk !== null) { input.aim = null; return; }
+  const d = _b.set(tgt.x - _c.x, 0, tgt.z - _c.z); // off any hull: the point on the vertical plane through her, square to the line of sight
+  const dist = d.length() || 1;
+  const n = d.divideScalar(dist);
+  const denom = sight.aim.dot(n);
+  if (denom < 1e-4) { input.aim = null; return; }
+  const tt = (new THREE.Vector3(tgt.x, 0, tgt.z).sub(_c).dot(n)) / denom;
+  const P = _c.clone().addScaledVector(sight.aim, tt);
+  P.y = Math.max(0, P.y);
+  const e = sim.estOf(p, tgt);
+  const sol = sim.solve(p, MAIN_MOUNT, MUZZLE_V, true, {}, { p: [P.x, P.y, P.z], v: [e[0], 0, e[1]] });
+  input.aim = { yaw: sol.yaw, pitch: sol.pitch, ship: tgt.idx };
 }
+// The compartments of every enemy hull as marks on the screen: a dot each, with the name and its health once the lens is close enough to
+// tell them apart. A click lays the sight on one.
+const marks = new Map();
+function markFor(key, i, id) {
+  let m = marks.get(key);
+  if (!m) {
+    m = document.createElement('button');
+    m.type = 'button';
+    m.className = 'hr-mark';
+    m.dataset.ship = String(i);
+    m.dataset.comp = id;
+    m.innerHTML = '<i></i><span></span>';
+    marksEl.appendChild(m);
+    marks.set(key, m);
+  }
+  return m;
+}
+function updateMarks() {
+  const shown = new Set();
+  if (view === 'radar') {
+    const W = window.innerWidth, H = window.innerHeight;
+    for (let i = 1; i < sim.ships.length; i++) {
+      const s = sim.ships[i], g = ships[i]?.group;
+      if (!g || s.team !== 1 || s.tSunk !== null || !g.visible) continue;
+      const dist = Math.max(1, sim.distance(sim.player, s));
+      const ppm = H / (2 * dist * Math.tan(rad(camera.fov / 2))); // pixels to a metre at her range
+      const spacing = 24 * ppm; // between the two nearest compartments
+      if (spacing < 7) continue;
+      const side = nearSide(g) * (HALF_BEAM - 0.3);
+      for (const id of COMP_IDS) {
+        g.localToWorld(_a.set(ZONE_X[id], 7, side));
+        _a.project(camera);
+        if (_a.z > 1 || Math.abs(_a.x) > 1.05 || Math.abs(_a.y) > 1.05) continue;
+        const key = `${i}:${id}`;
+        const m = markFor(key, i, id);
+        shown.add(key);
+        const f = s.comp[id] / COMPARTMENTS[id].hp;
+        m.style.transform = `translate(${((_a.x * 0.5 + 0.5) * W).toFixed(1)}px, ${((-_a.y * 0.5 + 0.5) * H).toFixed(1)}px)`;
+        m.hidden = false;
+        const aimed = sight.ship === i && sight.zone === id;
+        m.classList.toggle('aim', aimed);
+        m.classList.toggle('out', f <= 0);
+        m.classList.toggle('bad', f > 0 && f < 0.5);
+        m.classList.toggle('hurt', f >= 0.5 && f < 0.99);
+        const label = m.lastChild;
+        const text = spacing >= 80 || aimed ? `${COMP_LABEL[id]} ${f <= 0 ? 'OUT' : `${Math.round(f * 100)}%`}` : '';
+        if (label.textContent !== text) label.textContent = text;
+      }
+    }
+  }
+  for (const [key, m] of marks) if (!shown.has(key)) m.hidden = true;
+}
+const COMP_LABEL = { gun: '76 mm GUN', bridge: 'BRIDGE', engine: 'ENGINE', guns: '30 mm', steering: 'STEERING' };
 function updateRadarUi() {
+  updateMarks();
   if (view !== 'radar') return;
-  radarMode.textContent = sight.manual ? 'MANUAL' : 'AUTO';
-  radarMode.classList.toggle('manual', sight.manual);
+  radarMode.textContent = sight.lock ? 'LOCKED' : sight.manual ? 'MANUAL' : 'AUTO';
+  radarMode.classList.toggle('manual', sight.manual && !sight.lock);
+  radarMode.classList.toggle('locked', !!sight.lock);
   const yaw = Math.atan2(sight.aim.z, sight.aim.x);
   const rel = Math.atan2(Math.sin(yaw - sim.player.psi), Math.cos(yaw - sim.player.psi));
-  radarBrg.textContent = `${relName(rel)} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${camera.fov.toFixed(1)}°`;
+  radarBrg.textContent = `${relName(rel)} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${camera.fov.toFixed(camera.fov < 3 ? 2 : 1)}°`;
+  radarZoom.textContent = `×${(30 / camera.fov).toFixed(camera.fov < 3 ? 0 : 1)}`;
   const g = sim.player.gun;
+  const foes = sim.ships.filter((o) => o.team === 1);
+  const which = foes.length > 1 ? ` ${foes.indexOf(sim.enemy) + 1}/${foes.length}` : '';
   sightEl.classList.toggle('lock', !!sight.zone);
   sightEl.classList.toggle('searching', !sight.zone);
-  sightTxt.textContent = `${sight.zone ? `AIM: ${COMPARTMENTS[sight.zone].name.toUpperCase()}` : 'Off her hull'} · ${kmText(sim.range())} · ${AMMO_TYPES[g.type].name} ${g.stock[g.type]} · ${gunStatus(sim.player)}`;
+  sightEl.classList.toggle('warn', !!sight.warn);
+  const aim = sight.zone ? `${sight.lock ? 'LOCKED' : 'AIM'}: ${COMPARTMENTS[sight.zone].name.toUpperCase()}` : sight.warn ?? 'Off her hull';
+  sightTxt.textContent = `${aim} · enemy${which} ${kmText(sim.range())} · ${AMMO_TYPES[g.type].name} ${g.stock[g.type]} · ${gunStatus(sim.player)}`;
   map.sight = { yaw, locked: !!sight.zone };
 }
 
@@ -814,12 +1066,13 @@ renderer.setAnimationLoop((now) => {
   const dt = Math.max(0, Math.min((now - last) / 1000, 0.1));
   last = now;
   frameDt = dt;
+  syncShips();
   updateAim();
   sim.advance(dt, input);
   handleEvents();
+  syncShips();
   env.ocean.material.uniforms.uTime.value = sim.t;
-  poseShip(0, dt);
-  poseShip(1, dt);
+  for (let i = 0; i < ships.length; i++) poseShip(i, dt);
   updateWeapons(dt);
   updateCamera();
   env.follow(camera.position);
@@ -843,4 +1096,4 @@ renderer.setAnimationLoop((now) => {
   if (frames++ === 0) loadingEl?.remove();
 });
 
-window.__duel = { sim, camera, controls, scene, renderer, ships, setView, restart, fx, hooks: eventHooks, input };
+window.__duel = { sim, camera, controls, scene, renderer, ships, setView, restart, fx, hooks: eventHooks, input, sight };
