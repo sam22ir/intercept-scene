@@ -167,24 +167,6 @@ function squadron(animate) {
     + burst(236, 132, 0.84, animate, 14);
 }
 
-// Fleet command: three of your frigates (green) are selected, a right-click sends them across the sea (the order pulse
-// and the dashed path), and a shell from their side sinks one of the enemy's.
-function fleet(animate) {
-  const ship = (x, y, a, cls) => `<g transform="translate(${x} ${y}) rotate(${a})"><path class="${cls}" d="M-20 -5H8L20 0L8 5H-20Z"/></g>`;
-  const grid = '<path class="a-line" d="M0 55H480M0 110H480M0 165H480M80 0V220M160 0V220M240 0V220M320 0V220M400 0V220"/>';
-  const go = 'M120 150Q220 150 300 110';
-  const ring = animate
-    ? `<circle class="a-ring" cx="300" cy="110" r="4" opacity="0"><animate attributeName="r" values="4;4;22;22" keyTimes="0;0.25;0.5;1" dur="${DUR}" ${FOREVER}/><animate attributeName="opacity" values="0;0;0.9;0;0" keyTimes="0;0.25;0.28;0.52;1" dur="${DUR}" ${FOREVER}/></circle>`
-    : '<circle class="a-ring" cx="300" cy="110" r="14" opacity="0.7"/>';
-  const sel = '<circle class="a-ring" cx="100" cy="150" r="28" opacity="0.6"/><circle class="a-ring" cx="100" cy="98" r="28" opacity="0.6"/><circle class="a-ring" cx="100" cy="46" r="28" opacity="0.6"/>';
-  const shot = 'M300 112Q360 60 410 70';
-  return `<rect class="a-water" width="480" height="220"/>${grid}${sel}${trail(go)}${ship(100, 46, 0, 'a-ship')}${ship(100, 98, 0, 'a-ship')}${ship(100, 150, 0, 'a-ship')}`
-    + ship(410, 70, 180, 'a-foe') + ship(420, 140, 180, 'a-foe') + ring
-    + trail(shot)
-    + mover(missile, { path: shot, kt: [0.55, 0.78], still: [360, 74, -20] }, animate)
-    + burst(410, 70, 0.78, animate, 22);
-}
-
 const SCENES = {
   intercept: (ship, a) => intercept(ship, a),
   chute: (_s, a) => chute(a),
@@ -192,7 +174,6 @@ const SCENES = {
   helm: (_s, a) => helm(a),
   duel: (_s, a) => duel(a),
   squadron: (_s, a) => squadron(a),
-  fleet: (_s, a) => fleet(a),
   maneuvers2: (_s, a) => drill(2, a),
   maneuvers: (_s, a) => drill(3, a),
   formations: (_s, a) => drill(4, a),
