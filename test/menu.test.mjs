@@ -7,13 +7,13 @@ import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { MISSIONS, SHIPS, ENEMY_LEVELS, DEFAULT_LEVEL, GROUPS, FAMILIES, ENTRIES, entriesOf, groupOf, MISSION_IDS, FIXED_SHIP, menuText, missionById } from '../src/menu.js';
+import { MISSIONS, SHIPS, ENEMY_LEVELS, DEFAULT_LEVEL, FLEET_SCENARIOS, DEFAULT_SCENARIO, GROUPS, FAMILIES, ENTRIES, entriesOf, groupOf, MISSION_IDS, FIXED_SHIP, menuText, missionById } from '../src/menu.js';
 
 const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
 const html = read('../index.html');
 const src = {
   start: read('../src/start.js'), main: read('../src/main.js'), maneuvers: read('../src/maneuversMain.js'), fly: read('../src/flyMain.js'),
-  formations: read('../src/formationsMain.js'), helm: read('../src/helmMain.js'), duel: read('../src/duelMain.js'),
+  formations: read('../src/formationsMain.js'), helm: read('../src/helmMain.js'), duel: read('../src/duelMain.js'), fleet: read('../src/fleetMain.js'),
   timeline: read('../src/timeline.js'),
 };
 const urlOf = (f, q) => `${pathToFileURL(fileURLToPath(new URL(f, import.meta.url))).href}?${q}`;
@@ -50,8 +50,8 @@ const cardOf = (id) => chooser().match(new RegExp(`<button class="card"[^>]*data
 const text = (s) => s.replace(/<svg.*?<\/svg>/gs, '').replace(/<kbd>.*?<\/kbd>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
 describe('the menu data', () => {
-  it('lists the eight missions once each, in a fixed order, with every field', () => {
-    assert.deepEqual(MISSION_IDS, ['intercept', 'chute', 'fly', 'maneuvers2', 'maneuvers', 'formations', 'helm', 'duel']);
+  it('lists the nine missions once each, in a fixed order, with every field', () => {
+    assert.deepEqual(MISSION_IDS, ['intercept', 'chute', 'fly', 'maneuvers2', 'maneuvers', 'formations', 'helm', 'duel', 'fleet']);
     assert.equal(new Set(MISSIONS.map((m) => m.name)).size, MISSIONS.length, 'names are unique');
     for (const m of MISSIONS) {
       for (const f of ['name', 'kind', 'blurb', 'tagline', 'brand', 'button']) assert.ok(typeof m[f] === 'string' && m[f].length >= 3, `${m.id}.${f}`);
@@ -60,14 +60,14 @@ describe('the menu data', () => {
       assert.ok(m.brand.length <= 16, `${m.id}'s top-bar title fits`);
       if (!m.ship) assert.ok(m.fixed && m.fixedNote && m.sub, `${m.id} says what is fixed`);
     }
-    assert.deepEqual(MISSIONS.filter((m) => !m.ship).map((m) => m.id), ['fly', 'maneuvers2', 'maneuvers', 'formations', 'helm', 'duel']);
+    assert.deepEqual(MISSIONS.filter((m) => !m.ship).map((m) => m.id), ['fly', 'maneuvers2', 'maneuvers', 'formations', 'helm', 'duel', 'fleet']);
   });
 
   it('has three tabs by what the player does, each with real missions', () => {
     assert.deepEqual(GROUPS.map((g) => g.id), ['watch', 'play', 'drill']);
     assert.deepEqual(GROUPS.map((g) => g.name), ['Watch', 'Play', 'Drill']);
     assert.deepEqual(MISSIONS.filter((m) => m.group === 'watch').map((m) => m.id), ['intercept', 'chute']);
-    assert.deepEqual(MISSIONS.filter((m) => m.group === 'play').map((m) => m.id), ['fly', 'helm', 'duel']);
+    assert.deepEqual(MISSIONS.filter((m) => m.group === 'play').map((m) => m.id), ['fly', 'helm', 'duel', 'fleet']);
     assert.deepEqual(MISSIONS.filter((m) => m.group === 'drill').map((m) => m.id), ['maneuvers2', 'maneuvers', 'formations']);
     assert.ok(MISSIONS.every((m) => GROUPS.some((g) => g.id === m.group)), 'every mission is on a tab');
     for (const g of GROUPS) assert.ok(g.hint && entriesOf(g.id).length > 0, `${g.id} lists something`);
@@ -86,7 +86,7 @@ describe('the menu data', () => {
       assert.ok(m.tileSub && m.facts[0].startsWith(`${m.ships} ships`), `${id} says how many ships`);
     }
     assert.deepEqual(entriesOf('drill').map((e) => e.members), [FAMILIES[0].members]);
-    assert.deepEqual(ENTRIES.map((e) => e.id), ['intercept', 'chute', 'fly', 'helm', 'duel', 'maneuvers2'], 'the list order M steps through');
+    assert.deepEqual(ENTRIES.map((e) => e.id), ['intercept', 'chute', 'fly', 'helm', 'duel', 'fleet', 'maneuvers2'], 'the list order M steps through');
     assert.equal(new Set(ENTRIES.flatMap((e) => e.members)).size, MISSIONS.length, 'every mission is reachable from one entry');
     assert.equal(groupOf('formations'), 'drill');
     assert.equal(M.SHIP_IDS.length, 3);
@@ -292,6 +292,75 @@ describe('the words are true of the ship duel', () => {
     for (const arrow of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) assert.match(src.duel, new RegExp(arrow));
     assert.match(missionById('duel').tagline, /hold F/);
     assert.match(src.start, /duelMain\.js/);
+  });
+});
+
+describe('the words are true of fleet command', () => {
+  let FS, FO, SC;
+  before(async () => {
+    FS = await import(urlOf('../src/fleet.js', 'menu'));
+    FO = await import(urlOf('../src/fleetOrders.js', 'menu'));
+    SC = await import(urlOf('../src/fleetScoring.js', 'menu'));
+  });
+
+  it('a squadron of four frigates that the player only gives orders to', () => {
+    const m = missionById('fleet');
+    const sim = new FS.FleetSim({ seed: 1 });
+    assert.equal(sim.squad.length, 4);
+    assert.ok(m.tagline.includes('four frigates') && m.facts[0].startsWith('4 frigates'));
+    assert.equal(sim.n, 4);
+    assert.ok(sim.squad.every((s) => s.ai), 'every hull has a helmsman: the player only orders');
+    assert.equal(m.group, 'play');
+    assert.equal(m.level, true, 'the raiders have a level');
+    assert.match(m.fixedNote, /picket, two gun ships and an escort/);
+    assert.deepEqual(sim.squad.map((s) => s.role), ['picket', 'gun', 'gun', 'escort']);
+  });
+
+  it('the scenarios on the screen are the simulation\'s', () => {
+    assert.deepEqual(FLEET_SCENARIOS.map((x) => x.id), Object.keys(SC.SCENARIOS));
+    assert.ok(FLEET_SCENARIOS.some((x) => x.id === DEFAULT_SCENARIO));
+    for (const x of FLEET_SCENARIOS) assert.match(chooser(), new RegExp(`data-scenario="${x.id}"`));
+    assert.equal((chooser().match(/data-scenario="/g) ?? []).length, FLEET_SCENARIOS.length);
+    assert.equal(menuText('fleet').hasScenario, true);
+    assert.equal(menuText('duel').hasScenario, false);
+    assert.match(missionById('fleet').tagline, /Escort/);
+    assert.match(missionById('fleet').tagline, /defend a zone/);
+    assert.match(src.fleet, /__FLEET_SCENARIO/, 'the scene reads the scenario start.js sets');
+    assert.match(src.fleet, /__DUEL_LEVEL/, 'and the level');
+    assert.match(src.start, /__FLEET_SCENARIO/);
+    assert.match(src.start, /fleetMain\.js/);
+  });
+
+  it('the four formations, sector patrol and hold fire the text names are real orders', () => {
+    assert.deepEqual(Object.keys(FO.FORMATIONS), ['FORM 1', 'FORM 3', 'BOX', 'FORM D']);
+    for (const t of ['form', 'sector', 'stance', 'course', 'speed', 'goto']) assert.ok(FS.ORDER_TYPES.includes(t), t);
+    const m = missionById('fleet');
+    assert.match(m.tagline, /pause to plan/);
+    assert.match(m.tagline, /rewind with Z/);
+    assert.match(m.tagline, /on the radar/);
+    assert.equal(typeof new FS.FleetSim({ seed: 1 }).rewindTo, 'function');
+  });
+
+  it('every key it lists is really bound in the scene, with its behaviour', () => {
+    const m = missionById('fleet');
+    const keys = m.keys.map(([k]) => k);
+    for (const k of keys.filter((x) => /^[A-Z]$/.test(x))) assert.match(src.fleet, new RegExp(`case '${k.toLowerCase()}':`), `fleet: ${k}`);
+    assert.match(src.fleet, /case ' ':/, 'Space');
+    for (const arrow of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) assert.match(src.fleet, new RegExp(arrow));
+    assert.ok(keys.includes('← →') && keys.includes('↑ ↓') && keys.includes('Space') && keys.includes('0 – 4'));
+    assert.match(src.fleet, /'0'/);
+    const label = Object.fromEntries(m.keys);
+    assert.match(label.F, /formation/);
+    assert.match(label.P, /sector/);
+    assert.match(label.E, /hold fire/);
+    assert.match(label.X, /crew/);
+    assert.match(label.Z, /rewind/);
+    assert.match(label.Space, /pause/);
+    // the hold-fire key must not shadow a shared one (the readouts, the interface and the sound keys stay where they are)
+    for (const shared of ['h', 'c', 's', 'n']) assert.ok(!keys.includes(shared.toUpperCase()), `${shared} is not listed`);
+    assert.match(src.fleet, /case 'h':/);
+    assert.match(src.fleet, /case 'c':/);
+    assert.doesNotMatch(src.fleet, /DuelSim\(/, 'it runs on the fleet simulation');
   });
 });
 
