@@ -50,8 +50,8 @@ const cardOf = (id) => chooser().match(new RegExp(`<button class="card"[^>]*data
 const text = (s) => s.replace(/<svg.*?<\/svg>/gs, '').replace(/<kbd>.*?<\/kbd>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
 describe('the menu data', () => {
-  it('lists the eight missions once each, in a fixed order, with every field', () => {
-    assert.deepEqual(MISSION_IDS, ['intercept', 'chute', 'fly', 'maneuvers2', 'maneuvers', 'formations', 'helm', 'duel']);
+  it('lists the nine missions once each, in a fixed order, with every field', () => {
+    assert.deepEqual(MISSION_IDS, ['intercept', 'chute', 'fly', 'maneuvers2', 'maneuvers', 'formations', 'helm', 'duel', 'fleet']);
     assert.equal(new Set(MISSIONS.map((m) => m.name)).size, MISSIONS.length, 'names are unique');
     for (const m of MISSIONS) {
       for (const f of ['name', 'kind', 'blurb', 'tagline', 'brand', 'button']) assert.ok(typeof m[f] === 'string' && m[f].length >= 3, `${m.id}.${f}`);
@@ -60,14 +60,14 @@ describe('the menu data', () => {
       assert.ok(m.brand.length <= 16, `${m.id}'s top-bar title fits`);
       if (!m.ship) assert.ok(m.fixed && m.fixedNote && m.sub, `${m.id} says what is fixed`);
     }
-    assert.deepEqual(MISSIONS.filter((m) => !m.ship).map((m) => m.id), ['fly', 'maneuvers2', 'maneuvers', 'formations', 'helm', 'duel']);
+    assert.deepEqual(MISSIONS.filter((m) => !m.ship).map((m) => m.id), ['fly', 'maneuvers2', 'maneuvers', 'formations', 'helm', 'duel', 'fleet']);
   });
 
   it('has three tabs by what the player does, each with real missions', () => {
     assert.deepEqual(GROUPS.map((g) => g.id), ['watch', 'play', 'drill']);
     assert.deepEqual(GROUPS.map((g) => g.name), ['Watch', 'Play', 'Drill']);
     assert.deepEqual(MISSIONS.filter((m) => m.group === 'watch').map((m) => m.id), ['intercept', 'chute']);
-    assert.deepEqual(MISSIONS.filter((m) => m.group === 'play').map((m) => m.id), ['fly', 'helm', 'duel']);
+    assert.deepEqual(MISSIONS.filter((m) => m.group === 'play').map((m) => m.id), ['fly', 'helm', 'duel', 'fleet']);
     assert.deepEqual(MISSIONS.filter((m) => m.group === 'drill').map((m) => m.id), ['maneuvers2', 'maneuvers', 'formations']);
     assert.ok(MISSIONS.every((m) => GROUPS.some((g) => g.id === m.group)), 'every mission is on a tab');
     for (const g of GROUPS) assert.ok(g.hint && entriesOf(g.id).length > 0, `${g.id} lists something`);
@@ -86,7 +86,7 @@ describe('the menu data', () => {
       assert.ok(m.tileSub && m.facts[0].startsWith(`${m.ships} ships`), `${id} says how many ships`);
     }
     assert.deepEqual(entriesOf('drill').map((e) => e.members), [FAMILIES[0].members]);
-    assert.deepEqual(ENTRIES.map((e) => e.id), ['intercept', 'chute', 'fly', 'helm', 'duel', 'maneuvers2'], 'the list order M steps through');
+    assert.deepEqual(ENTRIES.map((e) => e.id), ['intercept', 'chute', 'fly', 'helm', 'duel', 'fleet', 'maneuvers2'], 'the list order M steps through');
     assert.equal(new Set(ENTRIES.flatMap((e) => e.members)).size, MISSIONS.length, 'every mission is reachable from one entry');
     assert.equal(groupOf('formations'), 'drill');
     assert.equal(M.SHIP_IDS.length, 3);

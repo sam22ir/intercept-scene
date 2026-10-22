@@ -54,7 +54,7 @@ async function launch(id) {
   globalThis.__SHIP_VARIANT = id;
   // The maneuvers and fly missions have their own scenes; scenario.js (which the ship model imports) just sees
   // an intercept for the first and a recovery (no scripted missile to simulate) for the second.
-  globalThis.__SCENARIO = isDrill(mode) || mode === 'formations' ? 'intercept' : mode === 'fly' || mode === 'helm' || mode === 'duel' ? 'chute' : mode;
+  globalThis.__SCENARIO = isDrill(mode) || mode === 'formations' ? 'intercept' : mode === 'fly' || mode === 'helm' || mode === 'duel' || mode === 'fleet' ? 'chute' : mode;
   if (isDrill(mode)) globalThis.__DRILL_SHIPS = mode === 'maneuvers2' ? 2 : 3;
   if (menuText(mode, id).hasShip) { // the missions without a choice leave it alone
     write('localStorage', 'intercept.ship', id);
@@ -80,7 +80,7 @@ async function launch(id) {
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
   try {
     await (isDrill(mode) ? import('./maneuversMain.js') : mode === 'formations' ? import('./formationsMain.js')
-      : mode === 'fly' ? import('./flyMain.js') : mode === 'helm' ? import('./helmMain.js') : mode === 'duel' ? import('./duelMain.js') : import('./main.js'));
+      : mode === 'fly' ? import('./flyMain.js') : mode === 'helm' ? import('./helmMain.js') : mode === 'duel' ? import('./duelMain.js') : mode === 'fleet' ? import('./fleetMain.js') : import('./main.js'));
   } catch (err) {
     showFatal(err);
   }
@@ -244,7 +244,7 @@ try {
 const rememberedMode = read('localStorage', 'intercept.mode');
 mode = MODES.includes(modeFromUrl) ? modeFromUrl : (MODES.includes(rememberedMode) ? rememberedMode : 'intercept');
 const validShip = fromUrl === 'fwd' || fromUrl === 'aft';
-if ((validShip || isDrill(mode) || mode === 'formations' || mode === 'fly' || mode === 'helm' || mode === 'duel') && !forceChooser && (skipChooser || scripted)) { level = validLevel(levelFromUrl) ?? validLevel(read('localStorage', 'intercept.level.duel')) ?? DEFAULT_LEVEL; launch(validShip ? fromUrl : 'fwd'); }
+if ((validShip || isDrill(mode) || mode === 'formations' || mode === 'fly' || mode === 'helm' || mode === 'duel' || mode === 'fleet') && !forceChooser && (skipChooser || scripted)) { level = validLevel(levelFromUrl) ?? validLevel(read('localStorage', 'intercept.level.duel')) ?? DEFAULT_LEVEL; launch(validShip ? fromUrl : 'fwd'); }
 else showChooser(validShip ? fromUrl : null, validLevel(levelFromUrl));
 
 // The top bar's Menu button goes back to the main menu through each scene's own handler on #btn-ship.

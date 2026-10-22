@@ -154,6 +154,23 @@ export const MISSIONS = [
     sub: 'frigate duel',
     button: 'Open fire',
   },
+  {
+    id: 'fleet',
+    group: 'play',
+    name: 'Fleet command',
+    kind: 'Manual',
+    blurb: 'Command a squadron from above with the mouse',
+    tagline: 'A strategy game from above. Select your frigates with a click or a dragged box, right-click the sea to send them there, right-click an enemy to attack her. Shift queues orders. A squadron given one move order sails in line abreast, and every ship fires at what comes in range by herself. Sink the enemy squadron before she sinks yours.',
+    facts: ['3 frigates against 3', 'mouse orders, Shift queues them', 'pause and speed up the fight'],
+    keys: [['click · drag', 'select ships, or a box'], ['right-click', 'move, or attack an enemy'], ['Shift', 'queue orders'], ['Space', 'pause'], ['E · X · F', 'all ships, stop, find'], ['WASD · wheel', 'pan and zoom'], ['+ −', 'game speed'], ['R', 'fight again']],
+    ship: false,
+    level: true,
+    fixed: 'you command',
+    fixedNote: 'Three frigates: you give the orders.',
+    brand: 'Fleet command',
+    sub: 'squadron battle',
+    button: 'Take command',
+  },
 ];
 
 export const SHIPS = [
