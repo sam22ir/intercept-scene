@@ -565,10 +565,10 @@ function setView(v) {
 // The orbit view: a level camera (the horizon sits in the middle of the screen) at the side of the line between the two ships, far enough back
 // that both stand in the gap between the readouts. A drag swings it round them, the wheel moves it in and out; it follows both. With no
 // enemy in sight it frames your ship alone.
-let orbitFresh = true, orbitAz = 0, orbitZoom = 1;
+let orbitFresh = true, orbitAz = 0, orbitZoom = 1, orbitEl = 0; // orbitEl: the drag's lift of the camera (radians above the level view)
 const orbitPos = new THREE.Vector3(), orbitLook = new THREE.Vector3();
 let orbitDist = 300;
-function orbitOnBoth() { orbitFresh = true; orbitAz = 0; orbitZoom = 1; }
+function orbitOnBoth() { orbitFresh = true; orbitAz = 0; orbitZoom = 1; orbitEl = 0; }
 function orbitCamera() {
   setFov(50);
   const p = sim.player, e = sim.enemy;
@@ -586,15 +586,17 @@ function orbitCamera() {
   orbitDist += (want - orbitDist) * k;
   const ang = Math.atan2(ux, -uz) + orbitAz; // the camera stands on the line's left, rotated by the drag
   orbitLook.set(mx, 22, mz);
-  orbitPos.set(mx + Math.cos(ang) * orbitDist, 22, mz + Math.sin(ang) * orbitDist);
+  orbitPos.set(mx + Math.cos(ang) * orbitDist * Math.cos(orbitEl), 22 + Math.sin(orbitEl) * orbitDist, mz + Math.sin(ang) * orbitDist * Math.cos(orbitEl));
   camera.position.lerp(orbitPos, orbitFresh ? 1 : 1 - Math.exp(-frameDt / 0.25));
   camera.lookAt(orbitLook);
+  // The horizon stands 70 % of the way up the screen (a view tilted down by the angle that puts it there); lifting the camera by hand takes the tilt away.
+  camera.rotateX(-Math.atan(0.4 * Math.tan(rad(camera.fov / 2))) * clamp(1 - orbitEl / 0.5, 0, 1));
   orbitFresh = false;
 }
 canvas.addEventListener('pointerdown', (e) => {
   if (view !== 'orbit') return;
-  let x = e.clientX;
-  const move = (ev) => { orbitAz -= (ev.clientX - x) * 0.006; x = ev.clientX; };
+  let x = e.clientX, y = e.clientY;
+  const move = (ev) => { orbitAz -= (ev.clientX - x) * 0.006; orbitEl = clamp(orbitEl + (ev.clientY - y) * 0.004, 0, 1.25); x = ev.clientX; y = ev.clientY; };
   const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
