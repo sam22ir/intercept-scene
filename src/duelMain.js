@@ -60,6 +60,7 @@ const fx = createLiveFx(scene);
 
 const BRIDGE_EYE = new THREE.Vector3(16.9, 11.4, 0); // the long-lens sight on the bridge roof, in the ship's frame
 const HELM_EYE = new THREE.Vector3(11.7, 11.0, 0); // inside the wheelhouse, behind the helm wheel (models/bridge.js; as in Solo Air Defense)
+let aboveAng = 0, aboveFresh = true; // the Above view's heading of the screen, eased
 let camYaw = 0, camPitch = 0; // behind and above: the drag's swing round the ship and lift, back to nothing on every view change
 let lookYaw = 0; // bridge: degrees off the bow, + to starboard
 let lookPitch = -0.03;
@@ -549,7 +550,7 @@ function setView(v) {
     say('Aim: arrows · lock: Space · fire: F · Esc: helm', 'warn', 4200);
   } else if (v !== 'radar' && view === 'radar') setManual(radarPrevManual); // the gun goes on firing: a latched FIRE or a held key carries over
   view = v;
-  camYaw = camPitch = 0; lookYaw = 0; lookPitch = -0.03; // going back to a view always opens on its default angle
+  camYaw = camPitch = 0; aboveFresh = true; lookYaw = 0; lookPitch = -0.03; // going back to a view always opens on its default angle
   radarKeys.l = radarKeys.r = radarKeys.u = radarKeys.d = radarKeys.zi = radarKeys.zo = 0;
   sight.manual = false; // the radar's own controls start on automatic every time
   sight.lock = null;
@@ -662,10 +663,17 @@ function updateCamera() {
   } else if (view === 'radar') {
     aimSight(frameDt);
   } else if (view === 'above') {
+    // Straight down with the two ships side by side across the screen: the line from the enemy to you runs left to right (you on the right),
+    // eased as they move, and the height takes the width of the window, not just the range.
     setFov(50);
     const mx = (sim.player.x + foe.x) / 2, mz = (sim.player.z + foe.z) / 2;
-    const h = Math.max(380, sim.range() * 1.05);
-    camera.up.set(Math.cos(sim.player.psi + camYaw), 0, Math.sin(sim.player.psi + camYaw));
+    const want = Math.atan2(sim.player.z - foe.z, sim.player.x - foe.x); // the screen's right, as an angle on the sea (x, z)
+    aboveAng = aboveFresh ? want : aboveAng + wrapAngle(want - aboveAng) * (1 - Math.exp(-frameDt / 0.5));
+    aboveFresh = false;
+    const tanH = Math.tan(rad(camera.fov / 2)) * camera.aspect;
+    const h = Math.max(380, (sim.range() * 1.45) / (2 * tanH)); // room for the readouts either side
+    const a = aboveAng + camYaw;
+    camera.up.set(Math.sin(a), 0, -Math.cos(a)); // up = (dz, -dx)
     camera.position.set(mx, h, mz);
     camera.lookAt(mx, 0, mz);
   }
