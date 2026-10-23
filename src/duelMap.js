@@ -5,7 +5,7 @@ import { kmText, GUN_BLOCK } from './hull.js';
 // heading up, with range rings, a turning sweep, the north mark on the rim, the 76 mm's arc, and the other ships. Click it to change the range; N hides it.
 
 const SCALES = [2000, 4000, 8000, 16000]; // metres to the rim
-const ZOOMS = ['auto', 2000, 6000, 12000]; // what a click cycles through
+const ZOOMS = ['auto', 2000, 6000]; // what a click cycles through
 const SWEEP = 3; // s per turn of the aerial
 const TRACK_STEP = 1; // s between own-track samples
 const TRACK_MAX = 240;
