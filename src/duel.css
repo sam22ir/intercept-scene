@@ -439,3 +439,21 @@ body.duel-radarview .duel-ship { display: none; }
 .rc-gun .rc-lock.on { background: #c0392b; border-color: #ff7a7d; }
 .rc-main { width: 250px; }
 @media (max-width: 900px) { .rc-dial { width: 124px; height: 124px; } .rc-main { width: 200px; } }
+
+/* The top bar is a single gear; its menu opens under it. */
+body.mission-duel .bar-tools > :not(#btn-menu) { display: none; }
+body.mission-duel .bar-tools { border-left: 0; padding-left: 0; }
+body.mission-duel .topbar { padding: 4px; }
+body.mission-duel #btn-menu { min-width: 40px; min-height: 36px; padding: 0; place-items: center; }
+body.mission-duel #btn-menu svg { width: 22px; height: 22px; }
+body.mission-duel #btn-fold { display: none; }
+body.mission-duel #menu { left: 0; right: auto; min-width: 250px; }
+body.mission-duel #menu .menu-h { padding: 8px 10px 3px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+body.mission-duel #menu .menu-slider { padding: 4px 10px 8px; }
+body.mission-duel #menu button { color: var(--text); font-size: 13px; }
+body.mission-duel #menu #btn-ship { color: var(--accent); }
+body.mission-duel #menu #btn-fold { display: flex; }
+body.mission-duel #menu button[aria-pressed]::after { content: 'OFF'; order: 3; font: 700 9px system-ui, sans-serif; letter-spacing: 0.08em; opacity: 0.5; }
+body.mission-duel #menu button[aria-pressed="true"]::after { content: 'ON'; color: #3ddc84; opacity: 1; }
+body.mission-duel #menu button kbd { margin-left: auto; }
+body.mission-duel #menu #btn-fullscreen { display: flex; }

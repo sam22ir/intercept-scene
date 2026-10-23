@@ -910,6 +910,38 @@ soundButton.title = 'Sound: the guns, the hits, the sea and the engines (S)';
 if (!audio.supported) { soundButton.disabled = true; soundButton.title = 'Sound is not available in this browser'; }
 soundButton.addEventListener('click', () => setSound(!audio.enabled));
 
+// The top bar is one gear: its menu holds everything the battle needs (the old row of buttons is hidden in duel.css).
+{
+  menuButton.innerHTML = '<svg><use href="#i-gear"/></svg>';
+  menuButton.title = 'Settings';
+  menuButton.setAttribute('aria-label', 'Settings');
+  const tagsButton = document.createElement('button');
+  tagsButton.id = 'btn-tags';
+  const fsButton = document.querySelector('#btn-fullscreen');
+  const item = (b, label, key) => { b.className = ''; b.setAttribute('role', 'menuitem'); b.innerHTML = key ? `${label}<kbd>${key}</kbd>` : label; return b; };
+  const head = (t) => { const h = document.createElement('div'); h.className = 'menu-h'; h.textContent = t; return h; };
+  const weatherBtn = document.querySelector('#btn-weather'), seaRow = document.querySelector('#sea-row');
+  item(restartButton, 'Fight again', 'R');
+  item(document.querySelector('#btn-ship'), 'Main menu');
+  item(hudButton, 'Readouts', 'H');
+  item(mapButton, 'Mini map', 'N');
+  item(tagsButton, 'Ship tags', 'L');
+  item(soundButton, 'Sound', 'S');
+  item(fsButton, 'Fullscreen');
+  item(foldButton, 'Hide the interface', 'C');
+  item(document.querySelector('#btn-keys'), 'Keyboard shortcuts', '?');
+  menuEl.replaceChildren(head('Battle'), restartButton, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, tagsButton, foldButton, fsButton,
+    head('Sound'), soundButton, head('Sea'), ...[seaRow, weatherBtn].filter(Boolean), head('Help'), document.querySelector('#btn-keys'));
+  [hudButton, mapButton, soundButton, tagsButton].forEach((b) => b.setAttribute('aria-pressed', 'true'));
+  tagsButton.addEventListener('click', () => { tagsOn = !tagsOn; refreshGear(); });
+  fsButton.addEventListener('click', () => { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch { /* not allowed here */ } });
+  function refreshGear() {
+    const set = (b, on) => { b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); };
+    set(hudButton, hudOn); set(mapButton, mapOn); set(tagsButton, tagsOn); set(soundButton, audio.enabled);
+  }
+  menuButton.addEventListener('click', refreshGear); // (tagsOn is declared further down: read it only once the menu opens)
+}
+
 const keysEl = document.createElement('div');
 keysEl.id = 'fly-keys';
 keysEl.className = 'fly-keys';
