@@ -628,6 +628,7 @@ function gunStatus(s) {
   if (s.comp.gun <= 0) return 'OUT';
   if (g.ammo <= 0) return 'NO AMMUNITION';
   if (s.idx === 0 && fireLatch) return 'FIRING · F stops';
+  if (g.landBlocked) return 'LAND IN THE WAY';
   const sol = Math.abs(sim.relBearing(s));
   if (sim.range() > MAIN_RANGE) return `OUT OF RANGE (${kmText(MAIN_RANGE)})`;
   if (sol > MAIN_ARC) return 'OUT OF ARC: turn her';
@@ -1477,7 +1478,7 @@ function updateRadarUi() {
   fireEl.classList.toggle('ready', gn.cool <= 0 && gn.onTarget && !sight.warn && !!sight.lock);
   fireEl.classList.toggle('weak', !sight.lock && !sight.warn);
   fireEl.classList.toggle('sea', !sight.lock && !sight.snap && !sight.warn);
-  fireEl.classList.toggle('hold', !!sight.warn || sim.player.comp.gun <= 0);
+  fireEl.classList.toggle('hold', !!sight.warn || sim.player.comp.gun <= 0 || gn.landBlocked);
   ammoEl.textContent = `${gn.stock.he + gn.stock.ap} rds`;
   const g = sim.player.gun;
   const foes = sim.ships.filter((o) => o.team === 1);

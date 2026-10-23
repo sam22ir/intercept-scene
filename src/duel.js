@@ -341,6 +341,26 @@ export class DuelSim {
       { x: START_RANGE * (1.15 + r() * 0.35), z: side * (950 + r() * 500), r: 240 + r() * 200, h: 70 + r() * 50 },
     ];
   }
+  // The height of the island under a point (-Infinity over the sea). The rock is taken a little wider than its radius: the drawn shore wobbles
+  // out to 1.12 r, and a shell or a sight line must not slip over the beach of what looks like land.
+  groundAt(x, z) {
+    let top = -Infinity;
+    for (const isl of this.islands) {
+      const r = isl.r * 1.1, dd = Math.hypot(x - isl.x, z - isl.z);
+      if (dd < r) top = Math.max(top, isl.h * (1 - (dd / r) ** 2) ** 1.2);
+    }
+    return top;
+  }
+  // Does land stand between the gun and the target along the straight line of fire? The guns hold fire then (the shell would burst on it).
+  landBetween(a, b) {
+    if (!this.islands.length) return false;
+    const n = Math.ceil(Math.hypot(b[0] - a[0], b[2] - a[2]) / 40);
+    for (let i = 1; i < n; i++) {
+      const f = i / n;
+      if (this.groundAt(a[0] + (b[0] - a[0]) * f, a[2] + (b[2] - a[2]) * f) > a[1] + (b[1] - a[1]) * f) return true;
+    }
+    return false;
+  }
   // Is the straight line between two points hidden by an island?
   blocked(ax, az, bx, bz) {
     for (const isl of this.islands) {
@@ -985,6 +1005,7 @@ export class DuelSim {
     let wantYaw = 0, wantPitch = rad(2);
     g.engaged = false;
     g.onTarget = false;
+    g.landBlocked = false;
     if (g.stock[g.type] <= 0 && g.ammo > 0) this.switchAmmo(s.idx); // the loaded kind ran out: the other is loaded
     const tgt = this.foe(s);
     const blind = this.scouting && s.team === 0 && tgt.team === 1 && tgt.det === false; // no radar contact: the fire control has nothing to lay on
@@ -996,6 +1017,7 @@ export class DuelSim {
       wantPitch = clamp(aim.pitch, MAIN_PITCH[0], MAIN_PITCH[1]);
       const at = this.ships[aim.ship] ?? tgt, M = this.toWorld(s, MAIN_MOUNT);
       g.engaged = at.tSunk === null && Math.hypot(at.x - M[0], at.z - M[2]) <= MAIN_RANGE;
+      if (g.engaged && this.landBetween(M, this.toWorld(at, [0, 6, 0]))) { g.engaged = false; g.landBlocked = true; }
     } else if (alive && s.manual && !s.ai) {
       // by hand but nothing pointed at yet: the gun holds where it is and cannot fire (never the fire control at the manual scatter)
       wantYaw = g.yaw; wantPitch = g.pitch;
@@ -1005,6 +1027,7 @@ export class DuelSim {
         wantYaw = sol.yaw;
         wantPitch = clamp(sol.pitch, MAIN_PITCH[0], MAIN_PITCH[1]);
         g.engaged = true;
+        if (this.landBetween(this.toWorld(s, MAIN_MOUNT), this.toWorld(tgt, [0, 6, 0]))) { g.engaged = false; g.landBlocked = true; }
       } else wantYaw = clamp(sol.yaw, -MAIN_ARC, MAIN_ARC);
     }
     g.yaw = wrapPi(g.yaw + clamp(wrapPi(wantYaw - g.yaw), -MAIN_YAW_RATE * dt, MAIN_YAW_RATE * dt));
@@ -1051,13 +1074,10 @@ export class DuelSim {
     const p0 = sh.p.slice();
     sh.v[1] -= G * dt;
     for (let k = 0; k < 3; k++) sh.p[k] += sh.v[k] * dt;
-    for (const isl of this.islands) { // an island stops the shell: it bursts on the slope
-      const dd = Math.hypot(sh.p[0] - isl.x, sh.p[2] - isl.z);
-      if (dd < isl.r && sh.p[1] < isl.h * (1 - (dd / isl.r) ** 2) ** 1.2) {
-        this.events.push({ type: 'impact', owner: sh.owner, pos: sh.p.slice() });
-        this.shells.splice(this.shells.indexOf(sh), 1);
-        return;
-      }
+    if (sh.p[1] < this.groundAt(sh.p[0], sh.p[2])) { // an island stops the shell: it bursts on the slope
+      this.events.push({ type: 'impact', owner: sh.owner, pos: sh.p.slice() });
+      this.shells.splice(this.shells.indexOf(sh), 1);
+      return;
     }
     const owner = this.ships[sh.owner];
     const tgt = this.foe(owner);
