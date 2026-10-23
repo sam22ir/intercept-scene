@@ -1448,7 +1448,7 @@ window.addEventListener('pointermove', (e) => {
   if (!swingDrag || (view !== 'behind' && view !== 'above')) return;
   const dx = e.clientX - swingDrag.x, dy = e.clientY - swingDrag.y;
   swingDrag = { x: e.clientX, y: e.clientY };
-  camYaw = wrapAngle(camYaw - dx * 0.006);
+  camYaw = wrapAngle(camYaw + dx * 0.006);
   if (view === 'behind') camPitch = clamp(camPitch + dy * 0.004, -0.12, 1.0);
 });
 const _w1 = new THREE.Vector3();
