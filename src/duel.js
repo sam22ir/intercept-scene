@@ -139,7 +139,7 @@ const COLLIDE_AGAIN = 4; // s before the same pair can collide again
 const PICK_EVERY = 0.5; // s between a ship's looks for a nearer target
 // When the others come (s, by the enemy's level) and from where: enemy frigates from her side of the horizon, the friendly one from behind you,
 // merchants across the line of fire.
-const ENEMY_WAVES = { easy: [110], normal: [80, 175], hard: [70, 140, 215] };
+const ENEMY_WAVES = { easy: [110], normal: [75, 140, 210], hard: [60, 105, 150, 200, 255] };
 const ALLY_WAVE = 95;
 export const FRIEND_MAX = 3; // friendly frigates the player can call in one battle (scouting)
 const FRIEND_WAIT = 6; // s before another can be called
@@ -187,9 +187,9 @@ const TRACK_PLAYER = 3;
 // `every` seconds; `range` the distance it wants to fight at; `speed` its telegraph order; `retreat` the hull fraction below
 // which it runs.
 export const LEVELS = {
-  easy: { name: 'Easy', think: 1.4, aim: 2.4, track: 6, base: 0, jink: 0, every: [99, 99], range: 3800, speed: 4, retreat: 0, crews: 1, ammo: 'he' },
-  normal: { name: 'Normal', think: 0.6, aim: 1.2, track: 4, base: rad(22), jink: rad(18), every: [9, 16], range: 3400, speed: 5, retreat: 0.25, crews: 2, ammo: 'mixed' },
-  hard: { name: 'Hard', think: 0.25, aim: 1.0, track: 2.5, base: rad(40), jink: rad(40), every: [5, 10], range: 3000, speed: 5, retreat: 0.3, crews: 3, ammo: 'smart' },
+  easy: { name: 'Easy', think: 1.4, aim: 2.4, track: 6, base: 0, jink: 0, every: [99, 99], range: 3800, speed: 4, retreat: 0, crews: 1, ammo: 'he', heli: null },
+  normal: { name: 'Normal', think: 0.6, aim: 1.2, track: 4, base: rad(22), jink: rad(18), every: [9, 16], range: 3400, speed: 5, retreat: 0.25, crews: 2, ammo: 'mixed', heli: { delay: 45, gun: 1.5, hit: 0.5, dmg: 0.5, mcool: 24, mfrac: 0.18, hp: 20, alt: 150 } },
+  hard: { name: 'Hard', think: 0.25, aim: 1.0, track: 2.5, base: rad(40), jink: rad(40), every: [5, 10], range: 3000, speed: 5, retreat: 0.3, crews: 3, ammo: 'smart', heli: { delay: 22, gun: 0.9, hit: 0.6, dmg: 0.65, mcool: 15, mfrac: 0.28, hp: 28, alt: 120 } },
 };
 
 function mulberry32(seed) {
@@ -241,9 +241,10 @@ function makeShip(idx, x, z, psi, team = idx === 0 ? 0 : 1, kind = 'frigate') {
 
 export class DuelSim {
   // `level` is the enemy's; `auto` ('easy' | 'normal' | 'hard') hands the player's ship to the same kind of helmsman (tests).
-  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, helmPlayer = false, scouting = false, intro = false, playerReload = 1, playerDamage = 1, easyGunSafe = false, firingReveals = false, playerFlankKn = 0, gunRange = GUN_RANGE, gatAnswers = false, headingFire = false } = {}) {
+  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, helmPlayer = false, scouting = false, intro = false, playerReload = 1, playerDamage = 1, easyGunSafe = false, firingReveals = false, playerFlankKn = 0, gunRange = GUN_RANGE, gatAnswers = false, headingFire = false, enemyHelis = false } = {}) {
     this.seed = seed;
     this.gunRange = gunRange; // reach of the 30 mm guns (the scene sets 500 m under the 76 mm)
+    this.enemyHelis = !!enemyHelis; // on Normal and Hard each enemy frigate sends a helicopter against you (the scene turns it on)
     this.headingFire = headingFire; // the player's gun lays on the enemy nearest her heading, not the nearest in range
     this.gatAnswers = gatAnswers; // the player's 30 mm fire by themselves while an enemy's are firing
     this.playerFlankKn = playerFlankKn; // the top of the player's telegraph in knots (0: the shared Flank), so other missions keep theirs
@@ -262,6 +263,7 @@ export class DuelSim {
     this.islands = [];
     this.hop = null; // the strike helicopter (see below)
     this.hmiss = []; // its missiles in the air
+    this.ehops = [];
     this.sea = null; // { hs, dir }: the waves' height and the direction they travel (the scene sets it; see setSea)
     this.realHandling = !!realHandling; // heavy handling (hull.js stepHullReal): slow rudder, a long swing, weight, a skid in turns (the scene turns it on)
     // The player's own ship handles as Solo Air Defense's frigate (the scene turns it on): hull.js stepHull at its own 70 m radius, a quick
@@ -300,6 +302,7 @@ export class DuelSim {
     this.pending = this.wavesOn ? this.planWaves() : [];
     this.islands = this.scouting ? this.planIslands(this.ships[1].z) : [];
     this.hmiss = [];
+    this.ehops = []; // the enemy's helicopters
     this.rngH = mulberry32((this.seed ^ 0x4e11) >>> 0); // the helicopter's own stream
     this.hop = this.scouting ? this.makeHop() : null;
     this.radarOn = !this.intro;
@@ -632,20 +635,106 @@ export class DuelSim {
       if (d <= step + 14) {
         this.hmiss.splice(this.hmiss.indexOf(m), 1);
         if (tgt.tSunk !== null) continue;
-        const dmg = COMPARTMENTS[m.comp].hp * HELI_MISSILE_FRACTION;
+        const dmg = COMPARTMENTS[m.comp].hp * (m.frac ?? HELI_MISSILE_FRACTION);
         this.damage(tgt, m.comp, dmg, SHELL_HULL, 0);
-        if (this.hop?.avenge) tgt.hp = Math.max(0, tgt.hp - 12); // it goes for the waterline
-        tgt.lastHitBy = 0;
+        if (!m.foe && this.hop?.avenge) tgt.hp = Math.max(0, tgt.hp - 12); // it goes for the waterline
+        tgt.lastHitBy = m.foe ? m.owner : 0;
         if (this.rngF() < 0.4) this.ignite(tgt, m.comp, 0.3);
         tgt.stats.taken += 1;
-        this.events.push({ type: 'hit', owner: 0, ship: tgt.idx, comp: m.comp, dmg, kind: 'ap', pos: [tgt.x, 6, tgt.z], local: [0, 6, 0], out: tgt.comp[m.comp] <= 0, neutral: false, heli: true });
-        this.radio(`Missile hit: ${COMPARTMENTS[m.comp].name.toLowerCase()}${tgt.comp[m.comp] <= 0 ? ' out' : ''}`);
+        this.events.push({ type: 'hit', owner: m.foe ? m.owner : 0, ship: tgt.idx, comp: m.comp, dmg, kind: 'ap', pos: [tgt.x, 6, tgt.z], local: [0, 6, 0], out: tgt.comp[m.comp] <= 0, neutral: false, heli: true });
+        if (!m.foe) this.radio(`Missile hit: ${COMPARTMENTS[m.comp].name.toLowerCase()}${tgt.comp[m.comp] <= 0 ? ' out' : ''}`);
         continue;
       }
       m.v = [(dx / d) * HELI_MISSILE_SPEED, (dy / d) * HELI_MISSILE_SPEED, (dz / d) * HELI_MISSILE_SPEED];
       m.p[0] += (dx / d) * step; m.p[1] += (dy / d) * step; m.p[2] += (dz / d) * step;
     }
   }
+  // --- the enemy's helicopters (Normal and Hard) ----------------------------------------------------------------------------
+  // Each enemy frigate sends one a while after she appears (after the first shot, in the opening). It climbs, flies at you and circles you,
+  // firing its gun at a random compartment and a missile now and then, until your 30 mm guns bring it down (they answer anything in reach).
+  stepEnemyHelis(dt) {
+    const me = this.ships[0];
+    const lv = LEVELS[this.level].heli;
+    for (const s of this.ships) {
+      if (!lv || s.team !== 1 || s.merchant || s.tSunk !== null || (this.intro && !this.shotFired)) continue;
+      if (s.heliAt === undefined) s.heliAt = this.t + lv.delay + this.rngH() * 6;
+      if (this.t >= s.heliAt && !s.heliOut) {
+        s.heliOut = true;
+        this.ehops.push({ mother: s.idx, phase: 'up', x: s.x, y: 12, z: s.z, yaw: Math.atan2(me.z - s.z, me.x - s.x), pitch: 0, roll: 0, rpm: 1, spin: 0, speed: 0, theta: 0, gCool: 2, mCool: 6, hp: lv.hp, aaT: 0, t: 0 });
+        this.events.push({ type: 'ewarn', text: 'Enemy helicopter airborne', kind: 'bad' });
+      }
+    }
+    const hp = lv ?? LEVELS.normal.heli;
+    const gunsOk = me.tSunk === null && me.comp.guns > 0;
+    for (const e of this.ehops) {
+      if (e.phase === 'gone') continue;
+      e.t += dt;
+      e.spin += 30 * e.rpm * dt;
+      if (e.phase === 'down') { // shot down: it falls, and the sea takes it
+        e.y -= 28 * dt; e.pitch += 0.6 * dt; e.roll += 1.4 * dt;
+        e.x += Math.cos(e.yaw) * e.speed * dt; e.z += Math.sin(e.yaw) * e.speed * dt;
+        if (e.y <= 0) { e.phase = 'gone'; this.events.push({ type: 'ehdown', pos: [e.x, 2, e.z], splash: true }); }
+        continue;
+      }
+      const R = 650;
+      if (me.tSunk !== null) { // nothing left to fight: it flies off
+        e.y += clamp(220 - e.y, -6 * dt, 6 * dt); e.x += Math.cos(e.yaw) * 55 * dt; e.z += Math.sin(e.yaw) * 55 * dt;
+        if (e.t > 600) e.phase = 'gone';
+        continue;
+      }
+      const dx = e.x - me.x, dz = e.z - me.z, d = Math.hypot(dx, dz);
+      if (e.phase === 'up') {
+        e.y += clamp(hp.alt - e.y, -6 * dt, 6 * dt);
+        e.speed = Math.min(52, e.speed + 12 * dt);
+        const want = Math.atan2(me.z - e.z, me.x - e.x);
+        e.yaw += clamp(wrapPi(want - e.yaw), -0.9 * dt, 0.9 * dt);
+        e.x += Math.cos(e.yaw) * e.speed * dt; e.z += Math.sin(e.yaw) * e.speed * dt;
+        e.pitch = -0.1; e.roll = 0;
+        if (d < R * 1.4 && e.y > hp.alt - 15) { e.phase = 'orbit'; e.theta = Math.atan2(dz, dx); }
+      } else {
+        e.theta += (44 / R) * dt;
+        const px = me.x + Math.cos(e.theta) * R, pz = me.z + Math.sin(e.theta) * R, k = Math.min(1, dt * 2.5);
+        e.x += (px - e.x) * k; e.z += (pz - e.z) * k;
+        e.y += clamp(hp.alt - e.y, -5 * dt, 5 * dt);
+        e.yaw = e.theta + Math.PI / 2; e.speed = 44; e.pitch = -0.06; e.roll = 0.32;
+      }
+      e.gCool = Math.max(0, e.gCool - dt); e.mCool = Math.max(0, e.mCool - dt);
+      if (e.gCool <= 0 && d <= 1300) { // its gun on a random compartment
+        e.gCool = hp.gun;
+        const live = COMP_IDS.filter((id) => me.comp[id] > 0);
+        this.events.push({ type: 'hgun', pos: [e.x, e.y - 1, e.z], to: [me.x + (this.rngH() - 0.5) * 60, 6, me.z + (this.rngH() - 0.5) * 60] });
+        if (live.length && this.rngH() < hp.hit) {
+          const id = live[Math.floor(this.rngH() * live.length)];
+          const dmg = this.level === 'easy' ? COMPARTMENTS[id].hp * EASY_HIT_FRACTION : hp.dmg;
+          this.damage(me, id, dmg, SHELL_HULL, 0);
+          me.lastHitBy = e.mother; me.stats.taken += 1;
+          this.events.push({ type: 'hit', owner: e.mother, ship: 0, comp: id, dmg, kind: 'he', pos: [me.x, 6, me.z], local: [0, 6, 0], out: me.comp[id] <= 0, neutral: false, heli: true });
+        }
+      }
+      if (e.mCool <= 0 && d <= 3200 && e.phase === 'orbit') { // a missile at a random compartment
+        e.mCool = hp.mcool + this.rngH() * 4;
+        const live = COMP_IDS.filter((id) => me.comp[id] > 0);
+        if (live.length) {
+          const id = live[Math.floor(this.rngH() * live.length)];
+          this.hmiss.push({ p: [e.x, e.y - 2, e.z], v: [0, 0, 0], target: 0, comp: id, t0: this.t, frac: hp.mfrac, foe: true, owner: e.mother });
+          this.events.push({ type: 'hmissile', ship: 0, comp: id, pos: [e.x, e.y - 2, e.z] });
+          this.events.push({ type: 'ewarn', text: 'Missile launched at you', kind: 'bad' });
+        }
+      }
+      if (gunsOk && d <= this.gunRange && this.aaRound(me)) { // your 30 mm guns answer anything in their reach
+        e.aaT -= dt;
+        if (e.aaT <= 0) {
+          e.aaT = 0.45;
+          this.events.push({ type: 'hgun', pos: this.toWorld(me, GUN_MOUNT_LOCAL[0]), to: [e.x, e.y, e.z], air: true });
+          if (this.rngH() < clamp(1.05 - d / this.gunRange, 0.12, 0.8)) {
+            e.hp -= 5;
+            if (e.hp <= 0) { e.phase = 'down'; this.events.push({ type: 'ehdown', pos: [e.x, e.y, e.z], splash: false }); }
+          }
+        }
+      }
+    }
+  }
+  aaRound(me) { const g = me.gats.find((q) => q.ammo > 0); if (!g) return false; g.ammo = Math.max(0, g.ammo - 0.6); return true; }
   // Who the radar has: an enemy comes in as a contact (an event with her range and bearing) and is lost again only after 3 s unseen.
   updateContacts(dt) {
     const me = this.ships[0];
@@ -863,7 +952,9 @@ export class DuelSim {
     if (this.scouting) {
       if (this.radarOn) this.updateContacts(dt);
     }
-    if (this.hop) { this.stepHeli(dt); this.stepHeliMissiles(dt); }
+    if (this.hop) this.stepHeli(dt);
+    if (this.enemyHelis) this.stepEnemyHelis(dt);
+    if (this.hop || this.hmiss.length) this.stepHeliMissiles(dt);
     for (const s of this.ships) {
       if (s.merchant) continue;
       const k = Math.min(1, dt / (s.ai ? s.ai.p.track : TRACK_PLAYER));

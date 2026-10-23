@@ -250,6 +250,17 @@ export function createDuelMap() {
       ctx.restore();
     }
 
+    // The enemy's helicopters: a red rotor cross.
+    for (const e of sim.ehops ?? []) {
+      if (e.phase === 'gone' || e.phase === 'down') continue;
+      const [hx, hy] = xy(e.x, e.z);
+      const [cx, cy] = clampTo(hx, hy);
+      ctx.strokeStyle = RED;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(cx - 4, cy - 4); ctx.lineTo(cx + 4, cy + 4); ctx.moveTo(cx + 4, cy - 4); ctx.lineTo(cx - 4, cy + 4); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy, 5.5, 0, Math.PI * 2); ctx.stroke();
+    }
+
     // Where the radar view is looking: a sector out to the rim as wide as the lens (it narrows as the radar zooms in), a centre line and the true bearing.
     if (sightView) {
       const a0 = sightView.yaw - sim.player.psi - Math.PI / 2;

@@ -120,7 +120,7 @@ const clamp = THREE.MathUtils.clamp;
 let level = 'normal';
 try { level = globalThis.__DUEL_LEVEL ?? new URLSearchParams(location.search).get('level') ?? 'normal'; } catch { /* no address */ }
 if (!DUEL_LEVELS.includes(level)) level = 'normal';
-const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, helmPlayer: true, scouting: true, intro: true, playerReload: 0.5, playerDamage: 2, playerFlankKn: 38, gunRange: MAIN_RANGE - 500, gatAnswers: true, headingFire: true, easyGunSafe: true, firingReveals: true });
+const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, helmPlayer: true, scouting: true, intro: true, playerReload: 0.5, playerDamage: 2, playerFlankKn: 38, gunRange: MAIN_RANGE - 500, gatAnswers: true, headingFire: true, enemyHelis: true, easyGunSafe: true, firingReveals: true });
 seaHook = () => { const i = env.seaInfo(); if (i) sim.setSea(i.hs, i.dir); };
 seaHook();
 
@@ -192,6 +192,21 @@ function updateStrikeHeli() {
   _hs.x = h.x; _hs.y = h.y; _hs.z = h.z; _hs.yaw = -h.yaw; _hs.pitch = h.pitch; _hs.roll = h.roll; _hs.rpm = h.rpm; _hs.spin = h.spin;
   strikeHeli.userData.update(_hs);
   for (const m of sim.hmiss) fx.missileTrail(_c.set(m.p[0], m.p[1], m.p[2]), sim.t); // its missiles in the air
+}
+// The enemy's helicopters: a model each, made when it lifts off, hidden when it is gone.
+const foeHelis = [];
+function updateFoeHelis() {
+  const list = sim.ehops ?? [];
+  while (foeHelis.length < list.length) { const m = createHelicopter(); scene.add(m); foeHelis.push(m); }
+  for (let i = 0; i < foeHelis.length; i++) {
+    const e = list[i], m = foeHelis[i];
+    const show = !!e && e.phase !== 'gone';
+    m.visible = show;
+    if (!show) continue;
+    _hs.x = e.x; _hs.y = e.y; _hs.z = e.z; _hs.yaw = -e.yaw; _hs.pitch = e.pitch; _hs.roll = e.roll; _hs.rpm = e.rpm; _hs.spin = e.spin;
+    m.userData.update(_hs);
+    if (e.phase === 'down' && Math.random() < 0.5) fx.gunSmoke(_c.set(e.x, e.y, e.z), _b.set(0, 0, 0), sim.t);
+  }
 }
 
 // --- Shells and tracers ---------------------------------------------------------------------------------------------
@@ -464,6 +479,11 @@ function handleEvents() {
       v.flashSprite.visible = true;
       v.flash = 0.09;
       for (let k = 0; k < 7; k++) fx.gunSmoke(_c, _b.set(e.dir[0] * 9, e.dir[1] * 9, e.dir[2] * 9), sim.t);
+    } else if (e.type === 'ewarn') {
+      say(e.text, e.kind ?? 'bad', 2800, 'alarm');
+    } else if (e.type === 'ehdown') {
+      fx.explosion(_c.set(...e.pos), sim.t);
+      if (!e.splash) say('Enemy helicopter shot down', 'ok', 2600);
     } else if (e.type === 'contact') {
       say(`Contact ${relName(e.rel)} · ${kmText(e.range)}`, 'warn', 3600, 'ping');
     } else if (e.type === 'lost') {
@@ -2261,7 +2281,7 @@ renderer.setAnimationLoop((now) => {
   env.ocean.material.uniforms.uTime.value = sim.t;
   for (let i = 0; i < ships.length; i++) poseShip(i, dt);
   updateWeapons(dt);
-  updateStrikeHeli();
+  updateStrikeHeli(); updateFoeHelis();
   updateLandHidden();
   updateCamera();
   fadeWeatherCards();
