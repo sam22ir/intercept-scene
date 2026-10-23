@@ -1942,6 +1942,10 @@ function heliMissile() {
 }
 heliBtn.addEventListener('click', () => { say(sim.heliRequest(), ''); heliBtn.blur(); });
 missBtn.addEventListener('click', () => { heliMissile(); missBtn.blur(); });
+// The support buttons' icons: vector drawings, animated by CSS in duel.css (`.sp-ico .sway`, `.rotor`, `.flame`, ...).
+const ICON_ANCHOR = '<svg viewBox="0 0 32 32" aria-hidden="true"><path class="wave" d="M-9 29q3-2 6 0t6 0t6 0t6 0t6 0t6 0t6 0t6 0"/><g class="sway"><circle cx="16" cy="6.5" r="2.6"/><path d="M16 9.1V24M11 13h10M6.5 18.5C6.5 22.5 10.5 25 16 25s9.5-2.5 9.5-6.5M6.5 18.5l-2.6 2.4M6.5 18.5l3 1.6M25.5 18.5l2.6 2.4M25.5 18.5l-3 1.6"/></g></svg>';
+const ICON_HELI = '<svg viewBox="0 0 32 32" aria-hidden="true"><g class="bob"><g class="rotor"><path d="M2 8.5h28"/></g><path d="M16 8.5v3"/><path class="fill" d="M6.5 18c0-3.6 3-6.5 7.5-6.5h5c3.4 0 5.5 2 5.5 4.6v1.9c0 1.4-1.3 2.5-2.9 2.5H10.5C8.2 20.5 6.5 19.7 6.5 18z"/><path class="win" d="M9.5 15.3c.8-1.5 2.4-2.3 4.6-2.3h1.4v4.3H9.2z"/><path d="M24.5 15.3l5.5-2.6v3.4l-5 2"/><circle class="trot" cx="30" cy="12.6" r="2.3"/><path d="M8 24.5h15M11 20.5v4M20 20.5v4"/></g></svg>';
+const ICON_MISS = '<svg viewBox="0 0 32 32" aria-hidden="true"><g transform="rotate(-45 16 16)"><path class="smoke s1" d="M3 16h0"/><circle class="puff p1" cx="4" cy="16" r="1.6"/><circle class="puff p2" cx="4" cy="16" r="1.6"/><path class="flame" d="M9 14.2L1.5 16 9 17.8z"/><path class="fill" d="M9 13.2h11.5L27 16l-6.5 2.8H9z"/><path d="M9 13.2L5.8 9.8h5.6l1.9 3.4M9 18.8l-3.2 3.4h5.6l1.9-3.4M16 13.2v5.6"/></g></svg>';
 // One support button: an icon, a title and a status line, the key, and a bar that fills while it waits (`wait` 0..1, or null).
 const supportHtml = (icon, title, sub, key, wait = null) => `<i class="sp-ico">${icon}</i><span class="sp-txt"><b>${title}</b><small>${sub}</small></span><kbd>${key}</kbd>`
   + (wait === null ? '' : `<s class="sp-wait" style="width:${Math.round(clamp(wait, 0, 1) * 100)}%"></s>`);
@@ -1956,8 +1960,8 @@ function updateHeliButtons() {
   const key = `${title}|${sub}|${msub}|${ready}|${mwait === null ? '' : mwait.toFixed(2)}`;
   if (key === lastHeliBtn) return;
   lastHeliBtn = key;
-  heliBtn.innerHTML = supportHtml('🚁', title, sub, 'B'); heliBtn.hidden = !h;
-  missBtn.innerHTML = supportHtml('➶', 'Helicopter missile', msub, 'M', mwait); missBtn.hidden = !h; missBtn.disabled = !ready;
+  heliBtn.innerHTML = supportHtml(ICON_HELI, title, sub, 'B'); heliBtn.hidden = !h;
+  missBtn.innerHTML = supportHtml(ICON_MISS, 'Helicopter missile', msub, 'M', mwait); missBtn.hidden = !h; missBtn.disabled = !ready;
 }
 let lastFriend = '';
 function callFriend() {
@@ -1970,7 +1974,7 @@ function updateFriendBtn() {
   const sub = left <= 0 ? 'none left' : wait > 0 ? `next in ${Math.ceil(wait)} s` : `${left} of ${FRIEND_MAX} left · from astern`;
   if (sub === lastFriend) return;
   lastFriend = sub;
-  friendBtn.innerHTML = supportHtml('⚓', 'Call a friend', sub, 'K');
+  friendBtn.innerHTML = supportHtml(ICON_ANCHOR, 'Call a friend', sub, 'K');
   friendBtn.disabled = left <= 0 || wait > 0;
 }
 

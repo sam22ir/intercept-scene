@@ -559,7 +559,30 @@ body.mission-duel #fly-keys { flex-wrap: nowrap; overflow: hidden; max-width: ca
 body.mission-duel #fly-keys:not(.show) { opacity: 0; pointer-events: none; }
 .duel-views .duel-keys-btn { margin-left: 4px; border-left: 1px solid rgba(255, 255, 255, 0.18); border-radius: 0 999px 999px 0; }
 .duel-views .duel-keys-btn svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-/* The support buttons (K, B, M) sit at the bottom left, in a row beside the map (above it on narrower screens); FIRE (and the dome strip) take the bottom centre. */
-body.mission-duel .duel-actions { left: calc(var(--gap, 14px) + var(--safe-l, 0px) + var(--map-d, 150px) + 12px); right: auto; transform: none; flex-direction: row; align-items: center; gap: 12px; bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) + 4px); }
-@media (max-width: 1100px) { body.mission-duel .duel-actions { left: calc(var(--gap, 14px) + var(--safe-l, 0px) + 6px); bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) + var(--map-d, 150px) + 14px); } }
+/* The support buttons (K, B, M) sit in a row in the bottom right corner; FIRE (and the dome strip) take the very bottom centre. */
+body.mission-duel .duel-actions { left: auto; right: calc(var(--gap, 14px) + var(--safe-r, 0px)); transform: none; flex-direction: row; align-items: center; gap: 12px; bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) + 4px); }
+body.mission-duel .duel-friend .sp-txt { left: auto; right: -4px; transform: none; text-align: right; }
 body.mission-duel .duel-radar .rc, body.mission-duel .duel-ship { bottom: calc(var(--gap, 14px) + var(--safe-b, 0px)); }
+/* The support icons: vector drawings (anchor, helicopter, missile), animated; still under reduced motion, paused while the button is off. */
+.duel-friend .sp-ico svg { width: 30px; height: 30px; overflow: hidden; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.duel-friend .sp-ico { color: #5fd6ff; } .duel-heli .sp-ico { color: #f2c94c; } .duel-miss .sp-ico { color: #ff8a8d; }
+.sp-ico .fill { fill: currentColor; fill-opacity: 0.28; } .sp-ico .win { fill: currentColor; fill-opacity: 0.7; stroke: none; }
+.sp-ico .wave { stroke-width: 1.3; opacity: 0.8; } .sp-ico .flame { fill: #ffb347; stroke: none; } .sp-ico .puff { fill: currentColor; stroke: none; opacity: 0; }
+.sp-ico .trot { stroke-width: 1.2; stroke-dasharray: 2.5 2.4; } .sp-ico .smoke { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .sp-ico .sway { transform-origin: 16px 6.5px; animation: ic-sway 3.2s ease-in-out infinite; }
+  .sp-ico .wave { animation: ic-wave 2.4s linear infinite; }
+  .sp-ico .bob { animation: ic-bob 1.8s ease-in-out infinite; }
+  .sp-ico .rotor { transform-origin: 16px 8.5px; animation: ic-rotor 0.28s linear infinite; }
+  .sp-ico .trot { transform-origin: 30px 12.6px; animation: ic-spin 0.35s linear infinite; }
+  .sp-ico .flame { transform-origin: 9px 16px; animation: ic-flame 0.14s ease-in-out infinite alternate; }
+  .sp-ico .puff { animation: ic-puff 1.1s ease-out infinite; } .sp-ico .p2 { animation-delay: 0.55s; }
+  .duel-friend:disabled .sp-ico * { animation-play-state: paused; }
+}
+@keyframes ic-sway { 0%, 100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
+@keyframes ic-wave { to { transform: translateX(12px); } }
+@keyframes ic-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.3px); } }
+@keyframes ic-rotor { 0% { transform: scaleX(1); } 50% { transform: scaleX(0.18); } 100% { transform: scaleX(1); } }
+@keyframes ic-spin { to { transform: rotate(360deg); } }
+@keyframes ic-flame { from { transform: scaleX(0.55) scaleY(0.85); } to { transform: scaleX(1.25) scaleY(1.15); } }
+@keyframes ic-puff { 0% { transform: translateX(0) scale(0.4); opacity: 0.7; } 100% { transform: translateX(-9px) scale(1.5); opacity: 0; } }
