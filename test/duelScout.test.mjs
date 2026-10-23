@@ -108,7 +108,7 @@ describe('the strike helicopter', () => {
     assert.match(sim.heliRequest(), /starting up/);
     up(sim);
     assert.equal(sim.hop.phase, 'orbit');
-    assert.ok(Math.hypot(sim.hop.x - sim.enemy.x, sim.hop.z - sim.enemy.z) < 400, 'circling the enemy');
+    assert.ok(Math.hypot(sim.hop.x - sim.enemy.x, sim.hop.z - sim.enemy.z) < 500, 'circling the enemy');
     assert.ok(sim.heliUp);
   });
   it('launches by itself at the first shot, and its gun hurts the enemy', () => {

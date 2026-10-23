@@ -1015,6 +1015,7 @@ export function createShip({ ensign = 'alg', crew = true, catapult = true, helic
     update(t, tLaunch, _tLaunch2 = Infinity, opts = null) {
       radar.rotation.y = t * 2.1;
       if (heli && opts?.heli) heli.userData.update(opts.heli); // the sim's helicopter (heliFlight.js)
+      if (heli && opts && 'heliHidden' in opts) heli.visible = !opts.heliHidden; // the surface battle's helicopter leaves the pad (a world model flies)
       const { yaw, pitch } = opts?.aim ?? launcherAim(t);
       yawGroup.rotation.y = yaw;
       pitchGroup.rotation.z = pitch;

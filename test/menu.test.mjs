@@ -289,7 +289,8 @@ describe('the words are true of the ship duel', () => {
     for (const k of keys.filter((x) => /^[A-Z]$/.test(x))) assert.match(src.duel, new RegExp(`(case '${k.toLowerCase()}'|key === '${k.toLowerCase()}')`), `duel: ${k}`);
     assert.ok(keys.includes('← →') && keys.includes('↑ ↓'));
     for (const k of ['q', 'z', 'x']) assert.match(src.duel, new RegExp(`case '${k}'`), `duel: ${k}`);
-    assert.doesNotMatch(src.duel, /missile|lock.on/i, 'the duel has no missiles');
+    assert.doesNotMatch(src.duel, /lock.on|proportional/i, 'the duel has no homing ship missiles: only the helicopter fires one, at your word');
+    for (const k of ['k', 'b', 'm']) assert.match(src.duel, new RegExp(`case '${k}'`), `duel: ${k}`);
     for (const arrow of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) assert.match(src.duel, new RegExp(arrow));
     assert.match(missionById('duel').tagline, /hold F/);
     assert.match(src.start, /duelMain\.js/);

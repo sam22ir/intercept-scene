@@ -290,6 +290,11 @@ body.duel-cine .duel-bars i { transform: none; }
 body.duel-cine #hud, body.duel-cine .duel-ship, body.duel-cine #fly-keys, body.duel-cine .duel-views, body.duel-cine #minimap, body.duel-cine .mm-opts,
 body.duel-cine .topbar, body.duel-cine .duel-friend, body.duel-cine .duel-board, body.duel-cine .duel-radar, body.duel-cine .duel-sight { opacity: 0 !important; pointer-events: none !important; }
 .duel-intro { z-index: 25; min-width: 220px; }
-.duel-friend { position: fixed; z-index: 8; right: 14px; bottom: calc(var(--gap, 14px) + var(--safe-b, 0px)); padding: 9px 14px; border-radius: 10px; border: 1px solid rgba(53, 200, 255, 0.7); background: rgba(9, 14, 21, 0.78); color: #fff; font: 700 12px system-ui, sans-serif; letter-spacing: 0.04em; cursor: pointer; }
+.duel-actions { position: fixed; z-index: 8; right: 14px; bottom: calc(var(--gap, 14px) + var(--safe-b, 0px)); display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.duel-friend { padding: 9px 14px; border-radius: 10px; border: 1px solid rgba(53, 200, 255, 0.7); background: rgba(9, 14, 21, 0.78); color: #fff; font: 700 12px system-ui, sans-serif; letter-spacing: 0.04em; cursor: pointer; }
 .duel-friend:disabled { cursor: default; border-color: rgba(255, 255, 255, 0.2); color: var(--muted); }
 body:not(.mission-duel) .duel-friend, body:not(.mission-duel) .duel-bars, body:not(.mission-duel) .duel-intro, body.ui-hidden .duel-friend { display: none; }
+
+.duel-friend[hidden] { display: none; }
+.duel-heli { border-color: rgba(242, 201, 76, 0.7); } .duel-miss { border-color: rgba(255, 93, 97, 0.75); }
+body.duel-cine .duel-actions, body.ui-hidden .duel-actions, body:not(.mission-duel) .duel-actions { display: none; }

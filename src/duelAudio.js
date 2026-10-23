@@ -175,7 +175,9 @@ export function createDuelAudio() {
       else if (e.type === 'splash') shot('splash', e.pos, { level: 0.8, ref: 90, rate: 0.9 });
       else if (e.type === 'collision') shot('hit', e.pos, { level: 1.8, ref: 260, rate: 0.55 });
       else if (e.type === 'out' && e.ship === 0) beep();
-      else if (e.type === 'contact' || e.type === 'lost') beep();
+      else if (e.type === 'contact' || e.type === 'lost' || e.type === 'radio') beep();
+      else if (e.type === 'hmissile') shot('gun', e.pos, { level: 0.7, ref: 300, rate: 1.6 });
+      else if (e.type === 'hgun') shot('gun', e.pos, { level: 0.3, ref: 300, rate: 1.9 });
       else if (e.type === 'impact') shot('hit', e.pos, { level: 1.0, ref: 300, rate: 0.8 });
       else if (e.type === 'ground') shot('hit', e.pos, { level: 2.0, ref: 300, rate: 0.45 });
       else if (e.type === 'sunk') shot('sink', e.pos, { level: 1.5, ref: 500, rate: 1 });

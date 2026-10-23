@@ -4,6 +4,8 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 import { createEnvironment } from './environment.js';
 import { createShip } from './models/ship.js';
 import { createIslet } from './islet.js';
+import { createHelicopter } from './models/helicopter.js';
+import { PAD } from './heliFlight.js';
 import { createMerchant } from './models/merchant.js';
 import { createBridge } from './models/bridge.js';
 import { createGatling } from './models/gatling.js';
@@ -159,6 +161,23 @@ function syncIslands() {
   for (const isl of sim.islands) isletGroup.add(createIslet(isl));
 }
 
+// The helicopter: on the pad while it is parked or spinning up (the model on the ship), then a world model that flies where the sim says.
+const _deck = { x: PAD.x, y: PAD.y, z: PAD.z, yaw: 0, pitch: 0, roll: 0, rpm: 0, spin: 0, flying: false, phase: 'parked' };
+function deckHeliState() { _deck.rpm = sim.hop.rpm; _deck.spin = sim.hop.spin; return _deck; }
+const strikeHeli = createHelicopter();
+strikeHeli.visible = false;
+scene.add(strikeHeli);
+const _hs = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, rpm: 1, spin: 0 };
+function updateStrikeHeli() {
+  const h = sim.hop;
+  const show = !!h && h.phase !== 'deck' && h.phase !== 'spin' && h.phase !== 'gone';
+  strikeHeli.visible = show;
+  if (!show) return;
+  _hs.x = h.x; _hs.y = h.y; _hs.z = h.z; _hs.yaw = -h.yaw; _hs.pitch = h.pitch; _hs.roll = h.roll; _hs.rpm = h.rpm; _hs.spin = h.spin;
+  strikeHeli.userData.update(_hs);
+  for (const m of sim.hmiss) fx.missileTrail(_c.set(m.p[0], m.p[1], m.p[2]), sim.t); // its missiles in the air
+}
+
 // --- Shells and tracers ---------------------------------------------------------------------------------------------
 const glowTex = (() => {
   const c = document.createElement('canvas');
@@ -208,6 +227,7 @@ ships[0].group.add(bridge.group);
 // 30 mm mounts and the stern over the rudder. The radar view's marks sit here, a locked shell is sent here, and fires burn here.
 const ZONE_POS = { gun: [32, 7.5, 0], bridge: [11, 11.5, 0], engine: [-13.5, 10, 0], guns: [-33.6, 13, 0], steering: [-52, 4, 0] };
 const ZONE_X = Object.fromEntries(Object.entries(ZONE_POS).map(([id, p]) => [id, p[0]]));
+let hgunCount = 0;
 const MOT = { heave: [(2 * Math.PI) / 6.5, 0.35], pitch: [(2 * Math.PI) / 6.0, 0.3], roll: [(2 * Math.PI) / 11, 0.13] }; // [w, damping ratio]
 let slamShake = 0; // the jolt of the player's bow slam, 0 to 2, dying away
 function poseShip(i, dt) {
@@ -259,7 +279,7 @@ function poseShip(i, dt) {
   if (!s.merchant) {
     v.mainGun.pose(s.gun.yaw, s.gun.pitch);
     v.gats.forEach((g, k) => g.pose(s.gats[k].yaw, s.gats[k].pitch, s.gats[k].spin, s.gats[k].firing, sim.t));
-    v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0, heli: i === 0 && sim.heli ? sim.heli.state : undefined }); // the radar turns; the launcher box stays stowed; the helicopter flies as the sim says
+    v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0, heli: i === 0 && sim.hop ? deckHeliState() : undefined, heliHidden: i === 0 && sim.hop ? (sim.hop.phase !== 'deck' && sim.hop.phase !== 'spin') : undefined }); // the radar turns; the launcher box stays stowed; the helicopter sits on the pad until it lifts off
   }
   v.wake.update({ t: sim.t, x: s.x, z: s.z, psi: s.psi, r: s.r, u: s.u });
   if (!sink?.gone && s.tSunk === null) { // the funnel's haze and the bow's spray, while she is afloat
@@ -365,6 +385,14 @@ function handleEvents() {
       say(`Contact: enemy ${relName(e.rel)}, ${kmText(e.range)}${e.heli ? ' (the helicopter has her)' : ''}`, 'warn', 3600);
     } else if (e.type === 'lost') {
       say('Contact lost', '', 2400);
+    } else if (e.type === 'radio') {
+      say(`Helicopter: ${e.text}`, 'ok', 4600);
+    } else if (e.type === 'hgun') {
+      _c.set(...e.pos);
+      for (let k = 0; k < 2; k++) fx.gunSmoke(_c, _b.set(0, 0, 0), sim.t);
+      if ((hgunCount++ % 3) === 0) fx.shellBurst(_c.set(...e.to), sim.t);
+    } else if (e.type === 'hmissile') {
+      fx.launchBillow(_c.set(...e.pos), _b.set(0, -1, 0), sim.t);
     } else if (e.type === 'impact') {
       fx.shellBurst(_c.set(...e.pos), sim.t);
     } else if (e.type === 'ground') {
@@ -791,7 +819,8 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
   ['<kbd>E</kbd>', `Repair the compartment Z has picked (or press FIX on its bar in the radar view): ${REPAIR_TIME} s, then its fire is out, its leak is stopped and it gets 40 % of its points back; that part can be repaired again after ${REPAIR_WAIT} s`],
   ['<kbd>K</kbd>', 'Call a friendly frigate (or the button at the bottom right): she comes in from astern at full speed and fights; up to three, one every few seconds'],
-  ['<kbd>B</kbd>', 'The helicopter: take off, or land (only on a steady course: no rudder, no turn). Up, its radar reaches 7.5 km and sees over the islands; it stays on deck with the enemy close or in a very rough sea'],
+  ['<kbd>B</kbd>', 'The helicopter: it goes out over the enemy by itself at your first shot, circles her firing its gun and reports by radio (a part out, a fire, another ship joining). B sends it or calls it back. Its radar reaches 7.5 km and sees over the islands; it stays on deck in a very rough sea'],
+  ['<kbd>M</kbd>', 'Fire the helicopter missile (two a sortie): at the compartment you have locked or focused in the radar view, else at her gun, then her engine: it takes half of that compartment. If your ship is lost the helicopter avenges her and lands on a friendly frigate'],
   ['<kbd>1</kbd> to <kbd>5</kbd>', 'Behind, bridge, above, orbit, radar'],
   ['<kbd>2</kbd>', 'The wheelhouse, as in Solo Air Defense: the wheel turns with the rudder, the telegraph levers follow the engine order, and a drag looks round (double click looks ahead)'],
   ['<kbd>5</kbd>', 'Radar view: the fire-control sight. Arrows, a drag or the on-screen pad aim it. hold <kbd>Shift</kbd> to zoom in and <kbd>Ctrl</kbd> to zoom out (the wheel, <kbd>+</kbd> <kbd>-</kbd> and the lens track work too) to close the lens until a compartment fills it (<kbd>0</kbd> resets); every enemy hull shows its compartments as marks, and a click lays the sight on one. F fires there: the shell goes to the point under the crosshair, so you choose what to break. Space locks the point under the crosshair (and lets the lock go); Enter fires like F. A merchant or a friendly ship in the sight is not fired on. The helm is locked until Esc'],
@@ -834,7 +863,7 @@ function keysHtml() {
       + `${k('Tab', 'next target')}${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Esc', 'helm')}`;
   }
   return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', `thrust ${TELEGRAPH[sim.player.order].name}`)}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}${k('Tab', 'target')}`
-    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}${k('E', 'repair', sim.player.fix[COMP_IDS[selComp]].left > 0)}${k('B', sim.heliUp ? 'heli: land' : 'heli: scout', sim.heliUp)}`
+    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}${k('E', 'repair', sim.player.fix[COMP_IDS[selComp]].left > 0)}${k('B', sim.heliUp ? 'heli: land' : 'heli: go', sim.heliUp)}${k('M', `heli missile ${sim.hop?.ammo ?? 0}`)}`
     + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–5', 'views')}${k('R', 'again')}`;
 }
 let lastKeys = '';
@@ -939,7 +968,8 @@ window.addEventListener('keydown', (e) => {
     case 'z': selComp = (selComp + 1) % COMP_IDS.length; break;
     case 'e': sim.startRepair(0, COMP_IDS[selComp]); break;
     case 'b': say(sim.heliRequest(), ''); break;
-    case 'k': callFriend(); break; // call a friendly frigate // the helicopter: take off or land
+    case 'k': callFriend(); break; // call a friendly frigate
+    case 'm': heliMissile(); break; // fire the helicopter's missile // the helicopter: take off or land
     case 'x': sim.assignCrew(0, COMP_IDS[selComp]); break;
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
@@ -1485,10 +1515,40 @@ function introCamera() {
 }
 
 // --- Calling friends: a button (and K); each call brings one friendly frigate in from astern at full speed, up to three -----------------
+const actions = document.createElement('div');
+actions.className = 'duel-actions';
+document.body.appendChild(actions);
 const friendBtn = document.createElement('button');
 friendBtn.type = 'button';
 friendBtn.className = 'duel-friend';
-document.body.appendChild(friendBtn);
+actions.appendChild(friendBtn);
+const heliBtn = document.createElement('button');
+heliBtn.type = 'button';
+heliBtn.className = 'duel-friend duel-heli';
+actions.appendChild(heliBtn);
+const missBtn = document.createElement('button');
+missBtn.type = 'button';
+missBtn.className = 'duel-friend duel-miss';
+actions.appendChild(missBtn);
+let lastHeliBtn = '';
+function heliMissile() {
+  const comp = sight.lock ? sight.lock.comp : sight.snap ?? null; // the part aimed at in the radar view
+  const r = sim.heliMissile(view === 'radar' ? comp : null);
+  say(r.ok ? `Helicopter: missile away at the ${COMPARTMENTS[r.comp].name.toLowerCase()}` : r.why, r.ok ? 'warn' : 'warn', 2800);
+}
+heliBtn.addEventListener('click', () => { say(sim.heliRequest(), ''); heliBtn.blur(); });
+missBtn.addEventListener('click', () => { heliMissile(); missBtn.blur(); });
+function updateHeliButtons() {
+  const h = sim.hop;
+  const label = !h ? '' : h.phase === 'deck' ? 'Send the helicopter (B)' : h.phase === 'ingress' || h.phase === 'orbit' ? 'Helicopter: land (B)' : h.phase === 'gone' || h.phase === 'landed' ? 'Helicopter: down' : 'Helicopter: ' + h.phase;
+  const ready = !!h && (h.phase === 'ingress' || h.phase === 'orbit') && h.ammo > 0 && h.mCool <= 0;
+  const miss = !h ? '' : h.mCool > 0 ? `Missile: ${Math.ceil(h.mCool)} s` : `Helicopter missile (M) · ${h.ammo > 9 ? '∞' : h.ammo}`;
+  const key = `${label}|${miss}|${ready}`;
+  if (key === lastHeliBtn) return;
+  lastHeliBtn = key;
+  heliBtn.textContent = label; heliBtn.hidden = !h;
+  missBtn.textContent = miss; missBtn.hidden = !h; missBtn.disabled = !ready;
+}
 let lastFriend = '';
 function callFriend() {
   const r = sim.callFriend();
@@ -1520,6 +1580,7 @@ renderer.setAnimationLoop((now) => {
   env.ocean.material.uniforms.uTime.value = sim.t;
   for (let i = 0; i < ships.length; i++) poseShip(i, dt);
   updateWeapons(dt);
+  updateStrikeHeli();
   updateCamera();
   env.follow(camera.position);
   env.setShadowFocus(_b.set((sim.player.x + sim.enemy.x) / 2, 0, (sim.player.z + sim.enemy.z) / 2), clamp(sim.range() * 0.5, 120, 600));
@@ -1528,6 +1589,7 @@ renderer.setAnimationLoop((now) => {
   if (hudOn) {
     updateHud();
     updateFriendBtn();
+    updateHeliButtons();
     const sh = shipHtml();
     if (sh !== lastShip) { shipEl.innerHTML = sh; lastShip = sh; }
     if (view === 'radar') {
