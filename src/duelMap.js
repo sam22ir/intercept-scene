@@ -54,6 +54,8 @@ export function createDuelMap() {
     });
     opts.append(b);
   }
+  // (the switches live in the settings menu now: the scene calls setSector)
+  opts.hidden = true;
   document.body.append(opts);
 
   let enabled = true;
@@ -283,13 +285,18 @@ export function createDuelMap() {
     label.textContent = `${zoom === 0 ? 'AUTO · ' : ''}${kmText(scale)}`;
   }
 
+  const setSector = (id, on) => {
+    show[id] = !!on; lastKey = '';
+    try { localStorage.setItem('intercept.duel.sectors', JSON.stringify(show)); } catch { /* storage unavailable */ }
+  };
   return {
+    sector: (id) => show[id],
+    setSector,
     get enabled() { return enabled; },
     set sight(v) { sightView = v; lastKey = ''; },
     setEnabled(on) {
       enabled = on;
       root.hidden = !on;
-      opts.hidden = !on;
       document.body.classList.toggle('has-map', on);
       if (on) lastKey = '';
     },

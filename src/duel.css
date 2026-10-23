@@ -484,3 +484,36 @@ body.mission-duel .shot-caption { top: calc(var(--gap, 14px) + var(--safe-t, 0px
 .duel-friend:not(:disabled) { box-shadow: 0 0 0 2px rgba(53, 200, 255, 0.18), 0 6px 18px rgba(0, 0, 0, 0.35); }
 .duel-friend.duel-heli:not(:disabled) { box-shadow: 0 0 0 2px rgba(242, 201, 76, 0.2), 0 6px 18px rgba(0, 0, 0, 0.35); }
 .duel-friend.duel-miss:not(:disabled) { box-shadow: 0 0 0 2px rgba(255, 93, 97, 0.22), 0 6px 18px rgba(0, 0, 0, 0.35); }
+body.mission-duel .minimap { bottom: calc(var(--gap) + var(--safe-b)); }
+
+/* Ship status: small round badges with a state ring, in a column at each edge (yours on the left, the enemy on the right). */
+.duel-pts { position: fixed; z-index: 6; display: flex; flex-direction: column; gap: 7px; pointer-events: none; }
+.duel-pts[hidden], body.ui-hidden .duel-pts, body:not(.mission-duel) .duel-pts { display: none; }
+body.duel-cine .duel-pts { opacity: 0; }
+.duel-pts-me { left: calc(var(--gap, 14px) + var(--safe-l, 0px)); top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 54px); align-items: flex-start; }
+.duel-pts-foe { right: calc(var(--gap, 14px) + var(--safe-r, 0px)); top: calc(var(--gap, 14px) + var(--safe-t, 0px)); align-items: flex-end; }
+.pt { position: relative; width: 42px; height: 42px; padding: 0; border: 0; border-radius: 50%; display: block; color: #e8eef5; background: rgba(11, 17, 25, 0.78); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35); backdrop-filter: blur(5px); pointer-events: auto; cursor: default; }
+.pt[data-fix] { cursor: pointer; }
+.pt svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; stroke: none; fill: none; }
+.pt .pr-bg { stroke: rgba(255, 255, 255, 0.14); stroke-width: 3.2; }
+.pt .pr { stroke-width: 3.2; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 22px 22px; transition: stroke-dasharray 0.25s, stroke 0.25s; }
+.pt .pr-rep { stroke: #ff9f43; stroke-width: 2; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 22px 22px; }
+.pt .pi { stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.pt.hurt .pi { stroke: #f2c94c; } .pt.bad .pi { stroke: #ff9f43; } .pt.out { opacity: 0.8; } .pt.out .pi { stroke: #ff5d61; }
+.pt.hull { width: 48px; height: 48px; margin-bottom: 2px; }
+.pt.foe .pi { stroke: #ff8a8d; }
+.pt.sel { outline: 2px solid rgba(255, 255, 255, 0.7); outline-offset: 2px; }
+.pt.aim { outline: 2px dashed #f2c94c; outline-offset: 2px; }
+.pt .pm { position: absolute; right: -3px; bottom: -3px; display: flex; gap: 1px; text-decoration: none; }
+.pt .pm i { font-style: normal; font-size: 9px; line-height: 12px; min-width: 12px; text-align: center; border-radius: 6px; background: rgba(8, 13, 20, 0.92); }
+.pt .pm .fire { color: #ff7a1a; } .pt .pm .leak { color: #35c8ff; } .pt .pm .crew { color: #f2c94c; }
+.pt .pt-tip { position: absolute; top: 50%; transform: translateY(-50%); padding: 5px 9px; border-radius: 8px; background: rgba(8, 13, 20, 0.94); border: 1px solid rgba(255, 255, 255, 0.14); font: 600 11px system-ui, sans-serif; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 3; }
+.duel-pts-me .pt-tip { left: calc(100% + 10px); } .duel-pts-foe .pt-tip { right: calc(100% + 10px); }
+.pt:hover .pt-tip { opacity: 1; }
+.pt-all .pi { stroke: #3ddc84; } .pt-all:hover { background: rgba(61, 220, 132, 0.2); } .pt-all.off { opacity: 0.4; cursor: default; }
+.pt-pill { padding: 4px 9px; border-radius: 999px; font: 700 10.5px system-ui, sans-serif; letter-spacing: 0.04em; color: #e8eef5; background: rgba(11, 17, 25, 0.78); border: 1px solid rgba(255, 255, 255, 0.12); pointer-events: auto; }
+.pt-pill.hot { color: #fff; background: rgba(255, 59, 66, 0.6); border-color: #ff7a7d; animation: rc-pulse 1.2s ease-in-out infinite; }
+.pt-pill.dim { color: var(--muted); }
+body.mission-duel #fly-keys { flex-wrap: nowrap; overflow: hidden; max-width: calc(100vw - 430px); padding: 4px 12px; gap: 4px 12px; font-size: 10.5px; }
+@media (max-width: 760px) { body.mission-duel #fly-keys { display: none; } }
+@media (max-height: 680px) { .pt { width: 34px; height: 34px; } .pt.hull { width: 38px; height: 38px; } .duel-pts { gap: 5px; } .pt-pill { font-size: 9.5px; padding: 3px 7px; } }

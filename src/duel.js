@@ -451,9 +451,30 @@ export class DuelSim {
     if (!tgt) return { ok: false, why: 'The helicopter has no target' };
     if (Math.hypot(tgt.x - h.x, tgt.z - h.z) > 5500) return { ok: false, why: 'The target is out of range' };
     const c = comp && tgt.comp[comp] > 0 ? comp : (['gun', 'engine', 'bridge', 'guns', 'steering'].find((id) => tgt.comp[id] > 0) ?? 'gun');
+    if (h.shot) return { ok: false, why: 'The helicopter is already moving into position' };
+    if (this.camHint && !this.heliInView()) { h.shot = { comp: c, t0: this.t }; h.mCool = Math.max(h.mCool, 0.1); return { ok: true, why: '', comp: c, queued: true }; } // it gets into the camera's view first
     this.launchHeliMissile(tgt, c);
     h.ammo -= 1; h.mCool = HELI_MISSILE_COOL;
     return { ok: true, why: '', comp: c };
+  }
+  // The scene sets `camHint` each frame: { p: camera position, f: its forward unit vector, half: the smaller half field of view (rad) }.
+  // The helicopter fires only where the player can see it: well inside the picture and not too far off.
+  heliInView() {
+    const h = this.hop, c = this.camHint;
+    if (!c) return true;
+    const dx = h.x - c.p[0], dy = h.y - c.p[1], dz = h.z - c.p[2], d = Math.hypot(dx, dy, dz) || 1;
+    if (d < 60 || d > 3200) return false;
+    return (dx * c.f[0] + dy * c.f[1] + dz * c.f[2]) / d > Math.cos(c.half * 0.55);
+  }
+  // Where to fly to be seen: between the camera and the enemy, a little off the line so it does not hide her.
+  heliStation(tgt) {
+    const c = this.camHint, me = this.ships[0];
+    let fx = c.f[0], fz = c.f[2];
+    const hl = Math.hypot(fx, fz);
+    if (hl < 0.35) { const mx = (me.x + tgt.x) / 2, mz = (me.z + tgt.z) / 2; return [mx - (tgt.z - me.z) * 0.08, mz + (tgt.x - me.x) * 0.08]; } // looking straight down: over the middle of the fight
+    fx /= hl; fz /= hl;
+    const s = clamp(Math.hypot(tgt.x - c.p[0], tgt.z - c.p[2]) * 0.45, 260, 1500);
+    return [c.p[0] + fx * s - fz * 70, c.p[2] + fz * s + fx * 70];
   }
   stepHeli(dt) {
     const h = this.hop;
@@ -463,6 +484,7 @@ export class DuelSim {
     h.spin += 30 * h.rpm * dt;
     h.gCool = Math.max(0, h.gCool - dt);
     h.mCool = Math.max(0, h.mCool - dt);
+    if (h.shot && h.phase !== 'ingress' && h.phase !== 'orbit') h.shot = null; // it has been called back or lost: the missile is off
     // Her mother ship is lost: it fights on (it takes off at once if it is still on the deck).
     if (me.tSunk !== null && !h.avenge) {
       h.avenge = true; h.ammo = 99;
@@ -498,7 +520,16 @@ export class DuelSim {
         }
         h.target = tgt.idx;
         const dx = h.x - tgt.x, dz = h.z - tgt.z, d = Math.hypot(dx, dz);
-        if (h.phase === 'ingress') {
+        if (h.shot) { // a missile is waiting: fly where the camera sees the helicopter, then fire
+          const [sx, sz] = this.heliStation(tgt);
+          const left = flyTo(sx, sz, HELI_ALT, HELI_SPEED * 1.3);
+          h.theta = Math.atan2(h.z - tgt.z, h.x - tgt.x);
+          if ((left < 90 && this.heliInView()) || this.t - h.shot.t0 > 14) {
+            const c = tgt.comp[h.shot.comp] > 0 ? h.shot.comp : (['gun', 'engine', 'bridge', 'guns', 'steering'].find((id) => tgt.comp[id] > 0) ?? 'gun');
+            this.launchHeliMissile(tgt, c);
+            h.ammo -= 1; h.mCool = HELI_MISSILE_COOL; h.shot = null; h.phase = 'orbit';
+          }
+        } else if (h.phase === 'ingress') {
           flyTo(tgt.x + dx / (d || 1) * HELI_ORBIT, tgt.z + dz / (d || 1) * HELI_ORBIT, HELI_ALT, HELI_SPEED);
           if (d < HELI_ORBIT * 1.5 && h.y > HELI_ALT - 12) { h.phase = 'orbit'; h.theta = Math.atan2(dz, dx); this.radio(`On station over the enemy: hull ${Math.round(tgt.hp)}`); }
         } else {

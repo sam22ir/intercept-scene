@@ -576,7 +576,7 @@ function orbitCamera() {
   const ux = both ? (e.x - p.x) / (len || 1) : 1, uz = both ? (e.z - p.z) / (len || 1) : 0;
   // How much of the width is free of readouts: the ships' span must fit in it.
   const wide = window.innerWidth > 900;
-  const free = !hudOn ? 0.84 : wide ? 0.44 : 0.7;
+  const free = !hudOn ? 0.84 : wide ? 0.7 : 0.78;
   const tanH = Math.tan(rad(camera.fov / 2)) * camera.aspect;
   const half = len / 2 + 80;
   const want = clamp(half / (tanH * free), 220, 9000) * orbitZoom;
@@ -598,6 +598,12 @@ canvas.addEventListener('pointerdown', (e) => {
   window.addEventListener('pointerup', up);
 });
 canvas.addEventListener('wheel', (e) => { if (view === 'orbit') orbitZoom = clamp(orbitZoom * Math.exp(e.deltaY * 0.001), 0.5, 2.5); }, { passive: true });
+const _fwd = new THREE.Vector3();
+function setCamHint() { // tells the simulation what the camera sees, so the helicopter fires where it can be seen
+  camera.getWorldDirection(_fwd);
+  const vh = rad(camera.fov / 2), hh = Math.atan(Math.tan(vh) * camera.aspect);
+  sim.camHint = { p: [camera.position.x, camera.position.y, camera.position.z], f: [_fwd.x, _fwd.y, _fwd.z], half: Math.min(vh, hh) };
+}
 let frameDt = 1 / 60;
 let behindHead = 0, behindT = 0, behindOn = false; // the behind camera's own heading, which trails the ship's
 function updateCamera() {
@@ -727,7 +733,7 @@ function shipHtml() { // the strip is the dome alone (heading, rudder, speed), c
 // (each part is repaired alone) and one for all; the enemy you aim at down the right. A click on one of your bars sends a crew there.
 const boardEl = document.createElement('div');
 boardEl.id = 'duel-board';
-boardEl.className = 'duel-board';
+boardEl.className = 'duel-pts duel-pts-me';
 document.body.appendChild(boardEl);
 let lastBoard = '';
 const healthColour = (f) => (f <= 0 ? '#ff5d61' : f < 0.5 ? '#ff7a1a' : f < 0.99 ? '#f2c94c' : '#3ddc84');
@@ -761,19 +767,49 @@ function partRows(s, mine, aim = null) {
       + `<span class="bn">${COMPARTMENTS[id].name}</span><i class="bb"><s style="width:${Math.round(f * 100)}%;background:${healthColour(f)}"></s></i><em>${f <= 0 ? 'OUT' : Math.round(f * 100)}</em><u class="bm">${marks}</u>${btn}</div>`;
   }).join('');
 }
+// Each part of a ship is one small round badge: its shape in the middle, a ring round it for its state (the arc is the health, in the
+// health colour; an orange inner ring is a repair under way), small marks for fire, a leak and crews. The name and the figures show on hover.
+const PART_ICON = {
+  hull: '<path d="M3 15h18l-3 4H6zM12 4v8M8 9h8"/>',
+  gun: '<path d="M4 15h11l2-3h3M7 15v4h6v-4"/>',
+  bridge: '<path d="M4 18h16M7 18v-6h10v6M9 12V8h6v4"/>',
+  engine: '<circle cx="12" cy="12" r="3"/><path d="M12 4v3M12 17v3M4 12h3M17 12h3M6.3 6.3l2.1 2.1M15.6 15.6l2.1 2.1M17.7 6.3l-2.1 2.1M8.4 15.6l-2.1 2.1"/>',
+  guns: '<path d="M6 18h12M9 18V9M12 18V7M15 18V9"/>',
+  steering: '<circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="1.5"/><path d="M12 4v4M12 16v4M4 12h4M16 12h4"/>',
+};
+const RING = 2 * Math.PI * 19;
+function badge(id, f, { tip, cls = '', marks = '', rep = null, data = '' }) {
+  const col = healthColour(f);
+  return `<div class="pt${cls}"${data} title="${tip}"><svg viewBox="0 0 44 44"><circle class="pr-bg" cx="22" cy="22" r="19"/>`
+    + `<circle class="pr" cx="22" cy="22" r="19" style="stroke:${col};stroke-dasharray:${(f * RING).toFixed(1)} ${RING.toFixed(1)}"/>`
+    + (rep === null ? '' : `<circle class="pr-rep" cx="22" cy="22" r="15" style="stroke-dasharray:${(clamp(rep, 0, 1) * 94.2).toFixed(1)} 94.2"/>`)
+    + `<g class="pi" transform="translate(10 10)">${PART_ICON[id]}</g></svg><u class="pm">${marks}</u><span class="pt-tip">${tip}</span></div>`;
+}
+function partBadges(s, mine, aim = null) {
+  return COMP_IDS.map((id) => {
+    const f = clamp(s.comp[id] / COMPARTMENTS[id].hp, 0, 1);
+    const fix = s.fix[id];
+    const crew = s.crews.filter((c) => c.to === id);
+    const marks = `${s.fire[id] > 0 ? '<i class="fire">▲</i>' : ''}${s.leak[id] > 0.005 ? '<i class="leak">≈</i>' : ''}${crew.length ? '<i class="crew">⛑</i>' : ''}`;
+    const rep = mine && fix.left > 0 ? 1 - fix.left / REPAIR_TIME : null;
+    const state = f <= 0 ? 'OUT' : `${Math.round(f * 100)}%`;
+    const note = mine ? (fix.left > 0 ? ' · repairing' : fix.wait > 0 ? ` · can be repaired in ${Math.ceil(fix.wait)} s` : f < 1 ? ' · click to repair' : '') : '';
+    const cls = (f <= 0 ? ' out' : f < 0.5 ? ' bad' : f < 0.99 ? ' hurt' : '') + (mine && COMP_IDS[selComp] === id ? ' sel' : '') + (aim === id ? ' aim' : '');
+    return badge(id, f, { tip: `${COMPARTMENTS[id].name} · ${state}${note}`, cls, marks, rep, data: mine ? ` data-fix="${id}"` : '' });
+  }).join('');
+}
 function boardHtml() {
   const p = sim.player;
   const hullF = clamp(p.hp / HULL_HP, 0, 1);
   const any = COMP_IDS.some((id) => p.fix[id].left <= 0 && p.fix[id].wait <= 0 && (p.comp[id] < COMPARTMENTS[id].hp || p.fire[id] > 0 || p.leak[id] > 0.005));
-  return `<div class="bd-head"><b>YOUR SHIP</b><span class="${hullF < 0.35 ? 'bad' : hullF < 0.7 ? 'hurt' : ''}">HULL ${Math.round(p.hp)}</span></div>`
-    + `<div class="bd-bar"><s style="width:${Math.round(hullF * 100)}%;background:${healthColour(hullF >= 0.99 ? 1 : hullF < 0.35 ? 0.2 : 0.7)}"></s></div>`
-    + `<div class="bd-rows">${partRows(p, true)}</div>`
-    + `<button type="button" class="bd-repair" data-act="repair"${any && p.tSunk === null ? '' : ' disabled'}><span>REPAIR ALL DAMAGED</span></button>`
-    + `<div class="bd-flood ${p.flood > 0.02 ? 'bad' : ''}">${floodText(p)}</div>`;
+  const hull = badge('hull', hullF, { tip: `Your hull · ${Math.round(p.hp)} · ${floodText(p)}`, cls: `${hullF < 0.35 ? ' bad' : hullF < 0.7 ? ' hurt' : ''} hull`, marks: p.flood > 0.02 ? '<i class="leak">≈</i>' : '' });
+  const on = any && p.tSunk === null;
+  const all = `<button type="button" class="pt pt-all${on ? '' : ' off'}" data-act="repair" title="Repair every damaged part"${on ? '' : ' disabled'}><svg viewBox="0 0 44 44"><circle class="pr-bg" cx="22" cy="22" r="19"/><g class="pi" transform="translate(10 10)"><path d="M14.7 6.3a4 4 0 0 0-5 5L4 17l3 3 5.7-5.7a4 4 0 0 0 5-5l-2.4 2.4-2-.6-.6-2z"/></g></svg><span class="pt-tip">Repair all damaged parts</span></button>`;
+  return hull + partBadges(p, true) + all;
 }
 boardEl.addEventListener('click', (e) => {
   const fx = e.target.closest?.('[data-fix]');
-  if (fx) { sim.startRepair(0, fx.dataset.fix); lastBoard = ''; return; }
+  if (fx && fx.dataset.fix) { sim.startRepair(0, fx.dataset.fix); lastBoard = ''; return; }
   if (e.target.closest?.('[data-act="repair"]')) { sim.startRepair(0); lastBoard = ''; return; }
   const z = e.target.closest?.('[data-comp]');
   if (z && z.dataset.comp) { selComp = COMP_IDS.indexOf(z.dataset.comp); sim.assignCrew(0, z.dataset.comp); lastBoard = ''; }
@@ -783,34 +819,23 @@ boardEl.addEventListener('click', (e) => {
 // outlined), whether her 76 mm bears on you, her flooding, and what your sight is doing.
 const targetEl = document.createElement('div');
 targetEl.id = 'duel-target';
-targetEl.className = 'duel-tgt';
+targetEl.className = 'duel-pts duel-pts-foe';
 document.body.appendChild(targetEl);
 let lastTarget = '';
 function targetHtml() {
   const e = sim.enemy;
   if (!e) return '';
-  if (e.det === false && e.tSunk === null) return '<div class="tg-head"><b>ENEMY</b><span class="tg-lvl">NO CONTACT</span></div><p class="tg-none">The radar does not have her. Close the range, or send up the helicopter (B).</p>';
-  const foes = sim.ships.filter((o) => o.team === 1);
-  const which = foes.length > 1 ? ` <small>${foes.indexOf(e) + 1}/${foes.length}</small>` : '';
+  if (e.det === false && e.tSunk === null) return '<div class="pt-pill dim" title="The radar does not have her. Close the range, or send up the helicopter (B).">NO CONTACT</div>';
   const locked = sight.lock && sight.lock.ship === e.idx;
   const aim = view === 'radar' ? (locked ? sight.lock.comp : sight.snap) : null;
-  const aimNote = view !== 'radar' ? 'Radar view (5) to aim at a part' : locked ? `LOCKED · ${COMPARTMENTS[sight.lock.comp].name}` : sight.snap ? `FOCUS · ${COMPARTMENTS[sight.snap].name}` : 'NO FOCUS · shells fall in the sea';
   const hullF = clamp(e.hp / HULL_HP, 0, 1);
-  const tiles = COMP_IDS.map((id) => {
-    const f = clamp(e.comp[id] / COMPARTMENTS[id].hp, 0, 1);
-    const cls = f <= 0 ? ' out' : f < 0.5 ? ' bad' : f < 0.99 ? ' hurt' : '';
-    const marks = `${e.fire[id] > 0 ? '<u class="fire">▲</u>' : ''}${e.leak[id] > 0.005 ? '<u class="leak">≈</u>' : ''}`;
-    return `<div class="tg-part${cls}${aim === id ? ' aim' : ''}" title="${COMPARTMENTS[id].name}"><b>${COMP_ABBR[id]}</b>`
-      + `<i><s style="height:${Math.round(f * 100)}%;background:${healthColour(f)}"></s></i><em>${f <= 0 ? 'OUT' : Math.round(f * 100)}</em><span>${marks}</span></div>`;
-  }).join('');
+  const foes = sim.ships.filter((o) => o.team === 1);
+  const which = foes.length > 1 ? ` ${foes.indexOf(e) + 1}/${foes.length}` : '';
   const b = bears(e);
-  return `<div class="tg-head"><b>ENEMY${which}</b><span class="tg-lvl">${LEVELS[sim.level].name}</span></div>`
-    + `<div class="tg-hull"><span><small>HULL</small><b>${Math.round(e.hp)}</b></span><i><s style="width:${Math.round(hullF * 100)}%"></s></i></div>`
-    + `<div class="tg-nav"><span><small>RANGE</small><b>${kmText(sim.range())}</b></span><span><small>BEARING</small><b>${relName(sim.relBearing(sim.player))}</b></span></div>`
-    + `<div class="tg-parts">${tiles}</div>`
-    + `<div class="tg-chips"><span class="${b === 'BEARS' ? 'hot' : b === 'OUT' ? 'good' : ''}">her 76 mm: ${b === 'BEARS' ? 'BEARS ON YOU' : b}</span>`
-    + `<span class="${e.tSunk !== null || e.flood > 0.02 ? 'good' : ''}">${floodText(e)}</span></div>`
-    + `<div class="tg-aim ${view === 'radar' ? (locked ? 'lock' : sight.snap ? 'focus' : '') : ''}">${aimNote}</div>`;
+  const hull = badge('hull', hullF, { tip: `Enemy hull · ${Math.round(e.hp)} · ${floodText(e)}`, cls: ' hull foe', marks: e.flood > 0.02 ? '<i class="leak">≈</i>' : '' });
+  return hull + partBadges(e, false, aim)
+    + `<div class="pt-pill" title="Range and bearing of the enemy${which}">${kmText(sim.range())} · ${relName(sim.relBearing(sim.player))}${which}</div>`
+    + (b === 'BEARS' ? '<div class="pt-pill hot" title="Her 76 mm bears on you">BEARS ON YOU</div>' : '');
 }
 
 const map = createDuelMap();
@@ -953,6 +978,8 @@ soundButton.addEventListener('click', () => setSound(!audio.enabled));
   menuButton.setAttribute('aria-label', 'Settings');
   const tagsButton = document.createElement('button');
   tagsButton.id = 'btn-tags';
+  const secMain = document.createElement('button'), secGat = document.createElement('button');
+  secMain.id = 'btn-sec-main'; secGat.id = 'btn-sec-gat';
   const fsButton = document.querySelector('#btn-fullscreen');
   const item = (b, label, key) => { b.className = ''; b.setAttribute('role', 'menuitem'); b.innerHTML = key ? `${label}<kbd>${key}</kbd>` : label; return b; };
   const head = (t) => { const h = document.createElement('div'); h.className = 'menu-h'; h.textContent = t; return h; };
@@ -962,18 +989,21 @@ soundButton.addEventListener('click', () => setSound(!audio.enabled));
   item(hudButton, 'Readouts', 'H');
   item(mapButton, 'Mini map', 'N');
   item(tagsButton, 'Ship tags', 'L');
+  item(secMain, 'Map: 76 mm sector'); item(secGat, 'Map: 30 mm sector');
   item(soundButton, 'Sound', 'S');
   item(fsButton, 'Fullscreen');
   item(foldButton, 'Hide the interface', 'C');
   item(document.querySelector('#btn-keys'), 'Keyboard shortcuts', '?');
-  menuEl.replaceChildren(head('Battle'), restartButton, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, tagsButton, foldButton, fsButton,
+  menuEl.replaceChildren(head('Battle'), restartButton, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, secMain, secGat, tagsButton, foldButton, fsButton,
     head('Sound'), soundButton, head('Sea'), ...[seaRow, weatherBtn].filter(Boolean), head('Help'), document.querySelector('#btn-keys'));
-  [hudButton, mapButton, soundButton, tagsButton].forEach((b) => b.setAttribute('aria-pressed', 'true'));
+  [hudButton, mapButton, soundButton, tagsButton, secMain, secGat].forEach((b) => b.setAttribute('aria-pressed', 'true'));
   tagsButton.addEventListener('click', () => { tagsOn = !tagsOn; refreshGear(); });
+  secMain.addEventListener('click', () => { map.setSector('main', !map.sector('main')); refreshGear(); });
+  secGat.addEventListener('click', () => { map.setSector('gat', !map.sector('gat')); refreshGear(); });
   fsButton.addEventListener('click', () => { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch { /* not allowed here */ } });
   function refreshGear() {
     const set = (b, on) => { b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); };
-    set(hudButton, hudOn); set(mapButton, mapOn); set(tagsButton, tagsOn); set(soundButton, audio.enabled);
+    set(hudButton, hudOn); set(mapButton, mapOn); set(tagsButton, tagsOn); set(secMain, map.sector('main')); set(secGat, map.sector('gat')); set(soundButton, audio.enabled);
   }
   menuButton.addEventListener('click', refreshGear); // (tagsOn is declared further down: read it only once the menu opens)
 }
@@ -1834,7 +1864,7 @@ let lastHeliBtn = '';
 function heliMissile() {
   const comp = sight.lock ? sight.lock.comp : sight.snap ?? null; // the part aimed at in the radar view
   const r = sim.heliMissile(view === 'radar' ? comp : null);
-  say(r.ok ? `Helicopter: missile away at the ${COMPARTMENTS[r.comp].name.toLowerCase()}` : r.why, r.ok ? 'warn' : 'warn', 2800);
+  say(r.ok ? (r.queued ? `Helicopter: moving into your view to fire at the ${COMPARTMENTS[r.comp].name.toLowerCase()}` : `Helicopter: missile away at the ${COMPARTMENTS[r.comp].name.toLowerCase()}`) : r.why, r.ok ? 'warn' : 'warn', 2800);
 }
 heliBtn.addEventListener('click', () => { say(sim.heliRequest(), ''); heliBtn.blur(); });
 missBtn.addEventListener('click', () => { heliMissile(); missBtn.blur(); });
@@ -1891,6 +1921,7 @@ renderer.setAnimationLoop((now) => {
   updateWeapons(dt);
   updateStrikeHeli();
   updateCamera();
+  setCamHint();
   updateHostileFx(dt);
   env.follow(camera.position);
   env.setShadowFocus(_b.set((sim.player.x + sim.enemy.x) / 2, 0, (sim.player.z + sim.enemy.z) / 2), clamp(sim.range() * 0.5, 120, 600));
