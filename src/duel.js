@@ -341,6 +341,26 @@ export class DuelSim {
       { x: START_RANGE * (1.15 + r() * 0.35), z: side * (950 + r() * 500), r: 240 + r() * 200, h: 70 + r() * 50 },
     ];
   }
+  // The height of the island under a point (-Infinity over the sea). The rock is taken a little wider than its radius: the drawn shore wobbles
+  // out to 1.12 r, and a shell or a sight line must not slip over the beach of what looks like land.
+  groundAt(x, z) {
+    let top = -Infinity;
+    for (const isl of this.islands) {
+      const r = isl.r * 1.1, dd = Math.hypot(x - isl.x, z - isl.z);
+      if (dd < r) top = Math.max(top, isl.h * (1 - (dd / r) ** 2) ** 1.2);
+    }
+    return top;
+  }
+  // Does land stand between the gun and the target along the straight line of fire? The guns hold fire then (the shell would burst on it).
+  landBetween(a, b) {
+    if (!this.islands.length) return false;
+    const n = Math.ceil(Math.hypot(b[0] - a[0], b[2] - a[2]) / 40);
+    for (let i = 1; i < n; i++) {
+      const f = i / n;
+      if (this.groundAt(a[0] + (b[0] - a[0]) * f, a[2] + (b[2] - a[2]) * f) > a[1] + (b[1] - a[1]) * f) return true;
+    }
+    return false;
+  }
   // Is the straight line between two points hidden by an island?
   blocked(ax, az, bx, bz) {
     for (const isl of this.islands) {
@@ -431,9 +451,30 @@ export class DuelSim {
     if (!tgt) return { ok: false, why: 'The helicopter has no target' };
     if (Math.hypot(tgt.x - h.x, tgt.z - h.z) > 5500) return { ok: false, why: 'The target is out of range' };
     const c = comp && tgt.comp[comp] > 0 ? comp : (['gun', 'engine', 'bridge', 'guns', 'steering'].find((id) => tgt.comp[id] > 0) ?? 'gun');
+    if (h.shot) return { ok: false, why: 'The helicopter is already moving into position' };
+    if (this.camHint && !this.heliInView()) { h.shot = { comp: c, t0: this.t }; h.mCool = Math.max(h.mCool, 0.1); return { ok: true, why: '', comp: c, queued: true }; } // it gets into the camera's view first
     this.launchHeliMissile(tgt, c);
     h.ammo -= 1; h.mCool = HELI_MISSILE_COOL;
     return { ok: true, why: '', comp: c };
+  }
+  // The scene sets `camHint` each frame: { p: camera position, f: its forward unit vector, half: the smaller half field of view (rad) }.
+  // The helicopter fires only where the player can see it: well inside the picture and not too far off.
+  heliInView() {
+    const h = this.hop, c = this.camHint;
+    if (!c) return true;
+    const dx = h.x - c.p[0], dy = h.y - c.p[1], dz = h.z - c.p[2], d = Math.hypot(dx, dy, dz) || 1;
+    if (d < 60 || d > 3200) return false;
+    return (dx * c.f[0] + dy * c.f[1] + dz * c.f[2]) / d > Math.cos(c.half * 0.55);
+  }
+  // Where to fly to be seen: between the camera and the enemy, a little off the line so it does not hide her.
+  heliStation(tgt) {
+    const c = this.camHint, me = this.ships[0];
+    let fx = c.f[0], fz = c.f[2];
+    const hl = Math.hypot(fx, fz);
+    if (hl < 0.35) { const mx = (me.x + tgt.x) / 2, mz = (me.z + tgt.z) / 2; return [mx - (tgt.z - me.z) * 0.08, mz + (tgt.x - me.x) * 0.08]; } // looking straight down: over the middle of the fight
+    fx /= hl; fz /= hl;
+    const s = clamp(Math.hypot(tgt.x - c.p[0], tgt.z - c.p[2]) * 0.45, 260, 1500);
+    return [c.p[0] + fx * s - fz * 70, c.p[2] + fz * s + fx * 70];
   }
   stepHeli(dt) {
     const h = this.hop;
@@ -443,6 +484,7 @@ export class DuelSim {
     h.spin += 30 * h.rpm * dt;
     h.gCool = Math.max(0, h.gCool - dt);
     h.mCool = Math.max(0, h.mCool - dt);
+    if (h.shot && h.phase !== 'ingress' && h.phase !== 'orbit') h.shot = null; // it has been called back or lost: the missile is off
     // Her mother ship is lost: it fights on (it takes off at once if it is still on the deck).
     if (me.tSunk !== null && !h.avenge) {
       h.avenge = true; h.ammo = 99;
@@ -478,7 +520,16 @@ export class DuelSim {
         }
         h.target = tgt.idx;
         const dx = h.x - tgt.x, dz = h.z - tgt.z, d = Math.hypot(dx, dz);
-        if (h.phase === 'ingress') {
+        if (h.shot) { // a missile is waiting: fly where the camera sees the helicopter, then fire
+          const [sx, sz] = this.heliStation(tgt);
+          const left = flyTo(sx, sz, HELI_ALT, HELI_SPEED * 1.3);
+          h.theta = Math.atan2(h.z - tgt.z, h.x - tgt.x);
+          if ((left < 90 && this.heliInView()) || this.t - h.shot.t0 > 14) {
+            const c = tgt.comp[h.shot.comp] > 0 ? h.shot.comp : (['gun', 'engine', 'bridge', 'guns', 'steering'].find((id) => tgt.comp[id] > 0) ?? 'gun');
+            this.launchHeliMissile(tgt, c);
+            h.ammo -= 1; h.mCool = HELI_MISSILE_COOL; h.shot = null; h.phase = 'orbit';
+          }
+        } else if (h.phase === 'ingress') {
           flyTo(tgt.x + dx / (d || 1) * HELI_ORBIT, tgt.z + dz / (d || 1) * HELI_ORBIT, HELI_ALT, HELI_SPEED);
           if (d < HELI_ORBIT * 1.5 && h.y > HELI_ALT - 12) { h.phase = 'orbit'; h.theta = Math.atan2(dz, dx); this.radio(`On station over the enemy: hull ${Math.round(tgt.hp)}`); }
         } else {
@@ -985,6 +1036,7 @@ export class DuelSim {
     let wantYaw = 0, wantPitch = rad(2);
     g.engaged = false;
     g.onTarget = false;
+    g.landBlocked = false;
     if (g.stock[g.type] <= 0 && g.ammo > 0) this.switchAmmo(s.idx); // the loaded kind ran out: the other is loaded
     const tgt = this.foe(s);
     const blind = this.scouting && s.team === 0 && tgt.team === 1 && tgt.det === false; // no radar contact: the fire control has nothing to lay on
@@ -996,6 +1048,7 @@ export class DuelSim {
       wantPitch = clamp(aim.pitch, MAIN_PITCH[0], MAIN_PITCH[1]);
       const at = this.ships[aim.ship] ?? tgt, M = this.toWorld(s, MAIN_MOUNT);
       g.engaged = at.tSunk === null && Math.hypot(at.x - M[0], at.z - M[2]) <= MAIN_RANGE;
+      if (g.engaged && this.landBetween(M, this.toWorld(at, [0, 6, 0]))) { g.engaged = false; g.landBlocked = true; }
     } else if (alive && s.manual && !s.ai) {
       // by hand but nothing pointed at yet: the gun holds where it is and cannot fire (never the fire control at the manual scatter)
       wantYaw = g.yaw; wantPitch = g.pitch;
@@ -1005,6 +1058,7 @@ export class DuelSim {
         wantYaw = sol.yaw;
         wantPitch = clamp(sol.pitch, MAIN_PITCH[0], MAIN_PITCH[1]);
         g.engaged = true;
+        if (this.landBetween(this.toWorld(s, MAIN_MOUNT), this.toWorld(tgt, [0, 6, 0]))) { g.engaged = false; g.landBlocked = true; }
       } else wantYaw = clamp(sol.yaw, -MAIN_ARC, MAIN_ARC);
     }
     g.yaw = wrapPi(g.yaw + clamp(wrapPi(wantYaw - g.yaw), -MAIN_YAW_RATE * dt, MAIN_YAW_RATE * dt));
@@ -1051,13 +1105,10 @@ export class DuelSim {
     const p0 = sh.p.slice();
     sh.v[1] -= G * dt;
     for (let k = 0; k < 3; k++) sh.p[k] += sh.v[k] * dt;
-    for (const isl of this.islands) { // an island stops the shell: it bursts on the slope
-      const dd = Math.hypot(sh.p[0] - isl.x, sh.p[2] - isl.z);
-      if (dd < isl.r && sh.p[1] < isl.h * (1 - (dd / isl.r) ** 2) ** 1.2) {
-        this.events.push({ type: 'impact', owner: sh.owner, pos: sh.p.slice() });
-        this.shells.splice(this.shells.indexOf(sh), 1);
-        return;
-      }
+    if (sh.p[1] < this.groundAt(sh.p[0], sh.p[2])) { // an island stops the shell: it bursts on the slope
+      this.events.push({ type: 'impact', owner: sh.owner, pos: sh.p.slice() });
+      this.shells.splice(this.shells.indexOf(sh), 1);
+      return;
     }
     const owner = this.ships[sh.owner];
     const tgt = this.foe(owner);

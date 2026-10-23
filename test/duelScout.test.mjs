@@ -266,4 +266,35 @@ describe('the player reloads the 76 mm in half the time (playerReload)', () => {
     quick.fireMain(quick.player); plain.fireMain(plain.player);
     assert.ok(Math.abs(quick.player.gun.cool - plain.player.gun.cool / 2) < 1e-9);
   });
+  it('the 76 mm holds fire when land stands on the line to a ship the helicopter shows, and fires once the line is clear', () => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', scouting: true });
+    sim.enemy.x = 3200; sim.enemy.z = 0; sim.enemy.ai = null; sim.enemy.u = 0; sim.enemy.order = 1;
+    sim.islands = [{ x: 1600, z: 0, r: 300, h: 80 }];
+    run(sim, 5);
+    Object.assign(sim.hop, { phase: 'orbit', x: sim.player.x + 1500, z: sim.player.z, y: 90 }); sim.hop.target = -1;
+    run(sim, 0.2);
+    assert.equal(sim.enemy.det, true);
+    const before = sim.player.stats.shells;
+    run(sim, 30, { fire: 1 });
+    assert.equal(sim.player.stats.shells, before, 'no round left the gun');
+    assert.equal(sim.player.gun.landBlocked, true);
+    sim.islands = [{ x: 1600, z: 900, r: 300, h: 80 }]; // the island is off the line
+    run(sim, 30, { fire: 1 });
+    assert.ok(sim.player.stats.shells > before);
+  });
+  it('the helicopter flies into the view of the camera before it fires the missile', () => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', scouting: true });
+    sim.enemy.x = 3200; sim.enemy.z = 0; sim.enemy.ai = null; sim.enemy.u = 0; sim.enemy.order = 1;
+    run(sim, 3);
+    sim.hop.phase = 'orbit'; sim.hop.x = 3200; sim.hop.z = 300; sim.hop.y = 95; sim.hop.ammo = 2; sim.hop.mCool = 0;
+    sim.camHint = { p: [sim.player.x - 110, 34, sim.player.z], f: [1, 0, 0], half: 0.4 }; // behind your ship, looking at the enemy
+    assert.equal(sim.heliInView(), false, 'it is over the enemy, far out of view');
+    const r = sim.heliMissile();
+    assert.ok(r.ok && r.queued);
+    assert.equal(sim.hmiss.length, 0, 'no missile yet');
+    let fired = false;
+    for (let i = 0; i < 400 && !fired; i++) { sim.advance(0.1, {}); if (sim.hmiss.length) { fired = true; assert.ok(sim.heliInView(), 'it was in view when it fired'); } }
+    assert.ok(fired, 'the missile left once it was in view');
+    assert.equal(sim.hop.ammo, 1);
+  });
 });

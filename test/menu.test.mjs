@@ -260,7 +260,7 @@ describe('the words are true of the ship duel', () => {
     const sim = new D.DuelSim({ seed: 1 });
     assert.equal(sim.ships.length, 2);
     assert.ok(sim.ships[1].ai && !sim.ships[0].ai, 'one helmsman, the enemy');
-    assert.match(m.facts[0], /^HE and AP rounds/);
+    assert.match(m.facts[0], /^76 mm with a zoom ring/);
     assert.deepEqual(Object.keys(D.AMMO_TYPES), ['he', 'ap']);
     assert.equal(sim.ships[0].gats.length, 2, 'the two 30 mm guns');
     assert.match(m.facts[1], /radar sight/);
@@ -270,7 +270,7 @@ describe('the words are true of the ship duel', () => {
     assert.match(m.tagline, /76 mm/);
     assert.match(m.tagline, /30 mm/);
     assert.match(m.tagline, /sinks/);
-    for (const w of ['HE', 'AP', 'repair crews']) assert.match(m.tagline, new RegExp(w));
+    for (const w of ['repair crews']) assert.match(m.tagline, new RegExp(w));
     assert.equal(m.level, true, 'the enemy level is a choice');
     assert.equal(menuText('duel').hasLevel, true);
     assert.equal(menuText('fly').hasLevel, false);
@@ -288,7 +288,7 @@ describe('the words are true of the ship duel', () => {
     const keys = missionById('duel').keys.map(([k]) => k);
     for (const k of keys.filter((x) => /^[A-Z]$/.test(x))) assert.match(src.duel, new RegExp(`(case '${k.toLowerCase()}'|key === '${k.toLowerCase()}')`), `duel: ${k}`);
     assert.ok(keys.includes('← →') && keys.includes('↑ ↓'));
-    for (const k of ['q', 'z', 'x']) assert.match(src.duel, new RegExp(`case '${k}'`), `duel: ${k}`);
+    for (const k of ['z', 'x']) assert.match(src.duel, new RegExp(`case '${k}'`), `duel: ${k}`);
     assert.doesNotMatch(src.duel, /lock.on|proportional/i, 'the duel has no homing ship missiles: only the helicopter fires one, at your word');
     for (const k of ['k', 'b', 'm']) assert.match(src.duel, new RegExp(`case '${k}'`), `duel: ${k}`);
     for (const arrow of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) assert.match(src.duel, new RegExp(arrow));
