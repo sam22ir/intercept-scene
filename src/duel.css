@@ -397,7 +397,9 @@ body.duel-cine .duel-tgt { opacity: 0; pointer-events: none; }
 .rc-lock { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font: 700 10.5px system-ui, sans-serif; color: #eafff2; background: rgba(61, 220, 132, 0.14); border: 1px solid rgba(61, 220, 132, 0.5); cursor: pointer; }
 .rc-lock kbd { font: 600 8.5px system-ui, sans-serif; opacity: 0.6; } .rc-lock:hover { background: rgba(61, 220, 132, 0.28); }
 .rc-lock.on { background: #c0392b; border-color: #ff7a7d; }
-@media (min-width: 901px) { .duel-radar .rc { bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) + 112px); } }
+/* The Radar view drops the dome strip (heading, speed, guns): the sight's console takes its place at the bottom. */
+body.duel-radarview .duel-ship { display: none; }
+@media (min-width: 901px) { .duel-radar .rc { bottom: calc(var(--gap, 14px) + var(--safe-b, 0px)); } }
 
 /* The support buttons (bottom right): icon, title, status, key, and a bar while one waits. */
 .duel-actions { gap: 8px; width: 236px; }
@@ -414,4 +416,3 @@ body.duel-cine .duel-tgt { opacity: 0; pointer-events: none; }
 .duel-friend.duel-miss { border-color: rgba(255, 93, 97, 0.45); border-left-color: #ff5d61; color: #ff8a8d; } .duel-miss .sp-ico { background: rgba(255, 93, 97, 0.16); } .duel-miss .sp-txt b { color: #fff; }
 @media (max-width: 900px) { .duel-actions { width: 200px; } .duel-friend .sp-txt small { display: none; } }
 .duel-ship .hs-latch { color: #ff7a7d; animation: rc-pulse 0.8s ease-in-out infinite; }
-@media (max-width: 900px) { .duel-radar .rc { bottom: calc(var(--keys-h, 56px) + 58px + 108px); } }
