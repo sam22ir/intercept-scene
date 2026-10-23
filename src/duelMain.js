@@ -981,6 +981,7 @@ function startBanner() {
 window.addEventListener('keydown', (e) => {
   if (KILL.on && (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter')) { endKill(); e.preventDefault(); return; } // skip the kill-cam
   if (INTRO.phase === 'tour' && (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter')) { toAsk(); e.preventDefault(); return; } // skip the tour
+  if (INTRO.phase === 'ask' && (e.key === 'Enter' || e.key === 'Escape')) { if (e.key === 'Enter') engage(); else holdFire(); e.preventDefault(); return; }
   if (view === 'radar' && (e.key === 'Shift' || e.key === 'Control')) { radarKeys[e.key === 'Shift' ? 'zi' : 'zo'] = 1; return; } // Shift closes the lens, Ctrl opens it
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const tag = e.target?.tagName;
@@ -1468,76 +1469,108 @@ window.addEventListener('resize', resize);
 resize();
 setView('behind');
 
-// --- The opening: the radar spots her, a cinematic tour of the ship, the question, the first shot ---------------------------------
-// The battle does not start by itself. The radar sweeps (3 s), then finds an enemy ship and calls her; a short cinematic goes through the
-// ship (the search radar, the 76 mm, the two 30 mm) and ends on the contact through a long lens; then the question: open fire? Yes lays the
-// gun on her and fires the first shot (the camera behind the gun, then riding the shell), and from that shot on everyone may fire; not
-// yet leaves it to you (F). The first shot is always yours: nobody else fires before it (sim.held). Esc, Space or Enter skip the tour.
-const SHOT_LIST = [ // [x, y, z] in the ship's frame; the camera dollies from `from` to `to` looking at `look`
-  { text: 'Search radar: sweeping', dur: 3.2, from: [-9, 31, 14], to: [4, 27.5, 10.5], look: [9.2, 22.5, 0], fov: 52 },
-  { text: '76 mm: loaded, training on the contact', dur: 3.2, from: [9, 14, 12], to: [24, 10, 9.5], look: [32, 7.5, 0], fov: 50 },
-  { text: 'Two 30 mm: on automatic', dur: 2.8, from: [-52, 19, -12], to: [-41, 16.5, 11], look: [-33.6, 13.8, 0], fov: 52 },
-  { text: null, dur: 3.6, from: [46, 17, 4], to: [49, 17, 3], look: 'enemy', fov: 15 },
+// --- The opening: the radar spots her, a fly-out to the enemy, her weapons one by one, the question, the first shot ----------------------
+// The battle does not start by itself. The radar sweeps (3 s) and finds an enemy ship; the camera leaves your ship and flies out to her,
+// circles her, whipping fast from one weapon to the next and slowing on each while a callout says what it is, then rushes back behind your
+// ship; then the question, big and red: engage? Yes lays the gun on her and fires the first shot (the camera behind the gun, then riding
+// the shell), and from that shot on everyone may fire; hold fire leaves it to you (F). The first shot is always yours: nobody else fires
+// before it (sim.held). Esc, Space or Enter skip the tour; on the question Enter engages and Esc holds fire.
+// Each stop is a camera on a circle round her (in her frame: x to her bow, z to starboard; `ang` from her bow towards starboard), looking
+// at a point of her hull; her model is the same frigate as yours, so the points are those of your own weapons.
+const STOPS = [
+  { ang: 0.4, r: 170, h: 34, look: [0, 8, 0], fov: 46, title: 'Hostile frigate', text: () => `${relName(sim.relBearing(sim.player))} · ${kmText(sim.range())} · ${Math.round(sim.knots(sim.enemy))} kn` },
+  { ang: 0.62, r: 58, h: 13, look: [32, 7.5, 0], fov: 32, title: '76 mm bow gun', text: () => `Her main weapon: it reaches ${kmText(MAIN_RANGE)}. Knock it out and she cannot hurt you at range.` },
+  { ang: 1.45, r: 48, h: 31, look: [9.2, 22.5, 0], fov: 36, title: 'Bridge and fire-control radar', text: () => 'She has seen you too. Hit the bridge and her shells scatter.' },
+  { ang: 2.55, r: 56, h: 19, look: [-33.6, 13.8, 0], fov: 34, title: 'Two 30 mm guns aft', text: () => `Deadly inside ${kmText(GUN_RANGE)}. Keep off her stern.` },
+  { ang: 3.35, r: 72, h: 14, look: [-45, 5, 0], fov: 38, title: 'Engine and rudder', text: () => 'Her weak point: hit them and she can neither run nor turn.' },
 ];
-const INTRO = { phase: 'off', t: 0, shot: -1, local: 0 }; // scan | tour | ask | fire | follow | off
+const TOUR = { fly: 2.6, whip: 0.8, hold: 2.2, back: 1.5 };
+const TOUR_LEN = TOUR.fly + STOPS.length * (TOUR.whip + TOUR.hold) + TOUR.back;
+const INTRO = { phase: 'off', t: 0, seg: null, stop: -1, p0: new THREE.Vector3(), l0: new THREE.Vector3() }; // scan | tour | ask | fire | follow | off
 const cineBars = document.createElement('div');
 cineBars.className = 'duel-bars';
 cineBars.innerHTML = '<i></i><i></i>';
 document.body.appendChild(cineBars);
 const introEl = document.createElement('div');
-introEl.className = 'duel-attack duel-intro';
+introEl.className = 'duel-hostile';
 introEl.hidden = true;
 document.body.appendChild(introEl);
+const calloutEl = document.createElement('div'); // the weapon's name and what it does, pinned to it on screen
+calloutEl.className = 'duel-callout';
+calloutEl.hidden = true;
+document.body.appendChild(calloutEl);
 function startIntro() {
-  INTRO.phase = 'scan'; INTRO.t = 0; INTRO.shot = -1; INTRO.local = 0;
-  introEl.hidden = true;
+  INTRO.phase = 'scan'; INTRO.t = 0; INTRO.seg = null; INTRO.stop = -1;
+  introEl.hidden = true; calloutEl.hidden = true;
   document.body.classList.remove('duel-cine');
   say('Radar: searching…', '', 3000);
 }
 function endIntro() {
   INTRO.phase = 'off';
-  introEl.hidden = true;
+  introEl.hidden = true; calloutEl.hidden = true;
   document.body.classList.remove('duel-cine');
   input.fire = 0;
 }
 function toAsk() {
   const e = sim.enemy;
+  calloutEl.hidden = true;
   document.body.classList.remove('duel-cine');
   if (!e || e.det === false || e.tSunk !== null) { endIntro(); say('No contact on the radar: find her', 'warn', 3600); return; }
   INTRO.phase = 'ask';
-  introEl.innerHTML = `<b>Enemy contact</b><small>${relName(sim.relBearing(sim.player))} · ${kmText(sim.range())} · hull ${Math.round(e.hp)}</small>`
-    + '<div><button type="button" data-go>Open fire</button><button type="button" data-no>Not yet</button></div>';
-  introEl.style.left = '50%';
-  introEl.style.top = '58%';
+  banner.hidden = true;
+  introEl.innerHTML = '<div class="dz-stripe"></div><p class="dz-tag">⚠ Hostile contact</p><h2>Enemy frigate</h2>'
+    + `<p class="dz-data"><span>${relName(sim.relBearing(sim.player))}</span><span>${kmText(sim.range())}</span><span>hull ${Math.round(e.hp)}</span><span>${LEVELS[sim.level].name}</span></p>`
+    + '<div class="dz-btns"><button type="button" data-go>Engage<small>Enter</small></button><button type="button" data-no>Hold fire<small>Esc</small></button></div><div class="dz-stripe"></div>';
   introEl.hidden = false;
 }
+function engage() {
+  introEl.hidden = true;
+  INTRO.phase = 'fire'; INTRO.t = 0;
+  document.body.classList.add('duel-cine');
+  say('Open fire', 'warn', 2000);
+}
+function holdFire() {
+  endIntro();
+  say('Fire when you are ready: F or Enter', '', 3600);
+}
 introEl.addEventListener('click', (e) => {
-  if (e.target.closest('[data-go]')) {
-    introEl.hidden = true;
-    INTRO.phase = 'fire'; INTRO.t = 0;
-    document.body.classList.add('duel-cine');
-    say('Open fire', 'warn', 2000);
-  } else if (e.target.closest('[data-no]')) {
-    endIntro();
-    say('Fire when you are ready: F or Enter', '', 3600);
-  }
+  if (e.target.closest('[data-go]')) engage();
+  else if (e.target.closest('[data-no]')) holdFire();
 });
+// Where the tour is at time t into it: { kind: 'fly' | 'stop' | 'back', i, u (0..1 through the move), held (s into the stop's hold) }.
+function tourSeg(t) {
+  if (t < TOUR.fly) return { kind: 'fly', i: 0, u: t / TOUR.fly, held: 0 };
+  t -= TOUR.fly;
+  const per = TOUR.whip + TOUR.hold;
+  if (t < STOPS.length * per) { const i = Math.floor(t / per), w = t - i * per; return { kind: 'stop', i, u: Math.min(1, w / TOUR.whip), held: Math.max(0, w - TOUR.whip) }; }
+  return { kind: 'back', i: STOPS.length - 1, u: Math.min(1, (t - STOPS.length * per) / TOUR.back), held: 0 };
+}
 function introStep(dt) {
   if (INTRO.phase === 'off') return;
   INTRO.t += dt;
   if (sim.shotFired && ['scan', 'tour', 'ask'].includes(INTRO.phase)) { endIntro(); return; } // you fired first yourself
   if (INTRO.phase === 'scan') {
     if (INTRO.t > 2.4 && !sim.radarOn) sim.startRadar();
-    if (INTRO.t > 3.4) { INTRO.phase = 'tour'; INTRO.t = 0; INTRO.shot = -1; document.body.classList.add('duel-cine'); }
-  } else if (INTRO.phase === 'tour') {
-    let acc = 0, idx = 0;
-    for (; idx < SHOT_LIST.length; idx++) { if (INTRO.t < acc + SHOT_LIST[idx].dur) break; acc += SHOT_LIST[idx].dur; }
-    if (idx >= SHOT_LIST.length) { toAsk(); return; }
-    if (idx !== INTRO.shot) {
-      INTRO.shot = idx;
-      say(SHOT_LIST[idx].text ?? `Contact: enemy ${relName(sim.relBearing(sim.player))}, ${kmText(sim.range())}`, idx === SHOT_LIST.length - 1 ? 'warn' : '', 3000);
+    if (INTRO.t > 3.4) {
+      INTRO.phase = 'tour'; INTRO.t = 0; INTRO.stop = -1;
+      INTRO.p0.copy(camera.position);
+      camera.getWorldDirection(INTRO.l0).multiplyScalar(60).add(camera.position);
+      document.body.classList.add('duel-cine');
+      say('Radar contact: hostile', 'bad', 2400);
     }
-    INTRO.local = (INTRO.t - acc) / SHOT_LIST[idx].dur;
+  } else if (INTRO.phase === 'tour') {
+    if (INTRO.t >= TOUR_LEN) { toAsk(); return; }
+    INTRO.seg = tourSeg(INTRO.t);
+    const g = INTRO.seg;
+    const show = g.kind === 'stop' && g.u > 0.7 ? g.i : -1; // the callout pops as the whip settles
+    if (show !== INTRO.stop) {
+      INTRO.stop = show;
+      calloutEl.hidden = show < 0;
+      if (show >= 0) {
+        calloutEl.innerHTML = `<i></i><div><b>${STOPS[show].title}</b><small>${STOPS[show].text()}</small></div>`;
+        calloutEl.classList.remove('pop'); void calloutEl.offsetWidth; calloutEl.classList.add('pop');
+      }
+    }
   } else if (INTRO.phase === 'fire') {
     input.fire = 1; // the gun is laid on her by the fire control; it fires as soon as it is on (the first shot)
     if (sim.shotFired) { input.fire = 0; INTRO.phase = 'follow'; INTRO.t = 0; }
@@ -1547,19 +1580,56 @@ function introStep(dt) {
   }
 }
 const smooth01 = (u) => { const x = clamp(u, 0, 1); return x * x * (3 - 2 * x); };
+const whipEase = (u) => 1 - Math.pow(1 - clamp(u, 0, 1), 4); // fast off the mark, slowing onto the weapon
+const lerp = (a, b, u) => a + (b - a) * u;
+const _tp = new THREE.Vector3(), _tl = new THREE.Vector3(), _tq = new THREE.Vector3();
+// A stop's camera and look point in the world, blended from stop `a` to stop `b` by u, the circle drifting on by `drift` radians.
+function stopPose(foe, a, b, u, drift, pos, look) {
+  const A = STOPS[a], B = STOPS[b];
+  const ang = lerp(A.ang, B.ang, u) + drift, r = lerp(A.r, B.r, u), h = lerp(A.h, B.h, u);
+  foe.localToWorld(pos.set(Math.cos(ang) * r, h, Math.sin(ang) * r));
+  foe.localToWorld(look.set(lerp(A.look[0], B.look[0], u), lerp(A.look[1], B.look[1], u), lerp(A.look[2], B.look[2], u)));
+  return lerp(A.fov, B.fov, u);
+}
+function behindPose(pos, look) { // where the Behind view takes over
+  const p = sim.player, hx = Math.cos(p.psi), hz = Math.sin(p.psi);
+  pos.set(p.x - hx * 110, 34, p.z - hz * 110);
+  look.set(p.x + hx * 45, 6, p.z + hz * 45);
+}
 // The cinematic camera, or false when the normal one is to run.
 function introCamera() {
   const ph = INTRO.phase;
   const me = ships[0]?.group;
   if (!me || (ph !== 'tour' && ph !== 'fire' && ph !== 'follow')) return false;
   if (ph === 'tour') {
-    const sh = SHOT_LIST[Math.max(0, INTRO.shot)];
-    const u = smooth01(INTRO.local);
-    _a.set(sh.from[0] + (sh.to[0] - sh.from[0]) * u, sh.from[1] + (sh.to[1] - sh.from[1]) * u, sh.from[2] + (sh.to[2] - sh.from[2]) * u);
-    camera.position.copy(me.localToWorld(_a));
-    if (sh.look === 'enemy') _b.set(sim.enemy.x, 6, sim.enemy.z); else me.localToWorld(_b.set(...sh.look));
+    const foe = ships[sim.enemy.idx]?.group, g = INTRO.seg;
+    if (!foe || !g) return false;
+    let fov;
+    if (g.kind === 'fly') { // out from your ship to her, over a rising arc
+      const u = smooth01(g.u);
+      fov = lerp(55, stopPose(foe, 0, 0, 0, 0, _tp, _tl), u);
+      camera.position.lerpVectors(INTRO.p0, _tp, u);
+      camera.position.y += Math.sin(Math.PI * u) * Math.min(260, INTRO.p0.distanceTo(_tp) * 0.08);
+      _b.lerpVectors(INTRO.l0, _tl, smooth01(g.u * 1.6));
+    } else if (g.kind === 'stop') { // whip round her to the weapon, then a slow drift while the callout reads
+      fov = stopPose(foe, Math.max(0, g.i - 1), g.i, whipEase(g.u), g.held * 0.035, camera.position, _b);
+    } else { // back to your ship, fast
+      stopPose(foe, g.i, g.i, 1, TOUR.hold * 0.035, _tp, _tl);
+      behindPose(_tq, _a);
+      const u = smooth01(g.u);
+      camera.position.lerpVectors(_tp, _tq, u);
+      camera.position.y += Math.sin(Math.PI * u) * Math.min(200, _tp.distanceTo(_tq) * 0.06);
+      _b.lerpVectors(_tl, _a, smooth01(g.u * 1.4));
+      fov = lerp(STOPS[g.i].fov, 55, u);
+    }
     camera.lookAt(_b);
-    setFov(sh.fov);
+    setFov(fov);
+    if (!calloutEl.hidden && g.kind === 'stop') { // pin the callout to the weapon
+      camera.updateMatrixWorld();
+      _tl.copy(_b).project(camera);
+      calloutEl.style.left = `${clamp((_tl.x + 1) / 2 * innerWidth, 20, innerWidth - 20)}px`;
+      calloutEl.style.top = `${clamp((1 - _tl.y) / 2 * innerHeight, 80, innerHeight - 80)}px`;
+    }
     return true;
   }
   if (ph === 'fire') { // behind and above the 76 mm, looking where it points
