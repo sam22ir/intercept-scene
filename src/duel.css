@@ -676,5 +676,7 @@ body.mission-duel #fly-keys { bottom: auto; height: auto; align-content: start; 
 .duel-ship .hs-prop { flex: none; align-self: flex-end; width: 46px; height: 46px; margin-bottom: 4px; border-radius: 50%; background: rgba(10, 30, 52, 0.82); box-shadow: 0 0 0 2px rgba(74, 163, 255, 0.55), 0 4px 12px rgba(0, 0, 0, 0.35); }
 .duel-ship .hs-prop svg { display: block; width: 100%; height: 100%; }
 .hs-prop .pp-disc { fill: none; stroke: rgba(255, 255, 255, 0.14); stroke-width: 1.4; }
-.hs-prop .pp-blade { fill: #7cc4ff; stroke: #0b1119; stroke-width: 0.8; stroke-linejoin: round; opacity: calc(1 - 0.35 * var(--blur, 0)); }
-.hs-prop .pp-hub { fill: #e8eef5; stroke: #0b1119; stroke-width: 0.8; }
+.hs-prop .pp-blade { fill: url(#pp-brass); stroke: #6e5320; stroke-width: 0.7; stroke-linejoin: round; opacity: calc(1 - 0.35 * var(--blur, 0)); }
+.hs-prop .pp-hubring { fill: #c9a24d; stroke: #6e5320; stroke-width: 0.7; }
+.hs-prop .pp-hub { fill: #4a2f14; }
+.duel-ship .hs-prop { background: rgba(40, 28, 12, 0.7); box-shadow: 0 0 0 2px rgba(214, 178, 92, 0.6), 0 4px 12px rgba(0, 0, 0, 0.35); }
