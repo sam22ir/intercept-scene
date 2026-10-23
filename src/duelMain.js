@@ -809,19 +809,21 @@ function partBadges(s, mine, aim = null) {
     return badge(id, f, { tip: `${COMPARTMENTS[id].name} · ${state}${note}`, cls, marks, rep, data: mine ? ` data-fix="${id}"` : '' });
   }).join('');
 }
+// Is there anything of yours to repair (the repair-all button, in the support row)?
+function repairReady() {
+  const p = sim.player;
+  return p.tSunk === null && COMP_IDS.some((id) => p.fix[id].left <= 0 && p.fix[id].wait <= 0 && (p.comp[id] < COMPARTMENTS[id].hp || p.fire[id] > 0 || p.leak[id] > 0.005));
+}
 function boardHtml() {
   const p = sim.player;
   const hullF = clamp(p.hp / HULL_HP, 0, 1);
   const any = COMP_IDS.some((id) => p.fix[id].left <= 0 && p.fix[id].wait <= 0 && (p.comp[id] < COMPARTMENTS[id].hp || p.fire[id] > 0 || p.leak[id] > 0.005));
   const hull = badge('hull', hullF, { tip: `Your hull · ${Math.round(p.hp)} · ${floodText(p)}`, cls: `${hullF < 0.35 ? ' bad' : hullF < 0.7 ? ' hurt' : ''} hull`, marks: p.flood > 0.02 ? '<i class="leak">≈</i>' : '' });
-  const on = any && p.tSunk === null;
-  const all = `<button type="button" class="pt pt-all${on ? '' : ' off'}" data-act="repair" title="Repair every damaged part"${on ? '' : ' disabled'}><svg viewBox="0 0 44 44"><circle class="pr-bg" cx="22" cy="22" r="19"/><g class="pi" transform="translate(10 10)"><path d="M14.7 6.3a4 4 0 0 0-5 5L4 17l3 3 5.7-5.7a4 4 0 0 0 5-5l-2.4 2.4-2-.6-.6-2z"/></g></svg><span class="pt-tip">Repair all damaged parts</span></button>`;
-  return hull + partBadges(p, true) + all;
+  return hull + partBadges(p, true);
 }
 boardEl.addEventListener('click', (e) => {
   const fx = e.target.closest?.('[data-fix]');
   if (fx && fx.dataset.fix) { sim.startRepair(0, fx.dataset.fix); lastBoard = ''; return; }
-  if (e.target.closest?.('[data-act="repair"]')) { sim.startRepair(0); lastBoard = ''; return; }
   const z = e.target.closest?.('[data-comp]');
   if (z && z.dataset.comp) { selComp = COMP_IDS.indexOf(z.dataset.comp); sim.assignCrew(0, z.dataset.comp); lastBoard = ''; }
 });
@@ -1937,6 +1939,20 @@ function updateHostileFx(dt) {
 const actions = document.createElement('div');
 actions.className = 'duel-actions';
 document.body.appendChild(actions);
+const repBtn = document.createElement('button');
+repBtn.type = 'button';
+repBtn.className = 'duel-friend duel-rep';
+actions.appendChild(repBtn);
+repBtn.addEventListener('click', () => { sim.startRepair(0); lastBoard = ''; repBtn.blur(); });
+let lastRep = '';
+function updateRepairBtn() {
+  const on = repairReady();
+  const key = String(on);
+  if (key === lastRep) return;
+  lastRep = key;
+  repBtn.innerHTML = supportHtml(ICON_REPAIR, 'Repair all', on ? 'every damaged part' : 'nothing to repair', '');
+  repBtn.disabled = !on;
+}
 const friendBtn = document.createElement('button');
 friendBtn.type = 'button';
 friendBtn.className = 'duel-friend';
@@ -1960,9 +1976,10 @@ missBtn.addEventListener('click', () => { heliMissile(); missBtn.blur(); });
 // The support buttons' icons: vector drawings, animated by CSS in duel.css (`.sp-ico .sway`, `.rotor`, `.flame`, ...).
 const ICON_ANCHOR = '<svg viewBox="0 0 32 32" aria-hidden="true"><path class="wave" d="M-9 29q3-2 6 0t6 0t6 0t6 0t6 0t6 0t6 0t6 0"/><g class="sway"><circle cx="16" cy="6.5" r="2.6"/><path d="M16 9.1V24M11 13h10M6.5 18.5C6.5 22.5 10.5 25 16 25s9.5-2.5 9.5-6.5M6.5 18.5l-2.6 2.4M6.5 18.5l3 1.6M25.5 18.5l2.6 2.4M25.5 18.5l-3 1.6"/></g></svg>';
 const ICON_HELI = '<svg viewBox="0 0 32 32" aria-hidden="true"><g class="bob"><g class="rotor"><path d="M2 8.5h28"/></g><path d="M16 8.5v3"/><path class="fill" d="M6.5 18c0-3.6 3-6.5 7.5-6.5h5c3.4 0 5.5 2 5.5 4.6v1.9c0 1.4-1.3 2.5-2.9 2.5H10.5C8.2 20.5 6.5 19.7 6.5 18z"/><path class="win" d="M9.5 15.3c.8-1.5 2.4-2.3 4.6-2.3h1.4v4.3H9.2z"/><path d="M24.5 15.3l5.5-2.6v3.4l-5 2"/><circle class="trot" cx="30" cy="12.6" r="2.3"/><path d="M8 24.5h15M11 20.5v4M20 20.5v4"/></g></svg>';
+const ICON_REPAIR = '<svg viewBox="0 0 32 32" aria-hidden="true"><g class="wrench"><path d="M20.6 6.6a6 6 0 0 0-7.4 7.6L5.4 22a2.7 2.7 0 0 0 3.8 3.8l7.8-7.8a6 6 0 0 0 7.6-7.4l-3.8 3.8-3.4-.9-.9-3.4z"/></g><circle cx="7.3" cy="23.9" r="0.9" style="fill:currentColor"/></svg>';
 const ICON_MISS = '<svg viewBox="0 0 32 32" aria-hidden="true"><g transform="rotate(-45 16 16)"><path class="smoke s1" d="M3 16h0"/><circle class="puff p1" cx="4" cy="16" r="1.6"/><circle class="puff p2" cx="4" cy="16" r="1.6"/><path class="flame" d="M9 14.2L1.5 16 9 17.8z"/><path class="fill" d="M9 13.2h11.5L27 16l-6.5 2.8H9z"/><path d="M9 13.2L5.8 9.8h5.6l1.9 3.4M9 18.8l-3.2 3.4h5.6l1.9-3.4M16 13.2v5.6"/></g></svg>';
 // One support button: an icon, a title and a status line, the key, and a bar that fills while it waits (`wait` 0..1, or null).
-const supportHtml = (icon, title, sub, key, wait = null) => `<i class="sp-ico">${icon}</i><span class="sp-txt"><b>${title}</b><small>${sub}</small></span><kbd>${key}</kbd>`
+const supportHtml = (icon, title, sub, key, wait = null) => `<i class="sp-ico">${icon}</i><span class="sp-txt"><b>${title}</b><small>${sub}</small></span>${key ? `<kbd>${key}</kbd>` : ''}`
   + (wait === null ? '' : `<s class="sp-wait" style="width:${Math.round(clamp(wait, 0, 1) * 100)}%"></s>`);
 function updateHeliButtons() {
   const h = sim.hop;
@@ -2023,7 +2040,7 @@ renderer.setAnimationLoop((now) => {
   audio.update(sim, camera);
   if (hudOn) {
     updateHud();
-    updateFriendBtn();
+    updateFriendBtn(); updateRepairBtn();
     updateHeliButtons();
     const sh = shipHtml();
     if (sh !== lastShip) { shipEl.innerHTML = sh; lastShip = sh; }

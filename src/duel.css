@@ -625,3 +625,8 @@ body.mission-duel .duel-radar .rc, body.mission-duel .duel-ship { bottom: calc(v
   #menu #btn-sound[aria-pressed="true"] .mi-w1 { animation: ic-blink 0.9s ease-in-out infinite alternate; } #menu #btn-sound[aria-pressed="true"] .mi-w2 { animation: ic-blink 0.9s ease-in-out 0.3s infinite alternate; }
   #menu button:hover .mi { animation: ic-bob 0.9s ease-in-out infinite; }
 }
+/* The repair-all button (a wrench) sits in the support row, in front of the call-friend button. */
+.duel-rep { border-color: rgba(61, 220, 132, 0.55); border-left-color: rgba(61, 220, 132, 0.55); } .duel-rep .sp-ico { color: #3ddc84; background: none; }
+.duel-rep:not(:disabled) { box-shadow: 0 0 0 2px rgba(61, 220, 132, 0.2), 0 6px 18px rgba(0, 0, 0, 0.35); }
+@media (prefers-reduced-motion: no-preference) { .duel-rep:not(:disabled) .wrench { transform-origin: 16px 16px; animation: ic-wrench 1.6s ease-in-out infinite; } }
+@keyframes ic-wrench { 0%, 55%, 100% { transform: rotate(0); } 65% { transform: rotate(-22deg); } 80% { transform: rotate(14deg); } 90% { transform: rotate(-6deg); } }
