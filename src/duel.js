@@ -241,9 +241,10 @@ function makeShip(idx, x, z, psi, team = idx === 0 ? 0 : 1, kind = 'frigate') {
 
 export class DuelSim {
   // `level` is the enemy's; `auto` ('easy' | 'normal' | 'hard') hands the player's ship to the same kind of helmsman (tests).
-  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, helmPlayer = false, scouting = false, intro = false, playerReload = 1, playerDamage = 1, easyGunSafe = false, firingReveals = false, playerFlankKn = 0, gunRange = GUN_RANGE, gatAnswers = false } = {}) {
+  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, helmPlayer = false, scouting = false, intro = false, playerReload = 1, playerDamage = 1, easyGunSafe = false, firingReveals = false, playerFlankKn = 0, gunRange = GUN_RANGE, gatAnswers = false, headingFire = false } = {}) {
     this.seed = seed;
     this.gunRange = gunRange; // reach of the 30 mm guns (the scene sets 500 m under the 76 mm)
+    this.headingFire = headingFire; // the player's gun lays on the enemy nearest her heading, not the nearest in range
     this.gatAnswers = gatAnswers; // the player's 30 mm fire by themselves while an enemy's are firing
     this.playerFlankKn = playerFlankKn; // the top of the player's telegraph in knots (0: the shared Flank), so other missions keep theirs
     this.playerReload = playerReload; // how long the player's 76 mm takes to reload, as a part of MAIN_RELOAD (the scene makes it 0.5)
@@ -770,10 +771,12 @@ export class DuelSim {
       let best = null, bd = Infinity;
       for (const o of this.hostiles(s)) {
         if (this.scouting && s.team === 0 && o.det === false) continue; // the picture is the radar's: a ship it has not got cannot be picked
-        const d = this.distance(s, o);
+        const d = this.headingFire && s.idx === 0 ? Math.abs(wrapPi(Math.atan2(o.z - s.z, o.x - s.x) - s.psi)) : this.distance(s, o);
         if (d < bd) { bd = d; best = o; }
       }
-      if (curOk && (!best || bd >= 0.75 * this.distance(s, cur))) continue;
+      if (this.headingFire && s.idx === 0) { // her bow decides: keep the current one unless another is clearly nearer the bow
+        if (curOk && (!best || bd >= Math.abs(wrapPi(Math.atan2(cur.z - s.z, cur.x - s.x) - s.psi)) - 0.12)) continue;
+      } else if (curOk && (!best || bd >= 0.75 * this.distance(s, cur))) continue;
       this.retarget(s, best ?? (cur ?? this.ships.find((o) => this.hostile(s, o)))?.idx ?? -1);
     }
   }

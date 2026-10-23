@@ -120,7 +120,7 @@ const clamp = THREE.MathUtils.clamp;
 let level = 'normal';
 try { level = globalThis.__DUEL_LEVEL ?? new URLSearchParams(location.search).get('level') ?? 'normal'; } catch { /* no address */ }
 if (!DUEL_LEVELS.includes(level)) level = 'normal';
-const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, helmPlayer: true, scouting: true, intro: true, playerReload: 0.5, playerDamage: 2, playerFlankKn: 38, gunRange: MAIN_RANGE - 500, gatAnswers: true, easyGunSafe: true, firingReveals: true });
+const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, helmPlayer: true, scouting: true, intro: true, playerReload: 0.5, playerDamage: 2, playerFlankKn: 38, gunRange: MAIN_RANGE - 500, gatAnswers: true, headingFire: true, easyGunSafe: true, firingReveals: true });
 seaHook = () => { const i = env.seaInfo(); if (i) sim.setSea(i.hs, i.dir); };
 seaHook();
 

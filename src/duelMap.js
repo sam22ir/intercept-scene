@@ -229,6 +229,27 @@ export function createDuelMap() {
       }
     }
 
+    // Your helicopter while it is in the air: an amber disc with a rotor cross and a nose along its heading, kept on the rim when it is off the map.
+    const hop = sim.hop;
+    if (hop && sim.heliUp) {
+      const [hx, hy] = xy(hop.x, hop.z);
+      const [cx, cy, edge] = clampTo(hx, hy);
+      const [nx, ny] = xy(hop.x + Math.cos(hop.yaw) * 200, hop.z + Math.sin(hop.yaw) * 200);
+      const ang = Math.atan2(ny - hy, nx - hx);
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.fillStyle = 'rgba(8,12,18,0.8)';
+      ctx.strokeStyle = '#ffc454';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(0, 0, edge ? 5 : 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.rotate(ang + Math.PI / 4);
+      ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(4, 0); ctx.moveTo(0, -4); ctx.lineTo(0, 4); ctx.stroke();
+      ctx.rotate(-Math.PI / 4);
+      ctx.fillStyle = '#ffc454';
+      ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(6, -2.6); ctx.lineTo(6, 2.6); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+
     // Where the radar view is looking: a sector out to the rim as wide as the lens (it narrows as the radar zooms in), a centre line and the true bearing.
     if (sightView) {
       const a0 = sightView.yaw - sim.player.psi - Math.PI / 2;
