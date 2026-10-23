@@ -9,7 +9,9 @@ import { GUN, HIT, SINK } from './duelAssets.js';
 //  beds      each ship's hum and the surf along her side (both with her speed), the wind.
 //  one-shots the 76 mm firing, a shell bursting on a hull, a ship going down (these three are ElevenLabs effects made for the
 //            duel, duelAssets.js), and splashes.
-//  synth     the rotary guns' ripping buzz (as in Solo Air Defense), a short alarm when one of your compartments goes.
+//  synth     the rotary guns' ripping buzz (as in Solo Air Defense).
+//  cues      the scene's alerts, each with its text on the banner (cue): an alarm, a ping, and the helicopter's radio (a squelch, then the
+//            report spoken by the browser's own voice, speechSynthesis, which needs no download and so works in the offline file).
 // Nothing is created until the sound is switched on (the browser wants a gesture first).
 
 const SOUND_SPEED = 340;
@@ -138,24 +140,65 @@ export function createDuelAudio() {
     src.start(ctx.currentTime + Math.min(d / SOUND_SPEED, 20));
     src.onended = () => { try { v.g.disconnect(); } catch { /* gone */ } };
   }
-  // A short two-tone alarm on the bridge.
-  function beep() {
+  // A tone sequence on the bridge: [[delay s, Hz], ...].
+  function tones(seq, level = 0.1, type = 'square', len = 0.12) {
     if (!ready || !enabled) return;
     const t = ctx.currentTime;
-    for (const [k, f] of [[0, 880], [0.16, 660], [0.32, 880]]) {
+    for (const [k, f] of seq) {
       const o = ctx.createOscillator();
       const g = ctx.createGain();
-      o.type = 'square';
+      o.type = type;
       o.frequency.value = f;
       g.gain.setValueAtTime(0, t + k);
-      g.gain.linearRampToValueAtTime(0.1, t + k + 0.01);
-      g.gain.linearRampToValueAtTime(0, t + k + 0.12);
+      g.gain.linearRampToValueAtTime(level, t + k + 0.01);
+      g.gain.linearRampToValueAtTime(0, t + k + len);
       o.connect(g);
       g.connect(voices.signal.in);
       o.start(t + k);
-      o.stop(t + k + 0.14);
+      o.stop(t + k + len + 0.02);
     }
     voices.signal.g.gain.value = 1;
+  }
+  // The radio's squelch: a burst of band-passed hiss with a click at each end.
+  function squelch(dur = 0.22) {
+    if (!ready || !enabled) return;
+    const sr = ctx.sampleRate, n = Math.floor(sr * dur);
+    const buf = ctx.createBuffer(1, n, sr), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * 0.35 * (i < 40 || i > n - 40 ? 2.5 : 1);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 1800; bp.Q.value = 0.9;
+    src.connect(bp); bp.connect(voices.signal.in);
+    src.start();
+    voices.signal.g.gain.value = 1;
+  }
+  // The helicopter's report, spoken: a clipped, slightly fast radio voice. A new report replaces one still waiting, never piles up.
+  const synth = globalThis.speechSynthesis;
+  let voice = null;
+  function pickVoice() {
+    const all = synth?.getVoices?.() ?? [];
+    voice = all.find((v) => /en[-_]GB/i.test(v.lang) && /male|daniel|george|ryan/i.test(v.name)) ?? all.find((v) => /^en/i.test(v.lang)) ?? null;
+  }
+  if (synth) { pickVoice(); synth.addEventListener?.('voiceschanged', pickVoice); }
+  function speak(text) {
+    if (!synth || !enabled || typeof SpeechSynthesisUtterance === 'undefined') return;
+    try {
+      if (synth.speaking || synth.pending) synth.cancel();
+      const u = new SpeechSynthesisUtterance(text.replace(/\b(\d+) mm\b/g, '$1 millimetre').replace(/:/g, ','));
+      if (voice) u.voice = voice;
+      u.rate = 1.12; u.pitch = 0.85; u.volume = 0.9;
+      synth.speak(u);
+    } catch { /* no voice here */ }
+  }
+  // One alert at a time, and not too often: an alarm at most every 2.5 s, a ping every 1.2 s, the radio whenever it reports.
+  const lastCue = { alarm: -1e9, ping: -1e9 };
+  function cue(kind, text = '') {
+    if (!enabled) return;
+    const now = performance.now() / 1000;
+    if (kind === 'alarm') { if (now - lastCue.alarm < 2.5) return; lastCue.alarm = now; tones([[0, 880], [0.16, 660], [0.32, 880]]); }
+    else if (kind === 'ping') { if (now - lastCue.ping < 1.2) return; lastCue.ping = now; tones([[0, 1320]], 0.07, 'sine', 0.25); }
+    else if (kind === 'radio') { squelch(); speak(text); }
   }
 
   return {
@@ -163,10 +206,11 @@ export function createDuelAudio() {
     get enabled() { return enabled; },
     setEnabled(on) {
       enabled = on;
-      if (on) start();
+      if (on) start(); else try { synth?.cancel(); } catch { /* none */ }
       if (ctx && master) master.gain.setTargetAtTime(on ? 0.9 : 0, ctx.currentTime, 0.05);
     },
-    reset() { /* the loops run on; the one-shots die by themselves */ },
+    reset() { try { synth?.cancel(); } catch { /* none */ } },
+    cue,
     // The simulation's events (duel.js): a shot, a hit, a splash, a compartment out, a ship sunk.
     event(e) {
       if (!ready) return;
@@ -174,8 +218,6 @@ export function createDuelAudio() {
       else if (e.type === 'hit') shot('hit', e.pos, { level: 1.3, ref: 200, rate: 1 });
       else if (e.type === 'splash') shot('splash', e.pos, { level: 0.8, ref: 90, rate: 0.9 });
       else if (e.type === 'collision') shot('hit', e.pos, { level: 1.8, ref: 260, rate: 0.55 });
-      else if (e.type === 'out' && e.ship === 0) beep();
-      else if (e.type === 'contact' || e.type === 'lost' || e.type === 'radio') beep();
       else if (e.type === 'hmissile') shot('gun', e.pos, { level: 0.7, ref: 300, rate: 1.6 });
       else if (e.type === 'hgun') shot('gun', e.pos, { level: 0.3, ref: 300, rate: 1.9 });
       else if (e.type === 'impact') shot('hit', e.pos, { level: 1.0, ref: 300, rate: 0.8 });

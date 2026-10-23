@@ -357,7 +357,11 @@ function updateWeapons(dt) {
 const banner = document.querySelector('#shot-caption');
 banner.classList.add('call');
 let bannerUntil = 0;
-function say(text, tone = '', ms = 3200) {
+// An alert sound goes only with its text on the banner, and only where a call asks for one (`sound`: 'alarm' for bad news about your ship,
+// 'ping' for a contact or news, 'radio' for the helicopter, which is also spoken). The audio throttles them (duelAudio.js `cue`).
+let cueSound = null; // set once the audio exists
+function say(text, tone = '', ms = 3200, sound = null) {
+  if (sound && cueSound) cueSound(sound, text);
   banner.textContent = text;
   banner.hidden = false;
   banner.classList.remove('standby', 'execute', 'station', 'danger');
@@ -428,11 +432,11 @@ function handleEvents() {
       v.flash = 0.09;
       for (let k = 0; k < 7; k++) fx.gunSmoke(_c, _b.set(e.dir[0] * 9, e.dir[1] * 9, e.dir[2] * 9), sim.t);
     } else if (e.type === 'contact') {
-      say(`Contact: enemy ${relName(e.rel)}, ${kmText(e.range)}${e.heli ? ' (the helicopter has her)' : ''}`, 'warn', 3600);
+      say(`Contact: enemy ${relName(e.rel)}, ${kmText(e.range)}${e.heli ? ' (the helicopter has her)' : ''}`, 'warn', 3600, 'ping');
     } else if (e.type === 'lost') {
       say('Contact lost', '', 2400);
     } else if (e.type === 'radio') {
-      say(`Helicopter: ${e.text}`, 'ok', 4600);
+      say(`Helicopter: ${e.text}`, 'ok', 4600, 'radio');
     } else if (e.type === 'hgun') {
       _c.set(...e.pos);
       for (let k = 0; k < 2; k++) fx.gunSmoke(_c, _b.set(0, 0, 0), sim.t);
@@ -443,25 +447,25 @@ function handleEvents() {
       fx.shellBurst(_c.set(...e.pos), sim.t);
     } else if (e.type === 'ground') {
       for (let k = 0; k < 3; k++) fx.explosion(_c.set(e.pos[0] + (k - 1) * 10, 4, e.pos[2]), sim.t + k * 0.25);
-      if (e.ship === 0) { say('Aground: the engine room is holed, back her off', 'bad', 3600); slamShake = Math.max(slamShake, 2); }
+      if (e.ship === 0) { say('Aground: the engine room is holed, back her off', 'bad', 3600, 'alarm'); slamShake = Math.max(slamShake, 2); }
     } else if (e.type === 'hit') {
       fx.shellBurst(_c.set(...e.pos), sim.t);
       if (e.ship === 0) {
         alarmEl.classList.remove('hit'); void alarmEl.offsetWidth; alarmEl.classList.add('hit');
         say(`Hit: ${COMPARTMENTS[e.comp].name}${e.out ? ' out' : ''}`, 'bad', 2200);
       } else if (e.neutral) {
-        if (e.owner === 0) say('You hit a merchant ship: hold fire, sinking her loses the duel', 'bad', 3600);
+        if (e.owner === 0) say('You hit a merchant ship: hold fire, sinking her loses the duel', 'bad', 3600, 'alarm');
       } else if (e.owner === 0) say(`Hit on her ${COMPARTMENTS[e.comp].name.toLowerCase()}${e.out ? ': out' : ''}`, 'ok', 2200);
     } else if (e.type === 'arrive') {
       const where = relName(e.rel);
-      if (e.kind === 'enemy') say(`Another enemy frigate ${where}, ${kmText(e.range)}`, 'warn', 4200);
-      else if (e.kind === 'ally') say(`Friendly frigate ${where}, ${kmText(e.range)}: coming to help`, 'ok', 4200);
-      else say(`Merchant ship crossing ${where}: do not fire on her`, '', 4200);
+      if (e.kind === 'enemy') say(`Another enemy frigate ${where}, ${kmText(e.range)}`, 'warn', 4200, 'alarm');
+      else if (e.kind === 'ally') say(`Friendly frigate ${where}, ${kmText(e.range)}: coming to help`, 'ok', 4200, 'ping');
+      else say(`Merchant ship crossing ${where}: do not fire on her`, '', 4200, 'ping');
     } else if (e.type === 'collision') {
       for (let k = 0; k < 4; k++) fx.shellBurst(_c.set(e.pos[0] + (Math.random() - 0.5) * 10, e.pos[1] + Math.random() * 4, e.pos[2] + (Math.random() - 0.5) * 10), sim.t);
       if (e.a === 0 || e.b === 0) {
         alarmEl.classList.remove('hit'); void alarmEl.offsetWidth; alarmEl.classList.add('hit');
-        say(`Collision at ${e.impact.toFixed(0)} m/s`, 'bad', 2600);
+        say(`Collision at ${e.impact.toFixed(0)} m/s`, 'bad', 2600, 'alarm');
       }
     } else if (e.type === 'gunhit') {
       if (e.ship === 0) { alarmEl.classList.remove('hit'); void alarmEl.offsetWidth; alarmEl.classList.add('hit'); }
@@ -469,7 +473,8 @@ function handleEvents() {
       fx.splashAt(_c.set(e.pos[0], 0, e.pos[2]), sim.t, 1.5);
       if (e.miss < 60) say(e.owner === 0 ? 'Near miss' : 'Their shell falls close', e.owner === 0 ? '' : 'warn', 1400);
     } else if (e.type === 'out') {
-      say(`${who(e.ship)} ${COMPARTMENTS[e.comp].name.toLowerCase()} is out`, e.ship === 0 ? 'bad' : 'ok', 3000);
+      const moved = e.ship !== 0 ? sightPastOut(e.ship, e.comp) : null;
+      say(`${who(e.ship)} ${COMPARTMENTS[e.comp].name.toLowerCase()} is out${moved ? `: sight on her ${COMPARTMENTS[moved].name.toLowerCase()}` : ''}`, e.ship === 0 ? 'bad' : 'ok', 3000, e.ship === 0 ? 'alarm' : 'ping');
     } else if (e.type === 'sunk') {
       startKill(e.ship);
       for (let k = 0; k < 3; k++) fx.explosion(_c.set(e.pos[0] + (k - 1) * 14, e.pos[1], e.pos[2]), sim.t + k * 0.35);
@@ -478,9 +483,9 @@ function handleEvents() {
     } else if (e.type === 'repair') {
       if (e.ship === 0) say(e.phase === 'start' ? `Repairing the ${COMPARTMENTS[e.comp].name.toLowerCase()}: ${REPAIR_TIME} s` : `${COMPARTMENTS[e.comp].name} repaired`, e.phase === 'start' ? 'warn' : 'ok', 2000);
     } else if (e.type === 'fire') {
-      if (e.ship === 0) say(`Fire in the ${COMPARTMENTS[e.comp].name.toLowerCase()}: send a crew`, 'warn', 2400);
+      if (e.ship === 0) say(`Fire in the ${COMPARTMENTS[e.comp].name.toLowerCase()}: send a crew`, 'warn', 2400, 'alarm');
     } else if (e.type === 'over') {
-      say(e.reason === 'merchant' ? 'You sank a merchant ship: you lose' : e.winner === 0 ? 'The enemy is going down: you win' : 'Your ship is sinking: you lose', e.winner === 0 ? 'ok' : 'bad', 60000);
+      say(e.reason === 'merchant' ? 'You sank a merchant ship: you lose' : e.winner === 0 ? 'The enemy is going down: you win' : 'Your ship is sinking: you lose', e.winner === 0 ? 'ok' : 'bad', 60000, e.winner === 0 ? 'ping' : 'alarm');
     }
   }
 }
@@ -884,6 +889,7 @@ keysSheet.querySelector('.keys-note').textContent = 'The 76 mm aims itself unles
 
 const audio = createDuelAudio();
 eventHooks.push((e) => audio.event(e));
+cueSound = (kind, text) => audio.cue(kind, text);
 const soundButton = document.querySelector('#btn-sound');
 function setSound(on) {
   audio.setEnabled(on);
@@ -1086,6 +1092,23 @@ function lockSight() { // Enter: lock the compartment the sight has snapped to, 
   sight.lock = { ship, comp };
   sight.manual = false;
 }
+// A part of hers is out: a sight locked or snapped on it moves to the nearest part along her hull that still works (none left: it stays).
+// Returns the part it moved to, or null.
+function sightPastOut(ship, comp) {
+  const s = sim.ships[ship];
+  const onIt = (sight.lock && sight.lock.ship === ship && sight.lock.comp === comp) || (!sight.lock && ship === sim.enemy.idx && sight.snapId === comp);
+  if (!s || !onIt) return null;
+  let next = null, best = Infinity;
+  for (const id of COMP_IDS) {
+    if (id === comp || s.comp[id] <= 0) continue;
+    const d = Math.abs(ZONE_POS[id][0] - ZONE_POS[comp][0]);
+    if (d < best) { best = d; next = id; }
+  }
+  if (!next) return null;
+  if (sight.lock) sight.lock = { ship, comp: next };
+  else { sight.lock = { ship, comp: next }; sight.manual = false; } // snapped: lock the new part, so the snap does not slide back
+  return next;
+}
 const radarKeys = { l: 0, r: 0, u: 0, d: 0, zi: 0, zo: 0 };
 let sightZoom = SIGHT_ZOOM0;
 let sightZoomGoal = SIGHT_ZOOM0;
@@ -1269,7 +1292,8 @@ function aimSight(dt) {
     if (tgG && tg.team === 1 && tg.tSunk === null && (24 * window.innerHeight) / (2 * r * Math.tan(rad(lens / 2))) >= MARK_MIN) {
       tgG.updateMatrixWorld(true);
       let best = null, bestA = Infinity, keepA = Infinity;
-      for (const id of COMP_IDS) {
+      const live = COMP_IDS.filter((id) => tg.comp[id] > 0);
+      for (const id of live.length ? live : COMP_IDS) {
         const ang = sight.aim.angleTo(_w2.copy(tgG.localToWorld(_w1.set(...ZONE_POS[id]))).sub(camera.position).normalize());
         if (ang < bestA) { bestA = ang; best = id; }
         if (id === sight.snapId) keepA = ang;
@@ -1549,6 +1573,10 @@ function introStep(dt) {
   if (sim.shotFired && ['scan', 'tour', 'ask'].includes(INTRO.phase)) { endIntro(); return; } // you fired first yourself
   if (INTRO.phase === 'scan') {
     if (INTRO.t > 2.4 && !sim.radarOn) sim.startRadar();
+    if (INTRO.t > CONTACT_AT && !document.body.classList.contains('duel-cine')) { // she is found: the bars come in, the reticle closes on her
+      document.body.classList.add('duel-cine');
+      say('Contact', 'bad', 1200, 'alarm');
+    }
     if (INTRO.t > 3.4) {
       INTRO.phase = 'tour'; INTRO.t = 0; INTRO.stop = -1;
       INTRO.p0.copy(camera.position);
@@ -1595,20 +1623,25 @@ function introCamera() {
     const foe = ships[sim.enemy.idx]?.group, g = INTRO.seg;
     if (!foe || !g) return false;
     let fov;
-    if (g.kind === 'fly') { // out from your ship to her, over a rising arc
+    if (g.kind === 'fly') { // out from your ship to her, low over the sea, banking, the lens widening with the speed
       const u = smooth01(g.u);
-      fov = lerp(55, stopPose(foe, 0, 0, 0, 0, _tp, _tl), u);
+      const end = stopPose(foe, 0, 0, 0, 0, _tp, _tl);
+      fov = lerp(55, end, u) + Math.sin(Math.PI * u) * 22;
       camera.position.lerpVectors(INTRO.p0, _tp, u);
-      camera.position.y += Math.sin(Math.PI * u) * Math.min(260, INTRO.p0.distanceTo(_tp) * 0.08);
+      camera.position.y = lerp(INTRO.p0.y, _tp.y, u) * (1 - 0.55 * Math.sin(Math.PI * u)); // dips toward the sea mid-way
       _b.lerpVectors(INTRO.l0, _tl, smooth01(g.u * 1.6));
+      camera.lookAt(_b);
+      camera.rotateZ(Math.sin(Math.PI * u) * 0.22 + Math.sin(INTRO.t * 23) * 0.004 * Math.sin(Math.PI * u)); // bank, and a tremor at speed
+      setFov(fov);
+      return true;
     } else if (g.kind === 'stop') { // whip round her to the weapon, then a slow drift while the callout reads
       fov = stopPose(foe, Math.max(0, g.i - 1), g.i, whipEase(g.u), g.held * 0.035, camera.position, _b);
-    } else { // back to your ship, fast
+    } else { // back to your ship, fast and low
       stopPose(foe, g.i, g.i, 1, TOUR.hold * 0.035, _tp, _tl);
       behindPose(_tq, _a);
       const u = smooth01(g.u);
       camera.position.lerpVectors(_tp, _tq, u);
-      camera.position.y += Math.sin(Math.PI * u) * Math.min(200, _tp.distanceTo(_tq) * 0.06);
+      camera.position.y += Math.sin(Math.PI * u) * 20;
       _b.lerpVectors(_tl, _a, smooth01(g.u * 1.4));
       fov = lerp(STOPS[g.i].fov, 55, u);
     }
@@ -1622,6 +1655,77 @@ function introCamera() {
     }
     return true;
   }
+}
+
+// --- The hostile marks of the opening: a red ring with sonar pings on the sea round her, a target reticle, a red alert at the edges ------
+// From the moment the radar has her (late in the scan) until the question is answered. The ring and pings are flat on the sea, drawn over
+// the fog so they read from far off; the reticle is a screen element that closes in on her and locks (`.duel-lock`).
+const hostileFx = (() => {
+  const g = new THREE.Group();
+  const mat = (o) => new THREE.MeshBasicMaterial({ color: 0xff2a33, transparent: true, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(96, 104, 128), mat(0.9));
+  const inner = new THREE.Mesh(new THREE.RingGeometry(78, 80, 128), mat(0.5));
+  const ticks = new THREE.Group(); // four ticks across the ring, like a sight on the sea
+  for (let k = 0; k < 4; k++) {
+    const t = new THREE.Mesh(new THREE.PlaneGeometry(26, 3), mat(0.9));
+    const a = (k * Math.PI) / 2;
+    t.position.set(Math.cos(a) * 117, 0, Math.sin(a) * 117);
+    t.rotation.set(-Math.PI / 2, 0, -a);
+    ticks.add(t);
+  }
+  const pings = [0, 1, 2].map(() => new THREE.Mesh(new THREE.RingGeometry(98, 104, 96), mat(0.6)));
+  for (const m of [ring, inner, ...pings]) m.rotation.x = -Math.PI / 2;
+  g.add(ring, inner, ticks, ...pings);
+  g.visible = false;
+  g.renderOrder = 5;
+  scene.add(g);
+  return { g, ring, inner, ticks, pings };
+})();
+const lockEl = document.createElement('div');
+lockEl.className = 'duel-lock';
+lockEl.hidden = true;
+lockEl.innerHTML = '<i></i><i></i><i></i><i></i><b>HOSTILE</b><small></small>';
+document.body.appendChild(lockEl);
+const lockLabel = lockEl.querySelector('small');
+let hostileT = 0, lastLockTxt = '';
+const CONTACT_AT = 2.6; // s into the scan: the radar has her
+function updateHostileFx(dt) {
+  const ph = INTRO.phase, e = sim.enemy;
+  const on = !!e && e.tSunk === null && ((ph === 'scan' && INTRO.t > CONTACT_AT) || ph === 'tour' || ph === 'ask');
+  hostileFx.g.visible = on;
+  document.body.classList.toggle('duel-alert', on && ph !== 'ask');
+  if (!on) { hostileT = 0; lockEl.hidden = true; return; }
+  hostileT += dt;
+  const fx = hostileFx;
+  fx.g.position.set(e.x, 0.8, e.z);
+  const grow = smooth01(hostileT / 0.6); // the ring snaps open when she is found
+  fx.ring.scale.setScalar(0.4 + 0.6 * grow);
+  fx.ring.material.opacity = 0.55 + 0.35 * Math.sin(hostileT * 6) ** 2;
+  fx.inner.scale.setScalar(grow);
+  fx.ticks.rotation.y = hostileT * 0.6;
+  fx.ticks.scale.setScalar(grow);
+  fx.pings.forEach((m, k) => { // sonar pings rolling outward, one every 0.6 s
+    const u = ((hostileT + k * 0.6) % 1.8) / 1.8;
+    m.scale.setScalar(1 + u * 2.6);
+    m.material.opacity = 0.6 * (1 - u) * grow;
+  });
+  // The reticle: from the contact through the fly-out and the first look at her, then the callouts take over.
+  const seg = INTRO.seg;
+  const showLock = ph === 'scan' || (ph === 'tour' && seg && (seg.kind === 'fly' || (seg.kind === 'stop' && seg.i === 0)));
+  if (!showLock) { lockEl.hidden = true; return; }
+  _tq.set(e.x, 9, e.z).project(camera);
+  if (_tq.z > 1) { lockEl.hidden = true; return; } // behind the camera
+  const dist = camera.position.distanceTo(_c.set(e.x, 9, e.z));
+  const shipPx = (130 / dist) * (innerHeight / 2) / Math.tan(rad(camera.fov / 2)); // about her length on screen
+  const close = smooth01(hostileT / 0.9); // the brackets close in from wide, then hold on her
+  const size = clamp(lerp(innerHeight * 0.7, Math.max(70, shipPx * 1.15), close), 70, innerHeight * 0.8);
+  lockEl.hidden = false;
+  lockEl.style.left = `${((_tq.x + 1) / 2) * innerWidth}px`;
+  lockEl.style.top = `${((1 - _tq.y) / 2) * innerHeight}px`;
+  lockEl.style.setProperty('--s', `${size.toFixed(0)}px`);
+  lockEl.classList.toggle('locked', close >= 1);
+  const txt = close >= 1 ? `LOCKED · ${kmText(sim.range())}` : 'ACQUIRING…';
+  if (txt !== lastLockTxt) { lockLabel.textContent = txt; lastLockTxt = txt; }
 }
 
 // --- Calling friends: a button (and K); each call brings one friendly frigate in from astern at full speed, up to three -----------------
@@ -1694,6 +1798,7 @@ renderer.setAnimationLoop((now) => {
   updateWeapons(dt);
   updateStrikeHeli();
   updateCamera();
+  updateHostileFx(dt);
   env.follow(camera.position);
   env.setShadowFocus(_b.set((sim.player.x + sim.enemy.x) / 2, 0, (sim.player.z + sim.enemy.z) / 2), clamp(sim.range() * 0.5, 120, 600));
   fx.update(sim.t);

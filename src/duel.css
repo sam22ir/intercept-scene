@@ -335,3 +335,20 @@ body.duel-cine .duel-actions, body.ui-hidden .duel-actions, body:not(.mission-du
 @keyframes dz-blink { 50% { opacity: 0.35; } }
 body:not(.mission-duel) .duel-hostile, body:not(.mission-duel) .duel-callout { display: none; }
 @media (prefers-reduced-motion: reduce) { .duel-hostile, .duel-hostile .dz-tag, .duel-callout.pop i, .duel-callout.pop div { animation: none; } }
+/* The opening's lock-on reticle and the red alert at the edges */
+.duel-lock { --s: 200px; position: fixed; z-index: 31; width: var(--s); height: calc(var(--s) * 0.62); transform: translate(-50%, -50%); pointer-events: none; transition: width 0.08s linear, height 0.08s linear; }
+.duel-lock[hidden] { display: none; }
+.duel-lock i { position: absolute; width: 22%; height: 30%; border: 3px solid #ff3b42; filter: drop-shadow(0 0 6px #ff3b42); }
+.duel-lock i:nth-child(1) { left: 0; top: 0; border-right: 0; border-bottom: 0; } .duel-lock i:nth-child(2) { right: 0; top: 0; border-left: 0; border-bottom: 0; }
+.duel-lock i:nth-child(3) { left: 0; bottom: 0; border-right: 0; border-top: 0; } .duel-lock i:nth-child(4) { right: 0; bottom: 0; border-left: 0; border-top: 0; }
+.duel-lock b, .duel-lock small { position: absolute; left: 50%; transform: translateX(-50%); white-space: nowrap; color: #ff5d61; text-shadow: 0 0 8px rgba(255, 40, 50, 0.9), 0 1px 2px #000; }
+.duel-lock b { bottom: calc(100% + 6px); font: 900 16px system-ui, sans-serif; letter-spacing: 0.35em; }
+.duel-lock small { top: calc(100% + 6px); font: 700 12px ui-monospace, monospace; letter-spacing: 0.12em; }
+.duel-lock:not(.locked) i { border-color: #ffb03b; filter: drop-shadow(0 0 6px #ffb03b); animation: dz-blink 0.25s steps(2) infinite; }
+.duel-lock.locked i { animation: dz-lock 0.35s ease-out; } .duel-lock.locked b { animation: dz-blink 0.7s steps(2) infinite; }
+@keyframes dz-lock { from { transform: scale(1.6); opacity: 0.2; } to { transform: none; opacity: 1; } }
+body.duel-alert::after { content: ''; position: fixed; inset: 0; z-index: 29; pointer-events: none; box-shadow: inset 0 0 18vmin rgba(255, 20, 30, 0.55); animation: dz-alert 1.1s ease-in-out infinite alternate; }
+@keyframes dz-alert { from { opacity: 0.25; } to { opacity: 1; } }
+body:not(.mission-duel) .duel-lock { display: none; }
+@media (prefers-reduced-motion: reduce) { .duel-lock i, .duel-lock b, body.duel-alert::after { animation: none; } }
+body.duel-cine .duel-labels { opacity: 0; }
