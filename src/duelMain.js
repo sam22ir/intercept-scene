@@ -1245,8 +1245,8 @@ radarEl.hidden = true;
 radarEl.innerHTML = '<div class="hr-marks"></div><div class="rc">'
   + '<div class="rc-main"><div class="rc-top"><b class="hr-mode">AUTO</b><span class="hr-brg"></span><b class="hr-zv"></b></div></div>'
   + '<div class="rc-gun"><div class="rc-dial"><svg class="rc-ring" viewBox="0 0 150 150" aria-label="Zoom"><circle class="rc-rtrack" r="70" cx="75" cy="75"/><circle class="rc-rfill" r="70" cx="75" cy="75"/><circle class="rc-hit" r="70" cx="75" cy="75"/><circle class="rc-rthumb" r="7"/></svg>'
-  + '<button type="button" class="rc-fire" data-act="fire"><span>FIRE</span><small class="rc-am"></small><kbd>F</kbd></button></div>'
-  + '<button type="button" class="rc-lock" data-act="lock">⌖ Lock<kbd>Space</kbd></button></div></div>';
+  + '<button type="button" class="rc-fire" data-act="fire"><span>FIRE</span><small class="rc-am"></small><kbd>F</kbd></button>'
+  + '<button type="button" class="rc-lock" data-act="lock" title="Lock the part under the sight, or let the lock go (Space)">⌖ Lock</button></div></div></div>';
 document.body.appendChild(radarEl);
 const radarMode = radarEl.querySelector('.hr-mode');
 const radarBrg = radarEl.querySelector('.hr-brg');
@@ -1577,7 +1577,7 @@ function updateRadarUi() {
   radarMode.classList.toggle('manual', sight.manual && !sight.lock);
   radarMode.classList.toggle('locked', !!sight.lock);
   lockBtn.classList.toggle('on', !!sight.lock);
-  lockBtn.firstChild.textContent = sight.lock ? '⌖ Release' : '⌖ Lock';
+  lockBtn.textContent = sight.lock ? '⌖ RELEASE' : '⌖ LOCK';
   const yaw = Math.atan2(sight.aim.z, sight.aim.x);
   const rel = Math.atan2(Math.sin(yaw - sim.player.psi), Math.cos(yaw - sim.player.psi));
   radarBrg.textContent = `${relName(rel)} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${camera.fov.toFixed(camera.fov < 3 ? 2 : 1)}°`;

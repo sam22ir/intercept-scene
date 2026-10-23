@@ -530,3 +530,19 @@ body.mission-duel #fly-keys { flex-wrap: nowrap; overflow: hidden; max-width: ca
 .duel-radar .rc { position: absolute; }
 .duel-radar .rc .rc-main { position: absolute; right: calc(100% + 14px); bottom: 0; }
 .duel-radar .rc .rc-main { display: none; }
+
+/* One round button in two parts: the upper four fifths fire (red), the lower fifth locks or releases the sight (green). */
+.rc-dial { --fs: 96px; }
+@media (max-width: 900px) { .rc-dial { --fs: 76px; } }
+.rc-dial .rc-fire { width: var(--fs); height: var(--fs); clip-path: inset(0 0 21% 0); }
+.rc-dial .rc-lock { position: absolute; left: 50%; top: 50%; width: var(--fs); height: var(--fs); margin: calc(var(--fs) / -2) 0 0 calc(var(--fs) / -2); padding: 0; border: 0; border-radius: 50%; display: block; z-index: 1; cursor: pointer;
+  clip-path: inset(80% 0 0 0); background: #3ddc84; color: #04200f; font: 800 calc(var(--fs) * 0.095) system-ui, sans-serif; letter-spacing: 0.1em; text-align: center; line-height: 1; }
+.rc-dial .rc-lock::before { content: ''; position: absolute; inset: 7px; border-radius: 50%; background: radial-gradient(circle at 50% 120%, #7dffb0, #1fa05a 70%); box-shadow: inset 0 4px 10px rgba(0, 0, 0, 0.3); }
+.rc-dial .rc-lock { padding-top: calc(var(--fs) * 0.86); text-shadow: none; }
+.rc-dial .rc-lock:hover { filter: brightness(1.15); }
+.rc-dial .rc-lock:active::before { filter: brightness(0.9); }
+.rc-dial .rc-lock.on { background: #b9f5cf; animation: rc-latch 0.9s ease-in-out infinite alternate; }
+.rc-dial .rc-lock.on::before { background: radial-gradient(circle at 50% 120%, #d9ffe8, #3ddc84 70%); }
+.rc-dial .rc-lock kbd { display: none; }
+.rc-dial .rc-lock { isolation: isolate; }
+.rc-dial .rc-lock::before { z-index: -1; }
