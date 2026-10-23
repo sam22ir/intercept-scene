@@ -240,9 +240,11 @@ function makeShip(idx, x, z, psi, team = idx === 0 ? 0 : 1, kind = 'frigate') {
 
 export class DuelSim {
   // `level` is the enemy's; `auto` ('easy' | 'normal' | 'hard') hands the player's ship to the same kind of helmsman (tests).
-  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, scouting = false, intro = false, playerReload = 1 } = {}) {
+  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, helmPlayer = false, scouting = false, intro = false, playerReload = 1, playerDamage = 1, easyGunSafe = false } = {}) {
     this.seed = seed;
     this.playerReload = playerReload; // how long the player's 76 mm takes to reload, as a part of MAIN_RELOAD (the scene makes it 0.5)
+    this.playerDamage = playerDamage; // what the player's 76 mm shells do to a hostile ship, times the usual (the scene makes it 2)
+    this.easyGunSafe = !!easyGunSafe; // on Easy your own 76 mm can never be damaged, set on fire or flooded (the scene turns it on)
     // The opening (the scene turns it on): the radar is off until startRadar(), so no enemy is known, and no ship but yours fires until you have
     // fired your first shot (the event 'firstshot'): the first shot is always the player's.
     this.intro = !!intro;
@@ -256,6 +258,9 @@ export class DuelSim {
     this.hmiss = []; // its missiles in the air
     this.sea = null; // { hs, dir }: the waves' height and the direction they travel (the scene sets it; see setSea)
     this.realHandling = !!realHandling; // heavy handling (hull.js stepHullReal): slow rudder, a long swing, weight, a skid in turns (the scene turns it on)
+    // The player's own ship handles as Solo Air Defense's frigate (the scene turns it on): hull.js stepHull at its own 70 m radius, a quick
+    // rudder and speed, no skid and no sea against her; the other ships keep the duel's handling.
+    this.helmPlayer = !!helmPlayer;
     this.wavesOn = !!waves; // more ships arrive (the scene turns it on)
     this.level = LEVELS[level] ? level : 'normal';
     this.auto = auto && LEVELS[auto] ? auto : null;
@@ -909,6 +914,16 @@ export class DuelSim {
   stepShip(s, dt) {
     const sunk = s.tSunk !== null;
     const engine = s.comp.engine / COMPARTMENTS.engine.hp;
+    if (this.helmPlayer && s.idx === 0) {
+      s.sway = 0;
+      stepHull(s, dt, {
+        want: sunk ? 0 : s.cmd.want,
+        orderKn: sunk ? 0 : TELEGRAPH[s.order].kn,
+        rudderLimit: RUDDER_MAX * (0.25 + 0.75 * s.comp.steering / COMPARTMENTS.steering.hp),
+        speedCap: s.comp.engine <= 0 ? 5 / TELEGRAPH[s.order].kn : 0.35 + 0.65 * engine,
+      });
+      return;
+    }
     // The sea against her: heading into it costs speed (about 12 % in a 3 m sea, 35 % in a very high one, much less running before it), and a
     // sea on the quarter yaws her bow to and fro, which the helm must catch.
     let seaK = 1, seaYaw = 0;
@@ -931,7 +946,7 @@ export class DuelSim {
   // The scatter of a ship's 76 mm (radians, one standard deviation).
   scatter(s) {
     const hurt = 1 - s.comp.bridge / COMPARTMENTS.bridge.hp;
-    const rough = this.sea && this.realHandling ? 1 + 0.05 * this.sea.hs : 1; // a ship that pitches and rolls shoots wider
+    const rough = this.sea && this.realHandling && !(this.helmPlayer && s.idx === 0) ? 1 + 0.05 * this.sea.hs : 1; // a ship that pitches and rolls shoots wider
     return (SCATTER_BASE * (s.manual ? MANUAL_SCATTER : 1) + SCATTER_TURN * Math.abs(s.r)) * (1 + 1.5 * hurt) * (s.ai ? s.ai.p.aim : 1) * rough;
   }
 
@@ -1065,28 +1080,32 @@ export class DuelSim {
     const am = AMMO_TYPES[sh.kind] ?? AMMO_TYPES.he;
     let dmg = aimed ? COMPARTMENTS[comp].hp * (sh.lock ? LOCK_FRACTION : FOCUS_FRACTION) : lerp(SHELL_DAMAGE[0], SHELL_DAMAGE[1], this.rng()) * am.dmg;
     if (this.easyShield(from, tgt)) dmg = COMPARTMENTS[comp].hp * EASY_HIT_FRACTION;
+    if (from.idx === 0 && this.hostile(from, tgt)) dmg *= this.playerDamage;
     if (this.hostile(from, tgt)) from.stats.hits += 1;
     tgt.stats.taken += 1;
     tgt.lastHitBy = from.idx;
     const pos = this.toWorld(tgt, [local[0], clamp(local[1], 0, BOX.y1), local[2]]);
     this.damage(tgt, comp, dmg, SHELL_HULL, local[2]);
     if (am.fire > 0 && this.rngF() < am.fire) this.ignite(tgt, comp, 0.3);
-    tgt.leak[comp] += am.flood;
+    if (!this.gunSafe(tgt, comp)) tgt.leak[comp] += am.flood;
     this.events.push({ type: 'hit', owner: sh.owner, ship: tgt.idx, comp, dmg, kind: sh.kind, pos, local: local.slice(), out: tgt.comp[comp] <= 0, neutral: tgt.team === 2 });
     this.shells.splice(this.shells.indexOf(sh), 1);
   }
 
+  // On Easy (with easyGunSafe) your own 76 mm is untouchable: no damage, fire or flooding reaches it (the hull still takes its share).
+  gunSafe(s, comp) { return this.easyGunSafe && this.level === 'easy' && s.idx === 0 && comp === 'gun'; }
+
   damage(s, comp, dmg, hullShare, side = 0) {
     if (s.tSunk !== null) return;
     const before = s.comp[comp];
-    s.comp[comp] = Math.max(0, before - dmg);
+    if (!this.gunSafe(s, comp)) s.comp[comp] = Math.max(0, before - dmg);
     if (side) s.listSide = Math.sign(side);
     s.hp = Math.max(0, s.hp - dmg * hullShare);
     if (before > 0 && s.comp[comp] <= 0) this.events.push({ type: 'out', ship: s.idx, comp });
   }
 
   ignite(s, comp, level = 0.3) {
-    if (s.tSunk !== null || s.comp[comp] <= 0 || s.fire[comp] > 0) return;
+    if (s.tSunk !== null || s.comp[comp] <= 0 || s.fire[comp] > 0 || this.gunSafe(s, comp)) return;
     s.fire[comp] = level;
     this.events.push({ type: 'fire', ship: s.idx, comp });
   }

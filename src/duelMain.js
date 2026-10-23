@@ -104,7 +104,7 @@ const clamp = THREE.MathUtils.clamp;
 let level = 'normal';
 try { level = globalThis.__DUEL_LEVEL ?? new URLSearchParams(location.search).get('level') ?? 'normal'; } catch { /* no address */ }
 if (!DUEL_LEVELS.includes(level)) level = 'normal';
-const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, scouting: true, intro: true, playerReload: 0.5 });
+const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, helmPlayer: true, scouting: true, intro: true, playerReload: 0.5, playerDamage: 2, easyGunSafe: true });
 seaHook = () => { const i = env.seaInfo(); if (i) sim.setSea(i.hs, i.dir); };
 seaHook();
 
@@ -1472,9 +1472,8 @@ setView('behind');
 // --- The opening: the radar spots her, a fly-out to the enemy, her weapons one by one, the question, the first shot ----------------------
 // The battle does not start by itself. The radar sweeps (3 s) and finds an enemy ship; the camera leaves your ship and flies out to her,
 // circles her, whipping fast from one weapon to the next and slowing on each while a callout says what it is, then rushes back behind your
-// ship; then the question, big and red: engage? Yes lays the gun on her and fires the first shot (the camera behind the gun, then riding
-// the shell), and from that shot on everyone may fire; hold fire leaves it to you (F). The first shot is always yours: nobody else fires
-// before it (sim.held). Esc, Space or Enter skip the tour; on the question Enter engages and Esc holds fire.
+// ship; then the question, big and red: engage? Yes opens the Radar view (the sight) on her and leaves the shot to you: aim, then F; hold fire
+// goes back to the ship. Nothing fires by itself, and the first shot is always yours: nobody else fires before it (sim.held). Esc, Space or Enter skip the tour; on the question Enter engages and Esc holds fire.
 // Each stop is a camera on a circle round her (in her frame: x to her bow, z to starboard; `ang` from her bow towards starboard), looking
 // at a point of her hull; her model is the same frigate as yours, so the points are those of your own weapons.
 const STOPS = [
@@ -1486,7 +1485,7 @@ const STOPS = [
 ];
 const TOUR = { fly: 2.6, whip: 0.8, hold: 2.2, back: 1.5 };
 const TOUR_LEN = TOUR.fly + STOPS.length * (TOUR.whip + TOUR.hold) + TOUR.back;
-const INTRO = { phase: 'off', t: 0, seg: null, stop: -1, p0: new THREE.Vector3(), l0: new THREE.Vector3() }; // scan | tour | ask | fire | follow | off
+const INTRO = { phase: 'off', t: 0, seg: null, stop: -1, p0: new THREE.Vector3(), l0: new THREE.Vector3() }; // scan | tour | ask | off
 const cineBars = document.createElement('div');
 cineBars.className = 'duel-bars';
 cineBars.innerHTML = '<i></i><i></i>';
@@ -1524,10 +1523,9 @@ function toAsk() {
   introEl.hidden = false;
 }
 function engage() {
-  introEl.hidden = true;
-  INTRO.phase = 'fire'; INTRO.t = 0;
-  document.body.classList.add('duel-cine');
-  say('Open fire', 'warn', 2000);
+  endIntro();
+  setView('radar');
+  say('Weapons free: aim at a part of her, then fire (F)', 'warn', 4200);
 }
 function holdFire() {
   endIntro();
@@ -1571,12 +1569,6 @@ function introStep(dt) {
         calloutEl.classList.remove('pop'); void calloutEl.offsetWidth; calloutEl.classList.add('pop');
       }
     }
-  } else if (INTRO.phase === 'fire') {
-    input.fire = 1; // the gun is laid on her by the fire control; it fires as soon as it is on (the first shot)
-    if (sim.shotFired) { input.fire = 0; INTRO.phase = 'follow'; INTRO.t = 0; }
-    else if (INTRO.t > 12) { endIntro(); say('Turn her to bring the gun to bear', 'warn', 4000); }
-  } else if (INTRO.phase === 'follow') {
-    if (INTRO.t > 3 || (INTRO.t > 0.5 && !sim.shells.some((s) => s.owner === 0))) endIntro();
   }
 }
 const smooth01 = (u) => { const x = clamp(u, 0, 1); return x * x * (3 - 2 * x); };
@@ -1598,10 +1590,8 @@ function behindPose(pos, look) { // where the Behind view takes over
 }
 // The cinematic camera, or false when the normal one is to run.
 function introCamera() {
-  const ph = INTRO.phase;
-  const me = ships[0]?.group;
-  if (!me || (ph !== 'tour' && ph !== 'fire' && ph !== 'follow')) return false;
-  if (ph === 'tour') {
+  if (INTRO.phase !== 'tour' || !ships[0]) return false;
+  {
     const foe = ships[sim.enemy.idx]?.group, g = INTRO.seg;
     if (!foe || !g) return false;
     let fov;
@@ -1632,21 +1622,6 @@ function introCamera() {
     }
     return true;
   }
-  if (ph === 'fire') { // behind and above the 76 mm, looking where it points
-    camera.position.copy(me.localToWorld(_a.set(17, 12.5, -7)));
-    ships[0].mainGun.muzzle.getWorldPosition(_b);
-    _a.set(Math.cos(sim.player.psi + sim.player.gun.yaw * -1), 0.03, Math.sin(sim.player.psi + sim.player.gun.yaw * -1)).multiplyScalar(60).add(_b);
-    camera.lookAt(_a);
-    setFov(46);
-    return true;
-  }
-  const sh = sim.shells.find((s) => s.owner === 0); // follow: riding behind the shell
-  if (!sh) return false;
-  const sp = Math.hypot(sh.v[0], sh.v[1], sh.v[2]) || 1;
-  camera.position.set(sh.p[0] - (sh.v[0] / sp) * 18, sh.p[1] + 3.5, sh.p[2] - (sh.v[2] / sp) * 18);
-  camera.lookAt(sh.p[0] + (sh.v[0] / sp) * 60, sh.p[1] + (sh.v[1] / sp) * 60, sh.p[2] + (sh.v[2] / sp) * 60);
-  setFov(40);
-  return true;
 }
 
 // --- Calling friends: a button (and K); each call brings one friendly frigate in from astern at full speed, up to three -----------------

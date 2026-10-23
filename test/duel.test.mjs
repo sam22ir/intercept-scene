@@ -614,6 +614,47 @@ describe('heavy handling (realHandling)', () => {
   });
 });
 
+describe("the player's ship on Solo Air Defense's handling (helmPlayer)", () => {
+  const turn = (opts) => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', realHandling: true, ...opts });
+    sim.setSea(3, 0.8);
+    const p = sim.player, e = sim.ships[1];
+    let rudder = 0;
+    for (let i = 0; i < 80; i++) { sim.advance(0.1, { right: 1 }); if (i === 14) rudder = p.rudder; }
+    return { r: p.r, rudder, sway: p.sway ?? 0, enemyHeavy: e.sway !== undefined };
+  };
+  it('turns faster, puts the rudder over quickly, does not skid, and leaves the enemy on the heavy handling', () => {
+    const heavy = turn({}), helm = turn({ helmPlayer: true });
+    assert.ok(helm.r > heavy.r * 1.5, `turn rate ${helm.r.toFixed(3)} against ${heavy.r.toFixed(3)} rad/s`);
+    assert.ok(helm.rudder > heavy.rudder, 'the rudder is further over after 1.5 s');
+    assert.equal(helm.sway, 0);
+    assert.ok(helm.enemyHeavy, 'the enemy still skids (heavy handling)');
+  });
+});
+
+describe("the player's strong 76 mm and, on Easy, her untouchable gun (playerDamage, easyGunSafe)", () => {
+  it('a hit from your 76 mm does playerDamage times the usual to a hostile ship', () => {
+    const run = (playerDamage) => {
+      const sim = new DuelSim({ seed: 3, level: 'easy', playerDamage });
+      const e = sim.enemy, hp = e.hp;
+      sim.hit({ owner: 0, kind: 'ap' }, e, [0, 4, 0]);
+      return hp - e.hp;
+    };
+    const one = run(1), two = run(2);
+    assert.ok(Math.abs(two / one - 2) < 0.6, `damage ${one.toFixed(2)} then ${two.toFixed(2)}`);
+  });
+  it('on Easy nothing reaches your own 76 mm, on Normal it can still be knocked out', () => {
+    const hitGun = (level) => {
+      const sim = new DuelSim({ seed: 3, level, easyGunSafe: true });
+      const p = sim.player;
+      for (let i = 0; i < 40; i++) { sim.damage(p, 'gun', 30, 0); sim.ignite(p, 'gun'); }
+      return { gun: p.comp.gun, fire: p.fire.gun };
+    };
+    assert.deepEqual(hitGun('easy'), { gun: COMPARTMENTS.gun.hp, fire: 0 });
+    assert.equal(hitGun('normal').gun, 0);
+  });
+});
+
 describe('the sea against the ship (realHandling + setSea)', () => {
   const runTo = (hs, dir) => {
     const sim = new DuelSim({ seed: 3, level: 'easy', realHandling: true });
