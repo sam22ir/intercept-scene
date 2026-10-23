@@ -586,3 +586,42 @@ body.mission-duel .duel-radar .rc, body.mission-duel .duel-ship { bottom: calc(v
 @keyframes ic-spin { to { transform: rotate(360deg); } }
 @keyframes ic-flame { from { transform: scaleX(0.55) scaleY(0.85); } to { transform: scaleX(1.25) scaleY(1.15); } }
 @keyframes ic-puff { 0% { transform: translateX(0) scale(0.4); opacity: 0.7; } 100% { transform: translateX(-9px) scale(1.5); opacity: 0; } }
+/* Icons for the parts, the views, FIRE and LOCK: vector drawings, animated while they are in use (the part's badge is still when it is out). */
+.duel-views button svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+.duel-views button svg .beam { fill: currentColor; fill-opacity: 0.25; stroke: none; }
+.pt .pi .wv { stroke-width: 1.2; opacity: 0.7; }
+.rc-fire .fire-ico { width: 22px; height: 22px; fill: none; stroke: #fff; stroke-width: 1.4; stroke-linejoin: round; margin-bottom: -2px; }
+.rc-fire .fire-ico .burst { fill: #ffd27a; stroke: #fff4d6; } .rc-fire .fire-ico circle { fill: #fff; stroke: none; }
+.rc-dial .rc-lock svg { width: 1em; height: 1em; margin-right: 0.3em; vertical-align: -0.12em; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; }
+@media (prefers-reduced-motion: no-preference) {
+  .pt:not(.out) .pi .bob { animation: ic-bob 2.2s ease-in-out infinite; }
+  .pt:not(.out) .pi .wv { animation: ic-wave8 2.4s linear infinite; }
+  .pt:not(.out) .pi .recoil { animation: ic-recoil 2.6s ease-out infinite; }
+  .pt:not(.out) .pi .blink { animation: ic-blink 1.6s steps(2, jump-none) infinite; }
+  .pt:not(.out) .pi .pis.a { animation: ic-pump 0.7s ease-in-out infinite alternate; } .pt:not(.out) .pi .pis.b { animation: ic-pump 0.7s ease-in-out infinite alternate-reverse; }
+  .pt:not(.out) .pi .gat { stroke-dasharray: 3 2.2; animation: ic-gat 0.5s linear infinite; }
+  .pt:not(.out) .pi .rud { transform-origin: 12px 12px; animation: ic-rud 3.4s ease-in-out infinite; }
+  .duel-views button.active .lines { animation: ic-lines 0.9s linear infinite; }
+  .duel-views button.active .wheel { transform-origin: 12px 12px; animation: ic-spin 6s ease-in-out infinite alternate; }
+  .duel-views button.active .sweep { transform-origin: 12px 12px; animation: ic-spin 2.6s linear infinite; }
+  .rc-fire.ready .fire-ico { animation: ic-pulse 0.7s ease-in-out infinite alternate; }
+  .rc-dial .rc-lock.on svg { animation: ic-spin 2.4s linear infinite; }
+}
+@keyframes ic-recoil { 0%, 86%, 100% { transform: translateX(0); } 90% { transform: translateX(-2.2px); } }
+@keyframes ic-blink { 0% { opacity: 1; } 100% { opacity: 0.1; } }
+@keyframes ic-pump { from { transform: translateY(1.8px); } to { transform: translateY(-1.2px); } }
+@keyframes ic-gat { to { stroke-dashoffset: -10.4; } }
+@keyframes ic-rud { 0%, 100% { transform: rotate(-14deg); } 50% { transform: rotate(14deg); } }
+@keyframes ic-lines { from { transform: translateX(-2px); opacity: 0.3; } to { transform: translateX(2px); opacity: 1; } }
+@keyframes ic-pulse { from { transform: scale(0.92); } to { transform: scale(1.18); } }
+@keyframes ic-wave8 { to { transform: translateX(8px); } }
+/* The settings menu: a small vector icon in front of each entry; it moves on hover, and the sound waves play while sound is on. */
+#menu .mi-l { display: inline-flex; align-items: center; gap: 10px; }
+#menu .mi { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; opacity: 0.85; }
+#menu button:hover .mi { opacity: 1; }
+#menu [aria-pressed="false"] .mi { opacity: 0.4; }
+@media (prefers-reduced-motion: no-preference) {
+  #menu button:hover .mi-a { transform-origin: 12px 12px; animation: ic-spin 1.2s linear infinite; }
+  #menu #btn-sound[aria-pressed="true"] .mi-w1 { animation: ic-blink 0.9s ease-in-out infinite alternate; } #menu #btn-sound[aria-pressed="true"] .mi-w2 { animation: ic-blink 0.9s ease-in-out 0.3s infinite alternate; }
+  #menu button:hover .mi { animation: ic-bob 0.9s ease-in-out infinite; }
+}

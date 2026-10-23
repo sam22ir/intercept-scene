@@ -780,13 +780,13 @@ function partRows(s, mine, aim = null) {
 }
 // Each part of a ship is one small round badge: its shape in the middle, a ring round it for its state (the arc is the health, in the
 // health colour; an orange inner ring is a repair under way), small marks for fire, a leak and crews. The name and the figures show on hover.
-const PART_ICON = {
-  hull: '<path d="M3 15h18l-3 4H6zM12 4v8M8 9h8"/>',
-  gun: '<path d="M4 15h11l2-3h3M7 15v4h6v-4"/>',
-  bridge: '<path d="M4 18h16M7 18v-6h10v6M9 12V8h6v4"/>',
-  engine: '<circle cx="12" cy="12" r="3"/><path d="M12 4v3M12 17v3M4 12h3M17 12h3M6.3 6.3l2.1 2.1M15.6 15.6l2.1 2.1M17.7 6.3l-2.1 2.1M8.4 15.6l-2.1 2.1"/>',
-  guns: '<path d="M6 18h12M9 18V9M12 18V7M15 18V9"/>',
-  steering: '<circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="1.5"/><path d="M12 4v4M12 16v4M4 12h4M16 12h4"/>',
+const PART_ICON = { // 24 x 24 drawings, animated by CSS (duel.css, `.pi .bob` ...); still while the part is out
+  hull: '<g class="bob"><path d="M2 15h20l-3.5 5h-13z"/><path d="M7.5 15v-3.5h7l2 3.5M11 11.5V6M9 8.5h4"/></g><path class="wv" d="M-2 22.5q2-1.4 4 0t4 0t4 0t4 0t4 0t4 0t4 0"/>',
+  gun: '<path d="M4 20h11M6 20v-5a4 4 0 0 1 8 0v5"/><g class="recoil"><path d="M13.5 13.5H22"/><path d="M20.5 11.8v3.4"/></g>',
+  bridge: '<path d="M3 20h18M5 20v-5l2.5-3.5h9L19 15v5M8.5 15h7"/><path d="M12 11.5V4M9 6.5h6"/><circle class="blink" cx="12" cy="3.4" r="1" style="fill:currentColor"/>',
+  engine: '<path d="M3 20h18M5 20v-7h14v7z"/><g class="pis a"><path d="M8 13V8.5M6.2 8.5h3.6"/></g><g class="pis b"><path d="M12 13V8.5M10.2 8.5h3.6"/></g><g class="pis a"><path d="M16 13V8.5M14.2 8.5h3.6"/></g><path d="M8 16.5h8"/>',
+  guns: '<path d="M3 20h8M7 20v-4.5M5 15.5h5"/><path class="gat" d="M10 9h12M10 12h12M10 15h12"/><path d="M8.5 7.5v9"/>',
+  steering: '<path d="M12 2.5V12"/><circle cx="12" cy="3.8" r="1.3"/><g class="rud"><path d="M10 11.5h4l.9 9.2-2.9-1.7-2.9 1.7z"/></g><path d="M5 22c2.4-1.2 4-1.2 7 0s4.6 1.2 7 0" style="opacity:.6"/>',
 };
 const RING = 2 * Math.PI * 19;
 function badge(id, f, { tip, cls = '', marks = '', rep = null, data = '' }) {
@@ -928,12 +928,13 @@ restartButton.addEventListener('click', () => restart());
 
 const strip = document.createElement('div');
 strip.className = 'duel-views';
-const VIEW_ICONS = {
-  behind: '<path d="M3 16h18l-3 4H6z"/><path d="M12 4v9M8 9h8"/>',
-  bridge: '<rect x="3" y="6" width="18" height="10" rx="2"/><path d="M3 11h18M12 6v10M8 20h8"/>',
-  above: '<circle cx="12" cy="12" r="6"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>',
-  orbit: '<ellipse cx="12" cy="12" rx="9" ry="4.5" transform="rotate(-25 12 12)"/><circle cx="12" cy="12" r="2"/>',
-  radar: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/>',
+const MOTION = !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const VIEW_ICONS = { // drawn for what each view is: a chase camera, the wheelhouse wheel, a plan view, an orbit, the radar
+  behind: '<path d="M8 14h13l-2.5 4H10z"/><path d="M12 14v-3h5l1.5 3"/><g class="lines"><path d="M2 12.5h3.5M1 15.5h4.5M3 18.5h3.5"/></g>',
+  bridge: '<g class="wheel"><circle cx="12" cy="12" r="6.2"/><circle cx="12" cy="12" r="1.7"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4M5.3 5.3l2.5 2.5M16.2 16.2l2.5 2.5M18.7 5.3l-2.5 2.5M7.8 16.2l-2.5 2.5"/></g>',
+  above: '<path d="M12 2.5c3.2 3 4.3 7 4.3 11v5.7L14 22h-4l-2.3-2.8v-5.7c0-4 1.1-8 4.3-11z"/><path d="M12 8v10M9.7 13h4.6"/>',
+  orbit: '<g transform="rotate(-25 12 12)"><ellipse cx="12" cy="12" rx="9.5" ry="4.6"/>' + (MOTION ? '<circle r="1.7" style="fill:currentColor"><animateMotion dur="3.2s" repeatCount="indefinite" path="M21.5 12a9.5 4.6 0 1 1 -19 0a9.5 4.6 0 1 1 19 0"/></circle>' : '<circle cx="21.5" cy="12" r="1.7" style="fill:currentColor"/>') + '</g><path d="M9.7 12.6h4.6l-.9 1.5h-2.8zM12 10.3v2.3"/>',
+  radar: '<circle cx="12" cy="12" r="9.3"/><circle cx="12" cy="12" r="4.7"/><g class="sweep"><path d="M12 12L19 5.6"/><path class="beam" d="M12 12L19 5.6A9.3 9.3 0 0 1 21.3 12z"/></g><circle cx="8" cy="8.5" r="1" style="fill:currentColor"/>',
 };
 strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (${i + 1})" aria-label="${VIEW_LABELS[i]}"><svg viewBox="0 0 24 24">${VIEW_ICONS[v]}</svg><span>${VIEW_LABELS[i]}</span></button>`).join('');
 document.body.appendChild(strip);
@@ -1003,19 +1004,33 @@ soundButton.addEventListener('click', () => setSound(!audio.enabled));
   const secMain = document.createElement('button'), secGat = document.createElement('button');
   secMain.id = 'btn-sec-main'; secGat.id = 'btn-sec-gat';
   const fsButton = document.querySelector('#btn-fullscreen');
-  const item = (b, label, key) => { b.className = ''; b.setAttribute('role', 'menuitem'); b.innerHTML = key ? `${label}<kbd>${key}</kbd>` : label; return b; };
+  // A small vector drawing in front of each entry, for what it does (animated a little on hover or while it is on: duel.css `.mi`).
+  const MI = {
+    restart: '<path class="mi-a" d="M20 12a8 8 0 1 1-2.6-5.9M20 4v4.5h-4.5"/>',
+    menu: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+    readouts: '<rect x="3.5" y="4.5" width="17" height="12" rx="2"/><path d="M7 13l3-3.2 2.4 2 3.6-4.3M9 20h6M12 16.5V20"/>',
+    map: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><path class="mi-a" d="M12 12l5.5-5"/>',
+    tags: '<path d="M3.5 12.2V4.5h7.7l9 9a1.6 1.6 0 0 1 0 2.2l-5 5a1.6 1.6 0 0 1-2.2 0z"/><circle cx="8" cy="9" r="1.3"/>',
+    sec76: '<path d="M4 19h4M6 19V9"/><path d="M6 9l14-5.5v11z" style="fill:currentColor;fill-opacity:.2"/>',
+    sec30: '<path d="M4 19h4M6 19V9"/><path d="M6 9l14-2.5M6 9l14 0M6 9l14 2.5"/>',
+    sound: '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="mi-w1" d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path class="mi-w2" d="M18.2 6.8a7.5 7.5 0 0 1 0 10.4"/>',
+    full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    hide: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path class="mi-a" d="M4 4l16 16"/>',
+    keys: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7.5 14h9"/>',
+  };
+  const item = (b, label, key, ic) => { b.className = ''; b.setAttribute('role', 'menuitem'); b.innerHTML = `<span class="mi-l">${ic ? `<svg class="mi" viewBox="0 0 24 24" aria-hidden="true">${MI[ic]}</svg>` : ''}${label}</span>${key ? `<kbd>${key}</kbd>` : ''}`; return b; };
   const head = (t) => { const h = document.createElement('div'); h.className = 'menu-h'; h.textContent = t; return h; };
   const weatherBtn = document.querySelector('#btn-weather'), seaRow = document.querySelector('#sea-row');
-  item(restartButton, 'Fight again', 'R');
-  item(document.querySelector('#btn-ship'), 'Main menu');
-  item(hudButton, 'Readouts', 'H');
-  item(mapButton, 'Mini map', 'N');
-  item(tagsButton, 'Ship tags', 'L');
-  item(secMain, 'Map: 76 mm sector'); item(secGat, 'Map: 30 mm sector');
-  item(soundButton, 'Sound', 'S');
-  item(fsButton, 'Fullscreen');
-  item(foldButton, 'Hide the interface', 'C');
-  item(document.querySelector('#btn-keys'), 'Keyboard shortcuts', '?');
+  item(restartButton, 'Fight again', 'R', 'restart');
+  item(document.querySelector('#btn-ship'), 'Main menu', '', 'menu');
+  item(hudButton, 'Readouts', 'H', 'readouts');
+  item(mapButton, 'Mini map', 'N', 'map');
+  item(tagsButton, 'Ship tags', 'L', 'tags');
+  item(secMain, 'Map: 76 mm sector', '', 'sec76'); item(secGat, 'Map: 30 mm sector', '', 'sec30');
+  item(soundButton, 'Sound', 'S', 'sound');
+  item(fsButton, 'Fullscreen', '', 'full');
+  item(foldButton, 'Hide the interface', 'C', 'hide');
+  item(document.querySelector('#btn-keys'), 'Keyboard shortcuts', '?', 'keys');
   menuEl.replaceChildren(head('Battle'), restartButton, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, secMain, secGat, tagsButton, foldButton, fsButton,
     head('Sound'), soundButton, head('Sea'), ...[seaRow, weatherBtn].filter(Boolean), head('Help'), document.querySelector('#btn-keys'));
   [hudButton, mapButton, soundButton, tagsButton, secMain, secGat].forEach((b) => b.setAttribute('aria-pressed', 'true'));
@@ -1255,8 +1270,8 @@ radarEl.hidden = true;
 radarEl.innerHTML = '<div class="hr-marks"></div><div class="rc">'
   + '<div class="rc-main"><div class="rc-top"><b class="hr-mode">AUTO</b><span class="hr-brg"></span><b class="hr-zv"></b></div></div>'
   + '<div class="rc-gun"><div class="rc-dial"><svg class="rc-ring" viewBox="0 0 150 150" aria-label="Zoom"><circle class="rc-rtrack" r="70" cx="75" cy="75"/><circle class="rc-rfill" r="70" cx="75" cy="75"/><circle class="rc-hit" r="70" cx="75" cy="75"/><circle class="rc-rthumb" r="7"/></svg>'
-  + '<button type="button" class="rc-fire" data-act="fire"><span>FIRE</span><kbd>F</kbd></button>'
-  + '<button type="button" class="rc-lock" data-act="lock" title="Lock the part under the sight, or let the lock go (Space)">⌖ Lock</button></div></div></div>';
+  + '<button type="button" class="rc-fire" data-act="fire"><svg class="fire-ico" viewBox="0 0 24 24" aria-hidden="true"><path class="burst" d="M12 1.5l2.1 5.2 4.9-2.9-1.9 5.4 5.4-.6-4.3 3.4 4.3 3.4-5.4-.6 1.9 5.4-4.9-2.9L12 22.5l-2.1-5.2-4.9 2.9 1.9-5.4-5.4.6L5.8 12 1.5 8.6l5.4.6L5 3.8l4.9 2.9z"/><circle cx="12" cy="12" r="2.6"/></svg><span>FIRE</span><kbd>F</kbd></button>'
+  + '<button type="button" class="rc-lock" data-act="lock" title="Lock the part under the sight, or let the lock go (Space)">LOCK</button></div></div></div>';
 document.body.appendChild(radarEl);
 const radarMode = radarEl.querySelector('.hr-mode');
 const radarBrg = radarEl.querySelector('.hr-brg');
@@ -1586,7 +1601,7 @@ function updateRadarUi() {
   radarMode.classList.toggle('manual', sight.manual && !sight.lock);
   radarMode.classList.toggle('locked', !!sight.lock);
   lockBtn.classList.toggle('on', !!sight.lock);
-  lockBtn.textContent = sight.lock ? '⌖ RELEASE' : '⌖ LOCK';
+  { const txt = sight.lock ? 'RELEASE' : 'LOCK'; if (lockBtn.dataset.txt !== txt) { lockBtn.dataset.txt = txt; lockBtn.innerHTML = `<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="2.2"/><path d="M6 .8v2.2M6 9v2.2M.8 6H3M9 6h2.2"/></svg>${txt}`; } }
   const yaw = Math.atan2(sight.aim.z, sight.aim.x);
   const rel = Math.atan2(Math.sin(yaw - sim.player.psi), Math.cos(yaw - sim.player.psi));
   radarBrg.textContent = `${relName(rel)} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${camera.fov.toFixed(camera.fov < 3 ? 2 : 1)}°`;
