@@ -604,6 +604,17 @@ function setCamHint() { // tells the simulation what the camera sees, so the hel
   const vh = rad(camera.fov / 2), hh = Math.atan(Math.tan(vh) * camera.aspect);
   sim.camHint = { p: [camera.position.x, camera.position.y, camera.position.z], f: [_fwd.x, _fwd.y, _fwd.z], half: Math.min(vh, hh) };
 }
+// Which enemy ships stand behind land as the guns see her: no tag, no marks and no aim on her parts (the helicopter and the map still show her).
+const landHidden = [];
+function updateLandHidden() {
+  const p = sim.player;
+  if (!sim.islands.length) { landHidden.length = 0; return; }
+  const M = sim.toWorld(p, MAIN_MOUNT);
+  for (let i = 0; i < sim.ships.length; i++) {
+    const t = sim.ships[i];
+    landHidden[i] = i > 0 && t.team === 1 && t.tSunk === null && sim.landBetween(M, [t.x, 6, t.z]);
+  }
+}
 let frameDt = 1 / 60;
 let behindHead = 0, behindT = 0, behindOn = false; // the behind camera's own heading, which trails the ship's
 function updateCamera() {
@@ -1052,7 +1063,7 @@ function updateTag() {
     const s = sim.ships[i];
     if (!s) { if (tags[i]) tags[i].obj.visible = false; continue; }
     const t = tagFor(i);
-    t.obj.visible = tagsOn && !!ships[i]?.group.visible && !(s.team === 1 && s.det === false && s.tSunk === null);
+    t.obj.visible = tagsOn && !!ships[i]?.group.visible && !(s.team === 1 && s.det === false && s.tSunk === null) && !landHidden[i];
     t.obj.position.set(s.x, 36, s.z);
     const foe = s.team === 1;
     const title = s.merchant ? 'MERCHANT' : foe ? (sim.player.target === i ? '▶ ENEMY' : 'ENEMY') : 'ALLY';
@@ -1392,7 +1403,7 @@ function aimSight(dt) {
   sight.snap = null;
   if (sight.lock) { // held on its compartment as she sails
     const ls = sim.ships[sight.lock.ship], lg = ships[sight.lock.ship]?.group;
-    if (!ls || !lg || ls.tSunk !== null) sight.lock = null;
+    if (!ls || !lg || ls.tSunk !== null || landHidden[sight.lock.ship]) sight.lock = null;
     else {
       lg.updateMatrixWorld(true);
       _a.copy(lg.localToWorld(_w1.set(...ZONE_POS[sight.lock.comp]))).sub(camera.position).normalize();
@@ -1400,7 +1411,7 @@ function aimSight(dt) {
     }
   } else if (!sight.manual) { // automatic: while the marks are on screen the sight snaps to the nearest one, else it holds her middle
     const tg = sim.enemy, tgG = ships[tg.idx]?.group;
-    if (tgG && tg.team === 1 && tg.tSunk === null && (24 * window.innerHeight) / (2 * r * Math.tan(rad(lens / 2))) >= MARK_MIN) {
+    if (tgG && tg.team === 1 && tg.tSunk === null && !landHidden[tg.idx] && (24 * window.innerHeight) / (2 * r * Math.tan(rad(lens / 2))) >= MARK_MIN) {
       tgG.updateMatrixWorld(true);
       let best = null, bestA = Infinity, keepA = Infinity;
       const live = COMP_IDS.filter((id) => tg.comp[id] > 0);
@@ -1436,6 +1447,7 @@ function radarAimShell() {
   const p = sim.player;
   sight.zone = null; sight.ship = null; sight.warn = null; sight.hit = null;
   if (p.tSunk !== null || sim.winner !== null) { input.aim = null; return; }
+  if (landHidden[sim.enemy.idx]) { sight.warn = 'LAND IN THE WAY'; input.aim = null; return; } // she is behind an island: nothing to aim at
   if (sight.lock) { // locked: the shell goes to that compartment, led by her true velocity (a free shot is weak, see duel.js)
     const ls = sim.ships[sight.lock.ship], lg = ships[sight.lock.ship]?.group;
     if (ls && lg && ls.tSunk === null) {
@@ -1476,7 +1488,7 @@ function radarAimShell() {
   }
   if (best >= 0) {
     const s = sim.ships[best];
-    if (s.team === 1 && s.tSunk === null) {
+    if (s.team === 1 && s.tSunk === null && !landHidden[best]) {
       const P = ships[best].group.localToWorld(bestLocal.clone());
       sight.zone = sight.snap && sim.enemy.idx === best ? sight.snap : zoneAt(bestLocal.x);
       sight.ship = best;
@@ -1486,7 +1498,7 @@ function radarAimShell() {
       const sol = sim.solve(p, MAIN_MOUNT, MUZZLE_V, true, {}, { p: [P.x, P.y, P.z], v: [e[0], 0, e[1]] });
       input.aim = { yaw: sol.yaw, pitch: sol.pitch, ship: best, free: true }; // neither locked nor focused: the shell falls in the sea
     } else {
-      sight.warn = s.tSunk !== null ? 'SINKING' : s.merchant ? 'MERCHANT: HOLD FIRE' : 'FRIENDLY: HOLD FIRE';
+      sight.warn = landHidden[best] ? 'LAND IN THE WAY' : s.tSunk !== null ? 'SINKING' : s.merchant ? 'MERCHANT: HOLD FIRE' : 'FRIENDLY: HOLD FIRE';
       input.aim = null;
     }
     return;
@@ -1529,7 +1541,7 @@ function updateMarks() {
     const W = window.innerWidth, H = window.innerHeight;
     for (let i = 1; i < sim.ships.length; i++) {
       const s = sim.ships[i], g = ships[i]?.group;
-      if (!g || s.team !== 1 || s.tSunk !== null || !g.visible || s.det === false) continue;
+      if (!g || s.team !== 1 || s.tSunk !== null || !g.visible || s.det === false || landHidden[i]) continue;
       const dist = Math.max(1, sim.distance(sim.player, s));
       const ppm = H / (2 * dist * Math.tan(rad(camera.fov / 2))); // pixels to a metre at her range
       const spacing = 24 * ppm; // between the two nearest compartments
@@ -1920,6 +1932,7 @@ renderer.setAnimationLoop((now) => {
   for (let i = 0; i < ships.length; i++) poseShip(i, dt);
   updateWeapons(dt);
   updateStrikeHeli();
+  updateLandHidden();
   updateCamera();
   setCamHint();
   updateHostileFx(dt);
