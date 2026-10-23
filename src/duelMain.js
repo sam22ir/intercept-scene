@@ -723,15 +723,21 @@ const propL = document.createElement('div'), propR = document.createElement('div
 propL.className = propR.className = 'hs-prop';
 propL.innerHTML = propR.innerHTML = PROP_SVG;
 domeHost.className = 'hs-domehost';
-shipEl.append(propL, domeHost, propR);
+const barL = document.createElement('div'), barR = document.createElement('div');
+barL.className = barR.className = 'hs-lvl'; // a sliding bar for each engine: the telegraph's level, from slow astern (bottom) to flank (top)
+barL.innerHTML = barR.innerHTML = '<i class="lv-fill"></i><b class="lv-thumb"></b>';
+shipEl.append(barL, propL, domeHost, propR, barR);
 document.body.appendChild(shipEl);
 const propRotL = propL.querySelector('.pp-rot'), propRotR = propR.querySelector('.pp-rot');
 let propAng = 0;
 function spinProps(dt) {
   const kn = sim.knots(sim.player);
-  propAng = (propAng + kn * 0.33 * dt) % (Math.PI * 2); // 38 kn: about two turns a second
+  propAng = (propAng + kn * 0.09 * dt) % (Math.PI * 2); // 38 kn: about one turn every two seconds
   const deg = (propAng * 180) / Math.PI;
   propRotL.style.transform = `rotate(${-deg}deg)`; propRotR.style.transform = `rotate(${deg}deg)`;
+  const lvl = (sim.player.order / (TELEGRAPH.length - 1)).toFixed(3), fl = sim.player.order === TELEGRAPH.length - 1;
+  barL.style.setProperty('--lvl', lvl); barR.style.setProperty('--lvl', lvl);
+  barL.classList.toggle('flank', fl); barR.classList.toggle('flank', fl);
   const fast = Math.min(1, Math.abs(kn) / 20);
   propL.style.setProperty('--blur', fast.toFixed(2)); propR.style.setProperty('--blur', fast.toFixed(2));
 }
