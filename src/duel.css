@@ -654,3 +654,10 @@ body.mission-duel .minimap { bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) 
   .rc-dial .rc-lock .lk-spin { transform-origin: 8px 6px; animation: ic-spin 3s linear infinite; }
 }
 @keyframes ic-shell { from { transform: translateY(0); } to { transform: translateY(-2.5px); } }
+.pt .pt-tip { display: none !important; } /* no popups on the part icons: their names sit between the columns */
+/* FIRE and LOCK are words again (no icons). */
+.rc-fire span { display: inline; } .rc-fire .fire-ico, .rc-dial .rc-lock svg { display: none; }
+/* The key help is a compact list on the free left side, under the views bar: it covers none of the other fields. */
+body.mission-duel #fly-keys { left: calc(var(--gap, 14px) + var(--safe-l, 0px)); right: auto; top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 62px); transform: none; width: 232px; max-width: 232px; display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: flex-start; gap: 4px; padding: 8px 10px; border-radius: 12px; font-size: 11px; overflow-x: hidden; overflow-y: auto; max-height: calc(100vh - var(--map-d, 150px) - var(--gap, 14px) * 2 - 130px); pointer-events: none; z-index: 8; }
+body.mission-duel #fly-keys .fk { white-space: nowrap; }
+body.mission-duel #fly-keys kbd { min-width: 34px; flex: none; }

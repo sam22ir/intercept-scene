@@ -792,10 +792,10 @@ const PART_ICON = { // 24 x 24 drawings, animated by CSS (duel.css, `.pi .bob` .
 const RING = 2 * Math.PI * 19;
 function badge(id, f, { tip, cls = '', marks = '', rep = null, data = '' }) {
   const col = healthColour(f);
-  return `<div class="pt${cls}"${data} title="${tip}"><svg viewBox="0 0 44 44"><circle class="pr-bg" cx="22" cy="22" r="19"/>`
+  return `<div class="pt${cls}"${data} aria-label="${tip}"><svg viewBox="0 0 44 44"><circle class="pr-bg" cx="22" cy="22" r="19"/>`
     + `<circle class="pr" cx="22" cy="22" r="19" style="stroke:${col};stroke-dasharray:${(f * RING).toFixed(1)} ${RING.toFixed(1)}"/>`
     + (rep === null ? '' : `<circle class="pr-rep" cx="22" cy="22" r="15" style="stroke-dasharray:${(clamp(rep, 0, 1) * 94.2).toFixed(1)} 94.2"/>`)
-    + `<g class="pi" transform="translate(10 10)">${PART_ICON[id]}</g></svg><u class="pm">${marks}</u><span class="pt-tip">${tip}</span></div>`;
+    + `<g class="pi" transform="translate(10 10)">${PART_ICON[id]}</g></svg><u class="pm">${marks}</u></div>`;
 }
 function partBadges(s, mine, aim = null) {
   return COMP_IDS.map((id) => {
@@ -979,6 +979,7 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>A</kbd>', 'The 30 mm guns on automatic'],
   ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
   ['<kbd>E</kbd>', `Repair the compartment Z has picked (or press FIX on its bar in the radar view): ${REPAIR_TIME} s, then its fire is out, its leak is stopped and it gets 40 % of its points back; that part can be repaired again after ${REPAIR_WAIT} s`],
+  ['<kbd>W</kbd>', 'The wrench: repair every damaged part at once (or the wrench button in the bottom right)'],
   ['<kbd>K</kbd>', 'Call a friendly frigate (or the button at the bottom right): she comes in from astern at full speed and fights; up to three, one every few seconds'],
   ['<kbd>B</kbd>', 'The helicopter: it goes out over the enemy by itself at your first shot, circles her firing its gun and reports by radio (a part out, a fire, another ship joining). B sends it or calls it back. Its radar reaches 7.5 km and sees over the islands; it stays on deck in a very rough sea'],
   ['<kbd>M</kbd>', 'Fire the helicopter missile (two a sortie): at the compartment you have locked or focused in the radar view, else at her gun, then her engine: it takes half of that compartment. If your ship is lost the helicopter avenges her and lands on a friendly frigate'],
@@ -1078,7 +1079,7 @@ function keysHtml() {
       + `${k('Tab', 'next target')}${k('B', sim.heliUp ? 'heli: land' : 'heli: go', sim.heliUp)}${k('M', 'heli missile')}${k('K', 'friend')}${k('Esc', 'helm')}`;
   }
   return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', `thrust ${TELEGRAPH[sim.player.order].name}`)}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}${k('Tab', 'target')}`
-    + `${k('Z X', 'crews')}${k('E', 'repair', sim.player.fix[COMP_IDS[selComp]].left > 0)}${k('B', sim.heliUp ? 'heli: land' : 'heli: go', sim.heliUp)}${k('M', `heli missile ${sim.hop?.ammo ?? 0}`)}`
+    + `${k('Z X', 'crews')}${k('E', 'repair', sim.player.fix[COMP_IDS[selComp]].left > 0)}${k('W', 'repair all')}${k('B', sim.heliUp ? 'heli: land' : 'heli: go', sim.heliUp)}${k('M', `heli missile ${sim.hop?.ammo ?? 0}`)}`
     + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–5', 'views')}${k('R', 'again')}`;
 }
 let lastKeys = '';
@@ -1191,6 +1192,7 @@ window.addEventListener('keydown', (e) => {
     case 'a': sim.toggleAuto(0); break;
     case 'z': selComp = (selComp + 1) % COMP_IDS.length; break;
     case 'e': sim.startRepair(0, COMP_IDS[selComp]); break;
+    case 'w': if (repairReady()) { sim.startRepair(0); lastBoard = ''; } break; // the wrench: repair everything damaged
     case 'b': say(sim.heliRequest(), ''); break;
     case 'k': callFriend(); break; // call a friendly frigate
     case 'm': heliMissile(); break; // fire the helicopter's missile // the helicopter: take off or land
@@ -1289,8 +1291,8 @@ radarEl.hidden = true;
 radarEl.innerHTML = '<div class="hr-marks"></div><div class="rc">'
   + '<div class="rc-main"><div class="rc-top"><b class="hr-mode">AUTO</b><span class="hr-brg"></span><b class="hr-zv"></b></div></div>'
   + '<div class="rc-gun"><div class="rc-dial"><svg class="rc-ring" viewBox="0 0 150 150" aria-label="Zoom"><circle class="rc-rtrack" r="70" cx="75" cy="75"/><circle class="rc-rfill" r="70" cx="75" cy="75"/><circle class="rc-hit" r="70" cx="75" cy="75"/><circle class="rc-rthumb" r="7"/></svg>'
-  + '<button type="button" class="rc-fire" data-act="fire" title="Fire (hold F)" aria-label="Fire"><svg class="fire-ico" viewBox="0 0 24 34" aria-hidden="true"><path class="sh-body" d="M12 1.5c3.6 3.4 5.4 7.6 5.4 12.2V27H6.6V13.7C6.6 9.1 8.4 4.9 12 1.5z"/><path class="sh-band" d="M6.6 17.2h10.8v2.4H6.6zM6.6 21.4h10.8v1.2H6.6z"/><path class="sh-base" d="M5.4 27h13.2v3.6H5.4z"/><path class="sh-shine" d="M9.2 8.2c.6-1.5 1.5-2.8 2.5-3.8"/></svg><kbd>F</kbd></button>'
-  + '<button type="button" class="rc-lock" data-act="lock" title="Lock the part under the sight, or let the lock go (Space)" aria-label="Lock"></button></div></div></div>';
+  + '<button type="button" class="rc-fire" data-act="fire" title="Fire (hold F)"><span>FIRE</span><kbd>F</kbd></button>'
+  + '<button type="button" class="rc-lock" data-act="lock" title="Lock the part under the sight, or let the lock go (Space)">LOCK</button></div></div></div>';
 document.body.appendChild(radarEl);
 const radarMode = radarEl.querySelector('.hr-mode');
 const radarBrg = radarEl.querySelector('.hr-brg');
@@ -1306,6 +1308,7 @@ let fireLatch = false; // a long press on FIRE keeps the gun firing until the bu
 function setFireLatch(on) {
   fireLatch = on;
   fireEl.classList.toggle('latched', on);
+  fireEl.querySelector('span').textContent = on ? 'FIRING' : 'FIRE';
   if (!on) input.fire = 0;
 }
 const ZOOM_SPAN = Math.log(80); // the zoom goal runs from 8 (wide) to 0.1 (close) along the track
@@ -1619,9 +1622,7 @@ function updateRadarUi() {
   radarMode.classList.toggle('manual', sight.manual && !sight.lock);
   radarMode.classList.toggle('locked', !!sight.lock);
   lockBtn.classList.toggle('on', !!sight.lock);
-  { const st = sight.lock ? 'on' : 'off'; if (lockBtn.dataset.st !== st) { lockBtn.dataset.st = st; lockBtn.setAttribute('aria-label', sight.lock ? 'Release the lock' : 'Lock'); lockBtn.innerHTML = sight.lock
-    ? '<svg viewBox="0 0 16 12" aria-hidden="true"><g class="lk-spin"><circle cx="8" cy="6" r="4.6"/><path d="M8 .4v2M8 9.6v2M2.4 6h2M11.6 6h2"/></g><circle class="lk-dot" cx="8" cy="6" r="1.5"/></svg>'
-    : '<svg viewBox="0 0 16 12" aria-hidden="true"><circle cx="8" cy="6" r="3"/><path d="M8 .6v2.4M8 9v2.4M2.6 6H5M11 6h2.4"/><circle class="lk-dot" cx="8" cy="6" r="0.8"/></svg>'; } }
+  lockBtn.textContent = sight.lock ? 'RELEASE' : 'LOCK';
   const yaw = Math.atan2(sight.aim.z, sight.aim.x);
   const rel = Math.atan2(Math.sin(yaw - sim.player.psi), Math.cos(yaw - sim.player.psi));
   radarBrg.textContent = `${relName(rel)} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${camera.fov.toFixed(camera.fov < 3 ? 2 : 1)}°`;
@@ -1968,7 +1969,7 @@ function updateRepairBtn() {
   const key = String(on);
   if (key === lastRep) return;
   lastRep = key;
-  repBtn.innerHTML = supportHtml(ICON_REPAIR, 'Repair all', on ? 'every damaged part' : 'nothing to repair', '');
+  repBtn.innerHTML = supportHtml(ICON_REPAIR, 'Repair all', on ? 'every damaged part' : 'nothing to repair', 'W');
   repBtn.disabled = !on;
 }
 const friendBtn = document.createElement('button');
