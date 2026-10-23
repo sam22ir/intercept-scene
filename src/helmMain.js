@@ -1556,13 +1556,82 @@ hudButton.addEventListener('click', () => setHud(!hudOn));
 setHud(true);
 let tagsOn = true;
 
-// The view buttons: a strip at the top centre.
+// The view buttons: a strip at the top, beside the gear. Each is an icon; the one in use opens into a pill with its name. The last button shows the key bar.
 const strip = document.createElement('div');
 strip.className = 'helm-views';
-strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (${i + 1})">${['Bridge', 'Behind', 'Above', 'Missile', 'Radar', 'Target', 'Orbit'][i]}</button>`).join('');
+const VIEW_LABELS = ['Bridge', 'Behind', 'Above', 'Missile', 'Radar', 'Target', 'Orbit'];
+const MOTION = !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const VIEW_ICONS = { // drawn for what each view is: the wheelhouse wheel, a chase camera, a plan view, a missile, the radar, a target sight, an orbit
+  bridge: '<g class="wheel"><circle cx="12" cy="12" r="6.2"/><circle cx="12" cy="12" r="1.7"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4M5.3 5.3l2.5 2.5M16.2 16.2l2.5 2.5M18.7 5.3l-2.5 2.5M7.8 16.2l-2.5 2.5"/></g>',
+  behind: '<path d="M8 14h13l-2.5 4H10z"/><path d="M12 14v-3h5l1.5 3"/><g class="lines"><path d="M2 12.5h3.5M1 15.5h4.5M3 18.5h3.5"/></g>',
+  above: '<path d="M12 2.5c3.2 3 4.3 7 4.3 11v5.7L14 22h-4l-2.3-2.8v-5.7c0-4 1.1-8 4.3-11z"/><path d="M12 8v10M9.7 13h4.6"/>',
+  missile: '<path d="M8 12c3.2-3.4 8.5-3.4 13 0-4.5 3.4-9.8 3.4-13 0z"/><path d="M10.5 9.8L8.3 7M10.5 14.2L8.3 17"/><g class="lines"><path d="M2 12h3.5M3.5 9.5h2M3.5 14.5h2"/></g>',
+  sight: '<circle cx="12" cy="12" r="9.3"/><circle cx="12" cy="12" r="4.7"/><g class="sweep"><path d="M12 12L19 5.6"/><path class="beam" d="M12 12L19 5.6A9.3 9.3 0 0 1 21.3 12z"/></g><circle cx="8" cy="8.5" r="1" style="fill:currentColor"/>',
+  target: '<circle cx="12" cy="12" r="6"/><path d="M12 2.5v5M12 16.5v5M2.5 12h5M16.5 12h5"/><circle cx="12" cy="12" r="1.1" style="fill:currentColor"/>',
+  orbit: '<g transform="rotate(-25 12 12)"><ellipse cx="12" cy="12" rx="9.5" ry="4.6"/>' + (MOTION ? '<circle r="1.7" style="fill:currentColor"><animateMotion dur="3.2s" repeatCount="indefinite" path="M21.5 12a9.5 4.6 0 1 1 -19 0a9.5 4.6 0 1 1 19 0"/></circle>' : '<circle cx="21.5" cy="12" r="1.7" style="fill:currentColor"/>') + '</g><path d="M9.7 12.6h4.6l-.9 1.5h-2.8zM12 10.3v2.3"/>',
+};
+strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (${i + 1})" aria-label="${VIEW_LABELS[i]}"><svg viewBox="0 0 24 24">${VIEW_ICONS[v]}</svg><span>${VIEW_LABELS[i]}</span></button>`).join('');
 document.body.appendChild(strip);
 const viewButtons = [...strip.querySelectorAll('button')];
 viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+{ // the keys button: shows or hides the key bar (hidden at the start)
+  const kb = document.createElement('button');
+  kb.type = 'button';
+  kb.className = 'helm-keys-btn';
+  kb.title = 'Keys';
+  kb.setAttribute('aria-label', 'Show the keys');
+  kb.setAttribute('aria-pressed', 'false');
+  kb.innerHTML = '<svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>';
+  strip.appendChild(kb);
+  kb.addEventListener('click', () => { const on = keysEl.classList.toggle('show'); kb.classList.toggle('active', on); kb.setAttribute('aria-pressed', String(on)); kb.blur(); });
+}
+
+// The top bar is one gear: its menu holds everything the mission needs (the old row of buttons is hidden in helm.css).
+{
+  menuButton.innerHTML = '<svg><use href="#i-gear"/></svg>';
+  menuButton.title = 'Settings';
+  menuButton.setAttribute('aria-label', 'Settings');
+  const tagsButton = document.createElement('button'), cineButton = document.createElement('button');
+  tagsButton.id = 'btn-tags'; cineButton.id = 'btn-cine';
+  const fsButton = document.querySelector('#btn-fullscreen');
+  // A small vector drawing in front of each entry, for what it does (it moves a little on hover: helm.css `.mi`).
+  const MI = {
+    restart: '<path class="mi-a" d="M20 12a8 8 0 1 1-2.6-5.9M20 4v4.5h-4.5"/>',
+    menu: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+    readouts: '<rect x="3.5" y="4.5" width="17" height="12" rx="2"/><path d="M7 13l3-3.2 2.4 2 3.6-4.3M9 20h6M12 16.5V20"/>',
+    map: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><path class="mi-a" d="M12 12l5.5-5"/>',
+    tags: '<path d="M3.5 12.2V4.5h7.7l9 9a1.6 1.6 0 0 1 0 2.2l-5 5a1.6 1.6 0 0 1-2.2 0z"/><circle cx="8" cy="9" r="1.3"/>',
+    cine: '<rect x="3" y="7" width="13" height="10" rx="2"/><path d="M16 11l5-3v8l-5-3"/>',
+    sound: '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="mi-w1" d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path class="mi-w2" d="M18.2 6.8a7.5 7.5 0 0 1 0 10.4"/>',
+    full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    hide: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path class="mi-a" d="M4 4l16 16"/>',
+    keys: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7.5 14h9"/>',
+  };
+  const item = (b, label, key, ic) => { b.className = ''; b.setAttribute('role', 'menuitem'); b.innerHTML = `<span class="mi-l">${ic ? `<svg class="mi" viewBox="0 0 24 24" aria-hidden="true">${MI[ic]}</svg>` : ''}${label}</span>${key ? `<kbd>${key}</kbd>` : ''}`; return b; };
+  const head = (t) => { const h = document.createElement('div'); h.className = 'menu-h'; h.textContent = t; return h; };
+  const weatherBtn = document.querySelector('#btn-weather'), seaRow = document.querySelector('#sea-row');
+  item(restartButton, 'Sail again', 'R', 'restart');
+  item(document.querySelector('#btn-ship'), 'Main menu', '', 'menu');
+  item(hudButton, 'Readouts', 'H', 'readouts');
+  item(mapButton, 'Radar map', 'N', 'map');
+  item(tagsButton, 'Drone tags', 'L', 'tags');
+  item(cineButton, 'Intercept camera', 'I', 'cine');
+  item(soundButton, 'Sound', 'S', 'sound');
+  item(fsButton, 'Fullscreen', '', 'full');
+  item(foldButton, 'Hide the interface', 'C', 'hide');
+  item(document.querySelector('#btn-keys'), 'Keyboard shortcuts', '?', 'keys');
+  menuEl.replaceChildren(head('Mission'), restartButton, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, tagsButton, cineButton, foldButton, fsButton,
+    head('Sound'), soundButton, head('Sea'), ...[seaRow, weatherBtn].filter(Boolean), head('Help'), document.querySelector('#btn-keys'));
+  [hudButton, mapButton, soundButton, tagsButton, cineButton].forEach((b) => b.setAttribute('aria-pressed', 'true'));
+  tagsButton.addEventListener('click', () => { tagsOn = !tagsOn; refreshGear(); });
+  cineButton.addEventListener('click', () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'i' })); refreshGear(); });
+  fsButton.addEventListener('click', () => { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch { /* not allowed here */ } });
+  function refreshGear() {
+    const set = (b, on) => { b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); };
+    set(hudButton, hudOn); set(mapButton, map.enabled); set(tagsButton, tagsOn); set(cineButton, cineOn); set(soundButton, audio.enabled);
+  }
+  menuButton.addEventListener('click', refreshGear);
+}
 
 keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>←</kbd> <kbd>→</kbd>', 'Rudder to port / starboard while held; let go and it comes back amidships'],
