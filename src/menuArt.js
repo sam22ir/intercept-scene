@@ -101,8 +101,8 @@ function helm(animate) {
 
 // Tactical maneuvers: ships in plan view change formation (all heading east); each layout is a list of ship centres.
 const FORM = {
-  2: { names: ['ALG', 'RUS'], a: [[205, 110], [275, 110]], b: [[240, 82], [240, 138]] },
-  3: { names: ['ALG', 'RUS', 'UNIT'], a: [[170, 110], [240, 110], [310, 110]], b: [[240, 62], [240, 110], [240, 158]] },
+  2: { names: ['SHIP1', 'SHIP2'], a: [[205, 110], [275, 110]], b: [[240, 82], [240, 138]] },
+  3: { names: ['SHIP1', 'SHIP2', 'UNIT'], a: [[170, 110], [240, 110], [310, 110]], b: [[240, 62], [240, 110], [240, 158]] },
   4: { names: ['SHIP1', 'SHIP2', 'SHIP3', 'SHIP4'], a: [[300, 110], [240, 78], [240, 142], [180, 110]], b: [[240, 44], [240, 92], [240, 140], [240, 188]] },
 };
 function drill(n, animate) {

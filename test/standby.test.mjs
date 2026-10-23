@@ -32,7 +32,7 @@ describe('standby time', () => {
       near(b.PHASES[i].tx - b.PHASES[i].t, 25, `${p.id} announced 25 s ahead`);
     });
     for (const t of [0, 400, 900, 1700, 2600, 3000]) {
-      for (const id of ['alg', 'rus']) assert.deepEqual(a.shipState(id, t), b.shipState(id, t), `${id} at ${t}`);
+      for (const id of ['ship1', 'ship2']) assert.deepEqual(a.shipState(id, t), b.shipState(id, t), `${id} at ${t}`);
     }
     assert.equal(a.PASS.t, b.PASS.t);
     assert.equal(a.tEnd, b.tEnd);

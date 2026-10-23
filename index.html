@@ -149,11 +149,11 @@
               <div class="picks" role="radiogroup" aria-label="Number of ships">
                 <button class="pick" role="radio" aria-checked="false" data-mode="maneuvers2">
                   <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M6 9 H23 L29 13 L23 17 H6Z"/><path class="i-ship" d="M6 23 H23 L29 27 L23 31 H6Z"/><path class="i-line" d="M15 17 V23"/></svg>
-                  <span class="m-txt"><b><kbd>1</kbd>2 ships</b><small>ALG · RUS</small></span>
+                  <span class="m-txt"><b><kbd>1</kbd>2 ships</b><small>SHIP1 · SHIP2</small></span>
                 </button>
                 <button class="pick" role="radio" aria-checked="false" data-mode="maneuvers">
                   <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M8 4 H22 L27 7.5 L22 11 H8Z"/><path class="i-ship" d="M8 16 H22 L27 19.5 L22 23 H8Z"/><path class="i-ship" d="M5 28 H24 L31 32 L24 36 H5Z"/><path class="i-line" d="M15 11 V16 M15 23 V28"/></svg>
-                  <span class="m-txt"><b><kbd>2</kbd>3 ships</b><small>ALG · RUS · unit</small></span>
+                  <span class="m-txt"><b><kbd>2</kbd>3 ships</b><small>SHIP1 · SHIP2 · unit</small></span>
                 </button>
                 <button class="pick" role="radio" aria-checked="false" data-mode="formations">
                   <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-ship" d="M17 4 L20 10 L23 4Z M8 15 L11 21 L14 15Z M26 15 L29 21 L32 15Z M17 26 L20 32 L23 26Z"/><path class="i-line" d="M20 12 L11 15 M20 12 L29 15 M11 23 L20 26 M29 23 L20 26"/></svg>
@@ -245,7 +245,7 @@
         <button id="btn-edit" role="menuitem" title="Draw or edit the drone's flight path (E)">Edit flight path<kbd>E</kbd></button>
         <button id="btn-engage" role="menuitem" title="When the missile launches and hits, and how close the warhead bursts (G)">Missile engagement<kbd>G</kbd></button>
         <button id="btn-map" role="menuitem" aria-pressed="true" title="Mini map of the ship, drones and missiles (M)">Mini map<kbd>M</kbd></button>
-        <button id="btn-grid" role="menuitem" aria-pressed="false" title="A north-up grid of 500 yd squares and range rings round ALG (G)">Tactical grid<kbd>G</kbd></button>
+        <button id="btn-grid" role="menuitem" aria-pressed="false" title="A north-up grid of 500 yd squares and range rings round SHIP1 (G)">Tactical grid<kbd>G</kbd></button>
         <button id="btn-weather" role="menuitem" hidden title="Change the weather: clear, hazy, rain squalls or overcast (reloads the scene; a flight or a duel starts again)">Weather</button>
         <div id="sea-row" class="menu-slider" hidden title="The state of the sea: from calm to very high waves (it also rocks the ships and the camera)"><span>Sea state <b id="sea-name"></b></span><input id="sea-range" type="range" min="0" max="100" step="1" aria-label="Sea state"></div>
         <button id="btn-fullscreen" role="menuitem" title="Fill the screen (F)">Fullscreen<kbd>F</kbd></button>

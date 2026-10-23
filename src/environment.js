@@ -250,7 +250,7 @@ function createOcean(sunDir, calm, horizon, look = null, zenithCol = ZENITH) {
       uCalm: { value: calm ? 1 : 0 },
       uGrid: { value: 0 }, // the drill's tactical grid: on or off
       uGridCell: { value: 457.2 }, // 500 yd squares, north up
-      uRingC: { value: new THREE.Vector2() }, // the range rings' centre (ALG), world x z
+      uRingC: { value: new THREE.Vector2() }, // the range rings' centre (SHIP1), world x z
       uDeep: { value: calm ? new THREE.Color(0.012, 0.075, 0.13) : deep },
       uScatter: { value: calm ? new THREE.Color(0.03, 0.18, 0.24) : scatter },
       uHorizon: { value: horizon },
@@ -402,7 +402,7 @@ function createOcean(sunDir, calm, horizon, look = null, zenithCol = ZENITH) {
         col = mix(col, foamCol, foam);
         if (uGrid > 0.5) {
           // Tactical grid: 500 yd squares (every second line brighter) aligned to north, and solid range rings
-          // at 250, 500 and 1000 yd round ALG. Antialiased by the pixel footprint, fading with distance.
+          // at 250, 500 and 1000 yd round SHIP1. Antialiased by the pixel footprint, fading with distance.
           vec2 g = vWorld.xz / uGridCell;
           vec2 w = max(fwidth(g), vec2(1e-5));
           vec2 dm = abs(fract(g - 0.5) - 0.5) / w;

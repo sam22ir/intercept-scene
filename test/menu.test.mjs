@@ -161,14 +161,14 @@ describe('the words are true of the missions', () => {
     assert.ok(m.facts.includes('No missile'));
   });
 
-  it('Two-ship drill: ALG and RUS alone, the number of orders, the length and the play speed', () => {
+  it('Two-ship drill: SHIP1 and SHIP2 alone, the number of orders, the length and the play speed', () => {
     const m = missionById('maneuvers2');
     const minutes = Math.round(M2.exercise.tEnd / 60);
     assert.ok(m.tagline.includes(`${M2.PHASES.length} orders, about ${minutes} minutes`), `${M2.PHASES.length} orders, ${minutes} min`);
     assert.ok(m.facts.includes(`${M2.PHASES.length} orders`));
     assert.ok(m.facts.includes(`About ${minutes} minutes`));
     assert.match(m.tagline, /4×/);
-    assert.deepEqual(M2.SHIP_IDS, ['alg', 'rus']);
+    assert.deepEqual(M2.SHIP_IDS, ['ship1', 'ship2']);
     assert.ok(!/unit/i.test(m.tagline + m.facts.join()), 'no unit in the two-ship drill');
     for (const f of ['FORM 120', 'FORM 345']) assert.ok(m.tagline.includes(f) && M2.PHASES.some((p) => p.title === f), f);
     assert.match(src.start, /__DRILL_SHIPS = mode === 'maneuvers2' \? 2 : 3/);
@@ -182,7 +182,7 @@ describe('the words are true of the missions', () => {
     assert.ok(m.facts.includes(`About ${minutes} minutes`));
     assert.match(src.maneuvers, /clock\.setSpeed\(4\)/);
     assert.match(m.tagline, /4×/);
-    for (const id of ['ALG', 'RUS']) assert.ok(m.facts[0].includes(id) && m.tagline.includes(id));
+    for (const id of ['SHIP1', 'SHIP2']) assert.ok(m.facts[0].includes(id) && m.tagline.includes(id));
   });
 
   it('Four-ship formations: SHIP1 to SHIP4, the number of orders, the length and the play speed', () => {

@@ -130,10 +130,10 @@ seaHook();
 // gun's way); the enemy has her own ensign and a bluer hull.
 const shipPool = {};
 function makeVisual(s) {
-  const key = s.merchant ? 'merchant' : s.team === 1 ? 'rus' : s.idx === 0 ? 'me' : 'alg';
+  const key = s.merchant ? 'merchant' : s.team === 1 ? 'ship2' : s.idx === 0 ? 'me' : 'ship1';
   let v = shipPool[key]?.pop();
   if (!v) {
-    const m = s.merchant ? createMerchant() : createShip({ ensign: s.team === 1 ? 'rus' : 'alg', crew: false, ...(s.idx === 0 ? { catapult: false, helicopter: true } : {}) });
+    const m = s.merchant ? createMerchant() : createShip({ ensign: s.team === 1 ? 'red' : 'navy', crew: false, ...(s.idx === 0 ? { catapult: false, helicopter: true } : {}) });
     m.group.rotation.order = 'YXZ'; // heading, then heel, then trim
     scene.add(m.group);
     const gats = s.merchant ? [] : GUN_MOUNT_LOCAL.map(([x, y, z]) => {

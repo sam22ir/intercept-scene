@@ -23,7 +23,7 @@ const makeContext = (decodes) => class FakeContext {
 };
 
 const cam = { position: { distanceTo: () => 100 } };
-const positions = { alg: {}, rus: {} };
+const positions = { ship1: {}, ship2: {} };
 const playing = { playing: true, direction: 1 };
 const tick = () => new Promise((r) => setTimeout(r, 0));
 

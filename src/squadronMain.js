@@ -127,7 +127,7 @@ function makeVisual(s) {
   const key = kindOfShip(s);
   let v = shipPool[key]?.pop();
   if (!v) {
-    const m = key === 'drone' ? createDroneModel() : key === 'merchant' ? createMerchant() : createShip({ ensign: key === 'ours' ? 'alg' : 'rus', crew: false });
+    const m = key === 'drone' ? createDroneModel() : key === 'merchant' ? createMerchant() : createShip({ ensign: key === 'ours' ? 'navy' : 'red', crew: false });
     m.group.rotation.order = 'YXZ'; // heading, then heel, then trim
     scene.add(m.group);
     const frigate = key === 'ours' || key === 'enemy';

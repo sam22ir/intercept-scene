@@ -481,8 +481,8 @@ body.mission-maneuvers .hud-debrief { margin-top: 8px; }
 .mcard-deb .deb-rows .sub:first-child { text-align: left; }
 .mh-cell { min-width: 0; padding: 4px 6px 5px; border-radius: 8px; background: rgba(0, 0, 0, 0.22); }
 .mh-cell span { display: flex; align-items: center; gap: 4px; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
-.mh-cell.alg span::before, .mh-cell.rus span::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #3ddc84; }
-.mh-cell.rus span::before { background: #ff7a1a; }
+.mh-cell.ship1 span::before, .mh-cell.ship2 span::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #3ddc84; }
+.mh-cell.ship2 span::before { background: #ff7a1a; }
 .mh-cell.unit span::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #5ab4ff; }
 .mh-cell b { display: block; font-size: 14px; font-variant-numeric: tabular-nums; }
 .mh-cell em { font-style: normal; font-size: 10.5px; color: var(--muted); }

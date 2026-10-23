@@ -350,10 +350,10 @@ function raft(kit, white, metal, x, y, z) {
   kit.add(new THREE.BoxGeometry(0.7, 0.12, 1.4), metal, { pos: [x, y + 0.06, z] });
 }
 
-// `ensign` picks the stern flag (an anchor: navy for 'alg', dark red for 'rus') and hull tint: 'alg' (the default) or 'rus' (the second ship of the
+// `ensign` picks the stern flag (an anchor: navy for 'navy', dark red for 'red') and hull tint: 'navy' (the default) or 'red' (the second ship of the
 // maneuvers mission); `crew: false` leaves the deck crew out (the ship duel, where they stand in the gun's way).
 // `catapult: false` leaves the helideck bare, and `helicopter: true` parks a helicopter on it (the Solo Air Defense mission).
-export function createShip({ ensign = 'alg', crew = true, catapult = true, helicopter = false } = {}) {
+export function createShip({ ensign = 'navy', crew = true, catapult = true, helicopter = false } = {}) {
   const group = new THREE.Group();
   group.name = 'ship';
 
@@ -933,11 +933,11 @@ export function createShip({ ensign = 'alg', crew = true, catapult = true, helic
   const flagGeo = new THREE.PlaneGeometry(2.2, 1.4, 16, 6);
   flagGeo.translate(1.1, 0, 0);
   const flagBase = flagGeo.attributes.position.array.slice();
-  if (ensign === 'rus') M.hull.color.setHex(0xaeb9c9); // a slightly bluer grey hull
+  if (ensign === 'red') M.hull.color.setHex(0xaeb9c9); // a slightly bluer grey hull
   const flag = new THREE.Mesh(flagGeo, new THREE.MeshStandardMaterial({
-    // No national flags: a white anchor on a navy field (alg, yours) or on a dark red one (rus, the enemy).
+    // No national flags: a white anchor on a navy field ('navy': yours, the drill's other ships) or on a dark red one ('red': the enemy, the drill's SHIP2).
     map: canvasTexture(256, 160, (ctx, w, h) => {
-      ctx.fillStyle = ensign === 'rus' ? '#8c1d24' : '#14345f';
+      ctx.fillStyle = ensign === 'red' ? '#8c1d24' : '#14345f';
       ctx.fillRect(0, 0, w, h);
       ctx.strokeStyle = '#f2f5f8';
       ctx.fillStyle = '#f2f5f8';
