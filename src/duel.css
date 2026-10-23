@@ -681,8 +681,7 @@ body.mission-duel #fly-keys { bottom: auto; height: auto; align-content: start; 
 .hs-prop .pp-hub { fill: #4a2f14; }
 .duel-ship .hs-prop { background: rgba(40, 28, 12, 0.7); box-shadow: 0 0 0 2px rgba(214, 178, 92, 0.6), 0 4px 12px rgba(0, 0, 0, 0.35); }
 
-/* The sliding level bars beside the propellers: the telegraph, slow astern at the bottom to flank at the top */
+/* The level bars beside the propellers: filled by the ship's speed */
 .duel-ship .hs-lvl { flex: none; align-self: flex-end; position: relative; width: 9px; height: 46px; margin-bottom: 4px; border-radius: 5px; background: rgba(255, 255, 255, 0.12); box-shadow: 0 0 0 1px rgba(214, 178, 92, 0.45); overflow: visible; }
-.hs-lvl .lv-fill { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--lvl, 0) * 100%); border-radius: 5px; background: linear-gradient(0deg, #a9843a, #f3dc92); transition: height 0.25s ease-out; }
-.hs-lvl .lv-thumb { position: absolute; left: -3px; right: -3px; bottom: calc(var(--lvl, 0) * (100% - 5px)); height: 5px; border-radius: 3px; background: #f3dc92; border: 1px solid #6e5320; transition: bottom 0.25s ease-out; }
-.hs-lvl.flank .lv-fill { background: linear-gradient(0deg, #d6b25c, #ff7a1a); } .hs-lvl.flank .lv-thumb { background: #ff9f43; }
+.hs-lvl .lv-fill { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--lvl, 0) * 100%); border-radius: 5px; background: linear-gradient(0deg, #a9843a, #f3dc92); transition: height 0.2s linear; }
+.hs-lvl.flank .lv-fill { background: linear-gradient(0deg, #d6b25c, #ff7a1a); }

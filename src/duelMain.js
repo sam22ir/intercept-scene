@@ -724,8 +724,8 @@ propL.className = propR.className = 'hs-prop';
 propL.innerHTML = propR.innerHTML = PROP_SVG;
 domeHost.className = 'hs-domehost';
 const barL = document.createElement('div'), barR = document.createElement('div');
-barL.className = barR.className = 'hs-lvl'; // a sliding bar for each engine: the telegraph's level, from slow astern (bottom) to flank (top)
-barL.innerHTML = barR.innerHTML = '<i class="lv-fill"></i><b class="lv-thumb"></b>';
+barL.className = barR.className = 'hs-lvl'; // a sliding bar for each engine: filled by the ship's speed
+barL.innerHTML = barR.innerHTML = '<i class="lv-fill"></i>';
 shipEl.append(barL, propL, domeHost, propR, barR);
 document.body.appendChild(shipEl);
 const propRotL = propL.querySelector('.pp-rot'), propRotR = propR.querySelector('.pp-rot');
@@ -735,7 +735,7 @@ function spinProps(dt) {
   propAng = (propAng + kn * 0.18 * dt) % (Math.PI * 2); // 38 kn: about one turn a second
   const deg = (propAng * 180) / Math.PI;
   propRotL.style.transform = `rotate(${-deg}deg)`; propRotR.style.transform = `rotate(${deg}deg)`;
-  const lvl = (sim.player.order / (TELEGRAPH.length - 1)).toFixed(3), fl = sim.player.order === TELEGRAPH.length - 1;
+  const lvl = clamp(Math.abs(kn) / 38, 0, 1).toFixed(3), fl = kn > 28.5; // the bar fills with the real speed (38 kn is full); orange past the old top speed
   barL.style.setProperty('--lvl', lvl); barR.style.setProperty('--lvl', lvl);
   barL.classList.toggle('flank', fl); barR.classList.toggle('flank', fl);
   const fast = Math.min(1, Math.abs(kn) / 20);
