@@ -732,7 +732,7 @@ const propRotL = propL.querySelector('.pp-rot'), propRotR = propR.querySelector(
 let propAng = 0;
 function spinProps(dt) {
   const kn = sim.knots(sim.player);
-  propAng = (propAng + kn * 0.09 * dt) % (Math.PI * 2); // 38 kn: about one turn every two seconds
+  propAng = (propAng + kn * 0.18 * dt) % (Math.PI * 2); // 38 kn: about one turn a second
   const deg = (propAng * 180) / Math.PI;
   propRotL.style.transform = `rotate(${-deg}deg)`; propRotR.style.transform = `rotate(${deg}deg)`;
   const lvl = (sim.player.order / (TELEGRAPH.length - 1)).toFixed(3), fl = sim.player.order === TELEGRAPH.length - 1;
