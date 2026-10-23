@@ -3,6 +3,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { createEnvironment } from './environment.js';
 import { createShip } from './models/ship.js';
+import { createIslet } from './islet.js';
+import { createHelicopter } from './models/helicopter.js';
+import { PAD } from './heliFlight.js';
 import { createMerchant } from './models/merchant.js';
 import { createBridge } from './models/bridge.js';
 import { createGatling } from './models/gatling.js';
@@ -15,8 +18,8 @@ import { CameraRig } from './cameraRig.js';
 import { menuText } from './menu.js';
 import { compass, relName, kmText, RUDDER_MAX, HALF_LENGTH, HALF_BEAM } from './hull.js';
 import {
-  DuelSim, TELEGRAPH, COMPARTMENTS, COMP_IDS, HULL_HP, LEVELS, DUEL_LEVELS, MAIN_ARC, MAIN_RANGE, GUN_MOUNT_LOCAL, GUN_RANGE, sinkState,
-  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, zoneAt, AMMO_TYPES, SWITCH_TIME, CREWS, REPAIR_TIME, REPAIR_WAIT, LOCK_FRACTION, FOCUS_FRACTION,
+  DuelSim, TELEGRAPH, COMPARTMENTS, COMP_IDS, HULL_HP, LEVELS, DUEL_LEVELS, MAIN_ARC, MAIN_RANGE, GUN_MOUNT_LOCAL, sinkState,
+  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, zoneAt, SWITCH_TIME, CREWS, REPAIR_TIME, REPAIR_WAIT, FRIEND_MAX, LOCK_FRACTION, FOCUS_FRACTION,
 } from './duel.js';
 import { createDuelAudio } from './duelAudio.js';
 import { createDuelMap } from './duelMap.js';
@@ -50,18 +53,64 @@ controls.maxPolarAngle = Math.PI * 0.495;
 controls.enabled = false;
 const rig = new CameraRig(camera, controls);
 
-const env = createEnvironment(renderer, scene, { look: 'duel' });
+const env = createEnvironment(renderer, scene, { look: 'duel', realSea: true });
 env.setShadowSize(1024);
 env.ocean.material.uniforms.uShipX.value = 1e7; // the shader's straight-line wake: these ships turn, each has her own
 const fx = createLiveFx(scene);
 
 const BRIDGE_EYE = new THREE.Vector3(16.9, 11.4, 0); // the long-lens sight on the bridge roof, in the ship's frame
 const HELM_EYE = new THREE.Vector3(11.7, 11.0, 0); // inside the wheelhouse, behind the helm wheel (models/bridge.js; as in Solo Air Defense)
+let idsBtn = null; // the top view's ship-marks button (built with the views bar)
+const idState = { until: 0, labels: true }; // the ship marks: shown until this time (ms) in the chase and orbit views, always in the top view unless switched off
+let aboveAng = 0, aboveFresh = true; // the Above view's heading of the screen, eased
+let camYaw = 0, camPitch = 0; // behind and above: the drag's swing round the ship and lift, back to nothing on every view change
 let lookYaw = 0; // bridge: degrees off the bow, + to starboard
 let lookPitch = -0.03;
 const _a = new THREE.Vector3();
 const _vel = new THREE.Vector3();
 wireWeather({ look: env.look });
+// Fog only far out: everything inside fighting range (8 km) stays crisp, and the sea blends into the horizon colour before the edge of the
+// sea plane (32 km), so it meets the sky without a seam (with none at all the far water showed as a pale band under the islands).
+// The weather's cloud banks and squalls are upright cards standing on the sea: seen from high up they show a hard line across the water. They
+// fade out as the camera climbs (below 150 m nothing changes; from 450 m up they are gone).
+const weatherCards = [];
+scene.traverse((o) => { if (o.isSprite && o.scale.x > 3000 && o.userData.opacity !== undefined) weatherCards.push(o); });
+function fadeWeatherCards() {
+  const k = clamp(1 - (camera.position.y - 150) / 300, 0, 1);
+  for (const o of weatherCards) { o.material.opacity = o.userData.opacity * k; o.visible = k > 0.01; }
+}
+env.ocean.material.uniforms.uFogNear.value = scene.fog.near = 9000;
+env.ocean.material.uniforms.uFogFar.value = scene.fog.far = 32000;
+
+// --- The state of the sea (a slider in the menu, kept between visits, applied at once) ---------------------------------------------
+// 0 is a flat calm and 100 is very high waves. The waves' steepness and the whitecaps follow the slider, and so does how much the ships
+// roll and pitch on them (`seaK`, 1 = the original sea) and how much the behind camera sways.
+const SEA_MAX = 5.4;
+const seaOf = (v) => 0.4 + (v / 100) ** 1.5 * (SEA_MAX - 0.4); // the steepness for a slider value
+const SEA_NAMES = [[0.7, 'Calm'], [1.3, 'Slight'], [2.1, 'Moderate'], [3.0, 'Rough'], [4.0, 'Very rough'], [Infinity, 'Very high waves']];
+let seaV = 41; // about the mission's own sea (1.7)
+try { const v = Number(localStorage.getItem('intercept.duel.sea2')); if (localStorage.getItem('intercept.duel.sea2') !== null && v >= 0 && v <= 100) seaV = v; } catch { /* storage unavailable */ }
+let seaK = seaOf(seaV);
+const seaRange = document.querySelector('#sea-range');
+let seaHook = null; // set once the simulation exists: gives it the sea's height and direction
+function applySea() {
+  seaK = seaOf(seaV);
+  env.setSea(seaK, THREE.MathUtils.clamp((seaK - 0.5) / 1.5, 0, 1.2));
+  const n = document.querySelector('#sea-name');
+  if (n) n.textContent = SEA_NAMES.find(([lim]) => seaK < lim)[1];
+  if (seaHook) seaHook();
+}
+if (seaRange) {
+  document.querySelector('#sea-row').hidden = false;
+  seaRange.value = String(seaV);
+  seaRange.addEventListener('input', () => {
+    seaV = Number(seaRange.value);
+    try { localStorage.setItem('intercept.duel.sea2', String(seaV)); } catch { /* storage unavailable */ }
+    applySea();
+  });
+  seaRange.addEventListener('change', () => seaRange.blur()); // so the arrow keys steer again
+}
+applySea();
 const _b = new THREE.Vector3();
 const _c = new THREE.Vector3();
 const _q = new THREE.Quaternion();
@@ -71,7 +120,9 @@ const clamp = THREE.MathUtils.clamp;
 let level = 'normal';
 try { level = globalThis.__DUEL_LEVEL ?? new URLSearchParams(location.search).get('level') ?? 'normal'; } catch { /* no address */ }
 if (!DUEL_LEVELS.includes(level)) level = 'normal';
-const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true });
+const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, helmPlayer: true, scouting: true, intro: true, playerReload: 0.5, playerDamage: 2, playerFlankKn: 38, gunRange: MAIN_RANGE - 500, gatAnswers: true, headingFire: true, enemyHelis: true, easyGunSafe: true, firingReveals: true });
+seaHook = () => { const i = env.seaInfo(); if (i) sim.setSea(i.hs, i.dir); };
+seaHook();
 
 // --- The ships --------------------------------------------------------------------------------------------------------
 // A picture for each ship the simulation has: yours, the enemy's, then whoever arrives (more enemy frigates, a friendly one, merchants).
@@ -79,10 +130,10 @@ const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true })
 // gun's way); the enemy has her own ensign and a bluer hull.
 const shipPool = {};
 function makeVisual(s) {
-  const key = s.merchant ? 'merchant' : s.team === 1 ? 'rus' : 'alg';
+  const key = s.merchant ? 'merchant' : s.team === 1 ? 'rus' : s.idx === 0 ? 'me' : 'alg';
   let v = shipPool[key]?.pop();
   if (!v) {
-    const m = s.merchant ? createMerchant() : createShip({ ensign: key, crew: false });
+    const m = s.merchant ? createMerchant() : createShip({ ensign: s.team === 1 ? 'rus' : 'alg', crew: false, ...(s.idx === 0 ? { catapult: false, helicopter: true } : {}) });
     m.group.rotation.order = 'YXZ'; // heading, then heel, then trim
     scene.add(m.group);
     const gats = s.merchant ? [] : GUN_MOUNT_LOCAL.map(([x, y, z]) => {
@@ -97,7 +148,7 @@ function makeVisual(s) {
     scene.add(flashSprite);
     v = { ...m, key, gats, wake: createWake(scene), plume: new ShipPlume(fx), flashSprite };
   }
-  v.smokeT = 0; v.flash = 0; v.gunClock = [0, 0]; v.plume.last = null;
+  v.smokeT = 0; v.flash = 0; v.gunClock = [0, 0]; v.mot = null; v.plume.last = null;
   v.group.visible = true;
   return v;
 }
@@ -112,6 +163,50 @@ const ships = [];
 function syncShips() {
   while (ships.length < sim.ships.length) ships.push(makeVisual(sim.ships[ships.length]));
   while (ships.length > sim.ships.length) releaseVisual(ships.pop());
+  syncIslands();
+}
+// The islands the simulation has, as meshes (rebuilt when a new battle plans new ones).
+const isletGroup = new THREE.Group();
+scene.add(isletGroup);
+let isletKey = '';
+function syncIslands() {
+  const key = sim.islands.map((i) => `${i.x | 0},${i.z | 0},${i.r | 0}`).join('|');
+  if (key === isletKey) return;
+  isletKey = key;
+  for (const m of [...isletGroup.children]) { isletGroup.remove(m); m.geometry.dispose(); m.material.dispose(); }
+  for (const isl of sim.islands) isletGroup.add(createIslet(isl));
+}
+
+// The helicopter: on the pad while it is parked or spinning up (the model on the ship), then a world model that flies where the sim says.
+const _deck = { x: PAD.x, y: PAD.y, z: PAD.z, yaw: 0, pitch: 0, roll: 0, rpm: 0, spin: 0, flying: false, phase: 'parked' };
+function deckHeliState() { _deck.rpm = sim.hop.rpm; _deck.spin = sim.hop.spin; return _deck; }
+const strikeHeli = createHelicopter();
+strikeHeli.visible = false;
+scene.add(strikeHeli);
+const _hs = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, rpm: 1, spin: 0 };
+function updateStrikeHeli() {
+  const h = sim.hop;
+  const show = !!h && h.phase !== 'deck' && h.phase !== 'spin' && h.phase !== 'gone';
+  strikeHeli.visible = show;
+  if (!show) return;
+  _hs.x = h.x; _hs.y = h.y; _hs.z = h.z; _hs.yaw = -h.yaw; _hs.pitch = h.pitch; _hs.roll = h.roll; _hs.rpm = h.rpm; _hs.spin = h.spin;
+  strikeHeli.userData.update(_hs);
+  for (const m of sim.hmiss) fx.missileTrail(_c.set(m.p[0], m.p[1], m.p[2]), sim.t); // its missiles in the air
+}
+// The enemy's helicopters: a model each, made when it lifts off, hidden when it is gone.
+const foeHelis = [];
+function updateFoeHelis() {
+  const list = sim.ehops ?? [];
+  while (foeHelis.length < list.length) { const m = createHelicopter(); scene.add(m); foeHelis.push(m); }
+  for (let i = 0; i < foeHelis.length; i++) {
+    const e = list[i], m = foeHelis[i];
+    const show = !!e && e.phase !== 'gone';
+    m.visible = show;
+    if (!show) continue;
+    _hs.x = e.x; _hs.y = e.y; _hs.z = e.z; _hs.yaw = -e.yaw; _hs.pitch = e.pitch; _hs.roll = e.roll; _hs.rpm = e.rpm; _hs.spin = e.spin;
+    m.userData.update(_hs);
+    if (e.phase === 'down' && Math.random() < 0.5) fx.gunSmoke(_c.set(e.x, e.y, e.z), _b.set(0, 0, 0), sim.t);
+  }
 }
 
 // --- Shells and tracers ---------------------------------------------------------------------------------------------
@@ -154,7 +249,7 @@ const tracerVis = streaks(400, 1.1, 0xff6a1f, 34); // the 30 mm tracers
 const tracers = Array.from({ length: 400 }, () => ({ on: false, p: new THREE.Vector3(), v: new THREE.Vector3(), t0: 0 }));
 let tracerNext = 0;
 syncShips(); // the two ships to start with (more are added as they arrive)
-const bridge = createBridge(); // the wheelhouse's inside, shown only in the bridge view (as in Solo Air Defense)
+const bridge = createBridge({ classicWheel: true }); // the wheelhouse's inside, shown only in the bridge view (as in Solo Air Defense)
 bridge.group.visible = false;
 ships[0].group.add(bridge.group);
 
@@ -163,25 +258,65 @@ ships[0].group.add(bridge.group);
 // 30 mm mounts and the stern over the rudder. The radar view's marks sit here, a locked shell is sent here, and fires burn here.
 const ZONE_POS = { gun: [32, 7.5, 0], bridge: [11, 11.5, 0], engine: [-13.5, 10, 0], guns: [-33.6, 13, 0], steering: [-52, 4, 0] };
 const ZONE_X = Object.fromEntries(Object.entries(ZONE_POS).map(([id, p]) => [id, p[0]]));
+let hgunCount = 0;
+const MOT = { heave: [(2 * Math.PI) / 6.5, 0.35], pitch: [(2 * Math.PI) / 6.0, 0.3], roll: [(2 * Math.PI) / 11, 0.13] }; // [w, damping ratio]
+let slamShake = 0; // the jolt of the player's bow slam, 0 to 2, dying away
 function poseShip(i, dt) {
   const s = sim.ships[i];
   const v = ships[i];
   const sink = s.tSunk !== null ? sinkState(sim.t - s.tSunk, s.listSide) : null;
   const list = s.listSide * rad(9) * (1 - s.hp / HULL_HP) ** 2; // the hurt ship settles to the side she was hit on
   v.group.visible = !sink?.gone;
-  v.group.position.set(s.x, sink ? sink.depth : 0, s.z);
-  v.group.rotation.set(s.heel + list + (sink?.roll ?? 0), -s.psi, sink?.trim ?? 0);
+  // Every ship afloat rides the real waves (the ocean's own table): she heaves with the water under her middle and takes the pitch and roll of
+  // its surface under her bow, stern and sides (a hull this long follows the swell, not the chop, so most but not all of it).
+  // The hull does not follow the surface instantly: heave, pitch and roll are damped oscillators (periods of about 6.5, 6 and 11 s, the roll
+  // lightly damped) driven by the waves' own heave, slope along her and slope across her, so a beam sea sets her rolling, she hangs on a crest
+  // and drops after it, and the bow digs in and slams.
+  const ride = sink ? null : env.seaRide(s.x, s.z, s.psi, sim.t, s.merchant ? 120 : 110, 14);
+  let heaveSea = 0, rollSea = 0, pitchSea = 0;
+  if (ride) {
+    const m = (v.mot ??= { h: ride.heave, hv: 0, p: ride.pitch, pv: 0, r: -ride.roll, rv: 0, wet: false, cool: 0 });
+    if (!(dt > 0 && dt < 0.5)) { m.h = ride.heave; m.hv = 0; m.p = ride.pitch; m.pv = 0; m.r = -ride.roll; m.rv = 0; } // a stall or a restart: just snap
+    else {
+      const n = Math.max(1, Math.ceil(dt / 0.02)), h = dt / n;
+      for (let k = 0; k < n; k++) {
+        m.hv += (MOT.heave[0] ** 2 * (ride.heave - m.h) - 2 * MOT.heave[1] * MOT.heave[0] * m.hv) * h; m.h += m.hv * h;
+        m.pv += (MOT.pitch[0] ** 2 * (ride.pitch - m.p) - 2 * MOT.pitch[1] * MOT.pitch[0] * m.pv) * h; m.p += m.pv * h;
+        m.rv += (MOT.roll[0] ** 2 * (-ride.roll - m.r) - 2 * MOT.roll[1] * MOT.roll[0] * m.rv) * h; m.r += m.rv * h;
+      }
+    }
+    m.r = clamp(m.r, -0.42, 0.42); m.p = clamp(m.p, -0.25, 0.25);
+    heaveSea = m.h; rollSea = m.r * 0.9; pitchSea = m.p * 0.9;
+    // Slam: the bow, at the end of her pitch, meets a wave that stands well above her stem: spray over the forecastle, a jolt through the hull
+    // (and the camera), and a little way lost.
+    m.cool = Math.max(0, m.cool - dt);
+    const fx0 = Math.cos(s.psi), fz0 = Math.sin(s.psi);
+    const water = env.seaHeightAt(s.x + fx0 * 50, s.z + fz0 * 50, sim.t);
+    const over = water - (m.h + Math.sin(m.p) * 50) - 4.2; // metres of water above the stem's usual freeboard
+    if (over > 0 && !m.wet && m.cool <= 0 && !s.merchant && ride.hs > 1.2) {
+      const str = clamp(0.4 + over * 0.5, 0.3, 2);
+      m.cool = 1.4;
+      _vel.x = Math.cos(s.psi) * s.u; _vel.z = Math.sin(s.psi) * s.u;
+      const fwdv = { x: fx0, z: fz0 };
+      for (const side of [-1, 1]) for (let q = 0; q < 10; q++) v.plume.fx.bowSpray(v.group.localToWorld(_c.set(50, 2.5, side * 2.6)), _vel, side, 2 + str * 2.5, sim.t, fwdv);
+      sim.slam(i, str);
+      if (i === 0) slamShake = Math.max(slamShake, str);
+    }
+    m.wet = over > 0;
+  }
+  v.group.position.set(s.x, (sink ? sink.depth : 0) + heaveSea, s.z);
+  v.group.rotation.set(s.heel + list + rollSea + (sink?.roll ?? 0), -s.psi, pitchSea + (sink?.trim ?? 0));
   v.group.updateMatrixWorld(true);
   if (!s.merchant) {
     v.mainGun.pose(s.gun.yaw, s.gun.pitch);
     v.gats.forEach((g, k) => g.pose(s.gats[k].yaw, s.gats[k].pitch, s.gats[k].spin, s.gats[k].firing, sim.t));
-    v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0 }); // the radar turns; the launcher box stays stowed
+    v.update(sim.t, Infinity, Infinity, { aim: { yaw: Math.PI, pitch: 0 }, cradleT: 0, heli: i === 0 && sim.hop ? deckHeliState() : undefined, heliHidden: i === 0 && sim.hop ? (sim.hop.phase !== 'deck' && sim.hop.phase !== 'spin') : undefined }); // the radar turns; the launcher box stays stowed; the helicopter sits on the pad until it lifts off
   }
   v.wake.update({ t: sim.t, x: s.x, z: s.z, psi: s.psi, r: s.r, u: s.u });
   if (!sink?.gone && s.tSunk === null) { // the funnel's haze and the bow's spray, while she is afloat
     _vel.x = Math.cos(s.psi) * s.u;
     _vel.z = Math.sin(s.psi) * s.u;
-    v.plume.update(sim.t, v.group, _vel, env.look?.sea.state ?? 1);
+    v.plume.update(sim.t, v.group, _vel, seaK);
   }
   // Smoke and fire: a hurt compartment smokes, one that is out burns; a sinking ship pours it out.
   v.smokeT += dt;
@@ -253,7 +388,11 @@ function updateWeapons(dt) {
 const banner = document.querySelector('#shot-caption');
 banner.classList.add('call');
 let bannerUntil = 0;
-function say(text, tone = '', ms = 3200) {
+// An alert sound goes only with its text on the banner, and only where a call asks for one (`sound`: 'alarm' for bad news about your ship,
+// 'ping' for a contact or news). The audio throttles them (duelAudio.js `cue`). The helicopter's radio reports are not shown or heard.
+let cueSound = null; // set once the audio exists
+function say(text, tone = '', ms = 3200, sound = null) {
+  if (sound && cueSound) cueSound(sound, text);
   banner.textContent = text;
   banner.hidden = false;
   banner.classList.remove('standby', 'execute', 'station', 'danger');
@@ -266,10 +405,73 @@ alarmEl.className = 'duel-alarm';
 alarmEl.setAttribute('aria-hidden', 'true');
 document.body.appendChild(alarmEl);
 const who = (i) => (i === 0 ? 'Your' : 'Enemy');
+// --- The battle log (the debrief) and the kill-cam ----------------------------------------------------------------------------------
+// Every notable event is written down with its time; the end card lists them. When a ship sinks a short cinematic orbits her (Esc, Space or
+// Enter skip it) while the sim keeps running.
+const LOG = [];
+const KILL = { on: false, t: 0, dur: 5.5, ship: 0 };
+const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+function shipLabel(i) {
+  const s = sim.ships[i];
+  if (!s) return 'Ship';
+  return s.merchant ? 'Merchant ship' : i === 0 ? 'Your ship' : s.team === 0 ? 'Friendly frigate' : 'Enemy frigate';
+}
+function sideOf(i) { return i === 0 ? 'Your' : sim.ships[i]?.team === 0 ? 'Friendly' : sim.ships[i]?.merchant ? 'Merchant' : 'Enemy'; }
+function record(e) {
+  const add = (kind, text) => LOG.push({ t: sim.t, kind, text });
+  if (e.type === 'firstshot') add('ok', 'Your first shot');
+  else if (e.type === 'arrive') add(e.kind === 'enemy' ? 'bad' : '', e.kind === 'enemy' ? 'Another enemy frigate arrives' : e.kind === 'ally' ? 'A friendly frigate joins you' : 'A merchant ship crosses');
+  else if (e.type === 'out') add(e.ship === 0 ? 'bad' : 'ok', `${sideOf(e.ship)} ${COMPARTMENTS[e.comp].name.toLowerCase()} out`);
+  else if (e.type === 'fire' && (e.ship === 0 || sim.ships[e.ship]?.team === 1)) add(e.ship === 0 ? 'bad' : 'ok', `Fire in ${e.ship === 0 ? 'your' : 'her'} ${COMPARTMENTS[e.comp].name.toLowerCase()}`);
+  else if (e.type === 'sunk') add(e.ship === 0 ? 'bad' : 'ok', `${shipLabel(e.ship)} sunk`);
+  else if (e.type === 'ground' && e.ship === 0) add('bad', 'You ran aground');
+  else if (e.type === 'collision' && (e.a === 0 || e.b === 0)) add('bad', `Collision at ${e.impact.toFixed(0)} m/s`);
+}
+function startKill(i) {
+  if (INTRO.phase !== 'off') return;
+  KILL.on = true; KILL.t = 0; KILL.ship = i;
+  KILL.dur = sim.winner !== null || sim.over ? 7 : 5;
+  document.body.classList.add('duel-cine');
+  say(`${shipLabel(i)} is going down`, i === 0 ? 'bad' : 'ok', KILL.dur * 1000);
+}
+function endKill() {
+  if (!KILL.on) return;
+  KILL.on = false;
+  if (INTRO.phase === 'off') document.body.classList.remove('duel-cine');
+}
+function killCamera() {
+  if (!KILL.on) return false;
+  const s = sim.ships[KILL.ship];
+  if (!s) return false;
+  const u = KILL.t / KILL.dur, a = s.psi + 2.4 + KILL.t * 0.22, r = 150 - u * 55;
+  camera.position.set(s.x + Math.cos(a) * r, 26 - u * 11, s.z + Math.sin(a) * r);
+  camera.lookAt(s.x, 7 - u * 4, s.z);
+  setFov(42);
+  return true;
+}
+// After an enemy goes down (and her kill-cam), the next one: the living enemy your sight now has (or the nearest), once the radar has her.
+let nextEnemyPending = false;
+function nextEnemyStep() {
+  if (!nextEnemyPending || KILL.on || INTRO.phase !== 'off' || sim.winner !== null) return;
+  const live = sim.ships.filter((o) => o.team === 1 && o.tSunk === null && o.det !== false);
+  if (!live.length) return; // wait: the next one may still be over the horizon
+  nextEnemyPending = false;
+  const next = live.includes(sim.enemy) ? sim.enemy : live.reduce((a, b) => (sim.distance(sim.player, a) < sim.distance(sim.player, b) ? a : b));
+  sim.setTarget(0, next.idx);
+  if (next.stats.shells > 0) { // she is already firing: no question, straight into the sight, the gun firing
+    setView('radar');
+    setFireLatch(true);
+    say(`Under fire · ${relName(sim.relBearing(sim.player))}`, 'bad', 3600, 'alarm');
+  } else {
+    INTRO.again = true;
+    toAsk('Another hostile');
+  }
+}
 const eventHooks = []; // the audio listens here
 function handleEvents() {
   for (const e of sim.takeEvents()) {
     for (const h of eventHooks) h(e);
+    record(e);
     if (e.type === 'shot') {
       const v = ships[e.owner];
       v.mainGun.muzzle.getWorldPosition(_c);
@@ -277,24 +479,57 @@ function handleEvents() {
       v.flashSprite.visible = true;
       v.flash = 0.09;
       for (let k = 0; k < 7; k++) fx.gunSmoke(_c, _b.set(e.dir[0] * 9, e.dir[1] * 9, e.dir[2] * 9), sim.t);
+    } else if (e.type === 'ewarn') {
+      say(e.text, e.kind ?? 'bad', 2800, 'alarm');
+    } else if (e.type === 'ehdown') {
+      fx.explosion(_c.set(...e.pos), sim.t);
+      if (!e.splash) say('Enemy helicopter shot down', 'ok', 2600);
+    } else if (e.type === 'contact') {
+      say(`Contact ${relName(e.rel)} · ${kmText(e.range)}`, 'warn', 3600, 'ping');
+    } else if (e.type === 'lost') {
+      say('Contact lost', '', 2400);
+    } else if (e.type === 'hgun') {
+      for (let n = 0; n < 3; n++) { // tracers down to her
+        const tr = tracers[tracerNext++ % tracers.length];
+        tr.p.set(...e.pos);
+        tr.v.set(e.to[0] - e.pos[0], e.to[1] - e.pos[1], e.to[2] - e.pos[2]).normalize().multiplyScalar(1050);
+        tr.v.x += (Math.random() - 0.5) * 12; tr.v.y += (Math.random() - 0.5) * 12; tr.v.z += (Math.random() - 0.5) * 12;
+        tr.t0 = sim.t - n * 0.05;
+        tr.on = true;
+      }
+      _c.set(...e.pos);
+      for (let k = 0; k < 2; k++) fx.gunSmoke(_c, _b.set(0, 0, 0), sim.t);
+      if ((hgunCount++ % 3) === 0) fx.shellBurst(_c.set(...e.to), sim.t);
+    } else if (e.type === 'hmissile') {
+      fx.launchBillow(_c.set(...e.pos), _b.set(0, -1, 0), sim.t);
+    } else if (e.type === 'impact') {
+      fx.shellBurst(_c.set(...e.pos), sim.t);
+    } else if (e.type === 'ground') {
+      for (let k = 0; k < 3; k++) fx.explosion(_c.set(e.pos[0] + (k - 1) * 10, 4, e.pos[2]), sim.t + k * 0.25);
+      if (e.ship === 0) { say('Aground: back off', 'bad', 3600, 'alarm'); slamShake = Math.max(slamShake, 2); }
     } else if (e.type === 'hit') {
       fx.shellBurst(_c.set(...e.pos), sim.t);
       if (e.ship === 0) {
         alarmEl.classList.remove('hit'); void alarmEl.offsetWidth; alarmEl.classList.add('hit');
         say(`Hit: ${COMPARTMENTS[e.comp].name}${e.out ? ' out' : ''}`, 'bad', 2200);
       } else if (e.neutral) {
-        if (e.owner === 0) say('You hit a merchant ship: hold fire, sinking her loses the duel', 'bad', 3600);
+        if (e.owner === 0) say('Merchant hit: hold fire', 'bad', 3600, 'alarm');
       } else if (e.owner === 0) say(`Hit on her ${COMPARTMENTS[e.comp].name.toLowerCase()}${e.out ? ': out' : ''}`, 'ok', 2200);
     } else if (e.type === 'arrive') {
+      idState.until = performance.now() + 5000;
       const where = relName(e.rel);
-      if (e.kind === 'enemy') say(`Another enemy frigate ${where}, ${kmText(e.range)}`, 'warn', 4200);
-      else if (e.kind === 'ally') say(`A friendly frigate joins you, ${where}`, 'ok', 4200);
-      else say(`Merchant ship crossing ${where}: do not fire on her`, '', 4200);
+      if (e.kind === 'enemy') {
+        const live = sim.ships.filter((o) => o.team === 1 && o.tSunk === null).length;
+        const help = live > 1 ? sim.callFriend() : { ok: false };
+        say(`Enemy frigate ${where} · ${kmText(e.range)}`, 'warn', 4200, 'alarm');
+      }
+      else if (e.kind === 'ally') say(`Friendly ${where} · ${kmText(e.range)}`, 'ok', 4200, 'ping');
+      else say(`Merchant ${where}: hold fire`, '', 4200, 'ping');
     } else if (e.type === 'collision') {
       for (let k = 0; k < 4; k++) fx.shellBurst(_c.set(e.pos[0] + (Math.random() - 0.5) * 10, e.pos[1] + Math.random() * 4, e.pos[2] + (Math.random() - 0.5) * 10), sim.t);
       if (e.a === 0 || e.b === 0) {
         alarmEl.classList.remove('hit'); void alarmEl.offsetWidth; alarmEl.classList.add('hit');
-        say(`Collision at ${e.impact.toFixed(0)} m/s`, 'bad', 2600);
+        say('Collision', 'bad', 2600, 'alarm');
       }
     } else if (e.type === 'gunhit') {
       if (e.ship === 0) { alarmEl.classList.remove('hit'); void alarmEl.offsetWidth; alarmEl.classList.add('hit'); }
@@ -302,17 +537,20 @@ function handleEvents() {
       fx.splashAt(_c.set(e.pos[0], 0, e.pos[2]), sim.t, 1.5);
       if (e.miss < 60) say(e.owner === 0 ? 'Near miss' : 'Their shell falls close', e.owner === 0 ? '' : 'warn', 1400);
     } else if (e.type === 'out') {
-      say(`${who(e.ship)} ${COMPARTMENTS[e.comp].name.toLowerCase()} is out`, e.ship === 0 ? 'bad' : 'ok', 3000);
+      const moved = e.ship !== 0 ? sightPastOut(e.ship, e.comp) : null;
+      say(`${who(e.ship)} ${COMPARTMENTS[e.comp].name.toLowerCase()} out`, e.ship === 0 ? 'bad' : 'ok', 3000, e.ship === 0 ? 'alarm' : 'ping');
     } else if (e.type === 'sunk') {
+      if (sim.ships[e.ship]?.team === 1) nextEnemyPending = true;
+      startKill(e.ship);
       for (let k = 0; k < 3; k++) fx.explosion(_c.set(e.pos[0] + (k - 1) * 14, e.pos[1], e.pos[2]), sim.t + k * 0.35);
     } else if (e.type === 'ammo') {
-      if (e.ship === 0) say(`${AMMO_TYPES[e.kind].name} loaded`, '', 1400);
+      
     } else if (e.type === 'repair') {
-      if (e.ship === 0) say(e.phase === 'start' ? `Repairing the ${COMPARTMENTS[e.comp].name.toLowerCase()}: ${REPAIR_TIME} s` : `${COMPARTMENTS[e.comp].name} repaired`, e.phase === 'start' ? 'warn' : 'ok', 2000);
+      if (e.ship === 0) say(e.phase === 'start' ? `Repairing ${COMPARTMENTS[e.comp].name.toLowerCase()}` : `${COMPARTMENTS[e.comp].name} repaired`, e.phase === 'start' ? 'warn' : 'ok', 2000);
     } else if (e.type === 'fire') {
-      if (e.ship === 0) say(`Fire in the ${COMPARTMENTS[e.comp].name.toLowerCase()}: send a crew`, 'warn', 2400);
+      if (e.ship === 0) say(`Fire: ${COMPARTMENTS[e.comp].name.toLowerCase()}`, 'warn', 2400, 'alarm');
     } else if (e.type === 'over') {
-      say(e.reason === 'merchant' ? 'You sank a merchant ship: you lose' : e.winner === 0 ? 'The enemy is going down: you win' : 'Your ship is sinking: you lose', e.winner === 0 ? 'ok' : 'bad', 60000);
+      say(e.reason === 'merchant' ? 'Merchant sunk: you lose' : e.winner === 0 ? 'You win' : 'You lose', e.winner === 0 ? 'ok' : 'bad', 60000, e.winner === 0 ? 'ping' : 'alarm');
     }
   }
 }
@@ -340,36 +578,121 @@ function setView(v) {
     radarPrevManual = sim.player.manual;
     input.left = input.right = 0;
     setManual(true);
-    say('Radar: arrows or a drag aim the sight, Space locks, Enter fires. The helm is locked: Esc goes back', 'warn', 4200);
-  } else if (v !== 'radar' && view === 'radar') {
-    input.fire = 0;
-    setManual(radarPrevManual);
-  }
+    say('Aim: arrows · lock: Space · fire: F · Esc: helm', 'warn', 4200);
+  } else if (v !== 'radar' && view === 'radar') setManual(radarPrevManual); // the gun goes on firing: a latched FIRE or a held key carries over
   view = v;
+  if (idsBtn) idsBtn.hidden = v !== 'above';
+  if (v === 'orbit' || v === 'behind') idState.until = performance.now() + 5000;
+  camYaw = camPitch = 0; aboveFresh = true; lookYaw = 0; lookPitch = -0.03; // going back to a view always opens on its default angle
   radarKeys.l = radarKeys.r = radarKeys.u = radarKeys.d = radarKeys.zi = radarKeys.zo = 0;
   sight.manual = false; // the radar's own controls start on automatic every time
   sight.lock = null;
   sight.fresh = true;
   radarEl.hidden = v !== 'radar';
   sightEl.hidden = v !== 'radar';
+  if (ships[0]) ships[0].mainGun.group.visible = v !== 'radar'; // its barrel, trained on her, stood as a white bar up the middle of the sight
   document.body.classList.toggle('duel-radarview', v === 'radar');
+  try { flashKeys(); } catch { /* the key bar is built after the first view is set */ }
   map.sight = null;
-  controls.enabled = v === 'orbit';
-  if (v === 'orbit') rig.focus('ship', (out) => out.set(sim.player.x, 8, sim.player.z), 230, 25);
-  else rig.free();
+  controls.enabled = false;
+  if (v === 'orbit') orbitOnBoth();
+  rig.free();
   camera.up.set(0, 1, 0);
   viewButtons.forEach((b) => { const on = b.dataset.view === v; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
 }
+// The orbit view: a level camera (the horizon sits in the middle of the screen) at the side of the line between the two ships, far enough back
+// that both stand in the gap between the readouts. A drag swings it round them, the wheel moves it in and out; it follows both. With no
+// enemy in sight it frames your ship alone.
+// The orbit view, in one line: drag right to swing the camera to the right round the ships, drag down to rise (up to sink back), wheel to move in and out, double click to
+// start again. The view is tilted down a little so the horizon stands 70 % of the way up the screen (at its default height).
+const ORBIT_TILT = Math.atan(0.4 * Math.tan(rad(25)));
+let orbitDrag = false;
+let orbitFresh = true, orbitAz = 0, orbitZoom = 1, orbitEl = 0.1; // orbitEl: the drag's lift of the camera (radians above the level view)
+const orbitPos = new THREE.Vector3(), orbitCur = new THREE.Vector3(), orbitLook = new THREE.Vector3();
+let orbitDist = 300;
+function orbitOnBoth() { orbitFresh = true; orbitAz = 0; orbitZoom = 1; orbitEl = 0.1; } // it opens a little above the water, looking down on both ships
+function orbitCamera() {
+  setFov(50);
+  const p = sim.player, e = sim.enemy;
+  const both = e && e.tSunk === null && e.det !== false;
+  const mx = both ? (p.x + e.x) / 2 : p.x, mz = both ? (p.z + e.z) / 2 : p.z;
+  const len = both ? Math.hypot(e.x - p.x, e.z - p.z) : 0;
+  const ux = both ? (e.x - p.x) / (len || 1) : 1, uz = both ? (e.z - p.z) / (len || 1) : 0;
+  // How much of the width is free of readouts: the ships' span must fit in it.
+  const want = 300 * orbitZoom; // close on your own ship: she stands large at the lower right, the enemy far off beyond her bow
+  const k = orbitFresh ? 1 : 1 - Math.exp(-frameDt / 0.6); // the distance eases; the camera itself follows the hand at once
+  orbitDist += (want - orbitDist) * k;
+  const ang = Math.atan2(-uz, -ux) - rad(80) + orbitAz; // the camera stands behind her, to the side away from the enemy's line, rotated by the drag
+  orbitLook.set(p.x, 15, p.z);
+  orbitPos.set(p.x + Math.cos(ang) * orbitDist * Math.cos(orbitEl), 15 + Math.sin(orbitEl) * orbitDist, p.z + Math.sin(ang) * orbitDist * Math.cos(orbitEl));
+  orbitCur.lerp(orbitPos, orbitFresh || orbitDrag ? 1 : 1 - Math.exp(-frameDt / 0.2)); // smoothed apart from the camera, which is then slid aside
+  camera.position.copy(orbitCur);
+  camera.lookAt(orbitLook);
+  camera.rotateX(-ORBIT_TILT); // the same extra tilt at every height
+  camera.translateX(-orbitDist * 0.3); // slid aside and up, so she sits low at the right
+  camera.translateY(orbitDist * 0.1);
+  orbitFresh = false;
+}
+canvas.style.touchAction = 'none';
+canvas.addEventListener('pointerdown', (e) => {
+  if (view !== 'orbit' || e.button !== 0) return;
+  let x = e.clientX, y = e.clientY;
+  orbitDrag = true;
+  const move = (ev) => { orbitAz += (ev.clientX - x) * 0.006; orbitEl = clamp(orbitEl + (ev.clientY - y) * 0.004, 0, 1.4); x = ev.clientX; y = ev.clientY; };
+  const up = () => { orbitDrag = false; window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
+});
+canvas.addEventListener('wheel', (e) => { if (view === 'orbit') orbitZoom = clamp(orbitZoom * Math.exp(e.deltaY * 0.001), 0.5, 6); }, { passive: true });
+const _fwd = new THREE.Vector3();
+function setCamHint() { // tells the simulation what the camera sees, so the helicopter fires where it can be seen
+  camera.getWorldDirection(_fwd);
+  const vh = rad(camera.fov / 2), hh = Math.atan(Math.tan(vh) * camera.aspect);
+  sim.camHint = { p: [camera.position.x, camera.position.y, camera.position.z], f: [_fwd.x, _fwd.y, _fwd.z], half: Math.min(vh, hh) };
+}
+// Which enemy ships stand behind land as the guns see her: no tag, no marks and no aim on her parts (the helicopter and the map still show her).
+const landHidden = [];
+function updateLandHidden() {
+  const p = sim.player;
+  if (!sim.islands.length) { landHidden.length = 0; return; }
+  const M = sim.toWorld(p, MAIN_MOUNT);
+  for (let i = 0; i < sim.ships.length; i++) {
+    const t = sim.ships[i];
+    landHidden[i] = i > 0 && t.team === 1 && t.tSunk === null && sim.landBetween(M, [t.x, 6, t.z]);
+  }
+}
 let frameDt = 1 / 60;
+let behindHead = 0, behindT = 0, behindOn = false; // the behind camera's own heading, which trails the ship's
 function updateCamera() {
+  slamShake *= Math.exp(-4 * frameDt);
+  if (introCamera() || killCamera()) return;
+  viewCamera();
+}
+function viewCamera() { // the camera of the view you are in
+  if (view !== 'behind') behindOn = false;
   const me = ships[0].group;
   const foe = sim.enemy;
   bridge.group.visible = view === 'bridge';
-  if (view === 'orbit') { setFov(50); rig.update(); controls.update(); return; }
+  if (view === 'orbit') { orbitCamera(); return; }
   if (view === 'behind') {
     setFov(55);
-    camera.position.copy(me.localToWorld(_a.set(-110, 34, 0)));
-    camera.lookAt(me.localToWorld(_b.set(45, 6, 0)));
+    // Not bolted to the ship: the camera trails her heading (it swings out when she turns), rises and falls and sways with the sea,
+    // and leans a little into a turn, while it keeps looking at the point ahead of her real bow.
+    const p = sim.player;
+    if (!behindOn || sim.t < behindT) behindHead = p.psi;
+    behindOn = true; behindT = sim.t;
+    behindHead += wrapAngle(p.psi - behindHead) * (1 - Math.exp(-frameDt / 0.9));
+    const swell = Math.min(seaK, SEA_MAX);
+    const ride = env.seaRide(p.x, p.z, p.psi, sim.t); // the camera rises and falls with the swell under the ship
+    const bob = ride ? ride.heave * 0.85 : (Math.sin(sim.t * 0.9) * 1.0 + Math.sin(sim.t * 1.7 + 1) * 0.5) * swell;
+    const sway = Math.sin(sim.t * 0.55 + 2) * 0.6 * swell;
+    const hx = Math.cos(behindHead), hz = Math.sin(behindHead);
+    const cy = Math.cos(behindHead + camYaw), sy = Math.sin(behindHead + camYaw), cp = Math.cos(camPitch), sp = Math.sin(camPitch);
+    camera.position.set(p.x - cy * 110 * cp - hz * sway, 34 + bob + 110 * sp, p.z - sy * 110 * cp + hx * sway);
+    camera.lookAt(p.x + Math.cos(p.psi) * 45, 6 + bob * 0.3, p.z + Math.sin(p.psi) * 45);
+    camera.rotateZ(wrapAngle(p.psi - behindHead) * -0.3 + Math.sin(sim.t * 0.8) * 0.012 * swell);
+    if (slamShake > 0.01) { camera.position.y += Math.sin(sim.t * 38) * 0.7 * slamShake; camera.rotateX(Math.sin(sim.t * 29) * 0.012 * slamShake); }
   } else if (view === 'bridge') {
     // The wheelhouse, as in Solo Air Defense: the wheel turns with the rudder and the telegraph levers follow the order; drag looks round.
     bridge.update(clamp(sim.player.rudder / RUDDER_MAX, -1, 1), sim.player.order / (TELEGRAPH.length - 1));
@@ -381,10 +704,17 @@ function updateCamera() {
   } else if (view === 'radar') {
     aimSight(frameDt);
   } else if (view === 'above') {
+    // Straight down with the two ships side by side across the screen: the line from the enemy to you runs left to right (you on the right),
+    // eased as they move, and the height takes the width of the window, not just the range.
     setFov(50);
     const mx = (sim.player.x + foe.x) / 2, mz = (sim.player.z + foe.z) / 2;
-    const h = Math.max(380, sim.range() * 1.05);
-    camera.up.set(Math.cos(sim.player.psi), 0, Math.sin(sim.player.psi));
+    const want = Math.atan2(sim.player.z - foe.z, sim.player.x - foe.x); // the screen's right, as an angle on the sea (x, z)
+    aboveAng = aboveFresh ? want : aboveAng + wrapAngle(want - aboveAng) * (1 - Math.exp(-frameDt / 0.5));
+    aboveFresh = false;
+    const tanH = Math.tan(rad(camera.fov / 2)) * camera.aspect;
+    const h = Math.max(380, (sim.range() * 1.45) / (2 * tanH)); // room for the readouts either side
+    const a = aboveAng + camYaw;
+    camera.up.set(Math.sin(a), 0, -Math.cos(a)); // up = (dz, -dx)
     camera.position.set(mx, h, mz);
     camera.lookAt(mx, 0, mz);
   }
@@ -395,40 +725,20 @@ const root = document.querySelector('#hud');
 root.classList.add('duel-root');
 root.innerHTML = '<div class="duel-hud"></div>';
 const hud = root.querySelector('.duel-hud');
-const bar = (frac, cls = '') => `<i class="${cls}" style="width:${Math.round(clamp(frac, 0, 1) * 100)}%"></i>`;
 let selComp = 0; // the compartment Z has picked for X to send a crew to
-function cardHtml(i) {
-  const s = sim.ships[i];
-  const comps = COMP_IDS.map((id) => {
-    const f = s.comp[id] / COMPARTMENTS[id].hp;
-    const crew = s.crews.filter((c) => c.to === id);
-    const tags = `${s.fire[id] > 0 ? `<u class="fire" title="fire">${'▲'.repeat(Math.ceil(s.fire[id] * 3))}</u>` : ''}${s.leak[id] > 0.005 ? '<u class="leak" title="flooding">≈</u>' : ''}${crew.map((c) => `<u class="crew${c.eta > 0 ? ' going' : ''}" title="repair crew">⛑</u>`).join('')}`;
-    return `<div class="dh-row ${f <= 0 ? 'out' : f < 0.5 ? 'bad' : f < 0.99 ? 'hurt' : ''}${i === 0 && COMP_IDS[selComp] === id ? ' sel' : ''}"><span>${COMPARTMENTS[id].name}</span><b>${bar(f)}</b><em>${f <= 0 ? 'OUT' : `${Math.round(f * 100)}`}</em>${tags ? `<div class="dh-tags">${tags}</div>` : ''}</div>`;
-  }).join('');
-  const hp = s.hp / HULL_HP;
-  const foes = sim.ships.filter((o) => o.team === 1);
-  const which = foes.length > 1 ? ` ${foes.indexOf(s) + 1}/${foes.length}` : '';
-  return `<section class="dh-ship ${i ? 'foe' : 'you'}${s.tSunk !== null ? ' sunk' : ''}"><h3>${i ? `ENEMY${which}` : 'YOUR SHIP'}<small>${i ? LEVELS[sim.level].name : ''}${s.tSunk !== null ? 'SINKING' : ''}</small></h3>`
-    + `<div class="dh-row hull"><span>Hull</span><b>${bar(hp, hp < 0.3 ? 'bad' : '')}</b><em>${Math.round(s.hp)}</em></div>${comps}</section>`;
-}
 function gunStatus(s) {
   const g = s.gun;
   if (s.tSunk !== null) return '';
   if (s.comp.gun <= 0) return 'OUT';
-  if (g.ammo <= 0) return 'NO AMMUNITION';
+  if (g.ammo <= 0) return 'NO AMMO';
+  if (s.idx === 0 && fireLatch) return 'FIRING';
+  if (g.landBlocked) return 'LAND IN THE WAY';
   const sol = Math.abs(sim.relBearing(s));
-  if (sim.range() > MAIN_RANGE) return `OUT OF RANGE (${kmText(MAIN_RANGE)})`;
-  if (sol > MAIN_ARC) return 'OUT OF ARC: turn her';
+  if (sim.range() > MAIN_RANGE) return 'OUT OF RANGE';
+  if (sol > MAIN_ARC) return 'OUT OF ARC';
   if (g.cool > 0) return `LOADING ${g.cool.toFixed(1)} s`;
-  if (s.manual) return g.engaged ? (g.onTarget ? 'ON YOUR AIM' : 'TRAINING') : 'point at her';
+  if (s.manual) return g.engaged ? (g.onTarget ? 'ON YOUR AIM' : 'TRAINING') : 'aim at her';
   return g.onTarget ? 'ON TARGET' : 'TRAINING';
-}
-function rangeHtml() {
-  const live = sim.ships.filter((o) => o.team === 1 && o.tSunk === null).length;
-  const friends = sim.ships.filter((o) => o.team === 0 && o.idx > 0 && o.tSunk === null).length;
-  const traffic = sim.ships.filter((o) => o.merchant && o.tSunk === null).length;
-  const extra = `${live > 1 ? ` · <kbd>Tab</kbd> next of ${live}` : ''}${friends ? ' · ally' : ''}${traffic ? ` · ${traffic} merchant${traffic > 1 ? 's' : ''}` : ''}`;
-  return `<div class="dh-range"><span>ENEMY</span><b>${kmText(sim.range())}</b><small>${relName(sim.relBearing(sim.player))}${extra}</small></div>`;
 }
 function endHtml() {
   if (sim.winner === null) return '';
@@ -437,13 +747,14 @@ function endHtml() {
   const es = sim.ships.filter((o) => o.team === 1).reduce((a, o) => ({ hits: a.hits + o.stats.hits, shells: a.shells + o.stats.shells }), { hits: 0, shells: 0 });
   const why = sim.over === 'merchant' ? '<p>You sank a merchant ship</p>' : '';
   return `<section class="dh-end ${w ? 'won' : 'lost'}"><h2>${w ? 'You win' : 'You lose'}</h2>${why}`
-    + `<p>${Math.round(sim.t)} s · your 76 mm: ${st.hits} of ${st.shells} hit · theirs: ${es.hits} of ${es.shells}</p><p><kbd>R</kbd> to fight again</p></section>`;
+    + `<p>${Math.round(sim.t)} s · your 76 mm: ${st.hits} of ${st.shells} hit · theirs: ${es.hits} of ${es.shells}</p>`
+    + `<ol class="dh-log">${LOG.slice(-14).map((r) => `<li class="${r.kind}"><time>${mmss(r.t)}</time>${r.text}</li>`).join('')}</ol><p><kbd>R</kbd> to fight again</p></section>`;
 }
 let lastHtml = '';
 let hudOn = true;
 function updateHud() {
-  const html = cardHtml(sim.enemy.idx) + rangeHtml() + endHtml();
-  if (html !== lastHtml) { hud.innerHTML = html; lastHtml = html; }
+  const html = endHtml(); // the enemy and your ship are on their own cards (targetHtml, boardHtml) in every view
+  if (html !== lastHtml) { hud.innerHTML = html; lastHtml = html; root.classList.toggle('dh-over', html !== ''); }
 }
 
 // --- The ship's instruments (as Solo Air Defense's strip) ---------------------------------------------------------------------
@@ -452,7 +763,34 @@ function updateHud() {
 const shipEl = document.createElement('div');
 shipEl.id = 'duel-ship';
 shipEl.className = 'duel-ship';
+// The two propellers stand outside the dome, one each side, and turn with the ship's speed (counter-rotating; backwards when she goes astern).
+const PROP_SVG = '<svg viewBox="-24 -24 48 48" aria-hidden="true"><defs><linearGradient id="pp-brass" x1="0" y1="-23" x2="9" y2="-6" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f6e4a2"/><stop offset="0.55" stop-color="#d9b45c"/><stop offset="1" stop-color="#9b7632"/></linearGradient></defs><g class="pp-rot">'
+  + [0, 90, 180, 270].map((a) => `<g transform="rotate(${a})"><path d="M-2 -6 C-8.5 -9.5 -9.5 -19 -4 -22.6 C1 -24.5 8.4 -22 9 -17.6 C7 -12 4 -8 2.2 -6 Z" class="pp-blade"/><path d="M-3.4 -9 C-6 -13 -5.8 -18 -3 -20.6" class="pp-edge"/></g>`).join('')
+  + '</g><circle r="5.4" class="pp-hubring"/><circle r="3" class="pp-hub"/><circle r="1" class="pp-cap"/></svg>';
+const propL = document.createElement('div'), propR = document.createElement('div'), domeHost = document.createElement('div');
+propL.className = propR.className = 'hs-prop';
+propL.innerHTML = propR.innerHTML = PROP_SVG;
+domeHost.className = 'hs-domehost';
+const barL = document.createElement('div'), barR = document.createElement('div');
+barL.className = barR.className = 'hs-lvl'; // a sliding bar for each engine: five notches: dead slow, slow, half, full, flank (your throttle, not the speed)
+barL.innerHTML = barR.innerHTML = '<i></i><i></i><i></i><i></i><i></i>';
+shipEl.append(barL, propL, domeHost, propR, barR);
 document.body.appendChild(shipEl);
+const propRotL = propL.querySelector('.pp-rot'), propRotR = propR.querySelector('.pp-rot');
+let propAng = 0;
+function spinProps(dt) {
+  const kn = sim.knots(sim.player);
+  propAng = (propAng + kn * 0.18 * dt) % (Math.PI * 2); // 38 kn: about one turn a second
+  const deg = (propAng * 180) / Math.PI;
+  propRotL.style.transform = `rotate(${-deg}deg)`; propRotR.style.transform = `rotate(${deg}deg)`;
+  const ord = sim.player.order;
+  for (const bar of [barL, barR]) { // top notch first: the bar fills from the bottom with the throttle (slow astern lights the bottom one in blue)
+    const n = bar.children.length;
+    for (let q = 0; q < n; q++) { const lit = ord === 0 ? q === n - 1 : (n - 1 - q) < ord - 1; bar.children[q].className = lit ? (ord === 0 ? 'astern' : q === 0 ? 'top' : 'on') : ''; }
+  }
+  const fast = Math.min(1, Math.abs(kn) / 20);
+  propL.style.setProperty('--blur', fast.toFixed(2)); propR.style.setProperty('--blur', fast.toFixed(2));
+}
 let lastShip = '';
 const DOME_R = 94;
 const DOME_K = 1.5;
@@ -482,28 +820,17 @@ function domeSvg() {
     + `<line x1="${p0[0]}" y1="${(Number(p0[1]) - 5).toFixed(1)}" x2="${p0[0]}" y2="${(Number(p0[1]) + 5).toFixed(1)}" class="rm"/>`
     + `<text x="${cx}" y="94" class="sp">${sim.knots(p).toFixed(1)}<tspan> kn</tspan></text></svg>`;
 }
-function shipHtml() {
-  const p = sim.player;
-  const cells = COMP_IDS.map((id) => {
-    const f = p.comp[id] / COMPARTMENTS[id].hp;
-    const crew = p.crews.filter((c) => c.to === id).length;
-    return `<i class="cp ${f <= 0 ? 'out' : f < 0.5 ? 'bad' : f < 0.99 ? 'hurt' : ''}${COMP_IDS[selComp] === id ? ' sel' : ''}" title="${COMPARTMENTS[id].name}"><b>${COMP_ABBR[id]}</b><s style="height:${Math.round(clamp(f, 0, 1) * 100)}%"></s>`
-      + `<em>${p.fire[id] > 0 ? '<u class="fire">▲</u>' : ''}${p.leak[id] > 0.005 ? '<u class="leak">≈</u>' : ''}${crew ? '<u class="crew">⛑</u>' : ''}</em></i>`;
-  }).join('');
-  const g = p.gun;
-  const dry = p.gats.every((x) => x.ammo <= 0);
-  return `<div class="hs-rect hs-hull${p.hp < HULL_HP ? ' hurt' : ''}"><span>HULL <b>${Math.round(p.hp)}</b>${p.tSunk !== null ? ' · SINKING' : ''}</span><div class="hs-cells">${cells}</div></div>`
-    + `<div class="hs-dome">${domeSvg()}</div>`
-    + `<div class="hs-rect hs-wpn"><span>76 mm <b>${AMMO_TYPES[g.type].name}</b> · HE ${g.stock.he} AP ${g.stock.ap} · ${gunStatus(p)}</span>`
-    + `<span>30 mm <b>${dry ? 'DRY' : p.auto ? 'AUTO' : 'HOLD G'}</b> · crews <b>${p.crews.filter((c) => c.to).length}/${CREWS}</b> · ${COMPARTMENTS[COMP_IDS[selComp]].name}</span></div>`;
+function shipHtml() { // the strip is the dome alone (heading, rudder, speed), centred: the parts are on the board, the guns in the key bar and the sight
+  return `<div class="hs-dome">${domeSvg()}</div>`;
 }
 
 // --- The status boards (radar view) ---------------------------------------------------------------------------------------------
 // Two cards of horizontal bars, one for each part of a ship (no navigation data): yours down the left, with a FIX button on every part
 // (each part is repaired alone) and one for all; the enemy you aim at down the right. A click on one of your bars sends a crew there.
+let lastRange = '';
 const boardEl = document.createElement('div');
 boardEl.id = 'duel-board';
-boardEl.className = 'duel-board';
+boardEl.className = 'duel-pts duel-pts-me';
 document.body.appendChild(boardEl);
 let lastBoard = '';
 const healthColour = (f) => (f <= 0 ? '#ff5d61' : f < 0.5 ? '#ff7a1a' : f < 0.99 ? '#f2c94c' : '#3ddc84');
@@ -537,51 +864,91 @@ function partRows(s, mine, aim = null) {
       + `<span class="bn">${COMPARTMENTS[id].name}</span><i class="bb"><s style="width:${Math.round(f * 100)}%;background:${healthColour(f)}"></s></i><em>${f <= 0 ? 'OUT' : Math.round(f * 100)}</em><u class="bm">${marks}</u>${btn}</div>`;
   }).join('');
 }
+// Each part of a ship is one small round badge: its shape in the middle, a ring round it for its state (the arc is the health, in the
+// health colour; an orange inner ring is a repair under way), small marks for fire, a leak and crews. The name and the figures show on hover.
+const PART_ICON = { // 24 x 24 drawings, animated by CSS (duel.css, `.pi .bob` ...); still while the part is out
+  hull: '<g class="bob"><path d="M2 15h20l-3.5 5h-13z"/><path d="M7.5 15v-3.5h7l2 3.5M11 11.5V6M9 8.5h4"/></g><path class="wv" d="M-2 22.5q2-1.4 4 0t4 0t4 0t4 0t4 0t4 0t4 0"/>',
+  gun: '<path d="M4 20h11M6 20v-5a4 4 0 0 1 8 0v5"/><g class="recoil"><path d="M13.5 13.5H22"/><path d="M20.5 11.8v3.4"/></g>',
+  bridge: '<path d="M3 20h18M5 20v-5l2.5-3.5h9L19 15v5M8.5 15h7"/><path d="M12 11.5V4M9 6.5h6"/><circle class="blink" cx="12" cy="3.4" r="1" style="fill:currentColor"/>',
+  engine: '<path d="M3 20h18M5 20v-7h14v7z"/><g class="pis a"><path d="M8 13V8.5M6.2 8.5h3.6"/></g><g class="pis b"><path d="M12 13V8.5M10.2 8.5h3.6"/></g><g class="pis a"><path d="M16 13V8.5M14.2 8.5h3.6"/></g><path d="M8 16.5h8"/>',
+  guns: '<path d="M3 20h8M7 20v-4.5M5 15.5h5"/><path class="gat" d="M10 9h12M10 12h12M10 15h12"/><path d="M8.5 7.5v9"/>',
+  steering: '<path d="M12 2.5V12"/><circle cx="12" cy="3.8" r="1.3"/><g class="rud"><path d="M10 11.5h4l.9 9.2-2.9-1.7-2.9 1.7z"/></g><path d="M5 22c2.4-1.2 4-1.2 7 0s4.6 1.2 7 0" style="opacity:.6"/>',
+};
+const RING = 2 * Math.PI * 19;
+function badge(id, f, { tip, cls = '', marks = '', rep = null, data = '' }) {
+  const col = healthColour(f);
+  return `<div class="pt${cls}"${data} aria-label="${tip}"><svg viewBox="0 0 44 44"><circle class="pr-bg" cx="22" cy="22" r="19"/>`
+    + `<circle class="pr" cx="22" cy="22" r="19" style="stroke:${col};stroke-dasharray:${(f * RING).toFixed(1)} ${RING.toFixed(1)}"/>`
+    + (rep === null ? '' : `<circle class="pr-rep" cx="22" cy="22" r="15" style="stroke-dasharray:${(clamp(rep, 0, 1) * 94.2).toFixed(1)} 94.2"/>`)
+    + `<g class="pi" transform="translate(10 10)">${PART_ICON[id]}</g></svg><u class="pm">${marks}</u></div>`;
+}
+function partBadges(s, mine, aim = null) {
+  return COMP_IDS.map((id) => {
+    const f = clamp(s.comp[id] / COMPARTMENTS[id].hp, 0, 1);
+    const fix = s.fix[id];
+    const crew = s.crews.filter((c) => c.to === id);
+    const marks = `${s.fire[id] > 0 ? '<i class="fire">▲</i>' : ''}${s.leak[id] > 0.005 ? '<i class="leak">≈</i>' : ''}${crew.length ? '<i class="crew">⛑</i>' : ''}`;
+    const rep = mine && fix.left > 0 ? 1 - fix.left / REPAIR_TIME : null;
+    const state = f <= 0 ? 'OUT' : `${Math.round(f * 100)}%`;
+    const note = mine ? (fix.left > 0 ? ' · repairing' : fix.wait > 0 ? ` · can be repaired in ${Math.ceil(fix.wait)} s` : f < 1 ? ' · click to repair' : '') : '';
+    const cls = (mine ? ' mine' : ' foe') + (f <= 0 ? ' out' : f < 0.5 ? ' bad' : f < 0.99 ? ' hurt' : '') + (mine && COMP_IDS[selComp] === id ? ' sel' : '') + (aim === id ? ' aim' : '');
+    return badge(id, f, { tip: `${COMPARTMENTS[id].name} · ${state}${note}`, cls, marks, rep, data: mine ? ` data-fix="${id}"` : '' });
+  }).join('');
+}
+// Is there anything of yours to repair (the repair-all button, in the support row)?
+function repairReady() {
+  const p = sim.player;
+  return p.tSunk === null && COMP_IDS.some((id) => p.fix[id].left <= 0 && p.fix[id].wait <= 0 && (p.comp[id] < COMPARTMENTS[id].hp || p.fire[id] > 0 || p.leak[id] > 0.005));
+}
 function boardHtml() {
   const p = sim.player;
   const hullF = clamp(p.hp / HULL_HP, 0, 1);
-  const g = p.gun;
-  const dry = p.gats.every((x) => x.ammo <= 0);
-  const reload = g.cool > 0 ? clamp(1 - g.cool / MAIN_RELOAD, 0, 1) : 1;
   const any = COMP_IDS.some((id) => p.fix[id].left <= 0 && p.fix[id].wait <= 0 && (p.comp[id] < COMPARTMENTS[id].hp || p.fire[id] > 0 || p.leak[id] > 0.005));
-  return `<div class="bd-head"><b>YOUR SHIP</b><span class="${hullF < 0.35 ? 'bad' : hullF < 0.7 ? 'hurt' : ''}">HULL ${Math.round(p.hp)}</span></div>`
-    + `<div class="bd-bar"><s style="width:${Math.round(hullF * 100)}%;background:${healthColour(hullF >= 0.99 ? 1 : hullF < 0.35 ? 0.2 : 0.7)}"></s></div>`
-    + `<div class="bd-rows">${partRows(p, true)}</div>`
-    + `<button type="button" class="bd-repair" data-act="repair"${any && p.tSunk === null ? '' : ' disabled'}><span>REPAIR ALL DAMAGED</span></button>`
-    + `<div class="bd-flood ${p.flood > 0.02 ? 'bad' : ''}">${floodText(p)}</div>`
-    + `<div class="bd-wpn"><span>76 mm <b>${AMMO_TYPES[g.type].name} ${g.stock[g.type]}</b></span><div class="bd-prog" title="76 mm reload"><s style="width:${Math.round(reload * 100)}%"></s></div>`
-    + `<span>30 mm <b>${dry ? 'DRY' : p.auto ? 'AUTO' : 'HOLD G'}</b> · crews <b>${p.crews.filter((c) => c.to).length}/${CREWS}</b></span></div>`
-    + `<div class="bd-threat ${bears(sim.enemy) === 'BEARS' ? 'on' : ''}">her 76 mm: ${bears(sim.enemy) === 'BEARS' ? 'BEARS ON YOU' : bears(sim.enemy)}</div>`;
+  const hull = badge('hull', hullF, { tip: `Your hull · ${Math.round(p.hp)} · ${floodText(p)}`, cls: `${hullF < 0.35 ? ' bad' : hullF < 0.7 ? ' hurt' : ''} hull mine`, marks: p.flood > 0.02 ? '<i class="leak">≈</i>' : '' });
+  return hull + partBadges(p, true);
 }
 boardEl.addEventListener('click', (e) => {
   const fx = e.target.closest?.('[data-fix]');
-  if (fx) { sim.startRepair(0, fx.dataset.fix); lastBoard = ''; return; }
-  if (e.target.closest?.('[data-act="repair"]')) { sim.startRepair(0); lastBoard = ''; return; }
+  if (fx && fx.dataset.fix) { sim.startRepair(0, fx.dataset.fix); lastBoard = ''; return; }
   const z = e.target.closest?.('[data-comp]');
   if (z && z.dataset.comp) { selComp = COMP_IDS.indexOf(z.dataset.comp); sim.assignCrew(0, z.dataset.comp); lastBoard = ''; }
 });
 
-// The enemy you are aiming at, in the same style.
+// The enemy card (every view, top right): who she is, her hull, range and bearing, her five parts as tiles (the one your sight is on
+// outlined), whether her 76 mm bears on you, her flooding, and what your sight is doing.
 const targetEl = document.createElement('div');
 targetEl.id = 'duel-target';
-targetEl.className = 'duel-board duel-target';
+targetEl.className = 'duel-pts duel-pts-foe';
 document.body.appendChild(targetEl);
 let lastTarget = '';
+// Under the map: the range and bearing of the enemy (and which of them, with several), or that the radar has no contact.
+const rangeEl = document.createElement('div');
+rangeEl.className = 'duel-range';
+document.body.appendChild(rangeEl);
+function rangeHtml() {
+  const e = sim.enemy;
+  if (!e) return '';
+  if (e.det === false && e.tSunk === null) return '<div class="pt-pill dim" title="The radar does not have her. Close the range, or send up the helicopter (B).">NO CONTACT</div>';
+  const foes = sim.ships.filter((o) => o.team === 1);
+  const which = foes.length > 1 ? ` ${foes.indexOf(e) + 1}/${foes.length}` : '';
+  return `<div class="pt-pill" title="Range and bearing of the enemy${which}">${kmText(sim.range())} · ${relName(sim.relBearing(sim.player))}${which}</div>`;
+}
+// Between the two columns of parts: the short name of each, so yours and the enemy's read across.
+const namesEl = document.createElement('div');
+namesEl.className = 'duel-pts duel-pts-names';
+namesEl.innerHTML = [['hull', 'Hull'], ['gun', 'Gun'], ['bridge', 'Bridge'], ['engine', 'Engine'], ['guns', 'Aft'], ['steering', 'Rudder']].map(([id, n]) => `<span class="nm${id === 'hull' ? ' hull' : ''}">${n}</span>`).join('');
+document.body.appendChild(namesEl);
 function targetHtml() {
   const e = sim.enemy;
   if (!e) return '';
-  const foes = sim.ships.filter((o) => o.team === 1);
-  const which = foes.length > 1 ? ` ${foes.indexOf(e) + 1}/${foes.length}` : '';
+  if (e.det === false && e.tSunk === null) return '';
   const locked = sight.lock && sight.lock.ship === e.idx;
-  const aim = locked ? sight.lock.comp : sight.snap;
-  const aimNote = locked ? `LOCKED · ${COMPARTMENTS[sight.lock.comp].name}` : sight.snap ? `FOCUS · ${COMPARTMENTS[sight.snap].name}` : 'NO FOCUS · shells fall in the sea';
+  const aim = view === 'radar' ? (locked ? sight.lock.comp : sight.snap) : null;
   const hullF = clamp(e.hp / HULL_HP, 0, 1);
-  return `<div class="bd-head"><b>ENEMY${which}</b><span>HULL ${Math.round(e.hp)} · ${LEVELS[sim.level].name}</span></div>`
-    + `<div class="bd-bar foe"><s style="width:${Math.round(hullF * 100)}%"></s></div>`
-    + `<div class="bd-rows">${partRows(e, false, aim)}</div>`
-    + `<div class="bd-flood ${e.flood > 0.02 ? 'good' : ''}">${floodText(e)}</div>`
-    + `<div class="bd-threat ${bears(e) === 'BEARS' ? 'on' : ''}">her 76 mm: ${bears(e) === 'BEARS' ? 'BEARS ON YOU' : bears(e)}</div>`
-    + `<div class="bd-aim ${locked ? 'lock' : sight.snap ? 'focus' : ''}">${aimNote}</div>`;
+  const b = bears(e);
+  const hull = badge('hull', hullF, { tip: `Enemy hull · ${Math.round(e.hp)} · ${floodText(e)}`, cls: ' hull foe', marks: e.flood > 0.02 ? '<i class="leak">≈</i>' : '' });
+  return hull + partBadges(e, false, aim)
+    + (b === 'BEARS' ? '<div class="pt-pill hot" title="Her 76 mm bears on you">BEARS ON YOU</div>' : '');
 }
 
 const map = createDuelMap();
@@ -648,6 +1015,8 @@ function setHud(on) {
   shipEl.hidden = !on;
   boardEl.hidden = !on;
   targetEl.hidden = !on;
+  namesEl.hidden = !on;
+  rangeEl.hidden = !on;
   hudButton.classList.toggle('active', on);
   hudButton.setAttribute('aria-pressed', String(on));
 }
@@ -663,20 +1032,49 @@ restartButton.addEventListener('click', () => restart());
 
 const strip = document.createElement('div');
 strip.className = 'duel-views';
-strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (${i + 1})">${VIEW_LABELS[i]}</button>`).join('');
+const MOTION = !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const VIEW_ICONS = { // drawn for what each view is: a chase camera, the wheelhouse wheel, a plan view, an orbit, the radar
+  behind: '<path d="M8 14h13l-2.5 4H10z"/><path d="M12 14v-3h5l1.5 3"/><g class="lines"><path d="M2 12.5h3.5M1 15.5h4.5M3 18.5h3.5"/></g>',
+  bridge: '<g class="wheel"><circle cx="12" cy="12" r="6.2"/><circle cx="12" cy="12" r="1.7"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4M5.3 5.3l2.5 2.5M16.2 16.2l2.5 2.5M18.7 5.3l-2.5 2.5M7.8 16.2l-2.5 2.5"/></g>',
+  above: '<path d="M12 2.5c3.2 3 4.3 7 4.3 11v5.7L14 22h-4l-2.3-2.8v-5.7c0-4 1.1-8 4.3-11z"/><path d="M12 8v10M9.7 13h4.6"/>',
+  orbit: '<g transform="rotate(-25 12 12)"><ellipse cx="12" cy="12" rx="9.5" ry="4.6"/>' + (MOTION ? '<circle r="1.7" style="fill:currentColor"><animateMotion dur="3.2s" repeatCount="indefinite" path="M21.5 12a9.5 4.6 0 1 1 -19 0a9.5 4.6 0 1 1 19 0"/></circle>' : '<circle cx="21.5" cy="12" r="1.7" style="fill:currentColor"/>') + '</g><path d="M9.7 12.6h4.6l-.9 1.5h-2.8zM12 10.3v2.3"/>',
+  radar: '<circle cx="12" cy="12" r="9.3"/><circle cx="12" cy="12" r="4.7"/><g class="sweep"><path d="M12 12L19 5.6"/><path class="beam" d="M12 12L19 5.6A9.3 9.3 0 0 1 21.3 12z"/></g><circle cx="8" cy="8.5" r="1" style="fill:currentColor"/>',
+};
+strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (${i + 1})" aria-label="${VIEW_LABELS[i]}"><svg viewBox="0 0 24 24">${VIEW_ICONS[v]}</svg><span>${VIEW_LABELS[i]}</span></button>`).join('');
 document.body.appendChild(strip);
 viewButtons.push(...strip.querySelectorAll('button'));
 viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+{ // the keys button: shows or hides the key bar (hidden at the start)
+  const kb = document.createElement('button');
+  kb.type = 'button';
+  kb.className = 'duel-keys-btn';
+  kb.title = 'Keys';
+  kb.setAttribute('aria-label', 'Show the keys');
+  kb.setAttribute('aria-pressed', 'false');
+  kb.innerHTML = '<svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>';
+  strip.appendChild(kb);
+  const ib = document.createElement('button'); // top view only: switches the ship marks off and on
+  ib.type = 'button'; ib.className = 'duel-ids-btn'; ib.title = 'Ship marks on or off (top view)'; ib.setAttribute('aria-label', 'Ship marks'); ib.hidden = true;
+  ib.classList.add('active'); ib.setAttribute('aria-pressed', 'true');
+  ib.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.4"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></svg>';
+  strip.appendChild(ib);
+  idsBtn = ib;
+  ib.addEventListener('click', () => { idState.labels = !idState.labels; ib.classList.toggle('active', idState.labels); ib.setAttribute('aria-pressed', String(idState.labels)); ib.blur(); });
+  kb.addEventListener('click', () => { const on = keysEl.classList.toggle('show'); kb.classList.toggle('active', on); kb.setAttribute('aria-pressed', String(on)); kb.blur(); });
+}
 
 keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>←</kbd> <kbd>→</kbd>', 'Rudder to port / starboard while held; let go and it comes back amidships'],
   ['<kbd>↑</kbd> <kbd>↓</kbd>', 'Engine telegraph (thrust), one step: slow astern, stop, dead slow, slow, half, full, flank. Hulls that touch collide: damage by the closing speed, where they meet'],
   ['<kbd>F</kbd>', `Fire the 76 mm (hold): the gun trains on the enemy by itself within ${Math.round((MAIN_ARC * 180) / Math.PI)}° of the bow and ${kmText(MAIN_RANGE)}, and fires once it is on the aim and loaded`],
-  ['<kbd>G</kbd>', `Fire the two 30 mm guns aft (hold): ${kmText(GUN_RANGE)}, astern and abeam only`],
+  ['<kbd>G</kbd>', `Fire the two 30 mm guns aft (hold): ${kmText(sim.gunRange)}, astern and abeam only; they answer by themselves when hers open fire`],
   ['<kbd>A</kbd>', 'The 30 mm guns on automatic'],
-  ['<kbd>Q</kbd>', `Change the 76 mm round, HE or AP: HE starts fires and floods, AP hits one compartment harder; changing costs a ${SWITCH_TIME} s reload`],
   ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
   ['<kbd>E</kbd>', `Repair the compartment Z has picked (or press FIX on its bar in the radar view): ${REPAIR_TIME} s, then its fire is out, its leak is stopped and it gets 40 % of its points back; that part can be repaired again after ${REPAIR_WAIT} s`],
+  ['<kbd>W</kbd>', 'The wrench: repair every damaged part at once (or the wrench button in the bottom right)'],
+  ['<kbd>K</kbd>', 'Call a friendly frigate (or the button at the bottom right): she comes in from astern at full speed and fights; up to three, one every few seconds'],
+  ['<kbd>B</kbd>', 'The helicopter: it goes out over the enemy by itself at your first shot, circles her firing its gun and reports by radio (a part out, a fire, another ship joining). B sends it or calls it back. Its radar reaches 7.5 km and sees over the islands; it stays on deck in a very rough sea'],
+  ['<kbd>M</kbd>', 'Fire the helicopter missile (two a sortie): at the compartment you have locked or focused in the radar view, else at her gun, then her engine: it takes half of that compartment. If your ship is lost the helicopter avenges her and lands on a friendly frigate'],
   ['<kbd>1</kbd> to <kbd>5</kbd>', 'Behind, bridge, above, orbit, radar'],
   ['<kbd>2</kbd>', 'The wheelhouse, as in Solo Air Defense: the wheel turns with the rudder, the telegraph levers follow the engine order, and a drag looks round (double click looks ahead)'],
   ['<kbd>5</kbd>', 'Radar view: the fire-control sight. Arrows, a drag or the on-screen pad aim it. hold <kbd>Shift</kbd> to zoom in and <kbd>Ctrl</kbd> to zoom out (the wheel, <kbd>+</kbd> <kbd>-</kbd> and the lens track work too) to close the lens until a compartment fills it (<kbd>0</kbd> resets); every enemy hull shows its compartments as marks, and a click lays the sight on one. F fires there: the shell goes to the point under the crosshair, so you choose what to break. Space locks the point under the crosshair (and lets the lock go); Enter fires like F. A merchant or a friendly ship in the sight is not fired on. The helm is locked until Esc'],
@@ -691,6 +1089,7 @@ keysSheet.querySelector('.keys-note').textContent = 'The 76 mm aims itself unles
 
 const audio = createDuelAudio();
 eventHooks.push((e) => audio.event(e));
+cueSound = (kind, text) => audio.cue(kind, text);
 const soundButton = document.querySelector('#btn-sound');
 function setSound(on) {
   audio.setEnabled(on);
@@ -707,19 +1106,81 @@ soundButton.title = 'Sound: the guns, the hits, the sea and the engines (S)';
 if (!audio.supported) { soundButton.disabled = true; soundButton.title = 'Sound is not available in this browser'; }
 soundButton.addEventListener('click', () => setSound(!audio.enabled));
 
+// The top bar is one gear: its menu holds everything the battle needs (the old row of buttons is hidden in duel.css).
+{
+  menuButton.innerHTML = '<svg><use href="#i-gear"/></svg>';
+  menuButton.title = 'Settings';
+  menuButton.setAttribute('aria-label', 'Settings');
+  const tagsButton = document.createElement('button');
+  tagsButton.id = 'btn-tags';
+  const secMain = document.createElement('button'), secGat = document.createElement('button');
+  secMain.id = 'btn-sec-main'; secGat.id = 'btn-sec-gat';
+  const fsButton = document.querySelector('#btn-fullscreen');
+  // A small vector drawing in front of each entry, for what it does (animated a little on hover or while it is on: duel.css `.mi`).
+  const MI = {
+    restart: '<path class="mi-a" d="M20 12a8 8 0 1 1-2.6-5.9M20 4v4.5h-4.5"/>',
+    menu: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+    readouts: '<rect x="3.5" y="4.5" width="17" height="12" rx="2"/><path d="M7 13l3-3.2 2.4 2 3.6-4.3M9 20h6M12 16.5V20"/>',
+    map: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><path class="mi-a" d="M12 12l5.5-5"/>',
+    tags: '<path d="M3.5 12.2V4.5h7.7l9 9a1.6 1.6 0 0 1 0 2.2l-5 5a1.6 1.6 0 0 1-2.2 0z"/><circle cx="8" cy="9" r="1.3"/>',
+    sec76: '<path d="M4 19h4M6 19V9"/><path d="M6 9l14-5.5v11z" style="fill:currentColor;fill-opacity:.2"/>',
+    sec30: '<path d="M4 19h4M6 19V9"/><path d="M6 9l14-2.5M6 9l14 0M6 9l14 2.5"/>',
+    sound: '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="mi-w1" d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path class="mi-w2" d="M18.2 6.8a7.5 7.5 0 0 1 0 10.4"/>',
+    full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    hide: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path class="mi-a" d="M4 4l16 16"/>',
+    keys: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7.5 14h9"/>',
+  };
+  const item = (b, label, key, ic) => { b.className = ''; b.setAttribute('role', 'menuitem'); b.innerHTML = `<span class="mi-l">${ic ? `<svg class="mi" viewBox="0 0 24 24" aria-hidden="true">${MI[ic]}</svg>` : ''}${label}</span>${key ? `<kbd>${key}</kbd>` : ''}`; return b; };
+  const head = (t) => { const h = document.createElement('div'); h.className = 'menu-h'; h.textContent = t; return h; };
+  const weatherBtn = document.querySelector('#btn-weather'), seaRow = document.querySelector('#sea-row');
+  item(restartButton, 'Fight again', 'R', 'restart');
+  item(document.querySelector('#btn-ship'), 'Main menu', '', 'menu');
+  item(hudButton, 'Readouts', 'H', 'readouts');
+  item(mapButton, 'Mini map', 'N', 'map');
+  item(tagsButton, 'Ship tags', 'L', 'tags');
+  item(secMain, 'Map: 76 mm sector', '', 'sec76'); item(secGat, 'Map: 30 mm sector', '', 'sec30');
+  item(soundButton, 'Sound', 'S', 'sound');
+  item(fsButton, 'Fullscreen', '', 'full');
+  item(foldButton, 'Hide the interface', 'C', 'hide');
+  item(document.querySelector('#btn-keys'), 'Keyboard shortcuts', '?', 'keys');
+  menuEl.replaceChildren(head('Battle'), restartButton, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, secMain, secGat, tagsButton, foldButton, fsButton,
+    head('Sound'), soundButton, head('Sea'), ...[seaRow, weatherBtn].filter(Boolean), head('Help'), document.querySelector('#btn-keys'));
+  [hudButton, mapButton, soundButton, tagsButton, secMain, secGat].forEach((b) => b.setAttribute('aria-pressed', 'true'));
+  tagsButton.addEventListener('click', () => { tagsOn = !tagsOn; refreshGear(); });
+  secMain.addEventListener('click', () => { map.setSector('main', !map.sector('main')); refreshGear(); });
+  secGat.addEventListener('click', () => { map.setSector('gat', !map.sector('gat')); refreshGear(); });
+  fsButton.addEventListener('click', () => { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch { /* not allowed here */ } });
+  function refreshGear() {
+    const set = (b, on) => { b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); };
+    set(hudButton, hudOn); set(mapButton, mapOn); set(tagsButton, tagsOn); set(secMain, map.sector('main')); set(secGat, map.sector('gat')); set(soundButton, audio.enabled);
+  }
+  menuButton.addEventListener('click', refreshGear); // (tagsOn is declared further down: read it only once the menu opens)
+}
+
 const keysEl = document.createElement('div');
 keysEl.id = 'fly-keys';
 keysEl.className = 'fly-keys';
 document.body.appendChild(keysEl);
+// The key bar stays hidden until the keys button (next to the views) is pressed.
+function flashKeys() { /* the key bar no longer pops up by itself: the keys button next to the views shows it */ }
 const input = { left: 0, right: 0, fire: 0, gat: 0, aim: null };
-const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`;
+// A click on an entry of the key help presses that key (a tap: down, then up); entries for keys that are held to steer or zoom stay plain.
+const KEY_CLICK = { F: 'f', G: 'g', Tab: 'Tab', 'Z X': 'x', E: 'e', W: 'w', B: 'b', M: 'm', A: 'a', R: 'r', K: 'k', Esc: 'Escape', 'click · Space': ' ', 'F · Enter': 'f' };
+const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}${KEY_CLICK[key] ? ' fk-btn' : ''}"${KEY_CLICK[key] ? ` data-key="${KEY_CLICK[key]}" role="button" tabindex="-1"` : ''}><kbd>${key}</kbd>${label}</span>`;
+keysEl.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-key]');
+  if (!el) return;
+  const key = el.dataset.key;
+  window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+  setTimeout(() => window.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true })), key === 'f' || key === 'g' ? 350 : 60);
+});
 function keysHtml() {
   if (view === 'radar') {
-    return `${k('← → ↑ ↓', 'aim the sight')}${k('Shift Ctrl', 'zoom in / out')}${k('click', 'lock a compartment')}${k('Space', 'lock / release', !!sight.lock)}${k('Enter', 'fire 76 mm (hold)', input.fire)}`
-      + `${k('Tab', 'next target')}${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Esc', 'helm')}`;
+    return `${k('← → ↑ ↓', 'aim')}${k('Shift Ctrl', 'zoom')}${k('click · Space', 'lock a part', !!sight.lock)}${k('F · Enter', fireLatch ? 'firing: F stops' : 'fire (hold)', input.fire || fireLatch)}`
+      + `${k('Tab', 'next target')}${k('B', sim.heliUp ? 'heli: land' : 'heli: go', sim.heliUp)}${k('M', 'heli missile')}${k('K', 'friend')}${k('Esc', 'helm')}`;
   }
   return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', `thrust ${TELEGRAPH[sim.player.order].name}`)}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}${k('Tab', 'target')}`
-    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}${k('E', 'repair', sim.player.fix[COMP_IDS[selComp]].left > 0)}`
+    + `${k('Z X', 'crews')}${k('E', 'repair', sim.player.fix[COMP_IDS[selComp]].left > 0)}${k('W', 'repair all')}${k('B', sim.heliUp ? 'heli: land' : 'heli: go', sim.heliUp)}${k('M', `heli missile ${sim.hop?.ammo ?? 0}`)}`
     + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–5', 'views')}${k('R', 'again')}`;
 }
 let lastKeys = '';
@@ -747,7 +1208,7 @@ function updateTag() {
     const s = sim.ships[i];
     if (!s) { if (tags[i]) tags[i].obj.visible = false; continue; }
     const t = tagFor(i);
-    t.obj.visible = tagsOn && !!ships[i]?.group.visible;
+    t.obj.visible = tagsOn && !!ships[i]?.group.visible && !(s.team === 1 && s.det === false && s.tSunk === null) && !landHidden[i];
     t.obj.position.set(s.x, 36, s.z);
     const foe = s.team === 1;
     const title = s.merchant ? 'MERCHANT' : foe ? (sim.player.target === i ? '▶ ENEMY' : 'ENEMY') : 'ALLY';
@@ -772,17 +1233,25 @@ function restart() {
   for (const v of ships) v.wake.clear();
   tracers.forEach((t) => { t.on = false; });
   banner.hidden = true;
+  LOG.length = 0;
+  endKill();
+  nextEnemyPending = false;
   alarmEl.classList.remove('hit');
   if (view === 'radar') setView(viewBeforeRadar);
   input.aim = null;
   selComp = 0;
   setManual(false);
-  startBanner();
+  if (fireLatch) setFireLatch(false);
+  startIntro();
 }
 function startBanner() {
-  say(`Enemy ${relName(sim.relBearing(sim.player))}, ${kmText(sim.range())}: close, turn to bring your gun to bear, and keep her off your stern`, '', 5200);
+  say(`Enemy ${relName(sim.relBearing(sim.player))} · ${kmText(sim.range())}`, '', 5200);
 }
 window.addEventListener('keydown', (e) => {
+  if (KILL.on && (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter')) { endKill(); e.preventDefault(); return; } // skip the kill-cam
+  if (INTRO.phase === 'show' && (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter')) { endShow(); e.preventDefault(); return; } // skip the opening shots
+  if (INTRO.phase === 'tour' && (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter')) { toAsk(); e.preventDefault(); return; } // skip the tour
+  if (INTRO.phase === 'ask' && (e.key === 'Enter' || e.key === 'Escape')) { if (e.key === 'Enter') engage(); else holdFire(); e.preventDefault(); return; }
   if (view === 'radar' && (e.key === 'Shift' || e.key === 'Control')) { radarKeys[e.key === 'Shift' ? 'zi' : 'zo'] = 1; return; } // Shift closes the lens, Ctrl opens it
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const tag = e.target?.tagName;
@@ -795,7 +1264,6 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     return;
   }
-  if (view === 'radar' && e.key === 'Enter') { input.fire = 1; e.preventDefault(); return; } // Enter fires, like F
   if (view === 'radar' && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_')) { // zoom the lens while held
     radarKeys[e.key === '-' || e.key === '_' ? 'zo' : 'zi'] = 1;
     e.preventDefault();
@@ -811,7 +1279,13 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     return;
   }
-  if (e.key === 'f' || e.key === 'F') { input.fire = 1; e.preventDefault(); return; }
+  if (e.key === 'f' || e.key === 'F' || e.key === 'Enter') { // F or Enter fires while held; a long press latches it on (in any view) and a tap stops it
+    if (fireLatch && !e.repeat) { setFireLatch(false); say('Ceasefire', '', 1400); } else if (!fireLatch) {
+      input.fire = 1;
+      if (!e.repeat && !fireKeyHold) fireKeyHold = setTimeout(() => { fireKeyHold = 0; setFireLatch(true); say('Firing: tap F or Enter to stop', 'warn', 2400); }, 500);
+    }
+    e.preventDefault(); return;
+  }
   if (e.key === 'g' || e.key === 'G') { input.gat = 1; e.preventDefault(); return; }
   if (e.repeat) { if (e.key.startsWith('Arrow')) e.preventDefault(); return; }
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
@@ -819,9 +1293,12 @@ window.addEventListener('keydown', (e) => {
     case 'ArrowUp': sim.telegraph(0, +1); break;
     case 'ArrowDown': sim.telegraph(0, -1); break;
     case 'a': sim.toggleAuto(0); break;
-    case 'q': sim.switchAmmo(0); break;
     case 'z': selComp = (selComp + 1) % COMP_IDS.length; break;
     case 'e': sim.startRepair(0, COMP_IDS[selComp]); break;
+    case 'w': if (repairReady()) { sim.startRepair(0); lastBoard = ''; } break; // the wrench: repair everything damaged
+    case 'b': say(sim.heliRequest(), ''); break;
+    case 'k': callFriend(); break; // call a friendly frigate
+    case 'm': heliMissile(); break; // fire the helicopter's missile // the helicopter: take off or land
     case 'x': sim.assignCrew(0, COMP_IDS[selComp]); break;
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
@@ -839,13 +1316,14 @@ window.addEventListener('keydown', (e) => {
   }
   if (key !== 'Escape') e.preventDefault();
 });
+let fireKeyHold = 0; // the timer of a long press on F or Enter
 window.addEventListener('keyup', (e) => {
   if (e.key === '+' || e.key === '=' || e.key === 'Shift') radarKeys.zi = 0;
   if (e.key === '-' || e.key === '_' || e.key === 'Control') radarKeys.zo = 0;
   if (e.key.startsWith('Arrow')) radarKeys[{ ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd' }[e.key]] = 0;
   if (e.key === 'ArrowLeft') input.left = 0;
   if (e.key === 'ArrowRight') input.right = 0;
-  if (e.key === 'f' || e.key === 'F' || (e.key === 'Enter' && view === 'radar')) input.fire = 0;
+  if (e.key === 'f' || e.key === 'F' || e.key === 'Enter') { clearTimeout(fireKeyHold); fireKeyHold = 0; if (!fireLatch) input.fire = 0; }
   if (e.key === 'g' || e.key === 'G') input.gat = 0;
 });
 window.addEventListener('blur', () => { radarKeys.zi = radarKeys.zo = 0; input.left = 0; input.right = 0; input.fire = 0; input.gat = 0; });
@@ -884,6 +1362,23 @@ function lockSight() { // Enter: lock the compartment the sight has snapped to, 
   sight.lock = { ship, comp };
   sight.manual = false;
 }
+// A part of hers is out: a sight locked or snapped on it moves to the nearest part along her hull that still works (none left: it stays).
+// Returns the part it moved to, or null.
+function sightPastOut(ship, comp) {
+  const s = sim.ships[ship];
+  const onIt = (sight.lock && sight.lock.ship === ship && sight.lock.comp === comp) || (!sight.lock && ship === sim.enemy.idx && sight.snapId === comp);
+  if (!s || !onIt) return null;
+  let next = null, best = Infinity;
+  for (const id of COMP_IDS) {
+    if (id === comp || s.comp[id] <= 0) continue;
+    const d = Math.abs(ZONE_POS[id][0] - ZONE_POS[comp][0]);
+    if (d < best) { best = d; next = id; }
+  }
+  if (!next) return null;
+  if (sight.lock) sight.lock = { ship, comp: next };
+  else { sight.lock = { ship, comp: next }; sight.manual = false; } // snapped: lock the new part, so the snap does not slide back
+  return next;
+}
 const radarKeys = { l: 0, r: 0, u: 0, d: 0, zi: 0, zo: 0 };
 let sightZoom = SIGHT_ZOOM0;
 let sightZoomGoal = SIGHT_ZOOM0;
@@ -898,20 +1393,28 @@ const radarEl = document.createElement('div');
 radarEl.className = 'duel-radar';
 radarEl.hidden = true;
 radarEl.innerHTML = '<div class="hr-marks"></div><div class="rc">'
-  + '<div class="rc-main"><div class="rc-top"><b class="hr-mode">AUTO</b><span class="hr-brg"></span></div>'
-  + '<div class="rc-zoom"><span>WIDE</span><div class="rc-track" aria-label="Zoom"><i class="rc-ticks"></i><i class="rc-fill"></i><i class="rc-thumb"></i></div><span>CLOSE</span><b class="hr-zv"></b></div>'
-  + '<div class="rc-pills"><button type="button" data-act="lock"><i>⌖</i>Lock<kbd>Space</kbd></button><button type="button" data-act="fire"><i>✹</i>Fire<kbd>Enter</kbd></button></div></div>'
-  + '<div class="rc-gun"><button type="button" class="rc-fire" data-act="fire"><span>FIRE</span><kbd>F</kbd></button><button type="button" class="rc-ammo" data-act="ammo"><b class="rc-am"></b><kbd>Q</kbd></button></div></div>';
+  + '<div class="rc-main"><div class="rc-top"><b class="hr-mode">AUTO</b><span class="hr-brg"></span><b class="hr-zv"></b></div></div>'
+  + '<div class="rc-gun"><div class="rc-dial"><svg class="rc-ring" viewBox="0 0 150 150" aria-label="Zoom"><circle class="rc-rtrack" r="70" cx="75" cy="75"/><circle class="rc-rfill" r="70" cx="75" cy="75"/><circle class="rc-hit" r="70" cx="75" cy="75"/><circle class="rc-rthumb" r="7"/></svg>'
+  + '<button type="button" class="rc-fire" data-act="fire" title="Fire (hold F)"><span>FIRE</span></button>'
+  + '<button type="button" class="rc-lock" data-act="lock" title="Lock the part under the sight, or let the lock go (Space)">LOCK</button></div></div></div>';
 document.body.appendChild(radarEl);
 const radarMode = radarEl.querySelector('.hr-mode');
 const radarBrg = radarEl.querySelector('.hr-brg');
 const radarZoom = radarEl.querySelector('.hr-zv');
 const marksEl = radarEl.querySelector('.hr-marks');
-const trackEl = radarEl.querySelector('.rc-track');
-const thumbEl = radarEl.querySelector('.rc-thumb');
-const fillEl = radarEl.querySelector('.rc-fill');
+const hitEl = radarEl.querySelector('.rc-hit');
+const thumbEl = radarEl.querySelector('.rc-rthumb');
+const fillEl = radarEl.querySelector('.rc-rfill');
+const RING_ARC = 2 * Math.PI * 70 * 0.75; // the zoom ring runs 270 degrees, wide at the lower left round to close at the lower right
 const fireEl = radarEl.querySelector('.rc-fire');
-const ammoEl = radarEl.querySelector('.rc-am');
+const lockBtn = radarEl.querySelector('.rc-lock');
+let fireLatch = false; // a long press on FIRE keeps the gun firing until the button is tapped again
+function setFireLatch(on) {
+  fireLatch = on;
+  fireEl.classList.toggle('latched', on);
+  fireEl.querySelector('span').textContent = on ? 'FIRING' : 'FIRE';
+  if (!on) input.fire = 0;
+}
 const ZOOM_SPAN = Math.log(80); // the zoom goal runs from 8 (wide) to 0.1 (close) along the track
 const zoomFrac = () => 1 - Math.log(sightZoomGoal / 0.1) / ZOOM_SPAN;
 const radarStick = { x: 0, y: 0 }; // (the on-screen aim stick was removed: always 0; arrows and a drag aim the sight)
@@ -933,13 +1436,14 @@ radarEl.addEventListener('pointerdown', (e) => {
     sight.manual = false;
     return;
   }
-  if (e.target.closest('.rc-track')) { // the zoom track
+  if (e.target.closest('.rc-hit')) { // the zoom ring: drag round it
     e.preventDefault();
     dragOn(e, (ev) => {
       if (!ev) return;
-      const r = trackEl.getBoundingClientRect();
-      const t = clamp((ev.clientX - r.left) / r.width, 0, 1);
-      sightZoomGoal = clamp(0.1 * Math.exp((1 - t) * ZOOM_SPAN), 0.1, 8);
+      const r = hitEl.getBoundingClientRect();
+      let a = (Math.atan2(ev.clientY - (r.top + r.height / 2), ev.clientX - (r.left + r.width / 2)) * 180 / Math.PI - 135 + 720) % 360;
+      if (a > 270) a = a > 315 ? 0 : 270; // the gap at the bottom snaps to the nearer end
+      sightZoomGoal = clamp(0.1 * Math.exp((1 - a / 270) * ZOOM_SPAN), 0.1, 8);
     });
     return;
   }
@@ -947,17 +1451,21 @@ radarEl.addEventListener('pointerdown', (e) => {
   if (!b) return;
   e.preventDefault();
   const release = (fn) => { const up = () => { fn(); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); }; window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up); };
-  if (b.dataset.act === 'fire') { input.fire = 1; release(() => { input.fire = 0; }); }
+  if (b.dataset.act === 'fire') {
+    if (fireLatch) { setFireLatch(false); return; } // a tap while it is firing stops it
+    input.fire = 1;
+    const hold = setTimeout(() => { setFireLatch(true); say('Firing: tap to stop', 'warn', 2400); }, 500);
+    release(() => { clearTimeout(hold); if (!fireLatch) input.fire = 0; });
+  }
   else if (b.dataset.act === 'auto') { sight.manual = false; sight.lock = null; }
   else if (b.dataset.act === 'lock') toggleLock();
   else if (b.dataset.act === 'next') pickNextTarget();
-  else if (b.dataset.act === 'ammo') sim.switchAmmo(0);
   else if (b.dataset.act === 'back') setView(viewBeforeRadar);
 });
 function pickNextTarget() {
   sight.lock = null; // a lock is on one ship's hull: a new target lets it go
   const to = sim.cycleTarget(0);
-  if (to) say(`Target: enemy ${relName(wrapAngle(Math.atan2(to.z - sim.player.z, to.x - sim.player.x) - sim.player.psi))}, ${kmText(sim.distance(sim.player, to))}`, '', 1800);
+  if (to) say(`Target ${relName(wrapAngle(Math.atan2(to.z - sim.player.z, to.x - sim.player.x) - sim.player.psi))} · ${kmText(sim.distance(sim.player, to))}`, '', 1800);
   return to;
 }
 // In the sailing views, a click on an enemy ship (or near her) asks whether to attack her: yes turns the target to her and opens the radar view.
@@ -991,7 +1499,7 @@ canvas.addEventListener('pointerup', (e) => {
   if (!d || view === 'radar' || sim.winner !== null || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) return;
   let best = -1, bestD = 70; // pixels: on her or near her
   for (const o of sim.ships) {
-    if (o.team !== 1 || o.tSunk !== null || !ships[o.idx]?.group.visible) continue;
+    if (o.team !== 1 || o.tSunk !== null || o.det === false || !ships[o.idx]?.group.visible) continue;
     _pick.set(o.x, 10, o.z).project(camera);
     if (_pick.z > 1) continue;
     const dist = Math.hypot((_pick.x * 0.5 + 0.5) * innerWidth - e.clientX, (-_pick.y * 0.5 + 0.5) * innerHeight - e.clientY);
@@ -1012,7 +1520,7 @@ window.addEventListener('pointermove', (e) => {
   sight.dragPitch -= dy * THREE.MathUtils.degToRad(camera.fov) / window.innerHeight;
 });
 canvas.addEventListener('wheel', (e) => { if (view === 'radar') zoomSight(Math.exp(e.deltaY * 0.0012)); }, { passive: true });
-canvas.addEventListener('dblclick', () => { sightZoomGoal = SIGHT_ZOOM0; lookYaw = 0; lookPitch = -0.03; });
+canvas.addEventListener('dblclick', () => { camYaw = camPitch = 0; if (view === 'orbit') orbitOnBoth(); sightZoomGoal = SIGHT_ZOOM0; lookYaw = 0; lookPitch = -0.03; });
 // On the bridge a drag looks round the wheelhouse (as in Solo Air Defense): drag left and it turns left.
 let lookDrag = null;
 canvas.addEventListener('pointerdown', (e) => { if (e.button === 0 && view === 'bridge') lookDrag = { x: e.clientX, y: e.clientY }; });
@@ -1023,6 +1531,17 @@ window.addEventListener('pointermove', (e) => {
   lookDrag = { x: e.clientX, y: e.clientY };
   lookYaw = ((lookYaw + dx * 0.25 + 540) % 360) - 180;
   lookPitch = clamp(lookPitch - dy * 0.004, -0.9, 0.6);
+});
+// Behind and above: a drag swings the camera round the ship (and lifts or lowers it behind); it opens on the default angle again after a view change.
+let swingDrag = null;
+canvas.addEventListener('pointerdown', (e) => { if (e.button === 0 && (view === 'behind' || view === 'above')) swingDrag = { x: e.clientX, y: e.clientY }; });
+window.addEventListener('pointerup', () => { swingDrag = null; });
+window.addEventListener('pointermove', (e) => {
+  if (!swingDrag || (view !== 'behind' && view !== 'above')) return;
+  const dx = e.clientX - swingDrag.x, dy = e.clientY - swingDrag.y;
+  swingDrag = { x: e.clientX, y: e.clientY };
+  camYaw = wrapAngle(camYaw + dx * 0.006);
+  if (view === 'behind') camPitch = clamp(camPitch + dy * 0.004, -0.12, 1.0);
 });
 const _w1 = new THREE.Vector3();
 const _w2 = new THREE.Vector3();
@@ -1044,7 +1563,7 @@ function aimSight(dt) {
   sight.snap = null;
   if (sight.lock) { // held on its compartment as she sails
     const ls = sim.ships[sight.lock.ship], lg = ships[sight.lock.ship]?.group;
-    if (!ls || !lg || ls.tSunk !== null) sight.lock = null;
+    if (!ls || !lg || ls.tSunk !== null || landHidden[sight.lock.ship]) sight.lock = null;
     else {
       lg.updateMatrixWorld(true);
       _a.copy(lg.localToWorld(_w1.set(...ZONE_POS[sight.lock.comp]))).sub(camera.position).normalize();
@@ -1052,10 +1571,11 @@ function aimSight(dt) {
     }
   } else if (!sight.manual) { // automatic: while the marks are on screen the sight snaps to the nearest one, else it holds her middle
     const tg = sim.enemy, tgG = ships[tg.idx]?.group;
-    if (tgG && tg.team === 1 && tg.tSunk === null && (24 * window.innerHeight) / (2 * r * Math.tan(rad(lens / 2))) >= MARK_MIN) {
+    if (tgG && tg.team === 1 && tg.tSunk === null && !landHidden[tg.idx] && (24 * window.innerHeight) / (2 * r * Math.tan(rad(lens / 2))) >= MARK_MIN) {
       tgG.updateMatrixWorld(true);
       let best = null, bestA = Infinity, keepA = Infinity;
-      for (const id of COMP_IDS) {
+      const live = COMP_IDS.filter((id) => tg.comp[id] > 0);
+      for (const id of live.length ? live : COMP_IDS) {
         const ang = sight.aim.angleTo(_w2.copy(tgG.localToWorld(_w1.set(...ZONE_POS[id]))).sub(camera.position).normalize());
         if (ang < bestA) { bestA = ang; best = id; }
         if (id === sight.snapId) keepA = ang;
@@ -1087,6 +1607,7 @@ function radarAimShell() {
   const p = sim.player;
   sight.zone = null; sight.ship = null; sight.warn = null; sight.hit = null;
   if (p.tSunk !== null || sim.winner !== null) { input.aim = null; return; }
+  if (landHidden[sim.enemy.idx]) { sight.warn = 'LAND IN THE WAY'; input.aim = null; return; } // she is behind an island: nothing to aim at
   if (sight.lock) { // locked: the shell goes to that compartment, led by her true velocity (a free shot is weak, see duel.js)
     const ls = sim.ships[sight.lock.ship], lg = ships[sight.lock.ship]?.group;
     if (ls && lg && ls.tSunk === null) {
@@ -1127,7 +1648,7 @@ function radarAimShell() {
   }
   if (best >= 0) {
     const s = sim.ships[best];
-    if (s.team === 1 && s.tSunk === null) {
+    if (s.team === 1 && s.tSunk === null && !landHidden[best]) {
       const P = ships[best].group.localToWorld(bestLocal.clone());
       sight.zone = sight.snap && sim.enemy.idx === best ? sight.snap : zoneAt(bestLocal.x);
       sight.ship = best;
@@ -1137,7 +1658,7 @@ function radarAimShell() {
       const sol = sim.solve(p, MAIN_MOUNT, MUZZLE_V, true, {}, { p: [P.x, P.y, P.z], v: [e[0], 0, e[1]] });
       input.aim = { yaw: sol.yaw, pitch: sol.pitch, ship: best, free: true }; // neither locked nor focused: the shell falls in the sea
     } else {
-      sight.warn = s.tSunk !== null ? 'SINKING' : s.merchant ? 'MERCHANT: HOLD FIRE' : 'FRIENDLY: HOLD FIRE';
+      sight.warn = landHidden[best] ? 'LAND IN THE WAY' : s.tSunk !== null ? 'SINKING' : s.merchant ? 'MERCHANT: HOLD FIRE' : 'FRIENDLY: HOLD FIRE';
       input.aim = null;
     }
     return;
@@ -1180,7 +1701,7 @@ function updateMarks() {
     const W = window.innerWidth, H = window.innerHeight;
     for (let i = 1; i < sim.ships.length; i++) {
       const s = sim.ships[i], g = ships[i]?.group;
-      if (!g || s.team !== 1 || s.tSunk !== null || !g.visible) continue;
+      if (!g || s.team !== 1 || s.tSunk !== null || !g.visible || s.det === false || landHidden[i]) continue;
       const dist = Math.max(1, sim.distance(sim.player, s));
       const ppm = H / (2 * dist * Math.tan(rad(camera.fov / 2))); // pixels to a metre at her range
       const spacing = 24 * ppm; // between the two nearest compartments
@@ -1215,20 +1736,23 @@ function updateRadarUi() {
   radarMode.textContent = sight.lock ? 'LOCKED' : sight.manual ? 'MANUAL' : 'AUTO';
   radarMode.classList.toggle('manual', sight.manual && !sight.lock);
   radarMode.classList.toggle('locked', !!sight.lock);
+  lockBtn.classList.toggle('on', !!sight.lock);
+  lockBtn.textContent = sight.lock ? 'RELEASE' : 'LOCK';
   const yaw = Math.atan2(sight.aim.z, sight.aim.x);
   const rel = Math.atan2(Math.sin(yaw - sim.player.psi), Math.cos(yaw - sim.player.psi));
   radarBrg.textContent = `${relName(rel)} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${camera.fov.toFixed(camera.fov < 3 ? 2 : 1)}°`;
   radarZoom.textContent = `×${(30 / camera.fov).toFixed(camera.fov < 3 ? 0 : 1)}`;
   const zf = clamp(zoomFrac(), 0, 1) * 100;
-  thumbEl.style.left = `${zf}%`;
-  fillEl.style.width = `${zf}%`;
+  const ang = (135 + 2.7 * zf) * Math.PI / 180;
+  thumbEl.setAttribute('cx', (75 + 70 * Math.cos(ang)).toFixed(1));
+  thumbEl.setAttribute('cy', (75 + 70 * Math.sin(ang)).toFixed(1));
+  fillEl.style.strokeDasharray = `${(RING_ARC * zf / 100).toFixed(1)} 440`;
   const gn = sim.player.gun;
-  fireEl.style.setProperty('--rl', clamp(1 - gn.cool / MAIN_RELOAD, 0, 1).toFixed(3));
+  fireEl.style.setProperty('--rl', clamp(1 - gn.cool / sim.reloadTime(sim.player), 0, 1).toFixed(3));
   fireEl.classList.toggle('ready', gn.cool <= 0 && gn.onTarget && !sight.warn && !!sight.lock);
   fireEl.classList.toggle('weak', !sight.lock && !sight.warn);
   fireEl.classList.toggle('sea', !sight.lock && !sight.snap && !sight.warn);
-  fireEl.classList.toggle('hold', !!sight.warn || sim.player.comp.gun <= 0);
-  ammoEl.textContent = `${AMMO_TYPES[gn.type].name} ${gn.stock[gn.type]}`;
+  fireEl.classList.toggle('hold', !!sight.warn || sim.player.comp.gun <= 0 || gn.landBlocked);
   const g = sim.player.gun;
   const foes = sim.ships.filter((o) => o.team === 1);
   const which = foes.length > 1 ? ` ${foes.indexOf(sim.enemy) + 1}/${foes.length}` : '';
@@ -1236,9 +1760,9 @@ function updateRadarUi() {
   sightEl.classList.toggle('searching', !sight.zone);
   sightEl.classList.toggle('warn', !!sight.warn);
   const pct = (f) => Math.round(f * 100);
-  const aim = sight.zone ? `${sight.lock ? `LOCKED: ${COMPARTMENTS[sight.zone].name.toUpperCase()} · ${pct(LOCK_FRACTION)}% a hit` : sight.snap ? `FOCUS: ${COMPARTMENTS[sight.zone].name.toUpperCase()} · ${pct(FOCUS_FRACTION)}% a hit, Space locks` : 'NO FOCUS: the shell falls in the sea'}` : sight.warn ?? 'NO FOCUS: the shell falls in the sea';
-  sightTxt.textContent = `${aim} · enemy${which} ${kmText(sim.range())} · ${AMMO_TYPES[g.type].name} ${g.stock[g.type]} · ${gunStatus(sim.player)}`;
-  map.sight = { yaw, locked: !!sight.zone };
+  const aim = sight.zone ? `${sight.lock ? `LOCK ${COMPARTMENTS[sight.zone].name.toUpperCase()} ${pct(LOCK_FRACTION)}%` : sight.snap ? `FOCUS ${COMPARTMENTS[sight.zone].name.toUpperCase()} ${pct(FOCUS_FRACTION)}% · Space` : 'NO AIM'}` : sight.warn ?? 'NO AIM';
+  sightTxt.textContent = `${aim} · ${kmText(sim.range())}${which} · ${gunStatus(sim.player)}`;
+  map.sight = { yaw, locked: !!sight.zone, fov: 2 * Math.atan(Math.tan(rad(camera.fov / 2)) * camera.aspect) }; // the lens's width on the map
 }
 
 // --- Loop --------------------------------------------------------------------------------------------------------------------
@@ -1252,17 +1776,504 @@ function resize() {
   pointScale.value = (h * renderer.getPixelRatio()) / (2 * Math.tan(rad(camera.fov / 2)));
 }
 window.addEventListener('resize', resize);
+// Adaptive resolution: the sea and the shadows are fill-rate bound on integrated graphics, so the render scale follows the frame rate
+// (down in steps of 0.1 to 0.75 when under 40 fps, back up toward the device cap when over 55). The interface and the look are untouched.
+const PR_MAX = Math.min(window.devicePixelRatio, 1.5), PR_MIN = 0.75;
+let prAcc = 0, prN = 0;
+function adaptScale(dt) {
+  if (dt <= 0.0001 || document.hidden) return;
+  prAcc += dt; prN++;
+  if (prAcc < 1.5) return;
+  const avg = prAcc / prN;
+  prAcc = 0; prN = 0;
+  const pr = renderer.getPixelRatio();
+  const next = avg > 1 / 40 ? Math.max(PR_MIN, pr - 0.1) : avg < 1 / 55 ? Math.min(PR_MAX, pr + 0.05) : pr;
+  if (Math.abs(next - pr) > 0.001) { renderer.setPixelRatio(next); resize(); }
+}
 resize();
 setView('behind');
-startBanner();
 
+// --- The opening: the radar spots her, a fly-out to the enemy, her weapons one by one, the question, the first shot ----------------------
+// The battle does not start by itself. The radar sweeps (3 s) and finds an enemy ship; the camera leaves your ship and flies out to her,
+// circles her, whipping fast from one weapon to the next and slowing on each while a callout says what it is, then rushes back behind your
+// ship; then the question, big and red: engage? Yes opens the Radar view (the sight) on her and leaves the shot to you: aim, then F; hold fire
+// goes back to the ship. Nothing fires by itself, and the first shot is always yours: nobody else fires before it (sim.held). Esc, Space or Enter skip the tour; on the question Enter engages and Esc holds fire.
+// Each stop is a camera on a circle round her (in her frame: x to her bow, z to starboard; `ang` from her bow towards starboard), looking
+// at a point of her hull; her model is the same frigate as yours, so the points are those of your own weapons.
+const STOPS = [
+  { ang: 0.4, r: 170, h: 34, look: [0, 8, 0], fov: 46, title: 'Hostile frigate', text: () => `${relName(sim.relBearing(sim.player))} · ${kmText(sim.range())} · ${Math.round(sim.knots(sim.enemy))} kn` },
+  { ang: 0.62, r: 58, h: 13, look: [32, 7.5, 0], fov: 32, title: '76 mm bow gun', text: () => `Her main weapon: it reaches ${kmText(MAIN_RANGE)}. Knock it out and she cannot hurt you at range.` },
+  { ang: 1.45, r: 48, h: 31, look: [9.2, 22.5, 0], fov: 36, title: 'Bridge and fire-control radar', text: () => 'She has seen you too. Hit the bridge and her shells scatter.' },
+  { ang: 2.55, r: 56, h: 19, look: [-33.6, 13.8, 0], fov: 34, title: 'Two 30 mm guns aft', text: () => `Deadly inside ${kmText(sim.gunRange)}. Keep off her stern.` },
+  { ang: 3.35, r: 72, h: 14, look: [-45, 5, 0], fov: 38, title: 'Engine and rudder', text: () => 'Her weak point: hit them and she can neither run nor turn.' },
+];
+const TOUR = { fly: 2.6, whip: 0.8, hold: 2.2, back: 1.5 };
+const TOUR_LEN = TOUR.fly + STOPS.length * (TOUR.whip + TOUR.hold) + TOUR.back;
+const INTRO = { phase: 'off', t: 0, seg: null, stop: -1, p0: new THREE.Vector3(), l0: new THREE.Vector3(), q0: new THREE.Quaternion(), f0: 55 }; // scan | tour | ask | off
+const cineBars = document.createElement('div');
+cineBars.className = 'duel-bars';
+cineBars.innerHTML = '<i></i><i></i>';
+document.body.appendChild(cineBars);
+const introEl = document.createElement('div');
+introEl.className = 'duel-hostile';
+introEl.hidden = true;
+document.body.appendChild(introEl);
+const calloutEl = document.createElement('div'); // the weapon's name and what it does, pinned to it on screen
+calloutEl.className = 'duel-callout';
+calloutEl.hidden = true;
+document.body.appendChild(calloutEl);
+const showEl = document.createElement('div'); // the title over the opening shots of your own ship
+showEl.className = 'duel-title';
+showEl.hidden = true;
+document.body.appendChild(showEl);
+function startIntro(withShow = false) {
+  INTRO.phase = 'scan'; INTRO.t = 0; INTRO.seg = null; INTRO.stop = -1;
+  introEl.hidden = true; calloutEl.hidden = true; showEl.hidden = true;
+  document.body.classList.remove('duel-cine');
+  if (withShow) { // the beauty shots of your ship come first, the radar after
+    INTRO.phase = 'show';
+    document.body.classList.add('duel-cine');
+    showEl.innerHTML = '<small>Task force · open sea</small><h2>Your frigate</h2><p>Frigate · 76 mm bow gun · two 30 mm aft · strike helicopter</p>';
+    showEl.hidden = false;
+    return;
+  }
+  say('Searching…', '', 3000);
+}
+function endShow() {
+  showEl.hidden = true;
+  INTRO.phase = 'scan'; INTRO.t = 0;
+  document.body.classList.remove('duel-cine');
+  say('Searching…', '', 3000);
+}
+function endIntro() {
+  INTRO.phase = 'off';
+  INTRO.again = false;
+  introEl.hidden = true; calloutEl.hidden = true; showEl.hidden = true;
+  document.body.classList.remove('duel-cine');
+  input.fire = 0;
+}
+function toAsk(tag = 'Hostile contact') {
+  const e = sim.enemy;
+  calloutEl.hidden = true;
+  document.body.classList.remove('duel-cine');
+  if (!e || e.det === false || e.tSunk !== null) { endIntro(); say('No contact', 'warn', 3600); return; }
+  INTRO.phase = 'ask';
+  banner.hidden = true;
+  introEl.innerHTML = `<div class="dz-stripe"></div><p class="dz-tag">⚠ ${tag}</p><h2>Enemy frigate</h2>`
+    + `<p class="dz-data"><span>${relName(sim.relBearing(sim.player))}</span><span>${kmText(sim.range())}</span><span>hull ${Math.round(e.hp)}</span><span>${LEVELS[sim.level].name}</span></p>`
+    + '<div class="dz-btns"><button type="button" data-go>Engage<small>Enter</small></button><button type="button" data-no>Hold fire<small>Esc</small></button></div><div class="dz-stripe"></div>';
+  introEl.hidden = false;
+}
+function engage() {
+  endIntro();
+  setView('radar');
+  say('Weapons free: aim, then F', 'warn', 4200);
+}
+function holdFire() {
+  endIntro();
+  say('Fire when ready: F', '', 3600);
+}
+introEl.addEventListener('click', (e) => {
+  if (e.target.closest('[data-go]')) engage();
+  else if (e.target.closest('[data-no]')) holdFire();
+});
+// Where the tour is at time t into it: { kind: 'fly' | 'stop' | 'back', i, u (0..1 through the move), held (s into the stop's hold) }.
+function tourSeg(t) {
+  if (t < TOUR.fly) return { kind: 'fly', i: 0, u: t / TOUR.fly, held: 0 };
+  t -= TOUR.fly;
+  const per = TOUR.whip + TOUR.hold;
+  if (t < STOPS.length * per) { const i = Math.floor(t / per), w = t - i * per; return { kind: 'stop', i, u: Math.min(1, w / TOUR.whip), held: Math.max(0, w - TOUR.whip) }; }
+  return { kind: 'back', i: STOPS.length - 1, u: Math.min(1, (t - STOPS.length * per) / TOUR.back), held: 0 };
+}
+function introStep(dt) {
+  if (INTRO.phase === 'off') return;
+  INTRO.t += dt;
+  if (sim.shotFired && !INTRO.again && ['show', 'scan', 'tour', 'ask'].includes(INTRO.phase)) { endIntro(); return; } // you fired first yourself
+  if (INTRO.phase === 'show') { if (INTRO.t >= SHOW_LEN) endShow(); return; }
+  if (INTRO.phase === 'scan') {
+    if (INTRO.t > 2.4 && !sim.radarOn) sim.startRadar();
+    if (INTRO.t > CONTACT_AT && !document.body.classList.contains('duel-cine')) { // she is found: the bars come in, the reticle closes on her
+      document.body.classList.add('duel-cine');
+      say('Contact', 'bad', 1200, 'alarm');
+    }
+    if (INTRO.t > 3.4) {
+      INTRO.phase = 'tour'; INTRO.t = 0; INTRO.stop = -1;
+      INTRO.p0.copy(camera.position);
+      camera.getWorldDirection(INTRO.l0).multiplyScalar(60).add(camera.position);
+      INTRO.q0.copy(camera.quaternion); INTRO.f0 = camera.fov; // the tour leaves from the camera as it is, in whatever view, and comes back to it
+      camera.up.set(0, 1, 0);
+      document.body.classList.add('duel-cine');
+      say('Hostile contact', 'bad', 2400);
+    }
+  } else if (INTRO.phase === 'tour') {
+    if (INTRO.t >= TOUR_LEN) { toAsk(); return; }
+    INTRO.seg = tourSeg(INTRO.t);
+    const g = INTRO.seg;
+    const show = g.kind === 'stop' && g.u > 0.7 ? g.i : -1; // the callout pops as the whip settles
+    if (show !== INTRO.stop) {
+      INTRO.stop = show;
+      calloutEl.hidden = show < 0;
+      if (show >= 0) {
+        calloutEl.innerHTML = `<i></i><div><b>${STOPS[show].title}</b><small>${STOPS[show].text()}</small></div>`;
+        calloutEl.classList.remove('pop'); void calloutEl.offsetWidth; calloutEl.classList.add('pop');
+      }
+    }
+  }
+}
+const smooth01 = (u) => { const x = clamp(u, 0, 1); return x * x * (3 - 2 * x); };
+const whipEase = (u) => 1 - Math.pow(1 - clamp(u, 0, 1), 4); // fast off the mark, slowing onto the weapon
+const lerp = (a, b, u) => a + (b - a) * u;
+const _tp = new THREE.Vector3(), _tl = new THREE.Vector3(), _tq = new THREE.Vector3(), _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
+// A stop's camera and look point in the world, blended from stop `a` to stop `b` by u, the circle drifting on by `drift` radians.
+function stopPose(foe, a, b, u, drift, pos, look) {
+  const A = STOPS[a], B = STOPS[b];
+  const ang = lerp(A.ang, B.ang, u) + drift, r = lerp(A.r, B.r, u), h = lerp(A.h, B.h, u);
+  foe.localToWorld(pos.set(Math.cos(ang) * r, h, Math.sin(ang) * r));
+  foe.localToWorld(look.set(lerp(A.look[0], B.look[0], u), lerp(A.look[1], B.look[1], u), lerp(A.look[2], B.look[2], u)));
+  return lerp(A.fov, B.fov, u);
+}
+function behindPose(pos, look) { // where the Behind view takes over
+  const p = sim.player, hx = Math.cos(p.psi), hz = Math.sin(p.psi);
+  pos.set(p.x - hx * 110, 34, p.z - hz * 110);
+  look.set(p.x + hx * 45, 6, p.z + hz * 45);
+}
+// The opening shots of your own ship: a camera on a circle round her (in her frame: x to her bow, z to starboard), glided through the
+// keyframes below with a Catmull-Rom curve (no stops between shots): low off the bow quarter, a slow broadside past the bridge, high over the
+// stern, then behind her, where the Behind view takes over (the last key is `behindPose`).
+const SHOW_LEN = 10;
+const SHOW_KEYS = [ // t, ang, r, h, look x, look y, fov
+  [0, 0.25, 135, 5, 30, 9, 40],
+  [3.2, 1.1, 78, 8, 12, 12, 33],
+  [6, 2.3, 96, 30, -8, 8, 38],
+  [8.2, 2.9, 120, 44, 10, 6, 46],
+  [SHOW_LEN, Math.PI, 110, 34, 45, 6, 55],
+];
+const _sk = new Array(6).fill(0);
+function showPose(t) {
+  const K = SHOW_KEYS;
+  let i = 0;
+  while (i < K.length - 2 && t > K[i + 1][0]) i++;
+  const u = clamp((t - K[i][0]) / (K[i + 1][0] - K[i][0]), 0, 1), u2 = u * u, u3 = u2 * u;
+  const p0 = K[Math.max(0, i - 1)], p1 = K[i], p2 = K[i + 1], p3 = K[Math.min(K.length - 1, i + 2)];
+  for (let j = 0; j < 6; j++) {
+    const a = p0[j + 1], b = p1[j + 1], c = p2[j + 1], d = p3[j + 1];
+    _sk[j] = 0.5 * (2 * b + (-a + c) * u + (2 * a - 5 * b + 4 * c - d) * u2 + (-a + 3 * b - 3 * c + d) * u3);
+  }
+  return _sk;
+}
+// The cinematic camera, or false when the normal one is to run.
+function introCamera() {
+  if (INTRO.phase === 'show' && ships[0]) {
+    const me = ships[0].group, k = showPose(INTRO.t);
+    me.updateWorldMatrix(true, false);
+    me.localToWorld(camera.position.set(Math.cos(k[0]) * k[1], k[2], Math.sin(k[0]) * k[1]));
+    me.localToWorld(_b.set(k[3], k[4], 0));
+    camera.position.y = Math.max(camera.position.y, 3.5); // never under the swell
+    camera.lookAt(_b);
+    setFov(k[5]);
+    const t = INTRO.t;
+    showEl.style.opacity = String(clamp(Math.min((t - 0.5) / 0.9, (6.4 - t) / 0.9), 0, 1));
+    return true;
+  }
+  if (INTRO.phase !== 'tour' || !ships[0]) return false;
+  {
+    const foe = ships[sim.enemy.idx]?.group, g = INTRO.seg;
+    if (!foe || !g) return false;
+    bridge.group.visible = false; // the wheelhouse is no part of the tour
+    let fov;
+    if (g.kind === 'fly') { // out from your ship to her, low over the sea, banking, the lens widening with the speed
+      const u = smooth01(g.u);
+      const end = stopPose(foe, 0, 0, 0, 0, _tp, _tl);
+      fov = lerp(INTRO.f0, end, u) + Math.sin(Math.PI * u) * 22;
+      camera.position.lerpVectors(INTRO.p0, _tp, u);
+      camera.position.y = lerp(INTRO.p0.y, _tp.y, u) * (1 - 0.55 * Math.sin(Math.PI * u)); // dips toward the sea mid-way
+      _b.lerpVectors(INTRO.l0, _tl, smooth01(g.u * 1.6));
+      camera.lookAt(_b);
+      _q1.copy(camera.quaternion);
+      camera.quaternion.copy(INTRO.q0).slerp(_q1, smooth01(g.u * 2.2)); // turns from the view's own aim onto her
+      camera.rotateZ(Math.sin(Math.PI * u) * 0.22 + Math.sin(INTRO.t * 23) * 0.004 * Math.sin(Math.PI * u)); // bank, and a tremor at speed
+      setFov(fov);
+      return true;
+    } else if (g.kind === 'stop') { // whip round her to the weapon, then a slow drift while the callout reads
+      fov = stopPose(foe, Math.max(0, g.i - 1), g.i, whipEase(g.u), g.held * 0.035, camera.position, _b);
+    } else { // back to the view you were in, fast and low: from the last stop's pose to where that view's own camera stands now
+      stopPose(foe, g.i, g.i, 1, TOUR.hold * 0.035, _tp, _tl);
+      camera.up.set(0, 1, 0);
+      camera.position.copy(_tp); camera.lookAt(_tl);
+      _q1.copy(camera.quaternion);
+      const f1 = STOPS[g.i].fov;
+      viewCamera(); // the view's camera, laid down now: it is the target
+      _tq.copy(camera.position); _q2.copy(camera.quaternion);
+      const f2 = camera.fov;
+      const u = smooth01(g.u);
+      camera.position.lerpVectors(_tp, _tq, u);
+      camera.position.y += Math.sin(Math.PI * u) * 20;
+      camera.quaternion.copy(_q1).slerp(_q2, smooth01(g.u * 1.3));
+      setFov(lerp(f1, f2, u));
+      bridge.group.visible = view === 'bridge' && g.u > 0.92;
+      return true;
+    }
+    camera.lookAt(_b);
+    setFov(fov);
+    if (!calloutEl.hidden && g.kind === 'stop') { // pin the callout to the weapon
+      camera.updateMatrixWorld();
+      _tl.copy(_b).project(camera);
+      calloutEl.style.left = `${clamp((_tl.x + 1) / 2 * innerWidth, 20, innerWidth - 20)}px`;
+      calloutEl.style.top = `${clamp((1 - _tl.y) / 2 * innerHeight, 80, innerHeight - 80)}px`;
+    }
+    return true;
+  }
+}
+
+// --- The hostile marks of the opening: a red ring with sonar pings on the sea round her, a target reticle, a red alert at the edges ------
+// From the moment the radar has her (late in the scan) until the question is answered. The ring and pings are flat on the sea, drawn over
+// the fog so they read from far off; the reticle is a screen element that closes in on her and locks (`.duel-lock`).
+const hostileFx = (() => {
+  const g = new THREE.Group();
+  const mat = (o) => new THREE.MeshBasicMaterial({ color: 0xff2a33, transparent: true, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(96, 104, 128), mat(0.9));
+  const inner = new THREE.Mesh(new THREE.RingGeometry(78, 80, 128), mat(0.5));
+  const ticks = new THREE.Group(); // four ticks across the ring, like a sight on the sea
+  for (let k = 0; k < 4; k++) {
+    const t = new THREE.Mesh(new THREE.PlaneGeometry(26, 3), mat(0.9));
+    const a = (k * Math.PI) / 2;
+    t.position.set(Math.cos(a) * 117, 0, Math.sin(a) * 117);
+    t.rotation.set(-Math.PI / 2, 0, -a);
+    ticks.add(t);
+  }
+  const pings = [0, 1, 2].map(() => new THREE.Mesh(new THREE.RingGeometry(98, 104, 96), mat(0.6)));
+  for (const m of [ring, inner, ...pings]) m.rotation.x = -Math.PI / 2;
+  g.add(ring, inner, ticks, ...pings);
+  g.visible = false;
+  g.renderOrder = 5;
+  scene.add(g);
+  return { g, ring, inner, ticks, pings };
+})();
+// --- The ship marks: a ring on the sea under every other ship, in the hostile ring's style, with her kind and distance lying on the water -------
+// Red for an enemy, green for a friend, amber for a merchant. They show for 5 s when the view opens (chase or orbit) and when a ship arrives,
+// and stay, lighter, in the top view, where a button in the views bar removes them.
+const ID_STYLE = { 0: { col: 0x3ddc84, css: '#3ddc84', name: 'FRIENDLY' }, 1: { col: 0xff2a33, css: '#ff4d55', name: 'HOSTILE' }, 2: { col: 0xf2c94c, css: '#f2c94c', name: 'MERCHANT' } };
+const idMarks = new Map();
+function makeIdMark(team) {
+  const st = ID_STYLE[team] ?? ID_STYLE[2];
+  const g = new THREE.Group();
+  const mat = (o) => new THREE.MeshBasicMaterial({ color: st.col, transparent: true, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(96, 102, 96), mat(0.9));
+  const inner = new THREE.Mesh(new THREE.RingGeometry(78, 79.5, 96), mat(0.5));
+  const ping = new THREE.Mesh(new THREE.RingGeometry(98, 103, 96), mat(0.6));
+  const ticks = new THREE.Group();
+  for (let k = 0; k < 4; k++) {
+    const t = new THREE.Mesh(new THREE.PlaneGeometry(22, 3), mat(0.9));
+    const a = (k * Math.PI) / 2;
+    t.position.set(Math.cos(a) * 114, 0, Math.sin(a) * 114);
+    t.rotation.set(-Math.PI / 2, 0, -a);
+    ticks.add(t);
+  }
+  for (const m of [ring, inner, ping]) m.rotation.x = -Math.PI / 2;
+  const cv = document.createElement('canvas');
+  cv.width = 512; cv.height = 192;
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const lm = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide, toneMapped: false });
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(256, 96), lm);
+  label.rotation.x = -Math.PI / 2;
+  const lab = new THREE.Group(); // turned about the vertical so the writing stands upright for whoever looks
+  lab.add(label);
+  g.add(ring, inner, ping, ticks, lab);
+  g.visible = false;
+  g.traverse((o) => { o.renderOrder = 5; });
+  scene.add(g);
+  return { g, ring, inner, ping, ticks, lab, label, cv, tex, lm, st, text: '', mats: [ring, inner, ping, ...ticks.children].map((m) => m.material), base: [0.9, 0.5, 0.6, 0.9, 0.9, 0.9, 0.9] };
+}
+function paintIdMark(m, text) {
+  const c = m.cv.getContext('2d');
+  c.clearRect(0, 0, 512, 192);
+  c.textAlign = 'center'; c.lineJoin = 'round';
+  c.font = '800 44px system-ui, sans-serif';
+  c.lineWidth = 9; c.strokeStyle = 'rgba(0,0,0,0.75)'; c.fillStyle = m.st.css;
+  c.strokeText(m.st.name, 256, 62); c.fillText(m.st.name, 256, 62);
+  c.font = '800 78px system-ui, sans-serif';
+  c.strokeText(text, 256, 148); c.fillStyle = '#ffffff'; c.fillText(text, 256, 148);
+  m.tex.needsUpdate = true;
+  m.text = text;
+}
+const _idUp = new THREE.Vector3();
+let idT = 0;
+function updateIdMarks(dt) {
+  idT += dt;
+  const now = performance.now();
+  const top = view === 'above';
+  const show = view === 'bridge' || view === 'radar' ? 0 : top ? (idState.labels ? 0.5 : 0) : clamp((idState.until - now) / 700, 0, 1);
+  const live = new Set();
+  if (show > 0.01 && sim.player.tSunk === null) {
+    camera.updateMatrixWorld();
+    _idUp.setFromMatrixColumn(camera.matrixWorld, 1); // the screen's up, laid on the sea, is the way the writing's top points
+    _idUp.y = 0;
+    if (_idUp.lengthSq() < 0.01) _idUp.set(0, 0, -1);
+    _idUp.normalize();
+    const spin = Math.atan2(-_idUp.x, -_idUp.z);
+    for (const o of sim.ships) {
+      if (o.idx === 0 || o.tSunk !== null) continue;
+      if (o.team === 1 && o.det === false) continue;
+      const d = sim.distance(sim.player, o);
+      if (d > 12000) continue;
+      live.add(o.idx);
+      let m = idMarks.get(o.idx);
+      if (!m || m.team !== o.team) { if (m) { scene.remove(m.g); } m = makeIdMark(o.team); m.team = o.team; idMarks.set(o.idx, m); }
+      const txt = kmText(d);
+      if (txt !== m.text) paintIdMark(m, txt);
+      const cd = camera.position.distanceTo(_c.set(o.x, 0, o.z));
+      const k = clamp(cd / 1200, 0.8, 9); // a ring that stays readable from far off
+      m.g.visible = true;
+      m.g.position.set(o.x, 0.8, o.z);
+      m.g.scale.setScalar(k);
+      m.ticks.rotation.y = idT * 0.6;
+      const u = ((idT + o.idx * 0.4) % 1.8) / 1.8;
+      m.ping.scale.setScalar(1 + u * 2.2);
+      m.mats.forEach((mt, q) => { mt.opacity = m.base[q] * show; });
+      m.ping.material.opacity = 0.6 * (1 - u) * show;
+      m.lab.rotation.y = spin;
+      m.lab.position.set(-_idUp.x * 170, 0.2, -_idUp.z * 170); // below the ring, in the screen's sense
+      m.lm.opacity = show;
+    }
+  }
+  for (const [idx, m] of idMarks) if (!live.has(idx)) m.g.visible = false;
+}
+const lockEl = document.createElement('div');
+lockEl.className = 'duel-lock';
+lockEl.hidden = true;
+lockEl.innerHTML = '<i></i><i></i><i></i><i></i><b>HOSTILE</b><small></small>';
+document.body.appendChild(lockEl);
+const lockLabel = lockEl.querySelector('small');
+let hostileT = 0, lastLockTxt = '';
+const CONTACT_AT = 2.6; // s into the scan: the radar has her
+function updateHostileFx(dt) {
+  const ph = INTRO.phase, e = sim.enemy;
+  const on = !!e && e.tSunk === null && ((ph === 'scan' && INTRO.t > CONTACT_AT) || ph === 'tour' || ph === 'ask');
+  hostileFx.g.visible = on;
+  document.body.classList.toggle('duel-alert', on && ph !== 'ask');
+  if (!on) { hostileT = 0; lockEl.hidden = true; return; }
+  hostileT += dt;
+  const fx = hostileFx;
+  fx.g.position.set(e.x, 0.8, e.z);
+  const grow = smooth01(hostileT / 0.6); // the ring snaps open when she is found
+  fx.ring.scale.setScalar(0.4 + 0.6 * grow);
+  fx.ring.material.opacity = 0.55 + 0.35 * Math.sin(hostileT * 6) ** 2;
+  fx.inner.scale.setScalar(grow);
+  fx.ticks.rotation.y = hostileT * 0.6;
+  fx.ticks.scale.setScalar(grow);
+  fx.pings.forEach((m, k) => { // sonar pings rolling outward, one every 0.6 s
+    const u = ((hostileT + k * 0.6) % 1.8) / 1.8;
+    m.scale.setScalar(1 + u * 2.6);
+    m.material.opacity = 0.6 * (1 - u) * grow;
+  });
+  // The reticle: from the contact through the fly-out and the first look at her, then the callouts take over.
+  const seg = INTRO.seg;
+  const showLock = ph === 'scan' || (ph === 'tour' && seg && (seg.kind === 'fly' || (seg.kind === 'stop' && seg.i === 0)));
+  if (!showLock) { lockEl.hidden = true; return; }
+  _tq.set(e.x, 9, e.z).project(camera);
+  if (_tq.z > 1) { lockEl.hidden = true; return; } // behind the camera
+  const dist = camera.position.distanceTo(_c.set(e.x, 9, e.z));
+  const shipPx = (130 / dist) * (innerHeight / 2) / Math.tan(rad(camera.fov / 2)); // about her length on screen
+  const close = smooth01(hostileT / 0.9); // the brackets close in from wide, then hold on her
+  const size = clamp(lerp(innerHeight * 0.7, Math.max(70, shipPx * 1.15), close), 70, innerHeight * 0.8);
+  lockEl.hidden = false;
+  lockEl.style.left = `${((_tq.x + 1) / 2) * innerWidth}px`;
+  lockEl.style.top = `${((1 - _tq.y) / 2) * innerHeight}px`;
+  lockEl.style.setProperty('--s', `${size.toFixed(0)}px`);
+  lockEl.classList.toggle('locked', close >= 1);
+  const txt = close >= 1 ? `LOCKED · ${kmText(sim.range())}` : 'ACQUIRING…';
+  if (txt !== lastLockTxt) { lockLabel.textContent = txt; lastLockTxt = txt; }
+}
+
+// --- Calling friends: a button (and K); each call brings one friendly frigate in from astern at full speed, up to three -----------------
+const actions = document.createElement('div');
+actions.className = 'duel-actions';
+document.body.appendChild(actions);
+const repBtn = document.createElement('button');
+repBtn.type = 'button';
+repBtn.className = 'duel-friend duel-rep';
+actions.appendChild(repBtn);
+repBtn.addEventListener('click', () => { sim.startRepair(0); lastBoard = ''; repBtn.blur(); });
+let lastRep = '';
+function updateRepairBtn() {
+  const on = repairReady();
+  const key = String(on);
+  if (key === lastRep) return;
+  lastRep = key;
+  repBtn.innerHTML = supportHtml(ICON_REPAIR, 'Repair all', on ? 'every damaged part' : 'nothing to repair', 'W');
+  repBtn.disabled = !on;
+}
+const friendBtn = document.createElement('button');
+friendBtn.type = 'button';
+friendBtn.className = 'duel-friend';
+actions.appendChild(friendBtn);
+const heliBtn = document.createElement('button');
+heliBtn.type = 'button';
+heliBtn.className = 'duel-friend duel-heli';
+actions.appendChild(heliBtn);
+const missBtn = document.createElement('button');
+missBtn.type = 'button';
+missBtn.className = 'duel-friend duel-miss';
+actions.appendChild(missBtn);
+let lastHeliBtn = '';
+function heliMissile() {
+  const comp = sight.lock ? sight.lock.comp : sight.snap ?? null; // the part aimed at in the radar view
+  const r = sim.heliMissile(view === 'radar' ? comp : null);
+  say(r.ok ? (r.queued ? 'Heli: moving in' : `Heli: missile at ${COMPARTMENTS[r.comp].name.toLowerCase()}`) : r.why, r.ok ? 'warn' : 'warn', 2800);
+}
+heliBtn.addEventListener('click', () => { say(sim.heliRequest(), ''); heliBtn.blur(); });
+missBtn.addEventListener('click', () => { heliMissile(); missBtn.blur(); });
+// The support buttons' icons: vector drawings, animated by CSS in duel.css (`.sp-ico .sway`, `.rotor`, `.flame`, ...).
+const ICON_ANCHOR = '<svg viewBox="0 0 32 32" aria-hidden="true"><path class="wave" d="M-9 29q3-2 6 0t6 0t6 0t6 0t6 0t6 0t6 0t6 0"/><g class="sway"><circle cx="16" cy="6.5" r="2.6"/><path d="M16 9.1V24M11 13h10M6.5 18.5C6.5 22.5 10.5 25 16 25s9.5-2.5 9.5-6.5M6.5 18.5l-2.6 2.4M6.5 18.5l3 1.6M25.5 18.5l2.6 2.4M25.5 18.5l-3 1.6"/></g></svg>';
+const ICON_HELI = '<svg viewBox="0 0 32 32" aria-hidden="true"><g class="bob"><g class="rotor"><path d="M2 8.5h28"/></g><path d="M16 8.5v3"/><path class="fill" d="M6.5 18c0-3.6 3-6.5 7.5-6.5h5c3.4 0 5.5 2 5.5 4.6v1.9c0 1.4-1.3 2.5-2.9 2.5H10.5C8.2 20.5 6.5 19.7 6.5 18z"/><path class="win" d="M9.5 15.3c.8-1.5 2.4-2.3 4.6-2.3h1.4v4.3H9.2z"/><path d="M24.5 15.3l5.5-2.6v3.4l-5 2"/><circle class="trot" cx="30" cy="12.6" r="2.3"/><path d="M8 24.5h15M11 20.5v4M20 20.5v4"/></g></svg>';
+const ICON_REPAIR = '<svg viewBox="0 0 32 32" aria-hidden="true"><g class="wrench"><path d="M20.6 6.6a6 6 0 0 0-7.4 7.6L5.4 22a2.7 2.7 0 0 0 3.8 3.8l7.8-7.8a6 6 0 0 0 7.6-7.4l-3.8 3.8-3.4-.9-.9-3.4z"/></g><circle cx="7.3" cy="23.9" r="0.9" style="fill:currentColor"/></svg>';
+const ICON_MISS = '<svg viewBox="0 0 32 32" aria-hidden="true"><g transform="rotate(-45 16 16)"><path class="smoke s1" d="M3 16h0"/><circle class="puff p1" cx="4" cy="16" r="1.6"/><circle class="puff p2" cx="4" cy="16" r="1.6"/><path class="flame" d="M9 14.2L1.5 16 9 17.8z"/><path class="fill" d="M9 13.2h11.5L27 16l-6.5 2.8H9z"/><path d="M9 13.2L5.8 9.8h5.6l1.9 3.4M9 18.8l-3.2 3.4h5.6l1.9-3.4M16 13.2v5.6"/></g></svg>';
+// One support button: an icon, a title and a status line, the key, and a bar that fills while it waits (`wait` 0..1, or null).
+const supportHtml = (icon, title, sub, key, wait = null) => `<i class="sp-ico">${icon}</i><span class="sp-txt"><b>${title}</b><small>${sub}</small></span>${key ? `<kbd>${key}</kbd>` : ''}`
+  + (wait === null ? '' : `<s class="sp-wait" style="width:${Math.round(clamp(wait, 0, 1) * 100)}%"></s>`);
+function updateHeliButtons() {
+  const h = sim.hop;
+  const up = !!h && (h.phase === 'ingress' || h.phase === 'orbit');
+  const title = !h ? '' : h.phase === 'deck' ? 'Send the helicopter' : up ? 'Helicopter: land' : 'Helicopter';
+  const sub = !h ? '' : h.phase === 'deck' ? 'scouts and fires on her' : up ? (h.phase === 'orbit' ? 'over the enemy' : 'on its way') : h.phase === 'gone' || h.phase === 'landed' ? 'down' : h.phase;
+  const ready = up && h.ammo > 0 && h.mCool <= 0;
+  const msub = !h ? '' : !up ? 'send the helicopter first' : h.ammo <= 0 ? 'none left' : h.mCool > 0 ? `ready in ${Math.ceil(h.mCool)} s` : `${h.ammo > 9 ? '∞' : h.ammo} left · at the part you aim at`;
+  const mwait = h && up && h.mCool > 0 ? 1 - h.mCool / 8 : null;
+  const key = `${title}|${sub}|${msub}|${ready}|${mwait === null ? '' : mwait.toFixed(2)}`;
+  if (key === lastHeliBtn) return;
+  lastHeliBtn = key;
+  heliBtn.innerHTML = supportHtml(ICON_HELI, title, sub, 'B'); heliBtn.hidden = !h;
+  missBtn.innerHTML = supportHtml(ICON_MISS, 'Helicopter missile', msub, 'M', mwait); missBtn.hidden = !h; missBtn.disabled = !ready;
+}
+let lastFriend = '';
+function callFriend() {
+  const r = sim.callFriend();
+  say(r.ok ? 'Frigate called' : r.why, r.ok ? 'ok' : 'warn', 2600);
+}
+friendBtn.addEventListener('click', () => { callFriend(); friendBtn.blur(); });
+function updateFriendBtn() {
+  const left = FRIEND_MAX - (sim.friendsCalled ?? 0), wait = Math.max(0, (sim.friendReady ?? 0) - sim.t);
+  const sub = left <= 0 ? 'none left' : wait > 0 ? `next in ${Math.ceil(wait)} s` : `${left} of ${FRIEND_MAX} left · from astern`;
+  if (sub === lastFriend) return;
+  lastFriend = sub;
+  friendBtn.innerHTML = supportHtml(ICON_ANCHOR, 'Call a friend', sub, 'K');
+  friendBtn.disabled = left <= 0 || wait > 0;
+}
+
+startIntro(true); // the opening begins (everything it uses is defined above)
 let last = performance.now();
 let frames = 0;
 renderer.setAnimationLoop((now) => {
   const dt = Math.max(0, Math.min((now - last) / 1000, 0.1));
   last = now;
   frameDt = dt;
+  adaptScale(dt);
   syncShips();
+  introStep(dt);
+  nextEnemyStep();
+  if (KILL.on && (KILL.t += dt) > KILL.dur) endKill();
+  if (fireLatch) input.fire = 1;
   updateAim();
   sim.advance(dt, input);
   handleEvents();
@@ -1270,19 +2281,27 @@ renderer.setAnimationLoop((now) => {
   env.ocean.material.uniforms.uTime.value = sim.t;
   for (let i = 0; i < ships.length; i++) poseShip(i, dt);
   updateWeapons(dt);
+  updateStrikeHeli(); updateFoeHelis();
+  updateLandHidden();
   updateCamera();
+  fadeWeatherCards();
+  setCamHint();
+  updateHostileFx(dt);
+  updateIdMarks(dt);
   env.follow(camera.position);
   env.setShadowFocus(_b.set((sim.player.x + sim.enemy.x) / 2, 0, (sim.player.z + sim.enemy.z) / 2), clamp(sim.range() * 0.5, 120, 600));
   fx.update(sim.t);
   audio.update(sim, camera);
   if (hudOn) {
     updateHud();
+    updateFriendBtn(); updateRepairBtn();
+    updateHeliButtons();
     const sh = shipHtml();
-    if (sh !== lastShip) { shipEl.innerHTML = sh; lastShip = sh; }
-    if (view === 'radar') {
-      const bh = boardHtml(); if (bh !== lastBoard) { boardEl.innerHTML = bh; lastBoard = bh; }
-      const th = targetHtml(); if (th !== lastTarget) { targetEl.innerHTML = th; lastTarget = th; }
-    }
+    if (sh !== lastShip) { domeHost.innerHTML = sh; lastShip = sh; }
+    spinProps(dt);
+    const bh = boardHtml(); if (bh !== lastBoard) { boardEl.innerHTML = bh; lastBoard = bh; }
+    const th = targetHtml(); if (th !== lastTarget) { targetEl.innerHTML = th; lastTarget = th; }
+    const rh = rangeHtml(); if (rh !== lastRange) { rangeEl.innerHTML = rh; lastRange = rh; }
   }
   if (mapOn) drawMap();
   updateTag();
@@ -1296,4 +2315,4 @@ renderer.setAnimationLoop((now) => {
   if (frames++ === 0) loadingEl?.remove();
 });
 
-window.__duel = { sim, camera, controls, scene, renderer, ships, setView, restart, fx, hooks: eventHooks, input, sight };
+window.__duel = { sim, camera, controls, scene, renderer, ships, setView, restart, fx, hooks: eventHooks, input, sight, intro: INTRO, log: LOG, kill: KILL };

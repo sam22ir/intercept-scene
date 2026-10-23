@@ -252,3 +252,20 @@ describe('hulls that touch', () => {
     assert.equal(n, 0);
   });
 });
+
+describe('an enemy that fires gives herself away', () => {
+  it('she is a radar contact for a while after her 76 mm fires, wherever she is', () => {
+    const sim = new DuelSim({ seed: 3, level: 'normal', waves: true, scouting: true, firingReveals: true });
+    sim.startRadar();
+    const e = sim.enemy;
+    e.x = sim.player.x + 20000; e.z = sim.player.z; // far out of the radar's reach
+    for (let i = 0; i < 10; i++) sim.advance(0.5, {});
+    assert.equal(e.det, false);
+    e.firedAt = sim.t;
+    sim.advance(0.5, {});
+    assert.equal(e.det, true);
+    for (let i = 0; i < 50; i++) sim.advance(0.5, {});
+    assert.equal(e.det, false, 'and lost again once she has been quiet a while');
+  });
+});
+

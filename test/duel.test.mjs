@@ -3,6 +3,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { stepHullReal, KT } from '../src/hull.js';
 import {
   DuelSim, DT, MAIN_ARC, MAIN_RANGE, GUN_RANGE, HULL_HP, COMPARTMENTS, COMP_IDS, LEVELS, DUEL_LEVELS, SINK_TIME,
   REPAIR_TIME, REPAIR_WAIT, zoneAt, segmentBox, sinkState, gunBlind, TELEGRAPH, MANUAL_SCATTER, CREWS, CREW_MOVE, REPAIR_CAP, neighbours, AMMO_STOCK, AMMO_TYPES, SWITCH_TIME, MAIN_ROUNDS,
@@ -571,5 +572,117 @@ describe('the repair of each part', () => {
   it('the frigates start about three kilometres apart', () => {
     const sim = new DuelSim({ seed: 3 });
     assert.ok(sim.range() > 2800 && sim.range() < 3800, `range ${sim.range()}`);
+  });
+});
+
+describe('heavy handling (realHandling)', () => {
+  const sail = (opts, seconds, order = 4) => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', realHandling: true });
+    const p = sim.player;
+    const track = [];
+    for (let t = 0; t < seconds; t += 0.1) { sim.advance(0.1, opts(t)); track.push({ t, x: p.x, z: p.z, psi: p.psi, u: p.u, r: p.r, rudder: p.rudder, sway: p.sway ?? 0 }); }
+    return { sim, track };
+  };
+  it('a full-rudder circle has a tactical diameter of roughly three ship lengths and costs speed', () => {
+    const h = { x: 0, z: 0, psi: 0, u: 16 * KT, r: 0, rudder: 0, heel: 0 };
+    let transfer = null, t = 0;
+    for (; t < 250 && transfer === null; t += 0.05) { stepHullReal(h, 0.05, { want: 1, orderKn: 16 }); if (h.psi < 0) transfer = Math.abs(h.z); }
+    assert.ok(transfer > 220 && transfer < 480, `tactical diameter ${transfer?.toFixed(0)} m`);
+    assert.ok(h.u < 16 * KT * 0.85, 'she is slower in the turn');
+  });
+  it('the rudder travels slowly and the swing goes on after it is amidships', () => {
+    const { track } = sail((t) => (t < 6 ? { right: 1 } : {}), 20);
+    const at3 = track.find((s) => s.t >= 3);
+    assert.ok(at3.rudder < 0.3 && at3.rudder > 0.2, `rudder after 3 s ${at3.rudder.toFixed(2)}`);
+    const peak = Math.max(...track.map((s) => s.r));
+    const later = track.find((s) => s.t >= 9);
+    assert.ok(later.r > 0.2 * peak, 'she is still swinging three seconds after the rudder came back');
+  });
+  it('she skids outward in a turn (sway opposite the turn) and keeps her weight when the telegraph drops', () => {
+    const { track } = sail(() => ({ right: 1 }), 40);
+    assert.ok(track.at(-1).sway < -0.2, `sway ${track.at(-1).sway.toFixed(2)}`);
+    const sim = new DuelSim({ seed: 3, level: 'easy', realHandling: true });
+    sim.telegraph(0, -1); sim.telegraph(0, -1); sim.telegraph(0, -1); // down to Stop
+    const u0 = sim.player.u;
+    for (let i = 0; i < 100; i++) sim.advance(0.1, {});
+    assert.ok(sim.player.u > u0 * 0.55, `after 10 s she still carries way (${(sim.player.u / u0).toFixed(2)})`);
+  });
+  it('the old handling is untouched by default', () => {
+    const sim = new DuelSim({ seed: 3, level: 'easy' });
+    for (let i = 0; i < 100; i++) sim.advance(0.1, { right: 1 });
+    assert.equal(sim.player.sway, undefined);
+  });
+});
+
+describe("the player's ship on Solo Air Defense's handling (helmPlayer)", () => {
+  const turn = (opts) => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', realHandling: true, ...opts });
+    sim.setSea(3, 0.8);
+    const p = sim.player, e = sim.ships[1];
+    let rudder = 0;
+    for (let i = 0; i < 80; i++) { sim.advance(0.1, { right: 1 }); if (i === 14) rudder = p.rudder; }
+    return { r: p.r, rudder, sway: p.sway ?? 0, enemyHeavy: e.sway !== undefined };
+  };
+  it('turns faster, puts the rudder over quickly, does not skid, and leaves the enemy on the heavy handling', () => {
+    const heavy = turn({}), helm = turn({ helmPlayer: true });
+    assert.ok(helm.r > heavy.r * 1.5, `turn rate ${helm.r.toFixed(3)} against ${heavy.r.toFixed(3)} rad/s`);
+    assert.ok(helm.rudder > heavy.rudder, 'the rudder is further over after 1.5 s');
+    assert.equal(helm.sway, 0);
+    assert.ok(helm.enemyHeavy, 'the enemy still skids (heavy handling)');
+  });
+});
+
+describe("the player's strong 76 mm and, on Easy, her untouchable gun (playerDamage, easyGunSafe)", () => {
+  it('a hit from your 76 mm does playerDamage times the usual to a hostile ship', () => {
+    const run = (playerDamage) => {
+      const sim = new DuelSim({ seed: 3, level: 'easy', playerDamage });
+      const e = sim.enemy, hp = e.hp;
+      sim.hit({ owner: 0, kind: 'ap' }, e, [0, 4, 0]);
+      return hp - e.hp;
+    };
+    const one = run(1), two = run(2);
+    assert.ok(Math.abs(two / one - 2) < 0.6, `damage ${one.toFixed(2)} then ${two.toFixed(2)}`);
+  });
+  it('on Easy nothing reaches your own 76 mm, on Normal it can still be knocked out', () => {
+    const hitGun = (level) => {
+      const sim = new DuelSim({ seed: 3, level, easyGunSafe: true });
+      const p = sim.player;
+      for (let i = 0; i < 40; i++) { sim.damage(p, 'gun', 30, 0); sim.ignite(p, 'gun'); }
+      return { gun: p.comp.gun, fire: p.fire.gun };
+    };
+    assert.deepEqual(hitGun('easy'), { gun: COMPARTMENTS.gun.hp, fire: 0 });
+    assert.equal(hitGun('normal').gun, 0);
+  });
+});
+
+describe('the sea against the ship (realHandling + setSea)', () => {
+  const runTo = (hs, dir) => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', realHandling: true });
+    sim.setSea(hs, dir);
+    sim.player.u = 16 * KT;
+    for (let i = 0; i < 600; i++) sim.advance(0.1, {});
+    return sim.player;
+  };
+  it('heading into a high sea costs a lot of speed, running before it costs little, a calm costs none', () => {
+    const calm = runTo(0, 0).u, head = runTo(8.5, Math.PI).u, following = runTo(8.5, 0).u; // she heads +X (psi 0): waves travelling toward -X come at her bow
+    assert.ok(head < calm * 0.75, `head sea ${(head / KT).toFixed(1)} kn against ${(calm / KT).toFixed(1)}`);
+    assert.ok(following > head * 1.2, 'a following sea is kinder');
+  });
+  it('the guns scatter wider in a high sea, and a slam costs way', () => {
+    const a = new DuelSim({ seed: 3, level: 'easy', realHandling: true }), b = new DuelSim({ seed: 3, level: 'easy', realHandling: true });
+    b.setSea(8.5, 0);
+    assert.ok(b.scatter(b.player) > a.scatter(a.player) * 1.3);
+    const u0 = b.player.u;
+    b.slam(0, 2);
+    assert.ok(b.player.u < u0 && b.player.u > u0 * 0.9);
+  });
+  it('a quartering sea yaws her bow to and fro, a calm does not, and the plain duel ignores setSea', () => {
+    const swing = (hs) => { const sim = new DuelSim({ seed: 3, level: 'easy', realHandling: true }); sim.setSea(hs, 0.8); let lo = 9, hi = -9; for (let i = 0; i < 900; i++) { sim.advance(0.1, {}); if (i > 100) { lo = Math.min(lo, sim.player.psi); hi = Math.max(hi, sim.player.psi); } } return hi - lo; };
+    assert.ok(swing(8.5) > swing(0) + 0.01, 'the bow wanders in a high sea');
+    const plain = new DuelSim({ seed: 3, level: 'easy' });
+    plain.setSea(8.5, 0);
+    const base = new DuelSim({ seed: 3, level: 'easy' });
+    for (let i = 0; i < 100; i++) { plain.advance(0.1, {}); base.advance(0.1, {}); }
+    assert.equal(plain.player.u, base.player.u);
   });
 });

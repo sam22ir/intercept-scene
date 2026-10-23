@@ -9,7 +9,8 @@ import { GUN, HIT, SINK } from './duelAssets.js';
 //  beds      each ship's hum and the surf along her side (both with her speed), the wind.
 //  one-shots the 76 mm firing, a shell bursting on a hull, a ship going down (these three are ElevenLabs effects made for the
 //            duel, duelAssets.js), and splashes.
-//  synth     the rotary guns' ripping buzz (as in Solo Air Defense), a short alarm when one of your compartments goes.
+//  synth     the rotary guns' ripping buzz (as in Solo Air Defense).
+//  cues      the scene's alerts, each with its text on the banner (cue): an alarm and a ping.
 // Nothing is created until the sound is switched on (the browser wants a gesture first).
 
 const SOUND_SPEED = 340;
@@ -138,24 +139,32 @@ export function createDuelAudio() {
     src.start(ctx.currentTime + Math.min(d / SOUND_SPEED, 20));
     src.onended = () => { try { v.g.disconnect(); } catch { /* gone */ } };
   }
-  // A short two-tone alarm on the bridge.
-  function beep() {
+  // A tone sequence on the bridge: [[delay s, Hz], ...].
+  function tones(seq, level = 0.1, type = 'square', len = 0.12) {
     if (!ready || !enabled) return;
     const t = ctx.currentTime;
-    for (const [k, f] of [[0, 880], [0.16, 660], [0.32, 880]]) {
+    for (const [k, f] of seq) {
       const o = ctx.createOscillator();
       const g = ctx.createGain();
-      o.type = 'square';
+      o.type = type;
       o.frequency.value = f;
       g.gain.setValueAtTime(0, t + k);
-      g.gain.linearRampToValueAtTime(0.1, t + k + 0.01);
-      g.gain.linearRampToValueAtTime(0, t + k + 0.12);
+      g.gain.linearRampToValueAtTime(level, t + k + 0.01);
+      g.gain.linearRampToValueAtTime(0, t + k + len);
       o.connect(g);
       g.connect(voices.signal.in);
       o.start(t + k);
-      o.stop(t + k + 0.14);
+      o.stop(t + k + len + 0.02);
     }
     voices.signal.g.gain.value = 1;
+  }
+  // One alert at a time, and not too often: an alarm at most every 2.5 s, a ping every 1.2 s.
+  const lastCue = { alarm: -1e9, ping: -1e9 };
+  function cue(kind) {
+    if (!enabled) return;
+    const now = performance.now() / 1000;
+    if (kind === 'alarm') { if (now - lastCue.alarm < 2.5) return; lastCue.alarm = now; tones([[0, 880], [0.16, 660], [0.32, 880]]); }
+    else if (kind === 'ping') { if (now - lastCue.ping < 1.2) return; lastCue.ping = now; tones([[0, 1320]], 0.07, 'sine', 0.25); }
   }
 
   return {
@@ -167,6 +176,7 @@ export function createDuelAudio() {
       if (ctx && master) master.gain.setTargetAtTime(on ? 0.9 : 0, ctx.currentTime, 0.05);
     },
     reset() { /* the loops run on; the one-shots die by themselves */ },
+    cue,
     // The simulation's events (duel.js): a shot, a hit, a splash, a compartment out, a ship sunk.
     event(e) {
       if (!ready) return;
@@ -174,7 +184,10 @@ export function createDuelAudio() {
       else if (e.type === 'hit') shot('hit', e.pos, { level: 1.3, ref: 200, rate: 1 });
       else if (e.type === 'splash') shot('splash', e.pos, { level: 0.8, ref: 90, rate: 0.9 });
       else if (e.type === 'collision') shot('hit', e.pos, { level: 1.8, ref: 260, rate: 0.55 });
-      else if (e.type === 'out' && e.ship === 0) beep();
+      else if (e.type === 'hmissile') shot('gun', e.pos, { level: 0.7, ref: 300, rate: 1.6 });
+      else if (e.type === 'hgun') shot('gun', e.pos, { level: 0.3, ref: 300, rate: 1.9 });
+      else if (e.type === 'impact') shot('hit', e.pos, { level: 1.0, ref: 300, rate: 0.8 });
+      else if (e.type === 'ground') shot('hit', e.pos, { level: 2.0, ref: 300, rate: 0.45 });
       else if (e.type === 'sunk') shot('sink', e.pos, { level: 1.5, ref: 500, rate: 1 });
     },
     // Every frame: the beds and the guns, from the ships' state and the camera.

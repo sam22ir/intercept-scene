@@ -227,6 +227,8 @@ function showChooser(preselect, preselectLevel = null, preselectScenario = null)
   segs.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
   levelBtns.forEach((b) => b.addEventListener('click', () => setLevel(b.dataset.level)));
   scenarioBtns.forEach((b) => b.addEventListener('click', () => setScenario(b.dataset.scenario)));
+  // A double click on a mission, a drill size, a level or a scenario enters the mission (its first click already picked it).
+  [...rows, ...segs, ...levelBtns, ...scenarioBtns].forEach((b) => b.addEventListener('dblclick', go));
   cards.forEach((c) => {
     c.addEventListener('click', () => setShip(c.dataset.ship));
     c.addEventListener('dblclick', go); // a double click still starts straight away

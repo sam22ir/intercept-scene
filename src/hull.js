@@ -68,6 +68,51 @@ export function stepHull(s, dt, { want = 0, orderKn = 0, rudderLimit = RUDDER_MA
   s.heel += ((-HEEL * s.r * s.u - s.heel) / 3) * dt;
 }
 
+// --- Heavy handling, for the ship duel (opt-in: DuelSim({ realHandling: true }); Solo Air Defense keeps stepHull) -----------------------------
+// A 4,000 tonne frigate, not a quick one:
+//   - the steering gear is slow (the rudder goes over at 5 degrees a second and comes back at 6), so a turn is begun well before it is wanted;
+//   - the swing builds on the hull's own time (a first-order Nomoto turn with T = about 0.9 L / U: eight seconds at 14 knots, sixteen at 7),
+//     and goes on a while after the rudder is amidships;
+//   - full rudder gives a tactical diameter of about three lengths (a 170 m turning radius), and costs a quarter of her speed;
+//   - she has weight: speed builds at a third of a metre a second, and with the engines eased she coasts down, only slowly, on her drag;
+//   - in a turn she skids: the hull's sideways drift (`sway`, to the outside) builds with the turn rate and the speed, so she goes a little
+//     sideways, and heels outward;
+//   - going astern the rudder is half as effective.
+const REAL_RUDDER_RATE = rad(5);
+const REAL_RUDDER_RETURN = rad(6);
+export const REAL_RADIUS = 170; // m at full rudder, at speed (a tactical diameter of about three lengths)
+const REAL_LENGTH = 116;
+const REAL_TURN_LOSS = 0.25;
+const REAL_ACCEL = 0.33; // m/s², ahead
+const REAL_ASTERN = 0.4; // m/s², when the order is astern (the screw bites harder than it spins ahead)
+const REAL_COAST = 0.2; // m/s², the most the drag takes off her speed with the engines eased
+const REAL_SPEED_T = 14; // s
+const SWAY_T = 3.5; // s: the skid builds to about (3.5 s × the turn rate) of her speed
+const REAL_HEEL = 0.09;
+
+// `yaw` is an extra yaw acceleration (rad/s², the sea knocking her bow about).
+export function stepHullReal(s, dt, { want = 0, orderKn = 0, rudderLimit = RUDDER_MAX, speedCap = 1, radius = REAL_RADIUS, yaw = 0 } = {}) {
+  const goal = want * rudderLimit;
+  const rate = want === 0 ? REAL_RUDDER_RETURN : REAL_RUDDER_RATE;
+  s.rudder += clamp(goal - s.rudder, -rate * dt, rate * dt);
+  if (Math.abs(s.rudder) > rudderLimit) s.rudder = clamp(s.rudder, -rudderLimit, rudderLimit);
+  const ordered = (orderKn > 0 ? orderKn * speedCap : orderKn) * KT * (1 - REAL_TURN_LOSS * Math.abs(s.rudder) / RUDDER_MAX);
+  const dv = ordered - s.u;
+  const up = orderKn < 0 && dv < 0 ? REAL_ASTERN : REAL_ACCEL;
+  s.u += clamp(dv / REAL_SPEED_T, -REAL_COAST, up) * dt;
+  const T = clamp((0.9 * REAL_LENGTH) / Math.max(Math.abs(s.u), 3), 5, 25);
+  const rSteady = (s.u / radius) * (s.rudder / RUDDER_MAX) * (s.u < 0 ? 0.5 : 1);
+  s.r += ((rSteady - s.r) / T) * dt + yaw * dt;
+  s.psi = wrapPi(s.psi + s.r * dt);
+  s.sway = s.sway ?? 0;
+  s.sway += (-s.u * s.r - s.sway / SWAY_T) * dt;
+  s.sway = clamp(s.sway, -0.25 * Math.abs(s.u), 0.25 * Math.abs(s.u));
+  const c = Math.cos(s.psi), n = Math.sin(s.psi); // forward is (c, n), starboard is (-n, c)
+  s.x += (c * s.u - n * s.sway) * dt;
+  s.z += (n * s.u + c * s.sway) * dt;
+  s.heel += ((-REAL_HEEL * s.r * s.u - s.heel) / 4) * dt;
+}
+
 // A bearing from north (deg 0..360), and a relative one as the navy says it: green to starboard, red to port ("green 045").
 const deg = (r) => (r * 180) / Math.PI;
 export const compass = (r) => ((deg(r) % 360) + 360) % 360;

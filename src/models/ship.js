@@ -350,7 +350,7 @@ function raft(kit, white, metal, x, y, z) {
   kit.add(new THREE.BoxGeometry(0.7, 0.12, 1.4), metal, { pos: [x, y + 0.06, z] });
 }
 
-// `ensign` picks the stern flag and hull tint: 'alg' (the default) or 'rus' (the second ship of the
+// `ensign` picks the stern flag (an anchor: navy for 'alg', dark red for 'rus') and hull tint: 'alg' (the default) or 'rus' (the second ship of the
 // maneuvers mission); `crew: false` leaves the deck crew out (the ship duel, where they stand in the gun's way).
 // `catapult: false` leaves the helideck bare, and `helicopter: true` parks a helicopter on it (the Solo Air Defense mission).
 export function createShip({ ensign = 'alg', crew = true, catapult = true, helicopter = false } = {}) {
@@ -935,43 +935,30 @@ export function createShip({ ensign = 'alg', crew = true, catapult = true, helic
   const flagBase = flagGeo.attributes.position.array.slice();
   if (ensign === 'rus') M.hull.color.setHex(0xaeb9c9); // a slightly bluer grey hull
   const flag = new THREE.Mesh(flagGeo, new THREE.MeshStandardMaterial({
-    // alg: green/white field, red crescent and star. rus: white, blue and red bands.
-    map: ensign === 'rus' ? canvasTexture(256, 160, (ctx, w, h) => {
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, w, h / 3);
-      ctx.fillStyle = '#0039a6';
-      ctx.fillRect(0, h / 3, w, h / 3);
-      ctx.fillStyle = '#d52b1e';
-      ctx.fillRect(0, (2 * h) / 3, w, h / 3 + 1);
-    }) : canvasTexture(256, 160, (ctx, w, h) => {
-      const field = () => {
-        ctx.fillStyle = '#006233';
-        ctx.fillRect(0, 0, w / 2, h);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(w / 2, 0, w / 2, h);
-      };
-      field();
+    // No national flags: a white anchor on a navy field (alg, yours) or on a dark red one (rus, the enemy).
+    map: canvasTexture(256, 160, (ctx, w, h) => {
+      ctx.fillStyle = ensign === 'rus' ? '#8c1d24' : '#14345f';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = '#f2f5f8';
+      ctx.fillStyle = '#f2f5f8';
+      ctx.lineWidth = 9;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       const cx = w / 2;
-      const cy = h / 2;
-      const r = h * 0.3;
-      ctx.fillStyle = '#d21034';
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(cx + r * 0.3, cy, r * 0.8, 0, Math.PI * 2);
-      ctx.clip();
-      field();
-      ctx.restore();
-      ctx.fillStyle = '#d21034';
-      ctx.beginPath();
-      for (let i = 0; i < 10; i++) {
-        const a = -Math.PI / 2 + (i * Math.PI) / 5;
-        const rr = i % 2 ? r * 0.16 : r * 0.4;
-        ctx.lineTo(cx + r * 0.62 + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+      ctx.beginPath(); // the ring, the shank, the stock
+      ctx.arc(cx, h * 0.2, h * 0.07, 0, Math.PI * 2);
+      ctx.moveTo(cx, h * 0.27); ctx.lineTo(cx, h * 0.8);
+      ctx.moveTo(cx - h * 0.14, h * 0.38); ctx.lineTo(cx + h * 0.14, h * 0.38);
+      ctx.stroke();
+      ctx.beginPath(); // the arms
+      ctx.arc(cx, h * 0.55, h * 0.26, 0.1 * Math.PI, 0.9 * Math.PI);
+      ctx.stroke();
+      for (const sd of [-1, 1]) { // the flukes
+        const ex = cx + sd * h * 0.26 * Math.cos(0.1 * Math.PI), ey = h * 0.55 + h * 0.26 * Math.sin(0.1 * Math.PI);
+        ctx.beginPath();
+        ctx.moveTo(ex, ey - h * 0.1); ctx.lineTo(ex + sd * h * 0.09, ey + h * 0.05); ctx.lineTo(ex - sd * h * 0.07, ey + h * 0.03);
+        ctx.closePath(); ctx.fill();
       }
-      ctx.fill();
     }),
     side: THREE.DoubleSide, roughness: 0.8,
   }));
@@ -1015,6 +1002,7 @@ export function createShip({ ensign = 'alg', crew = true, catapult = true, helic
     update(t, tLaunch, _tLaunch2 = Infinity, opts = null) {
       radar.rotation.y = t * 2.1;
       if (heli && opts?.heli) heli.userData.update(opts.heli); // the sim's helicopter (heliFlight.js)
+      if (heli && opts && 'heliHidden' in opts) heli.visible = !opts.heliHidden; // the surface battle's helicopter leaves the pad (a world model flies)
       const { yaw, pitch } = opts?.aim ?? launcherAim(t);
       yawGroup.rotation.y = yaw;
       pitchGroup.rotation.z = pitch;
