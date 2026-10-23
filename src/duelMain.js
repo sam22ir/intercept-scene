@@ -1104,6 +1104,7 @@ function startBanner() {
 }
 window.addEventListener('keydown', (e) => {
   if (KILL.on && (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter')) { endKill(); e.preventDefault(); return; } // skip the kill-cam
+  if (INTRO.phase === 'show' && (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter')) { endShow(); e.preventDefault(); return; } // skip the opening shots
   if (INTRO.phase === 'tour' && (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter')) { toAsk(); e.preventDefault(); return; } // skip the tour
   if (INTRO.phase === 'ask' && (e.key === 'Enter' || e.key === 'Escape')) { if (e.key === 'Enter') engage(); else holdFire(); e.preventDefault(); return; }
   if (view === 'radar' && (e.key === 'Shift' || e.key === 'Control')) { radarKeys[e.key === 'Shift' ? 'zi' : 'zo'] = 1; return; } // Shift closes the lens, Ctrl opens it
@@ -1649,16 +1650,33 @@ const calloutEl = document.createElement('div'); // the weapon's name and what i
 calloutEl.className = 'duel-callout';
 calloutEl.hidden = true;
 document.body.appendChild(calloutEl);
-function startIntro() {
+const showEl = document.createElement('div'); // the title over the opening shots of your own ship
+showEl.className = 'duel-title';
+showEl.hidden = true;
+document.body.appendChild(showEl);
+function startIntro(withShow = false) {
   INTRO.phase = 'scan'; INTRO.t = 0; INTRO.seg = null; INTRO.stop = -1;
-  introEl.hidden = true; calloutEl.hidden = true;
+  introEl.hidden = true; calloutEl.hidden = true; showEl.hidden = true;
+  document.body.classList.remove('duel-cine');
+  if (withShow) { // the beauty shots of your ship come first, the radar after
+    INTRO.phase = 'show';
+    document.body.classList.add('duel-cine');
+    showEl.innerHTML = '<small>Task force · open sea</small><h2>Your frigate</h2><p>Frigate · 76 mm bow gun · two 30 mm aft · strike helicopter</p>';
+    showEl.hidden = false;
+    return;
+  }
+  say('Radar: searching…', '', 3000);
+}
+function endShow() {
+  showEl.hidden = true;
+  INTRO.phase = 'scan'; INTRO.t = 0;
   document.body.classList.remove('duel-cine');
   say('Radar: searching…', '', 3000);
 }
 function endIntro() {
   INTRO.phase = 'off';
   INTRO.again = false;
-  introEl.hidden = true; calloutEl.hidden = true;
+  introEl.hidden = true; calloutEl.hidden = true; showEl.hidden = true;
   document.body.classList.remove('duel-cine');
   input.fire = 0;
 }
@@ -1698,7 +1716,8 @@ function tourSeg(t) {
 function introStep(dt) {
   if (INTRO.phase === 'off') return;
   INTRO.t += dt;
-  if (sim.shotFired && !INTRO.again && ['scan', 'tour', 'ask'].includes(INTRO.phase)) { endIntro(); return; } // you fired first yourself
+  if (sim.shotFired && !INTRO.again && ['show', 'scan', 'tour', 'ask'].includes(INTRO.phase)) { endIntro(); return; } // you fired first yourself
+  if (INTRO.phase === 'show') { if (INTRO.t >= SHOW_LEN) endShow(); return; }
   if (INTRO.phase === 'scan') {
     if (INTRO.t > 2.4 && !sim.radarOn) sim.startRadar();
     if (INTRO.t > CONTACT_AT && !document.body.classList.contains('duel-cine')) { // she is found: the bars come in, the reticle closes on her
@@ -1744,8 +1763,44 @@ function behindPose(pos, look) { // where the Behind view takes over
   pos.set(p.x - hx * 110, 34, p.z - hz * 110);
   look.set(p.x + hx * 45, 6, p.z + hz * 45);
 }
+// The opening shots of your own ship: a camera on a circle round her (in her frame: x to her bow, z to starboard), glided through the
+// keyframes below with a Catmull-Rom curve (no stops between shots): low off the bow quarter, a slow broadside past the bridge, high over the
+// stern, then behind her, where the Behind view takes over (the last key is `behindPose`).
+const SHOW_LEN = 10;
+const SHOW_KEYS = [ // t, ang, r, h, look x, look y, fov
+  [0, 0.25, 135, 5, 30, 9, 40],
+  [3.2, 1.1, 78, 8, 12, 12, 33],
+  [6, 2.3, 96, 30, -8, 8, 38],
+  [8.2, 2.9, 120, 44, 10, 6, 46],
+  [SHOW_LEN, Math.PI, 110, 34, 45, 6, 55],
+];
+const _sk = new Array(6).fill(0);
+function showPose(t) {
+  const K = SHOW_KEYS;
+  let i = 0;
+  while (i < K.length - 2 && t > K[i + 1][0]) i++;
+  const u = clamp((t - K[i][0]) / (K[i + 1][0] - K[i][0]), 0, 1), u2 = u * u, u3 = u2 * u;
+  const p0 = K[Math.max(0, i - 1)], p1 = K[i], p2 = K[i + 1], p3 = K[Math.min(K.length - 1, i + 2)];
+  for (let j = 0; j < 6; j++) {
+    const a = p0[j + 1], b = p1[j + 1], c = p2[j + 1], d = p3[j + 1];
+    _sk[j] = 0.5 * (2 * b + (-a + c) * u + (2 * a - 5 * b + 4 * c - d) * u2 + (-a + 3 * b - 3 * c + d) * u3);
+  }
+  return _sk;
+}
 // The cinematic camera, or false when the normal one is to run.
 function introCamera() {
+  if (INTRO.phase === 'show' && ships[0]) {
+    const me = ships[0].group, k = showPose(INTRO.t);
+    me.updateWorldMatrix(true, false);
+    me.localToWorld(camera.position.set(Math.cos(k[0]) * k[1], k[2], Math.sin(k[0]) * k[1]));
+    me.localToWorld(_b.set(k[3], k[4], 0));
+    camera.position.y = Math.max(camera.position.y, 3.5); // never under the swell
+    camera.lookAt(_b);
+    setFov(k[5]);
+    const t = INTRO.t;
+    showEl.style.opacity = String(clamp(Math.min((t - 0.5) / 0.9, (6.4 - t) / 0.9), 0, 1));
+    return true;
+  }
   if (INTRO.phase !== 'tour' || !ships[0]) return false;
   {
     const foe = ships[sim.enemy.idx]?.group, g = INTRO.seg;
@@ -1912,7 +1967,7 @@ function updateFriendBtn() {
   friendBtn.disabled = left <= 0 || wait > 0;
 }
 
-startIntro(); // the opening begins (everything it uses is defined above)
+startIntro(true); // the opening begins (everything it uses is defined above)
 let last = performance.now();
 let frames = 0;
 renderer.setAnimationLoop((now) => {

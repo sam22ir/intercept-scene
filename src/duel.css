@@ -549,3 +549,9 @@ body.mission-duel #fly-keys { flex-wrap: nowrap; overflow: hidden; max-width: ca
 .rc-dial .rc-lock kbd { display: none; }
 .rc-dial .rc-lock { isolation: isolate; }
 .rc-dial .rc-lock::before { z-index: -1; }
+/* The title over the opening shots of your own ship. */
+.duel-title { position: fixed; z-index: 31; left: calc(var(--gap, 14px) + 4vw + var(--safe-l, 0px)); bottom: 17vh; max-width: min(560px, 80vw); pointer-events: none; color: #eaf3fb; text-shadow: 0 2px 14px rgba(0, 0, 0, 0.7); opacity: 0; }
+.duel-title[hidden] { display: none; }
+.duel-title small { display: block; font-size: 12px; letter-spacing: 0.3em; text-transform: uppercase; color: #8fd0ff; margin-bottom: 6px; }
+.duel-title h2 { margin: 0; font-size: clamp(30px, 6vw, 58px); font-weight: 300; letter-spacing: 0.14em; text-transform: uppercase; line-height: 1.05; }
+.duel-title p { margin: 10px 0 0; font-size: 13px; letter-spacing: 0.06em; opacity: 0.85; border-top: 1px solid rgba(143, 208, 255, 0.5); padding-top: 8px; }
