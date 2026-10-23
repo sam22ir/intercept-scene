@@ -514,11 +514,7 @@ function setView(v) {
     input.left = input.right = 0;
     setManual(true);
     say('Radar: arrows or a drag aim the sight, Space locks, Enter fires. The helm is locked: Esc goes back', 'warn', 4200);
-  } else if (v !== 'radar' && view === 'radar') {
-    input.fire = 0;
-    if (fireLatch) setFireLatch(false);
-    setManual(radarPrevManual);
-  }
+  } else if (v !== 'radar' && view === 'radar') setManual(radarPrevManual); // the gun goes on firing: a latched FIRE or a held key carries over
   view = v;
   radarKeys.l = radarKeys.r = radarKeys.u = radarKeys.d = radarKeys.zi = radarKeys.zo = 0;
   sight.manual = false; // the radar's own controls start on automatic every time
@@ -526,6 +522,7 @@ function setView(v) {
   sight.fresh = true;
   radarEl.hidden = v !== 'radar';
   sightEl.hidden = v !== 'radar';
+  if (ships[0]) ships[0].mainGun.group.visible = v !== 'radar'; // its barrel, trained on her, stood as a white bar up the middle of the sight
   document.body.classList.toggle('duel-radarview', v === 'radar');
   map.sight = null;
   controls.enabled = v === 'orbit';
@@ -586,42 +583,19 @@ const root = document.querySelector('#hud');
 root.classList.add('duel-root');
 root.innerHTML = '<div class="duel-hud"></div>';
 const hud = root.querySelector('.duel-hud');
-const bar = (frac, cls = '') => `<i class="${cls}" style="width:${Math.round(clamp(frac, 0, 1) * 100)}%"></i>`;
 let selComp = 0; // the compartment Z has picked for X to send a crew to
-function cardHtml(i) {
-  const s = sim.ships[i];
-  if (i && s.det === false && s.tSunk === null) return `<section class="dh-ship foe"><h3>ENEMY<small>NO CONTACT</small></h3><p class="dh-nc">Not on the radar. Close the range, or send up the helicopter (B)</p></section>`;
-  const comps = COMP_IDS.map((id) => {
-    const f = s.comp[id] / COMPARTMENTS[id].hp;
-    const crew = s.crews.filter((c) => c.to === id);
-    const tags = `${s.fire[id] > 0 ? `<u class="fire" title="fire">${'▲'.repeat(Math.ceil(s.fire[id] * 3))}</u>` : ''}${s.leak[id] > 0.005 ? '<u class="leak" title="flooding">≈</u>' : ''}${crew.map((c) => `<u class="crew${c.eta > 0 ? ' going' : ''}" title="repair crew">⛑</u>`).join('')}`;
-    return `<div class="dh-row ${f <= 0 ? 'out' : f < 0.5 ? 'bad' : f < 0.99 ? 'hurt' : ''}${i === 0 && COMP_IDS[selComp] === id ? ' sel' : ''}"><span>${COMPARTMENTS[id].name}</span><b>${bar(f)}</b><em>${f <= 0 ? 'OUT' : `${Math.round(f * 100)}`}</em>${tags ? `<div class="dh-tags">${tags}</div>` : ''}</div>`;
-  }).join('');
-  const hp = s.hp / HULL_HP;
-  const foes = sim.ships.filter((o) => o.team === 1);
-  const which = foes.length > 1 ? ` ${foes.indexOf(s) + 1}/${foes.length}` : '';
-  return `<section class="dh-ship ${i ? 'foe' : 'you'}${s.tSunk !== null ? ' sunk' : ''}"><h3>${i ? `ENEMY${which}` : 'YOUR SHIP'}<small>${i ? LEVELS[sim.level].name : ''}${s.tSunk !== null ? 'SINKING' : ''}</small></h3>`
-    + `<div class="dh-row hull"><span>Hull</span><b>${bar(hp, hp < 0.3 ? 'bad' : '')}</b><em>${Math.round(s.hp)}</em></div>${comps}</section>`;
-}
 function gunStatus(s) {
   const g = s.gun;
   if (s.tSunk !== null) return '';
   if (s.comp.gun <= 0) return 'OUT';
   if (g.ammo <= 0) return 'NO AMMUNITION';
+  if (s.idx === 0 && fireLatch) return '<b class="hs-latch">FIRING · F stops</b>';
   const sol = Math.abs(sim.relBearing(s));
   if (sim.range() > MAIN_RANGE) return `OUT OF RANGE (${kmText(MAIN_RANGE)})`;
   if (sol > MAIN_ARC) return 'OUT OF ARC: turn her';
   if (g.cool > 0) return `LOADING ${g.cool.toFixed(1)} s`;
   if (s.manual) return g.engaged ? (g.onTarget ? 'ON YOUR AIM' : 'TRAINING') : 'point at her';
   return g.onTarget ? 'ON TARGET' : 'TRAINING';
-}
-function rangeHtml() {
-  if (sim.enemy.det === false && sim.enemy.tSunk === null) return '<div class="dh-range"><span>ENEMY</span><b>—</b><small>no radar contact</small></div>';
-  const live = sim.ships.filter((o) => o.team === 1 && o.tSunk === null).length;
-  const friends = sim.ships.filter((o) => o.team === 0 && o.idx > 0 && o.tSunk === null).length;
-  const traffic = sim.ships.filter((o) => o.merchant && o.tSunk === null).length;
-  const extra = `${live > 1 ? ` · <kbd>Tab</kbd> next of ${live}` : ''}${friends ? ' · ally' : ''}${traffic ? ` · ${traffic} merchant${traffic > 1 ? 's' : ''}` : ''}`;
-  return `<div class="dh-range"><span>ENEMY</span><b>${kmText(sim.range())}</b><small>${relName(sim.relBearing(sim.player))}${extra}</small></div>`;
 }
 function endHtml() {
   if (sim.winner === null) return '';
@@ -636,8 +610,8 @@ function endHtml() {
 let lastHtml = '';
 let hudOn = true;
 function updateHud() {
-  const html = cardHtml(sim.enemy.idx) + rangeHtml() + endHtml();
-  if (html !== lastHtml) { hud.innerHTML = html; lastHtml = html; }
+  const html = endHtml(); // the enemy and your ship are on their own cards (targetHtml, boardHtml) in every view
+  if (html !== lastHtml) { hud.innerHTML = html; lastHtml = html; root.classList.toggle('dh-over', html !== ''); }
 }
 
 // --- The ship's instruments (as Solo Air Defense's strip) ---------------------------------------------------------------------
@@ -734,18 +708,12 @@ function partRows(s, mine, aim = null) {
 function boardHtml() {
   const p = sim.player;
   const hullF = clamp(p.hp / HULL_HP, 0, 1);
-  const g = p.gun;
-  const dry = p.gats.every((x) => x.ammo <= 0);
-  const reload = g.cool > 0 ? clamp(1 - g.cool / sim.reloadTime(p), 0, 1) : 1;
   const any = COMP_IDS.some((id) => p.fix[id].left <= 0 && p.fix[id].wait <= 0 && (p.comp[id] < COMPARTMENTS[id].hp || p.fire[id] > 0 || p.leak[id] > 0.005));
   return `<div class="bd-head"><b>YOUR SHIP</b><span class="${hullF < 0.35 ? 'bad' : hullF < 0.7 ? 'hurt' : ''}">HULL ${Math.round(p.hp)}</span></div>`
     + `<div class="bd-bar"><s style="width:${Math.round(hullF * 100)}%;background:${healthColour(hullF >= 0.99 ? 1 : hullF < 0.35 ? 0.2 : 0.7)}"></s></div>`
     + `<div class="bd-rows">${partRows(p, true)}</div>`
     + `<button type="button" class="bd-repair" data-act="repair"${any && p.tSunk === null ? '' : ' disabled'}><span>REPAIR ALL DAMAGED</span></button>`
-    + `<div class="bd-flood ${p.flood > 0.02 ? 'bad' : ''}">${floodText(p)}</div>`
-    + `<div class="bd-wpn"><span>76 mm <b>${AMMO_TYPES[g.type].name} ${g.stock[g.type]}</b></span><div class="bd-prog" title="76 mm reload"><s style="width:${Math.round(reload * 100)}%"></s></div>`
-    + `<span>30 mm <b>${dry ? 'DRY' : p.auto ? 'AUTO' : 'HOLD G'}</b> · crews <b>${p.crews.filter((c) => c.to).length}/${CREWS}</b></span></div>`
-    + `<div class="bd-threat ${bears(sim.enemy) === 'BEARS' ? 'on' : ''}">her 76 mm: ${bears(sim.enemy) === 'BEARS' ? 'BEARS ON YOU' : bears(sim.enemy)}</div>`;
+    + `<div class="bd-flood ${p.flood > 0.02 ? 'bad' : ''}">${floodText(p)}</div>`;
 }
 boardEl.addEventListener('click', (e) => {
   const fx = e.target.closest?.('[data-fix]');
@@ -755,28 +723,38 @@ boardEl.addEventListener('click', (e) => {
   if (z && z.dataset.comp) { selComp = COMP_IDS.indexOf(z.dataset.comp); sim.assignCrew(0, z.dataset.comp); lastBoard = ''; }
 });
 
-// The enemy you are aiming at, in the same style.
+// The enemy card (every view, top right): who she is, her hull, range and bearing, her five parts as tiles (the one your sight is on
+// outlined), whether her 76 mm bears on you, her flooding, and what your sight is doing.
 const targetEl = document.createElement('div');
 targetEl.id = 'duel-target';
-targetEl.className = 'duel-board duel-target';
+targetEl.className = 'duel-tgt';
 document.body.appendChild(targetEl);
 let lastTarget = '';
 function targetHtml() {
   const e = sim.enemy;
   if (!e) return '';
-  if (e.det === false && e.tSunk === null) return '<div class="bd-head"><b>ENEMY</b><span>NO CONTACT</span></div><div class="bd-flood">The radar does not have her.<br>Close the range, or send up the helicopter (B).</div>';
+  if (e.det === false && e.tSunk === null) return '<div class="tg-head"><b>ENEMY</b><span class="tg-lvl">NO CONTACT</span></div><p class="tg-none">The radar does not have her. Close the range, or send up the helicopter (B).</p>';
   const foes = sim.ships.filter((o) => o.team === 1);
-  const which = foes.length > 1 ? ` ${foes.indexOf(e) + 1}/${foes.length}` : '';
+  const which = foes.length > 1 ? ` <small>${foes.indexOf(e) + 1}/${foes.length}</small>` : '';
   const locked = sight.lock && sight.lock.ship === e.idx;
-  const aim = locked ? sight.lock.comp : sight.snap;
-  const aimNote = locked ? `LOCKED · ${COMPARTMENTS[sight.lock.comp].name}` : sight.snap ? `FOCUS · ${COMPARTMENTS[sight.snap].name}` : 'NO FOCUS · shells fall in the sea';
+  const aim = view === 'radar' ? (locked ? sight.lock.comp : sight.snap) : null;
+  const aimNote = view !== 'radar' ? 'Radar view (5) to aim at a part' : locked ? `LOCKED · ${COMPARTMENTS[sight.lock.comp].name}` : sight.snap ? `FOCUS · ${COMPARTMENTS[sight.snap].name}` : 'NO FOCUS · shells fall in the sea';
   const hullF = clamp(e.hp / HULL_HP, 0, 1);
-  return `<div class="bd-head"><b>ENEMY${which}</b><span>HULL ${Math.round(e.hp)} · ${LEVELS[sim.level].name}</span></div>`
-    + `<div class="bd-bar foe"><s style="width:${Math.round(hullF * 100)}%"></s></div>`
-    + `<div class="bd-rows">${partRows(e, false, aim)}</div>`
-    + `<div class="bd-flood ${e.flood > 0.02 ? 'good' : ''}">${floodText(e)}</div>`
-    + `<div class="bd-threat ${bears(e) === 'BEARS' ? 'on' : ''}">her 76 mm: ${bears(e) === 'BEARS' ? 'BEARS ON YOU' : bears(e)}</div>`
-    + `<div class="bd-aim ${locked ? 'lock' : sight.snap ? 'focus' : ''}">${aimNote}</div>`;
+  const tiles = COMP_IDS.map((id) => {
+    const f = clamp(e.comp[id] / COMPARTMENTS[id].hp, 0, 1);
+    const cls = f <= 0 ? ' out' : f < 0.5 ? ' bad' : f < 0.99 ? ' hurt' : '';
+    const marks = `${e.fire[id] > 0 ? '<u class="fire">▲</u>' : ''}${e.leak[id] > 0.005 ? '<u class="leak">≈</u>' : ''}`;
+    return `<div class="tg-part${cls}${aim === id ? ' aim' : ''}" title="${COMPARTMENTS[id].name}"><b>${COMP_ABBR[id]}</b>`
+      + `<i><s style="height:${Math.round(f * 100)}%;background:${healthColour(f)}"></s></i><em>${f <= 0 ? 'OUT' : Math.round(f * 100)}</em><span>${marks}</span></div>`;
+  }).join('');
+  const b = bears(e);
+  return `<div class="tg-head"><b>ENEMY${which}</b><span class="tg-lvl">${LEVELS[sim.level].name}</span></div>`
+    + `<div class="tg-hull"><span><small>HULL</small><b>${Math.round(e.hp)}</b></span><i><s style="width:${Math.round(hullF * 100)}%"></s></i></div>`
+    + `<div class="tg-nav"><span><small>RANGE</small><b>${kmText(sim.range())}</b></span><span><small>BEARING</small><b>${relName(sim.relBearing(sim.player))}</b></span></div>`
+    + `<div class="tg-parts">${tiles}</div>`
+    + `<div class="tg-chips"><span class="${b === 'BEARS' ? 'hot' : b === 'OUT' ? 'good' : ''}">her 76 mm: ${b === 'BEARS' ? 'BEARS ON YOU' : b}</span>`
+    + `<span class="${e.tSunk !== null || e.flood > 0.02 ? 'good' : ''}">${floodText(e)}</span></div>`
+    + `<div class="tg-aim ${view === 'radar' ? (locked ? 'lock' : sight.snap ? 'focus' : '') : ''}">${aimNote}</div>`;
 }
 
 const map = createDuelMap();
@@ -1016,7 +994,10 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     return;
   }
-  if (e.key === 'f' || e.key === 'F') { input.fire = 1; e.preventDefault(); return; }
+  if (e.key === 'f' || e.key === 'F') { // F fires while held; with FIRE latched (a long press, in any view) a tap of F stops it
+    if (fireLatch && !e.repeat) { setFireLatch(false); say('Ceasefire', '', 1400); } else input.fire = 1;
+    e.preventDefault(); return;
+  }
   if (e.key === 'g' || e.key === 'G') { input.gat = 1; e.preventDefault(); return; }
   if (e.repeat) { if (e.key.startsWith('Arrow')) e.preventDefault(); return; }
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
@@ -1053,7 +1034,7 @@ window.addEventListener('keyup', (e) => {
   if (e.key.startsWith('Arrow')) radarKeys[{ ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd' }[e.key]] = 0;
   if (e.key === 'ArrowLeft') input.left = 0;
   if (e.key === 'ArrowRight') input.right = 0;
-  if (e.key === 'f' || e.key === 'F' || (e.key === 'Enter' && view === 'radar')) input.fire = 0;
+  if (e.key === 'f' || e.key === 'F' || e.key === 'Enter') input.fire = 0;
   if (e.key === 'g' || e.key === 'G') input.gat = 0;
 });
 window.addEventListener('blur', () => { radarKeys.zi = radarKeys.zo = 0; input.left = 0; input.right = 0; input.fire = 0; input.gat = 0; });
@@ -1123,9 +1104,8 @@ const radarEl = document.createElement('div');
 radarEl.className = 'duel-radar';
 radarEl.hidden = true;
 radarEl.innerHTML = '<div class="hr-marks"></div><div class="rc">'
-  + '<div class="rc-main"><div class="rc-top"><b class="hr-mode">AUTO</b><span class="hr-brg"></span></div>'
-  + '<div class="rc-zoom"><span>WIDE</span><div class="rc-track" aria-label="Zoom"><i class="rc-ticks"></i><i class="rc-fill"></i><i class="rc-thumb"></i></div><span>CLOSE</span><b class="hr-zv"></b></div>'
-  + '<div class="rc-pills"><button type="button" data-act="lock"><i>⌖</i>Lock<kbd>Space</kbd></button><button type="button" data-act="fire"><i>✹</i>Fire<kbd>Enter</kbd></button></div></div>'
+  + '<div class="rc-main"><div class="rc-top"><b class="hr-mode">AUTO</b><span class="hr-brg"></span><button type="button" class="rc-lock" data-act="lock">⌖ Lock<kbd>Space</kbd></button></div>'
+  + '<div class="rc-zoom"><span>WIDE</span><div class="rc-track" aria-label="Zoom"><i class="rc-ticks"></i><i class="rc-fill"></i><i class="rc-thumb"></i></div><span>CLOSE</span><b class="hr-zv"></b></div></div>'
   + '<div class="rc-gun"><button type="button" class="rc-fire" data-act="fire"><span>FIRE</span><kbd>F</kbd></button><button type="button" class="rc-ammo" data-act="ammo"><b class="rc-am"></b><kbd>Q</kbd></button></div></div>';
 document.body.appendChild(radarEl);
 const radarMode = radarEl.querySelector('.hr-mode');
@@ -1136,6 +1116,7 @@ const trackEl = radarEl.querySelector('.rc-track');
 const thumbEl = radarEl.querySelector('.rc-thumb');
 const fillEl = radarEl.querySelector('.rc-fill');
 const fireEl = radarEl.querySelector('.rc-fire');
+const lockBtn = radarEl.querySelector('.rc-lock');
 let fireLatch = false; // a long press on FIRE keeps the gun firing until the button is tapped again
 function setFireLatch(on) {
   fireLatch = on;
@@ -1453,6 +1434,8 @@ function updateRadarUi() {
   radarMode.textContent = sight.lock ? 'LOCKED' : sight.manual ? 'MANUAL' : 'AUTO';
   radarMode.classList.toggle('manual', sight.manual && !sight.lock);
   radarMode.classList.toggle('locked', !!sight.lock);
+  lockBtn.classList.toggle('on', !!sight.lock);
+  lockBtn.firstChild.textContent = sight.lock ? '⌖ Release' : '⌖ Lock';
   const yaw = Math.atan2(sight.aim.z, sight.aim.x);
   const rel = Math.atan2(Math.sin(yaw - sim.player.psi), Math.cos(yaw - sim.player.psi));
   radarBrg.textContent = `${relName(rel)} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${camera.fov.toFixed(camera.fov < 3 ? 2 : 1)}°`;
@@ -1752,16 +1735,22 @@ function heliMissile() {
 }
 heliBtn.addEventListener('click', () => { say(sim.heliRequest(), ''); heliBtn.blur(); });
 missBtn.addEventListener('click', () => { heliMissile(); missBtn.blur(); });
+// One support button: an icon, a title and a status line, the key, and a bar that fills while it waits (`wait` 0..1, or null).
+const supportHtml = (icon, title, sub, key, wait = null) => `<i class="sp-ico">${icon}</i><span class="sp-txt"><b>${title}</b><small>${sub}</small></span><kbd>${key}</kbd>`
+  + (wait === null ? '' : `<s class="sp-wait" style="width:${Math.round(clamp(wait, 0, 1) * 100)}%"></s>`);
 function updateHeliButtons() {
   const h = sim.hop;
-  const label = !h ? '' : h.phase === 'deck' ? 'Send the helicopter (B)' : h.phase === 'ingress' || h.phase === 'orbit' ? 'Helicopter: land (B)' : h.phase === 'gone' || h.phase === 'landed' ? 'Helicopter: down' : 'Helicopter: ' + h.phase;
-  const ready = !!h && (h.phase === 'ingress' || h.phase === 'orbit') && h.ammo > 0 && h.mCool <= 0;
-  const miss = !h ? '' : h.mCool > 0 ? `Missile: ${Math.ceil(h.mCool)} s` : `Helicopter missile (M) · ${h.ammo > 9 ? '∞' : h.ammo}`;
-  const key = `${label}|${miss}|${ready}`;
+  const up = !!h && (h.phase === 'ingress' || h.phase === 'orbit');
+  const title = !h ? '' : h.phase === 'deck' ? 'Send the helicopter' : up ? 'Helicopter: land' : 'Helicopter';
+  const sub = !h ? '' : h.phase === 'deck' ? 'scouts and fires on her' : up ? (h.phase === 'orbit' ? 'over the enemy' : 'on its way') : h.phase === 'gone' || h.phase === 'landed' ? 'down' : h.phase;
+  const ready = up && h.ammo > 0 && h.mCool <= 0;
+  const msub = !h ? '' : !up ? 'send the helicopter first' : h.ammo <= 0 ? 'none left' : h.mCool > 0 ? `ready in ${Math.ceil(h.mCool)} s` : `${h.ammo > 9 ? '∞' : h.ammo} left · at the part you aim at`;
+  const mwait = h && up && h.mCool > 0 ? 1 - h.mCool / 8 : null;
+  const key = `${title}|${sub}|${msub}|${ready}|${mwait === null ? '' : mwait.toFixed(2)}`;
   if (key === lastHeliBtn) return;
   lastHeliBtn = key;
-  heliBtn.textContent = label; heliBtn.hidden = !h;
-  missBtn.textContent = miss; missBtn.hidden = !h; missBtn.disabled = !ready;
+  heliBtn.innerHTML = supportHtml('🚁', title, sub, 'B'); heliBtn.hidden = !h;
+  missBtn.innerHTML = supportHtml('➶', 'Helicopter missile', msub, 'M', mwait); missBtn.hidden = !h; missBtn.disabled = !ready;
 }
 let lastFriend = '';
 function callFriend() {
@@ -1771,10 +1760,10 @@ function callFriend() {
 friendBtn.addEventListener('click', () => { callFriend(); friendBtn.blur(); });
 function updateFriendBtn() {
   const left = FRIEND_MAX - (sim.friendsCalled ?? 0), wait = Math.max(0, (sim.friendReady ?? 0) - sim.t);
-  const txt = left <= 0 ? 'No more friends to call' : wait > 0 ? `Next friend in ${Math.ceil(wait)} s` : `Call a friend (K) · ${left} left`;
-  if (txt === lastFriend) return;
-  lastFriend = txt;
-  friendBtn.textContent = txt;
+  const sub = left <= 0 ? 'none left' : wait > 0 ? `next in ${Math.ceil(wait)} s` : `${left} of ${FRIEND_MAX} left · from astern`;
+  if (sub === lastFriend) return;
+  lastFriend = sub;
+  friendBtn.innerHTML = supportHtml('⚓', 'Call a friend', sub, 'K');
   friendBtn.disabled = left <= 0 || wait > 0;
 }
 
@@ -1809,10 +1798,8 @@ renderer.setAnimationLoop((now) => {
     updateHeliButtons();
     const sh = shipHtml();
     if (sh !== lastShip) { shipEl.innerHTML = sh; lastShip = sh; }
-    if (view === 'radar') {
-      const bh = boardHtml(); if (bh !== lastBoard) { boardEl.innerHTML = bh; lastBoard = bh; }
-      const th = targetHtml(); if (th !== lastTarget) { targetEl.innerHTML = th; lastTarget = th; }
-    }
+    const bh = boardHtml(); if (bh !== lastBoard) { boardEl.innerHTML = bh; lastBoard = bh; }
+    const th = targetHtml(); if (th !== lastTarget) { targetEl.innerHTML = th; lastTarget = th; }
   }
   if (mapOn) drawMap();
   updateTag();
