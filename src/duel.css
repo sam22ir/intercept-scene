@@ -630,3 +630,27 @@ body.mission-duel .duel-radar .rc, body.mission-duel .duel-ship { bottom: calc(v
 .duel-rep:not(:disabled) { box-shadow: 0 0 0 2px rgba(61, 220, 132, 0.2), 0 6px 18px rgba(0, 0, 0, 0.35); }
 @media (prefers-reduced-motion: no-preference) { .duel-rep:not(:disabled) .wrench { transform-origin: 16px 16px; animation: ic-wrench 1.6s ease-in-out infinite; } }
 @keyframes ic-wrench { 0%, 55%, 100% { transform: rotate(0); } 65% { transform: rotate(-22deg); } 80% { transform: rotate(14deg); } 90% { transform: rotate(-6deg); } }
+/* Both columns of parts on the right, yours then the enemy's, with each part's short name between them; the range sits under the map, which has no scale text. */
+body.mission-duel .duel-pts-me { left: auto; right: calc(var(--gap, 14px) + var(--safe-r, 0px) + 48px + 62px); top: calc(var(--gap, 14px) + var(--safe-t, 0px)); align-items: flex-end; }
+body.mission-duel .duel-pts-me .pt-tip { left: auto; right: calc(100% + 10px); }
+body.mission-duel .duel-pts-names { right: calc(var(--gap, 14px) + var(--safe-r, 0px) + 48px + 4px); top: calc(var(--gap, 14px) + var(--safe-t, 0px)); width: 54px; align-items: stretch; text-align: center; }
+.duel-pts-names .nm { height: 42px; display: grid; place-items: center; font: 700 9.5px system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(232, 238, 245, 0.78); text-shadow: 0 1px 3px #000, 0 0 6px rgba(0, 0, 0, 0.8); }
+.duel-pts-names .nm.hull { height: 48px; margin-bottom: 2px; }
+@media (max-height: 680px) { .duel-pts-names .nm { height: 34px; font-size: 8.5px; } .duel-pts-names .nm.hull { height: 38px; } }
+body.mission-duel .minimap .mm-scale { display: none; }
+body.mission-duel .minimap { bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) + 32px); }
+.duel-range { position: fixed; z-index: 9; left: calc(var(--gap, 14px) + var(--safe-l, 0px)); bottom: calc(var(--gap, 14px) + var(--safe-b, 0px)); width: var(--map-d, 150px); display: flex; justify-content: center; pointer-events: none; }
+.duel-range[hidden], body:not(.mission-duel) .duel-range, body.ui-hidden .duel-range { display: none; } body.duel-cine .duel-range { opacity: 0; }
+/* FIRE is a clean shell on the red sphere (no word, no flash); LOCK is a reticle that closes on the part. */
+.rc-fire span { display: none; }
+.rc-fire .fire-ico { width: 26px; height: 36px; margin: -4px 0 0; fill: none; stroke: none; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45)); }
+.rc-fire .sh-body { fill: #fff6ec; } .rc-fire .sh-band { fill: #b82a31; } .rc-fire .sh-base { fill: #e4c9a6; } .rc-fire .sh-shine { fill: none; stroke: #fff; stroke-width: 1.2; stroke-linecap: round; opacity: 0.8; }
+.rc-fire kbd { opacity: 0.8; font-size: 10px; margin-top: -1px; }
+.rc-fire.hold .sh-band, .rc-fire.sea .sh-band { fill: #59636c; }
+.rc-dial .rc-lock svg { width: 15px; height: 11px; margin: 0; vertical-align: -2px; fill: none; stroke: #04200f; stroke-width: 1.5; stroke-linecap: round; }
+.rc-dial .rc-lock .lk-dot { fill: #04200f; stroke: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .rc-fire.ready .fire-ico { animation: ic-shell 0.9s ease-in-out infinite alternate; }
+  .rc-dial .rc-lock .lk-spin { transform-origin: 8px 6px; animation: ic-spin 3s linear infinite; }
+}
+@keyframes ic-shell { from { transform: translateY(0); } to { transform: translateY(-2.5px); } }

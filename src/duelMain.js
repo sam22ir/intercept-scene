@@ -742,6 +742,7 @@ function shipHtml() { // the strip is the dome alone (heading, rudder, speed), c
 // --- The status boards (radar view) ---------------------------------------------------------------------------------------------
 // Two cards of horizontal bars, one for each part of a ship (no navigation data): yours down the left, with a FIX button on every part
 // (each part is repaired alone) and one for all; the enemy you aim at down the right. A click on one of your bars sends a crew there.
+let lastRange = '';
 const boardEl = document.createElement('div');
 boardEl.id = 'duel-board';
 boardEl.className = 'duel-pts duel-pts-me';
@@ -835,19 +836,33 @@ targetEl.id = 'duel-target';
 targetEl.className = 'duel-pts duel-pts-foe';
 document.body.appendChild(targetEl);
 let lastTarget = '';
-function targetHtml() {
+// Under the map: the range and bearing of the enemy (and which of them, with several), or that the radar has no contact.
+const rangeEl = document.createElement('div');
+rangeEl.className = 'duel-range';
+document.body.appendChild(rangeEl);
+function rangeHtml() {
   const e = sim.enemy;
   if (!e) return '';
   if (e.det === false && e.tSunk === null) return '<div class="pt-pill dim" title="The radar does not have her. Close the range, or send up the helicopter (B).">NO CONTACT</div>';
+  const foes = sim.ships.filter((o) => o.team === 1);
+  const which = foes.length > 1 ? ` ${foes.indexOf(e) + 1}/${foes.length}` : '';
+  return `<div class="pt-pill" title="Range and bearing of the enemy${which}">${kmText(sim.range())} · ${relName(sim.relBearing(sim.player))}${which}</div>`;
+}
+// Between the two columns of parts: the short name of each, so yours and the enemy's read across.
+const namesEl = document.createElement('div');
+namesEl.className = 'duel-pts duel-pts-names';
+namesEl.innerHTML = [['hull', 'Hull'], ['gun', 'Gun'], ['bridge', 'Bridge'], ['engine', 'Engine'], ['guns', 'Aft'], ['steering', 'Rudder']].map(([id, n]) => `<span class="nm${id === 'hull' ? ' hull' : ''}">${n}</span>`).join('');
+document.body.appendChild(namesEl);
+function targetHtml() {
+  const e = sim.enemy;
+  if (!e) return '';
+  if (e.det === false && e.tSunk === null) return '';
   const locked = sight.lock && sight.lock.ship === e.idx;
   const aim = view === 'radar' ? (locked ? sight.lock.comp : sight.snap) : null;
   const hullF = clamp(e.hp / HULL_HP, 0, 1);
-  const foes = sim.ships.filter((o) => o.team === 1);
-  const which = foes.length > 1 ? ` ${foes.indexOf(e) + 1}/${foes.length}` : '';
   const b = bears(e);
   const hull = badge('hull', hullF, { tip: `Enemy hull · ${Math.round(e.hp)} · ${floodText(e)}`, cls: ' hull foe', marks: e.flood > 0.02 ? '<i class="leak">≈</i>' : '' });
   return hull + partBadges(e, false, aim)
-    + `<div class="pt-pill" title="Range and bearing of the enemy${which}">${kmText(sim.range())} · ${relName(sim.relBearing(sim.player))}${which}</div>`
     + (b === 'BEARS' ? '<div class="pt-pill hot" title="Her 76 mm bears on you">BEARS ON YOU</div>' : '');
 }
 
@@ -915,6 +930,8 @@ function setHud(on) {
   shipEl.hidden = !on;
   boardEl.hidden = !on;
   targetEl.hidden = !on;
+  namesEl.hidden = !on;
+  rangeEl.hidden = !on;
   hudButton.classList.toggle('active', on);
   hudButton.setAttribute('aria-pressed', String(on));
 }
@@ -1272,8 +1289,8 @@ radarEl.hidden = true;
 radarEl.innerHTML = '<div class="hr-marks"></div><div class="rc">'
   + '<div class="rc-main"><div class="rc-top"><b class="hr-mode">AUTO</b><span class="hr-brg"></span><b class="hr-zv"></b></div></div>'
   + '<div class="rc-gun"><div class="rc-dial"><svg class="rc-ring" viewBox="0 0 150 150" aria-label="Zoom"><circle class="rc-rtrack" r="70" cx="75" cy="75"/><circle class="rc-rfill" r="70" cx="75" cy="75"/><circle class="rc-hit" r="70" cx="75" cy="75"/><circle class="rc-rthumb" r="7"/></svg>'
-  + '<button type="button" class="rc-fire" data-act="fire"><svg class="fire-ico" viewBox="0 0 24 24" aria-hidden="true"><path class="burst" d="M12 1.5l2.1 5.2 4.9-2.9-1.9 5.4 5.4-.6-4.3 3.4 4.3 3.4-5.4-.6 1.9 5.4-4.9-2.9L12 22.5l-2.1-5.2-4.9 2.9 1.9-5.4-5.4.6L5.8 12 1.5 8.6l5.4.6L5 3.8l4.9 2.9z"/><circle cx="12" cy="12" r="2.6"/></svg><span>FIRE</span><kbd>F</kbd></button>'
-  + '<button type="button" class="rc-lock" data-act="lock" title="Lock the part under the sight, or let the lock go (Space)">LOCK</button></div></div></div>';
+  + '<button type="button" class="rc-fire" data-act="fire" title="Fire (hold F)" aria-label="Fire"><svg class="fire-ico" viewBox="0 0 24 34" aria-hidden="true"><path class="sh-body" d="M12 1.5c3.6 3.4 5.4 7.6 5.4 12.2V27H6.6V13.7C6.6 9.1 8.4 4.9 12 1.5z"/><path class="sh-band" d="M6.6 17.2h10.8v2.4H6.6zM6.6 21.4h10.8v1.2H6.6z"/><path class="sh-base" d="M5.4 27h13.2v3.6H5.4z"/><path class="sh-shine" d="M9.2 8.2c.6-1.5 1.5-2.8 2.5-3.8"/></svg><kbd>F</kbd></button>'
+  + '<button type="button" class="rc-lock" data-act="lock" title="Lock the part under the sight, or let the lock go (Space)" aria-label="Lock"></button></div></div></div>';
 document.body.appendChild(radarEl);
 const radarMode = radarEl.querySelector('.hr-mode');
 const radarBrg = radarEl.querySelector('.hr-brg');
@@ -1289,7 +1306,6 @@ let fireLatch = false; // a long press on FIRE keeps the gun firing until the bu
 function setFireLatch(on) {
   fireLatch = on;
   fireEl.classList.toggle('latched', on);
-  fireEl.querySelector('span').textContent = on ? 'FIRING' : 'FIRE';
   if (!on) input.fire = 0;
 }
 const ZOOM_SPAN = Math.log(80); // the zoom goal runs from 8 (wide) to 0.1 (close) along the track
@@ -1603,7 +1619,9 @@ function updateRadarUi() {
   radarMode.classList.toggle('manual', sight.manual && !sight.lock);
   radarMode.classList.toggle('locked', !!sight.lock);
   lockBtn.classList.toggle('on', !!sight.lock);
-  { const txt = sight.lock ? 'RELEASE' : 'LOCK'; if (lockBtn.dataset.txt !== txt) { lockBtn.dataset.txt = txt; lockBtn.innerHTML = `<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="2.2"/><path d="M6 .8v2.2M6 9v2.2M.8 6H3M9 6h2.2"/></svg>${txt}`; } }
+  { const st = sight.lock ? 'on' : 'off'; if (lockBtn.dataset.st !== st) { lockBtn.dataset.st = st; lockBtn.setAttribute('aria-label', sight.lock ? 'Release the lock' : 'Lock'); lockBtn.innerHTML = sight.lock
+    ? '<svg viewBox="0 0 16 12" aria-hidden="true"><g class="lk-spin"><circle cx="8" cy="6" r="4.6"/><path d="M8 .4v2M8 9.6v2M2.4 6h2M11.6 6h2"/></g><circle class="lk-dot" cx="8" cy="6" r="1.5"/></svg>'
+    : '<svg viewBox="0 0 16 12" aria-hidden="true"><circle cx="8" cy="6" r="3"/><path d="M8 .6v2.4M8 9v2.4M2.6 6H5M11 6h2.4"/><circle class="lk-dot" cx="8" cy="6" r="0.8"/></svg>'; } }
   const yaw = Math.atan2(sight.aim.z, sight.aim.x);
   const rel = Math.atan2(Math.sin(yaw - sim.player.psi), Math.cos(yaw - sim.player.psi));
   radarBrg.textContent = `${relName(rel)} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${camera.fov.toFixed(camera.fov < 3 ? 2 : 1)}°`;
@@ -2046,6 +2064,7 @@ renderer.setAnimationLoop((now) => {
     if (sh !== lastShip) { shipEl.innerHTML = sh; lastShip = sh; }
     const bh = boardHtml(); if (bh !== lastBoard) { boardEl.innerHTML = bh; lastBoard = bh; }
     const th = targetHtml(); if (th !== lastTarget) { targetEl.innerHTML = th; lastTarget = th; }
+    const rh = rangeHtml(); if (rh !== lastRange) { rangeEl.innerHTML = rh; lastRange = rh; }
   }
   if (mapOn) drawMap();
   updateTag();
