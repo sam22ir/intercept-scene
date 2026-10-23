@@ -596,7 +596,7 @@ function orbitCamera() {
 canvas.addEventListener('pointerdown', (e) => {
   if (view !== 'orbit') return;
   let x = e.clientX, y = e.clientY;
-  const move = (ev) => { orbitAz -= (ev.clientX - x) * 0.006; orbitEl = clamp(orbitEl + (ev.clientY - y) * 0.004, 0, 1.25); x = ev.clientX; y = ev.clientY; };
+  const move = (ev) => { orbitAz -= (ev.clientX - x) * 0.006; orbitEl = clamp(orbitEl - (ev.clientY - y) * 0.004, 0, 1.25); x = ev.clientX; y = ev.clientY; };
   const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
@@ -710,17 +710,30 @@ function updateHud() {
 const shipEl = document.createElement('div');
 shipEl.id = 'duel-ship';
 shipEl.className = 'duel-ship';
+// The two propellers stand outside the dome, one each side, and turn with the ship's speed (counter-rotating; backwards when she goes astern).
+const PROP_SVG = '<svg viewBox="-24 -24 48 48" aria-hidden="true"><circle r="22" class="pp-disc"/><g class="pp-rot">'
+  + [0, 120, 240].map((a) => `<path transform="rotate(${a})" d="M-2.6 -3 C-6.5 -10 -5 -17 0 -20.5 C5 -17 6.5 -10 2.6 -3 Z" class="pp-blade"/>`).join('')
+  + '</g><circle r="3.6" class="pp-hub"/></svg>';
+const propL = document.createElement('div'), propR = document.createElement('div'), domeHost = document.createElement('div');
+propL.className = propR.className = 'hs-prop';
+propL.innerHTML = propR.innerHTML = PROP_SVG;
+domeHost.className = 'hs-domehost';
+shipEl.append(propL, domeHost, propR);
 document.body.appendChild(shipEl);
+const propRotL = propL.querySelector('.pp-rot'), propRotR = propR.querySelector('.pp-rot');
+let propAng = 0;
+function spinProps(dt) {
+  const kn = sim.knots(sim.player);
+  propAng = (propAng + kn * 0.33 * dt) % (Math.PI * 2); // 38 kn: about two turns a second
+  const deg = (propAng * 180) / Math.PI;
+  propRotL.style.transform = `rotate(${-deg}deg)`; propRotR.style.transform = `rotate(${deg}deg)`;
+  const fast = Math.min(1, Math.abs(kn) / 20);
+  propL.style.setProperty('--blur', fast.toFixed(2)); propR.style.setProperty('--blur', fast.toFixed(2));
+}
 let lastShip = '';
 const DOME_R = 94;
 const DOME_K = 1.5;
 const COMP_ABBR = { gun: '76', bridge: 'BRG', engine: 'ENG', guns: '30', steering: 'STR' };
-// The two engines' telegraph levers: a column of seven notches each (slow astern up to flank), lit up to the ordered level.
-function tgBar(x, order) {
-  let r = '';
-  for (let i = 0; i < TELEGRAPH.length; i++) r += `<rect x="${x - 3}" y="${(97 - (i + 1) * 3.7).toFixed(1)}" width="6" height="2.8" rx="1" class="tg${i <= order ? (i === 0 ? ' astern' : ' on') : ''}${i === TELEGRAPH.length - 1 && i <= order ? ' flank' : ''}"/>`;
-  return r;
-}
 function domeSvg() {
   const p = sim.player;
   const h = sim.headingDeg(p);
@@ -744,7 +757,6 @@ function domeSvg() {
     + `<text x="${cx}" y="79" class="hd">${String(Math.round(h) % 360).padStart(3, '0')}°</text>`
     + `<path d="M${pl[0]},${pl[1]} A${RR},${RR} 0 0 1 ${pr[0]},${pr[1]}" class="rt"/>${fill}`
     + `<line x1="${p0[0]}" y1="${(Number(p0[1]) - 5).toFixed(1)}" x2="${p0[0]}" y2="${(Number(p0[1]) + 5).toFixed(1)}" class="rm"/>`
-    + tgBar(66, p.order) + tgBar(134, p.order)
     + `<text x="${cx}" y="94" class="sp">${sim.knots(p).toFixed(1)}<tspan> kn</tspan></text></svg>`;
 }
 function shipHtml() { // the strip is the dome alone (heading, rudder, speed), centred: the parts are on the board, the guns in the key bar and the sight
@@ -2109,7 +2121,8 @@ renderer.setAnimationLoop((now) => {
     updateFriendBtn(); updateRepairBtn();
     updateHeliButtons();
     const sh = shipHtml();
-    if (sh !== lastShip) { shipEl.innerHTML = sh; lastShip = sh; }
+    if (sh !== lastShip) { domeHost.innerHTML = sh; lastShip = sh; }
+    spinProps(dt);
     const bh = boardHtml(); if (bh !== lastBoard) { boardEl.innerHTML = bh; lastBoard = bh; }
     const th = targetHtml(); if (th !== lastTarget) { targetEl.innerHTML = th; lastTarget = th; }
     const rh = rangeHtml(); if (rh !== lastRange) { rangeEl.innerHTML = rh; lastRange = rh; }
