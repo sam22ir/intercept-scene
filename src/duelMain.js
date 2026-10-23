@@ -717,8 +717,8 @@ shipEl.id = 'duel-ship';
 shipEl.className = 'duel-ship';
 // The two propellers stand outside the dome, one each side, and turn with the ship's speed (counter-rotating; backwards when she goes astern).
 const PROP_SVG = '<svg viewBox="-24 -24 48 48" aria-hidden="true"><defs><radialGradient id="pp-brass" cx="0" cy="-11" r="13" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f3dc92"/><stop offset="0.6" stop-color="#d6b25c"/><stop offset="1" stop-color="#a9843a"/></radialGradient></defs><circle r="22" class="pp-disc"/><g class="pp-rot">'
-  + [0, 72, 144, 216, 288].map((a) => `<path transform="rotate(${a})" d="M-2.2 -3 C-9.5 -7 -9 -17 -1.5 -21 C4.5 -20 7.5 -13 3.2 -3.2 Z" class="pp-blade"/>`).join('')
-  + '</g><circle r="4.6" class="pp-hubring"/><circle r="2.8" class="pp-hub"/></svg>';
+  + [0, 120, 240].map((a) => `<path transform="rotate(${a})" d="M-1.6 -7 C-6.5 -10.5 -7 -18 -2.5 -21.5 C2 -23.5 8 -21.5 8.6 -17.8 C6.2 -13 3.4 -9 1.8 -7 Z" class="pp-blade"/>`).join('')
+  + '</g><circle r="5.2" class="pp-hubring"/><circle r="3" class="pp-hub"/></svg>';
 const propL = document.createElement('div'), propR = document.createElement('div'), domeHost = document.createElement('div');
 propL.className = propR.className = 'hs-prop';
 propL.innerHTML = propR.innerHTML = PROP_SVG;
