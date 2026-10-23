@@ -66,11 +66,10 @@ let lookPitch = -0.03;
 const _a = new THREE.Vector3();
 const _vel = new THREE.Vector3();
 wireWeather({ look: env.look });
-// No fog: the haze starts only at the far edge of the sea plane (30 km), so ships and islands keep their colour to the horizon.
-env.ocean.material.uniforms.uFogNear.value = 24000;
-env.ocean.material.uniforms.uFogFar.value = 31000;
-scene.fog.near = 24000;
-scene.fog.far = 31000;
+// Fog only far out: everything inside fighting range (8 km) stays crisp, and the sea blends into the horizon colour before the edge of the
+// sea plane (32 km), so it meets the sky without a seam (with none at all the far water showed as a pale band under the islands).
+env.ocean.material.uniforms.uFogNear.value = scene.fog.near = 9000;
+env.ocean.material.uniforms.uFogFar.value = scene.fog.far = 32000;
 
 // --- The state of the sea (a slider in the menu, kept between visits, applied at once) ---------------------------------------------
 // 0 is a flat calm and 100 is very high waves. The waves' steepness and the whitecaps follow the slider, and so does how much the ships
