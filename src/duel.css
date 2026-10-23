@@ -517,3 +517,16 @@ body.duel-cine .duel-pts { opacity: 0; }
 body.mission-duel #fly-keys { flex-wrap: nowrap; overflow: hidden; max-width: calc(100vw - 430px); padding: 4px 12px; gap: 4px 12px; font-size: 10.5px; }
 @media (max-width: 760px) { body.mission-duel #fly-keys { display: none; } }
 @media (max-height: 680px) { .pt { width: 34px; height: 34px; } .pt.hull { width: 38px; height: 38px; } .duel-pts { gap: 5px; } .pt-pill { font-size: 9.5px; padding: 3px 7px; } }
+
+/* The support buttons sit in a row at the bottom centre, under the FIRE button (and under the dome strip in the other views). */
+.duel-actions { right: auto; left: 50%; transform: translateX(-50%); flex-direction: row; align-items: center; gap: 12px; bottom: calc(var(--gap, 14px) + var(--safe-b, 0px)); }
+.duel-friend .sp-txt { right: auto; left: 50%; top: auto; bottom: calc(100% + 10px); transform: translateX(-50%); text-align: center; }
+@media (min-width: 901px) {
+  .duel-ship { bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) + 62px); }
+  .duel-radar .rc { bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) + 62px); }
+}
+@media (max-width: 900px) { .duel-ship { bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) + 62px); } .duel-radar .rc { bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) + 62px); } }
+/* The FIRE button is the centre of the console, over the support buttons; the aim readout sits to its left. */
+.duel-radar .rc { position: absolute; }
+.duel-radar .rc .rc-main { position: absolute; right: calc(100% + 14px); bottom: 0; }
+.duel-radar .rc .rc-main { display: none; }
