@@ -69,6 +69,14 @@ const _vel = new THREE.Vector3();
 wireWeather({ look: env.look });
 // Fog only far out: everything inside fighting range (8 km) stays crisp, and the sea blends into the horizon colour before the edge of the
 // sea plane (32 km), so it meets the sky without a seam (with none at all the far water showed as a pale band under the islands).
+// The weather's cloud banks and squalls are upright cards standing on the sea: seen from high up they show a hard line across the water. They
+// fade out as the camera climbs (below 150 m nothing changes; from 450 m up they are gone).
+const weatherCards = [];
+scene.traverse((o) => { if (o.isSprite && o.scale.x > 3000 && o.userData.opacity !== undefined) weatherCards.push(o); });
+function fadeWeatherCards() {
+  const k = clamp(1 - (camera.position.y - 150) / 300, 0, 1);
+  for (const o of weatherCards) { o.material.opacity = o.userData.opacity * k; o.visible = k > 0.01; }
+}
 env.ocean.material.uniforms.uFogNear.value = scene.fog.near = 9000;
 env.ocean.material.uniforms.uFogFar.value = scene.fog.far = 32000;
 
@@ -570,7 +578,7 @@ function setView(v) {
 // The orbit view: a level camera (the horizon sits in the middle of the screen) at the side of the line between the two ships, far enough back
 // that both stand in the gap between the readouts. A drag swings it round them, the wheel moves it in and out; it follows both. With no
 // enemy in sight it frames your ship alone.
-// The orbit view, in one line: drag sideways to swing round the ships, drag up to rise (down to sink back), wheel to move in and out, double click to
+// The orbit view, in one line: drag right to swing the camera to the right round the ships, drag down to rise (up to sink back), wheel to move in and out, double click to
 // start again. The view is tilted down a little so the horizon stands 70 % of the way up the screen (at its default height).
 const ORBIT_TILT = Math.atan(0.4 * Math.tan(rad(25)));
 let orbitDrag = false;
@@ -606,7 +614,7 @@ canvas.addEventListener('pointerdown', (e) => {
   if (view !== 'orbit' || e.button !== 0) return;
   let x = e.clientX, y = e.clientY;
   orbitDrag = true;
-  const move = (ev) => { orbitAz -= (ev.clientX - x) * 0.006; orbitEl = clamp(orbitEl - (ev.clientY - y) * 0.004, 0, 1.4); x = ev.clientX; y = ev.clientY; };
+  const move = (ev) => { orbitAz += (ev.clientX - x) * 0.006; orbitEl = clamp(orbitEl + (ev.clientY - y) * 0.004, 0, 1.4); x = ev.clientX; y = ev.clientY; };
   const up = () => { orbitDrag = false; window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
@@ -2136,6 +2144,7 @@ renderer.setAnimationLoop((now) => {
   updateStrikeHeli();
   updateLandHidden();
   updateCamera();
+  fadeWeatherCards();
   setCamHint();
   updateHostileFx(dt);
   env.follow(camera.position);
