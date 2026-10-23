@@ -149,6 +149,7 @@ const START_RANGE = 3200; // m between the two frigates at the start
 export const HELI_RADAR = 7500; // m: how far the helicopter's radar sees (from the ship), over the islands
 export const HELI_ROUNDS = 2; // missiles the helicopter carries (a landing on a deck rearms it)
 export const HELI_MISSILE_FRACTION = 0.5; // of the struck compartment's points
+const FIRED_SEEN = 20; // s an enemy stays on your radar after her 76 mm fires, whatever is in the way
 const HELI_ALT = 95, HELI_SPEED = 60, HELI_ORBIT = 280, HELI_GUN_RANGE = 800, HELI_MISSILE_COOL = 8, HELI_MISSILE_SPEED = 280;
 const ARRIVE_RANGE = 4800; // m from you where a warship appears
 
@@ -240,10 +241,11 @@ function makeShip(idx, x, z, psi, team = idx === 0 ? 0 : 1, kind = 'frigate') {
 
 export class DuelSim {
   // `level` is the enemy's; `auto` ('easy' | 'normal' | 'hard') hands the player's ship to the same kind of helmsman (tests).
-  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, helmPlayer = false, scouting = false, intro = false, playerReload = 1, playerDamage = 1, easyGunSafe = false } = {}) {
+  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, helmPlayer = false, scouting = false, intro = false, playerReload = 1, playerDamage = 1, easyGunSafe = false, firingReveals = false } = {}) {
     this.seed = seed;
     this.playerReload = playerReload; // how long the player's 76 mm takes to reload, as a part of MAIN_RELOAD (the scene makes it 0.5)
     this.playerDamage = playerDamage; // what the player's 76 mm shells do to a hostile ship, times the usual (the scene makes it 2)
+    this.firingReveals = !!firingReveals; // an enemy whose 76 mm fires shows on your radar for FIRED_SEEN s, whatever is in the way (the scene turns it on)
     this.easyGunSafe = !!easyGunSafe; // on Easy your own 76 mm can never be damaged, set on fire or flooded (the scene turns it on)
     // The opening (the scene turns it on): the radar is off until startRadar(), so no enemy is known, and no ship but yours fires until you have
     // fired your first shot (the event 'firstshot'): the first shot is always the player's.
@@ -486,19 +488,20 @@ export class DuelSim {
           h.x += (px - h.x) * k; h.z += (pz - h.z) * k;
           h.y += clamp(HELI_ALT - h.y, -5 * dt, 5 * dt);
           h.yaw = h.theta + Math.PI / 2; h.speed = 46; h.pitch = -0.06; h.roll = 0.32;
-          // its gun, and (avenging) a missile as soon as one is ready
-          if (h.gCool <= 0 && Math.hypot(tgt.x - h.x, tgt.z - h.z) <= HELI_GUN_RANGE) {
-            h.gCool = 0.8;
-            const live = COMP_IDS.filter((id) => tgt.comp[id] > 0);
-            const id = live.length ? live[Math.floor(this.rngH() * live.length)] : 'gun';
-            this.damage(tgt, id, 0.6, SHELL_HULL, 0);
-            this.events.push({ type: 'hgun', pos: [h.x, h.y - 1, h.z], to: [tgt.x + (this.rngH() - 0.5) * 30, 6, tgt.z + (this.rngH() - 0.5) * 30] });
-          }
+          // (avenging) a missile as soon as one is ready
           if (h.avenge && h.mCool <= 0) {
             const id = ['gun', 'engine', 'bridge', 'guns', 'steering'].find((c) => tgt.comp[c] > 0) ?? 'engine';
             this.launchHeliMissile(tgt, id);
             h.mCool = 5;
           }
+        }
+        // its gun, by itself, as soon as she is in its reach (on the way in as well as circling her)
+        if (h.gCool <= 0 && Math.hypot(tgt.x - h.x, tgt.z - h.z) <= HELI_GUN_RANGE) {
+          h.gCool = 0.8;
+          const live = COMP_IDS.filter((id) => tgt.comp[id] > 0);
+          const id = live.length ? live[Math.floor(this.rngH() * live.length)] : 'gun';
+          this.damage(tgt, id, 0.6, SHELL_HULL, 0);
+          this.events.push({ type: 'hgun', pos: [h.x, h.y - 1, h.z], to: [tgt.x + (this.rngH() - 0.5) * 30, 6, tgt.z + (this.rngH() - 0.5) * 30] });
         }
         this.heliReports(dt, tgt);
         break;
@@ -596,7 +599,8 @@ export class DuelSim {
       if (o.team !== 1 || o.tSunk !== null) continue;
       if (o.det === undefined) o.det = false;
       const d = this.distance(me, o);
-      const seen = (d <= R && !this.blocked(me.x, me.z, o.x, o.z)) || (up && Math.hypot(o.x - this.hop.x, o.z - this.hop.z) <= HELI_RADAR);
+      const fired = this.firingReveals && o.firedAt !== undefined && this.t - o.firedAt < FIRED_SEEN; // a ship firing gives herself away (flash, fire-control radar)
+      const seen = (d <= R && !this.blocked(me.x, me.z, o.x, o.z)) || (up && Math.hypot(o.x - this.hop.x, o.z - this.hop.z) <= HELI_RADAR) || fired;
       if (seen) {
         o.unseen = 0;
         if (!o.det) { o.det = true; this.events.push({ type: 'contact', ship: o.idx, range: d, rel: wrapPi(Math.atan2(o.z - me.z, o.x - me.x) - me.psi), heli: up && d > R }); }
@@ -1017,6 +1021,7 @@ export class DuelSim {
   fireMain(s) {
     const g = s.gun;
     g.cool = this.reloadTime(s);
+    s.firedAt = this.t; // her gun gives her away (see updateContacts)
     this.noteShot(s);
     g.stock[g.type] -= 1;
     g.ammo = g.stock.he + g.stock.ap;

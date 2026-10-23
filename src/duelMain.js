@@ -104,7 +104,7 @@ const clamp = THREE.MathUtils.clamp;
 let level = 'normal';
 try { level = globalThis.__DUEL_LEVEL ?? new URLSearchParams(location.search).get('level') ?? 'normal'; } catch { /* no address */ }
 if (!DUEL_LEVELS.includes(level)) level = 'normal';
-const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, helmPlayer: true, scouting: true, intro: true, playerReload: 0.5, playerDamage: 2, easyGunSafe: true });
+const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, helmPlayer: true, scouting: true, intro: true, playerReload: 0.5, playerDamage: 2, easyGunSafe: true, firingReveals: true });
 seaHook = () => { const i = env.seaInfo(); if (i) sim.setSea(i.hs, i.dir); };
 seaHook();
 
@@ -358,7 +358,7 @@ const banner = document.querySelector('#shot-caption');
 banner.classList.add('call');
 let bannerUntil = 0;
 // An alert sound goes only with its text on the banner, and only where a call asks for one (`sound`: 'alarm' for bad news about your ship,
-// 'ping' for a contact or news, 'radio' for the helicopter, which is also spoken). The audio throttles them (duelAudio.js `cue`).
+// 'ping' for a contact or news). The audio throttles them (duelAudio.js `cue`). The helicopter's radio reports are not shown or heard.
 let cueSound = null; // set once the audio exists
 function say(text, tone = '', ms = 3200, sound = null) {
   if (sound && cueSound) cueSound(sound, text);
@@ -393,7 +393,6 @@ function record(e) {
   else if (e.type === 'out') add(e.ship === 0 ? 'bad' : 'ok', `${sideOf(e.ship)} ${COMPARTMENTS[e.comp].name.toLowerCase()} out`);
   else if (e.type === 'fire' && (e.ship === 0 || sim.ships[e.ship]?.team === 1)) add(e.ship === 0 ? 'bad' : 'ok', `Fire in ${e.ship === 0 ? 'your' : 'her'} ${COMPARTMENTS[e.comp].name.toLowerCase()}`);
   else if (e.type === 'sunk') add(e.ship === 0 ? 'bad' : 'ok', `${shipLabel(e.ship)} sunk`);
-  else if (e.type === 'radio') add('', `Helicopter: ${e.text}`);
   else if (e.type === 'ground' && e.ship === 0) add('bad', 'You ran aground');
   else if (e.type === 'collision' && (e.a === 0 || e.b === 0)) add('bad', `Collision at ${e.impact.toFixed(0)} m/s`);
 }
@@ -419,6 +418,24 @@ function killCamera() {
   setFov(42);
   return true;
 }
+// After an enemy goes down (and her kill-cam), the next one: the living enemy your sight now has (or the nearest), once the radar has her.
+let nextEnemyPending = false;
+function nextEnemyStep() {
+  if (!nextEnemyPending || KILL.on || INTRO.phase !== 'off' || sim.winner !== null) return;
+  const live = sim.ships.filter((o) => o.team === 1 && o.tSunk === null && o.det !== false);
+  if (!live.length) return; // wait: the next one may still be over the horizon
+  nextEnemyPending = false;
+  const next = live.includes(sim.enemy) ? sim.enemy : live.reduce((a, b) => (sim.distance(sim.player, a) < sim.distance(sim.player, b) ? a : b));
+  sim.setTarget(0, next.idx);
+  if (next.stats.shells > 0) { // she is already firing: no question, straight into the sight, the gun firing
+    setView('radar');
+    setFireLatch(true);
+    say(`Enemy ${relName(sim.relBearing(sim.player))} is firing on you: engaging (F stops)`, 'bad', 3600, 'alarm');
+  } else {
+    INTRO.again = true;
+    toAsk('Another hostile');
+  }
+}
 const eventHooks = []; // the audio listens here
 function handleEvents() {
   for (const e of sim.takeEvents()) {
@@ -435,9 +452,15 @@ function handleEvents() {
       say(`Contact: enemy ${relName(e.rel)}, ${kmText(e.range)}${e.heli ? ' (the helicopter has her)' : ''}`, 'warn', 3600, 'ping');
     } else if (e.type === 'lost') {
       say('Contact lost', '', 2400);
-    } else if (e.type === 'radio') {
-      say(`Helicopter: ${e.text}`, 'ok', 4600, 'radio');
     } else if (e.type === 'hgun') {
+      for (let n = 0; n < 3; n++) { // tracers down to her
+        const tr = tracers[tracerNext++ % tracers.length];
+        tr.p.set(...e.pos);
+        tr.v.set(e.to[0] - e.pos[0], e.to[1] - e.pos[1], e.to[2] - e.pos[2]).normalize().multiplyScalar(1050);
+        tr.v.x += (Math.random() - 0.5) * 12; tr.v.y += (Math.random() - 0.5) * 12; tr.v.z += (Math.random() - 0.5) * 12;
+        tr.t0 = sim.t - n * 0.05;
+        tr.on = true;
+      }
       _c.set(...e.pos);
       for (let k = 0; k < 2; k++) fx.gunSmoke(_c, _b.set(0, 0, 0), sim.t);
       if ((hgunCount++ % 3) === 0) fx.shellBurst(_c.set(...e.to), sim.t);
@@ -458,7 +481,11 @@ function handleEvents() {
       } else if (e.owner === 0) say(`Hit on her ${COMPARTMENTS[e.comp].name.toLowerCase()}${e.out ? ': out' : ''}`, 'ok', 2200);
     } else if (e.type === 'arrive') {
       const where = relName(e.rel);
-      if (e.kind === 'enemy') say(`Another enemy frigate ${where}, ${kmText(e.range)}`, 'warn', 4200, 'alarm');
+      if (e.kind === 'enemy') {
+        const live = sim.ships.filter((o) => o.team === 1 && o.tSunk === null).length;
+        const help = live > 1 ? sim.callFriend() : { ok: false };
+        say(`Another enemy frigate ${where}, ${kmText(e.range)}${help.ok ? ': a friendly frigate is coming to help' : ''}`, 'warn', 4200, 'alarm');
+      }
       else if (e.kind === 'ally') say(`Friendly frigate ${where}, ${kmText(e.range)}: coming to help`, 'ok', 4200, 'ping');
       else say(`Merchant ship crossing ${where}: do not fire on her`, '', 4200, 'ping');
     } else if (e.type === 'collision') {
@@ -476,6 +503,7 @@ function handleEvents() {
       const moved = e.ship !== 0 ? sightPastOut(e.ship, e.comp) : null;
       say(`${who(e.ship)} ${COMPARTMENTS[e.comp].name.toLowerCase()} is out${moved ? `: sight on her ${COMPARTMENTS[moved].name.toLowerCase()}` : ''}`, e.ship === 0 ? 'bad' : 'ok', 3000, e.ship === 0 ? 'alarm' : 'ping');
     } else if (e.type === 'sunk') {
+      if (sim.ships[e.ship]?.team === 1) nextEnemyPending = true;
       startKill(e.ship);
       for (let k = 0; k < 3; k++) fx.explosion(_c.set(e.pos[0] + (k - 1) * 14, e.pos[1], e.pos[2]), sim.t + k * 0.35);
     } else if (e.type === 'ammo') {
@@ -526,10 +554,20 @@ function setView(v) {
   document.body.classList.toggle('duel-radarview', v === 'radar');
   map.sight = null;
   controls.enabled = v === 'orbit';
-  if (v === 'orbit') rig.focus('ship', (out) => out.set(sim.player.x, 8, sim.player.z), 230, 25);
+  if (v === 'orbit') orbitOnBoth();
   else rig.free();
   camera.up.set(0, 1, 0);
   viewButtons.forEach((b) => { const on = b.dataset.view === v; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
+}
+// The orbit view: the camera behind and off to one side of your ship and above her, so the enemy shows past her; it orbits the point a
+// third of the way from you to her (it follows both). With no enemy in sight it orbits your ship.
+function orbitOnBoth() {
+  const p = sim.player, e = sim.enemy;
+  if (!e || e.tSunk !== null || e.det === false) { rig.focus('ship', (out) => out.set(p.x, 8, p.z), 230, 25); return; }
+  const dx = p.x - e.x, dz = p.z - e.z, r = Math.hypot(dx, dz) || 1, ux = dx / r, uz = dz / r;
+  const dist = clamp(r * 0.55, 260, 1800);
+  camera.position.set(p.x + ux * dist * 0.75 - uz * dist * 0.5, dist * 0.32, p.z + uz * dist * 0.75 + ux * dist * 0.5);
+  rig.focus('both', (out) => { const f = sim.enemy && sim.enemy.tSunk === null ? sim.enemy : sim.player; return out.set(lerp(sim.player.x, f.x, 0.33), 8, lerp(sim.player.z, f.z, 0.33)); }, dist, 25);
 }
 let frameDt = 1 / 60;
 let behindHead = 0, behindT = 0, behindOn = false; // the behind camera's own heading, which trails the ship's
@@ -892,8 +930,8 @@ const input = { left: 0, right: 0, fire: 0, gat: 0, aim: null };
 const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`;
 function keysHtml() {
   if (view === 'radar') {
-    return `${k('← → ↑ ↓', 'aim the sight')}${k('Shift Ctrl', 'zoom in / out')}${k('click', 'lock a compartment')}${k('Space', 'lock / release', !!sight.lock)}${k('Enter', 'fire 76 mm (hold)', input.fire)}`
-      + `${k('Tab', 'next target')}${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Esc', 'helm')}`;
+    return `${k('← → ↑ ↓', 'aim')}${k('Shift Ctrl', 'zoom')}${k('click · Space', 'lock a part', !!sight.lock)}${k('F · Enter', fireLatch ? 'firing: F stops' : 'fire (hold)', input.fire || fireLatch)}`
+      + `${k('Tab', 'next target')}${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('B', sim.heliUp ? 'heli: land' : 'heli: go', sim.heliUp)}${k('M', 'heli missile')}${k('K', 'friend')}${k('Esc', 'helm')}`;
   }
   return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', `thrust ${TELEGRAPH[sim.player.order].name}`)}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}${k('Tab', 'target')}`
     + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}${k('E', 'repair', sim.player.fix[COMP_IDS[selComp]].left > 0)}${k('B', sim.heliUp ? 'heli: land' : 'heli: go', sim.heliUp)}${k('M', `heli missile ${sim.hop?.ammo ?? 0}`)}`
@@ -951,6 +989,7 @@ function restart() {
   banner.hidden = true;
   LOG.length = 0;
   endKill();
+  nextEnemyPending = false;
   alarmEl.classList.remove('hit');
   if (view === 'radar') setView(viewBeforeRadar);
   input.aim = null;
@@ -1513,18 +1552,19 @@ function startIntro() {
 }
 function endIntro() {
   INTRO.phase = 'off';
+  INTRO.again = false;
   introEl.hidden = true; calloutEl.hidden = true;
   document.body.classList.remove('duel-cine');
   input.fire = 0;
 }
-function toAsk() {
+function toAsk(tag = 'Hostile contact') {
   const e = sim.enemy;
   calloutEl.hidden = true;
   document.body.classList.remove('duel-cine');
   if (!e || e.det === false || e.tSunk !== null) { endIntro(); say('No contact on the radar: find her', 'warn', 3600); return; }
   INTRO.phase = 'ask';
   banner.hidden = true;
-  introEl.innerHTML = '<div class="dz-stripe"></div><p class="dz-tag">⚠ Hostile contact</p><h2>Enemy frigate</h2>'
+  introEl.innerHTML = `<div class="dz-stripe"></div><p class="dz-tag">⚠ ${tag}</p><h2>Enemy frigate</h2>`
     + `<p class="dz-data"><span>${relName(sim.relBearing(sim.player))}</span><span>${kmText(sim.range())}</span><span>hull ${Math.round(e.hp)}</span><span>${LEVELS[sim.level].name}</span></p>`
     + '<div class="dz-btns"><button type="button" data-go>Engage<small>Enter</small></button><button type="button" data-no>Hold fire<small>Esc</small></button></div><div class="dz-stripe"></div>';
   introEl.hidden = false;
@@ -1553,7 +1593,7 @@ function tourSeg(t) {
 function introStep(dt) {
   if (INTRO.phase === 'off') return;
   INTRO.t += dt;
-  if (sim.shotFired && ['scan', 'tour', 'ask'].includes(INTRO.phase)) { endIntro(); return; } // you fired first yourself
+  if (sim.shotFired && !INTRO.again && ['scan', 'tour', 'ask'].includes(INTRO.phase)) { endIntro(); return; } // you fired first yourself
   if (INTRO.phase === 'scan') {
     if (INTRO.t > 2.4 && !sim.radarOn) sim.startRadar();
     if (INTRO.t > CONTACT_AT && !document.body.classList.contains('duel-cine')) { // she is found: the bars come in, the reticle closes on her
@@ -1776,6 +1816,7 @@ renderer.setAnimationLoop((now) => {
   frameDt = dt;
   syncShips();
   introStep(dt);
+  nextEnemyStep();
   if (KILL.on && (KILL.t += dt) > KILL.dur) endKill();
   if (fireLatch) input.fire = 1;
   updateAim();

@@ -416,3 +416,8 @@ body.duel-radarview .duel-ship { display: none; }
 .duel-friend.duel-miss { border-color: rgba(255, 93, 97, 0.45); border-left-color: #ff5d61; color: #ff8a8d; } .duel-miss .sp-ico { background: rgba(255, 93, 97, 0.16); } .duel-miss .sp-txt b { color: #fff; }
 @media (max-width: 900px) { .duel-actions { width: 200px; } .duel-friend .sp-txt small { display: none; } }
 .duel-ship .hs-latch { color: #ff7a7d; animation: rc-pulse 0.8s ease-in-out infinite; }
+/* The key bar wraps onto a second row rather than losing keys off its ends; the banner keeps below it. */
+@media (min-width: 901px) {
+  body.mission-duel .fly-keys { flex-wrap: wrap; justify-content: center; overflow: visible; max-width: min(1100px, calc(100vw - 560px)); }
+  body.mission-duel .shot-caption { top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 66px + var(--keys-h, 30px)); }
+}
