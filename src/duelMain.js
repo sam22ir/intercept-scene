@@ -1255,7 +1255,7 @@ radarEl.hidden = true;
 radarEl.innerHTML = '<div class="hr-marks"></div><div class="rc">'
   + '<div class="rc-main"><div class="rc-top"><b class="hr-mode">AUTO</b><span class="hr-brg"></span><b class="hr-zv"></b></div></div>'
   + '<div class="rc-gun"><div class="rc-dial"><svg class="rc-ring" viewBox="0 0 150 150" aria-label="Zoom"><circle class="rc-rtrack" r="70" cx="75" cy="75"/><circle class="rc-rfill" r="70" cx="75" cy="75"/><circle class="rc-hit" r="70" cx="75" cy="75"/><circle class="rc-rthumb" r="7"/></svg>'
-  + '<button type="button" class="rc-fire" data-act="fire"><span>FIRE</span><small class="rc-am"></small><kbd>F</kbd></button>'
+  + '<button type="button" class="rc-fire" data-act="fire"><span>FIRE</span><kbd>F</kbd></button>'
   + '<button type="button" class="rc-lock" data-act="lock" title="Lock the part under the sight, or let the lock go (Space)">⌖ Lock</button></div></div></div>';
 document.body.appendChild(radarEl);
 const radarMode = radarEl.querySelector('.hr-mode');
@@ -1275,7 +1275,6 @@ function setFireLatch(on) {
   fireEl.querySelector('span').textContent = on ? 'FIRING' : 'FIRE';
   if (!on) input.fire = 0;
 }
-const ammoEl = radarEl.querySelector('.rc-am');
 const ZOOM_SPAN = Math.log(80); // the zoom goal runs from 8 (wide) to 0.1 (close) along the track
 const zoomFrac = () => 1 - Math.log(sightZoomGoal / 0.1) / ZOOM_SPAN;
 const radarStick = { x: 0, y: 0 }; // (the on-screen aim stick was removed: always 0; arrows and a drag aim the sight)
@@ -1603,7 +1602,6 @@ function updateRadarUi() {
   fireEl.classList.toggle('weak', !sight.lock && !sight.warn);
   fireEl.classList.toggle('sea', !sight.lock && !sight.snap && !sight.warn);
   fireEl.classList.toggle('hold', !!sight.warn || sim.player.comp.gun <= 0 || gn.landBlocked);
-  ammoEl.textContent = `${gn.stock.he + gn.stock.ap} rds`;
   const g = sim.player.gun;
   const foes = sim.ships.filter((o) => o.team === 1);
   const which = foes.length > 1 ? ` ${foes.indexOf(sim.enemy) + 1}/${foes.length}` : '';
