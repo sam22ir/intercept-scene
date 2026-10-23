@@ -552,6 +552,7 @@ function setView(v) {
   sightEl.hidden = v !== 'radar';
   if (ships[0]) ships[0].mainGun.group.visible = v !== 'radar'; // its barrel, trained on her, stood as a white bar up the middle of the sight
   document.body.classList.toggle('duel-radarview', v === 'radar');
+  try { flashKeys(); } catch { /* the key bar is built after the first view is set */ }
   map.sight = null;
   controls.enabled = false;
   if (v === 'orbit') orbitOnBoth();
@@ -891,7 +892,14 @@ restartButton.addEventListener('click', () => restart());
 
 const strip = document.createElement('div');
 strip.className = 'duel-views';
-strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (${i + 1})">${VIEW_LABELS[i]}</button>`).join('');
+const VIEW_ICONS = {
+  behind: '<path d="M3 16h18l-3 4H6z"/><path d="M12 4v9M8 9h8"/>',
+  bridge: '<rect x="3" y="6" width="18" height="10" rx="2"/><path d="M3 11h18M12 6v10M8 20h8"/>',
+  above: '<circle cx="12" cy="12" r="6"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>',
+  orbit: '<ellipse cx="12" cy="12" rx="9" ry="4.5" transform="rotate(-25 12 12)"/><circle cx="12" cy="12" r="2"/>',
+  radar: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/>',
+};
+strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (${i + 1})" aria-label="${VIEW_LABELS[i]}"><svg viewBox="0 0 24 24">${VIEW_ICONS[v]}</svg><span>${VIEW_LABELS[i]}</span></button>`).join('');
 document.body.appendChild(strip);
 viewButtons.push(...strip.querySelectorAll('button'));
 viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
@@ -974,6 +982,10 @@ const keysEl = document.createElement('div');
 keysEl.id = 'fly-keys';
 keysEl.className = 'fly-keys';
 document.body.appendChild(keysEl);
+let keysTimer = 0;
+// The key bar is out of the way: it shows for a few seconds when the view changes, then fades.
+function flashKeys(ms = 6000) { keysEl.classList.add('show'); clearTimeout(keysTimer); keysTimer = setTimeout(() => keysEl.classList.remove('show'), ms); }
+flashKeys(9000); // and at the start
 const input = { left: 0, right: 0, fire: 0, gat: 0, aim: null };
 const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`;
 function keysHtml() {

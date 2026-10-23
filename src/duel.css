@@ -457,3 +457,30 @@ body.mission-duel #menu button[aria-pressed]::after { content: 'OFF'; order: 3; 
 body.mission-duel #menu button[aria-pressed="true"]::after { content: 'ON'; color: #3ddc84; opacity: 1; }
 body.mission-duel #menu button kbd { margin-left: auto; }
 body.mission-duel #menu #btn-fullscreen { display: flex; }
+
+/* Out of the way: the views sit beside the gear in the top-left corner, the key bar shows only for a moment, the support buttons are a rail of
+   small round buttons at the bottom-right (a hover or a focus opens the label), so the top centre and the middle stay clear. */
+.duel-views { left: calc(var(--gap) + var(--safe-l) + 52px); top: calc(var(--gap) + var(--safe-t) + 4px); transform: none; gap: 2px; padding: 3px; }
+.duel-views button { display: inline-flex; align-items: center; gap: 6px; padding: 0; min-width: 32px; height: 32px; justify-content: center; color: var(--muted); }
+.duel-views button svg { width: 17px; height: 17px; }
+.duel-views button span { display: none; font-size: 12px; }
+.duel-views button.active { padding: 0 11px 0 9px; color: #1a0d02; }
+.duel-views button.active svg { stroke: #1a0d02; }
+.duel-views button.active span { display: inline; }
+.duel-views button:not(.active):hover { background: rgba(255, 255, 255, 0.1); color: var(--text); }
+@media (max-width: 900px) { .duel-views { top: calc(var(--gap) + var(--safe-t) + 4px); bottom: auto; } .duel-views button { padding: 0; } .duel-views button.active { padding: 0 9px 0 7px; } }
+body.mission-duel #fly-keys { top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 6px); left: 50%; transform: translateX(-50%); max-width: calc(100vw - 460px); opacity: 0; transition: opacity 0.5s; }
+body.mission-duel #fly-keys.show { opacity: 1; }
+body.mission-duel .shot-caption { top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 56px); }
+
+.duel-actions { width: auto; gap: 8px; align-items: flex-end; }
+.duel-friend { width: 46px; height: 46px; padding: 0; display: grid; grid-template-columns: none; place-items: center; border-radius: 50%; border-left-width: 1px; overflow: visible; }
+.duel-friend .sp-ico { width: 46px; height: 46px; border-radius: 50%; background: none; font-size: 19px; }
+.duel-friend kbd { position: absolute; right: -3px; top: -4px; padding: 1px 5px; font-size: 9px; background: rgba(8, 13, 20, 0.92); }
+.duel-friend .sp-txt { position: absolute; right: calc(100% + 10px); top: 50%; transform: translateY(-50%); padding: 6px 10px; border-radius: 9px; background: rgba(8, 13, 20, 0.92); border: 1px solid rgba(255, 255, 255, 0.14); white-space: nowrap; text-align: right; opacity: 0; pointer-events: none; transition: opacity 0.15s; z-index: 2; }
+.duel-friend:hover .sp-txt, .duel-friend:focus-visible .sp-txt { opacity: 1; }
+.duel-friend .sp-txt small { display: block; }
+.duel-friend .sp-wait { left: 8px; right: 8px; bottom: -6px; height: 3px; border-radius: 2px; max-width: calc(100% - 16px); }
+.duel-friend:not(:disabled) { box-shadow: 0 0 0 2px rgba(53, 200, 255, 0.18), 0 6px 18px rgba(0, 0, 0, 0.35); }
+.duel-friend.duel-heli:not(:disabled) { box-shadow: 0 0 0 2px rgba(242, 201, 76, 0.2), 0 6px 18px rgba(0, 0, 0, 0.35); }
+.duel-friend.duel-miss:not(:disabled) { box-shadow: 0 0 0 2px rgba(255, 93, 97, 0.22), 0 6px 18px rgba(0, 0, 0, 0.35); }
