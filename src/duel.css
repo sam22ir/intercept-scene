@@ -50,6 +50,9 @@ body.mission-duel .hud { max-height: calc(100vh - 2 * var(--gap) - var(--keys-h,
 .dh-end { padding: 10px 12px; border-radius: 10px; text-align: center; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.05); }
 .dh-end h2 { margin: 0 0 4px; font-size: 18px; }
 .dh-end p { margin: 2px 0; font-size: 11.5px; color: var(--muted); }
+.dh-log { list-style: none; margin: 6px 0; padding: 0; max-height: 26vh; overflow-y: auto; text-align: left; font-size: 11px; color: var(--muted); }
+.dh-log li { padding: 1px 0; } .dh-log time { display: inline-block; width: 36px; opacity: 0.6; font-variant-numeric: tabular-nums; }
+.dh-log .ok { color: #3ddc84; } .dh-log .bad { color: #ff5d61; }
 .dh-end.won { border-color: rgba(61, 220, 132, 0.7); } .dh-end.won h2 { color: #3ddc84; }
 .dh-end.lost { border-color: rgba(255, 93, 97, 0.7); } .dh-end.lost h2 { color: #ff5d61; }
 

@@ -370,10 +370,56 @@ alarmEl.className = 'duel-alarm';
 alarmEl.setAttribute('aria-hidden', 'true');
 document.body.appendChild(alarmEl);
 const who = (i) => (i === 0 ? 'Your' : 'Enemy');
+// --- The battle log (the debrief) and the kill-cam ----------------------------------------------------------------------------------
+// Every notable event is written down with its time; the end card lists them. When a ship sinks a short cinematic orbits her (Esc, Space or
+// Enter skip it) while the sim keeps running.
+const LOG = [];
+const KILL = { on: false, t: 0, dur: 5.5, ship: 0 };
+const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+function shipLabel(i) {
+  const s = sim.ships[i];
+  if (!s) return 'Ship';
+  return s.merchant ? 'Merchant ship' : i === 0 ? 'Your ship' : s.team === 0 ? 'Friendly frigate' : 'Enemy frigate';
+}
+function sideOf(i) { return i === 0 ? 'Your' : sim.ships[i]?.team === 0 ? 'Friendly' : sim.ships[i]?.merchant ? 'Merchant' : 'Enemy'; }
+function record(e) {
+  const add = (kind, text) => LOG.push({ t: sim.t, kind, text });
+  if (e.type === 'firstshot') add('ok', 'Your first shot');
+  else if (e.type === 'arrive') add(e.kind === 'enemy' ? 'bad' : '', e.kind === 'enemy' ? 'Another enemy frigate arrives' : e.kind === 'ally' ? 'A friendly frigate joins you' : 'A merchant ship crosses');
+  else if (e.type === 'out') add(e.ship === 0 ? 'bad' : 'ok', `${sideOf(e.ship)} ${COMPARTMENTS[e.comp].name.toLowerCase()} out`);
+  else if (e.type === 'fire' && (e.ship === 0 || sim.ships[e.ship]?.team === 1)) add(e.ship === 0 ? 'bad' : 'ok', `Fire in ${e.ship === 0 ? 'your' : 'her'} ${COMPARTMENTS[e.comp].name.toLowerCase()}`);
+  else if (e.type === 'sunk') add(e.ship === 0 ? 'bad' : 'ok', `${shipLabel(e.ship)} sunk`);
+  else if (e.type === 'radio') add('', `Helicopter: ${e.text}`);
+  else if (e.type === 'ground' && e.ship === 0) add('bad', 'You ran aground');
+  else if (e.type === 'collision' && (e.a === 0 || e.b === 0)) add('bad', `Collision at ${e.impact.toFixed(0)} m/s`);
+}
+function startKill(i) {
+  if (INTRO.phase !== 'off') return;
+  KILL.on = true; KILL.t = 0; KILL.ship = i;
+  KILL.dur = sim.winner !== null || sim.over ? 7 : 5;
+  document.body.classList.add('duel-cine');
+  say(`${shipLabel(i)} is going down`, i === 0 ? 'bad' : 'ok', KILL.dur * 1000);
+}
+function endKill() {
+  if (!KILL.on) return;
+  KILL.on = false;
+  if (INTRO.phase === 'off') document.body.classList.remove('duel-cine');
+}
+function killCamera() {
+  if (!KILL.on) return false;
+  const s = sim.ships[KILL.ship];
+  if (!s) return false;
+  const u = KILL.t / KILL.dur, a = s.psi + 2.4 + KILL.t * 0.22, r = 150 - u * 55;
+  camera.position.set(s.x + Math.cos(a) * r, 26 - u * 11, s.z + Math.sin(a) * r);
+  camera.lookAt(s.x, 7 - u * 4, s.z);
+  setFov(42);
+  return true;
+}
 const eventHooks = []; // the audio listens here
 function handleEvents() {
   for (const e of sim.takeEvents()) {
     for (const h of eventHooks) h(e);
+    record(e);
     if (e.type === 'shot') {
       const v = ships[e.owner];
       v.mainGun.muzzle.getWorldPosition(_c);
@@ -425,6 +471,7 @@ function handleEvents() {
     } else if (e.type === 'out') {
       say(`${who(e.ship)} ${COMPARTMENTS[e.comp].name.toLowerCase()} is out`, e.ship === 0 ? 'bad' : 'ok', 3000);
     } else if (e.type === 'sunk') {
+      startKill(e.ship);
       for (let k = 0; k < 3; k++) fx.explosion(_c.set(e.pos[0] + (k - 1) * 14, e.pos[1], e.pos[2]), sim.t + k * 0.35);
     } else if (e.type === 'ammo') {
       if (e.ship === 0) say(`${AMMO_TYPES[e.kind].name} loaded`, '', 1400);
@@ -486,7 +533,7 @@ let frameDt = 1 / 60;
 let behindHead = 0, behindT = 0, behindOn = false; // the behind camera's own heading, which trails the ship's
 function updateCamera() {
   slamShake *= Math.exp(-4 * frameDt);
-  if (introCamera()) return;
+  if (introCamera() || killCamera()) return;
   if (view !== 'behind') behindOn = false;
   const me = ships[0].group;
   const foe = sim.enemy;
@@ -578,7 +625,8 @@ function endHtml() {
   const es = sim.ships.filter((o) => o.team === 1).reduce((a, o) => ({ hits: a.hits + o.stats.hits, shells: a.shells + o.stats.shells }), { hits: 0, shells: 0 });
   const why = sim.over === 'merchant' ? '<p>You sank a merchant ship</p>' : '';
   return `<section class="dh-end ${w ? 'won' : 'lost'}"><h2>${w ? 'You win' : 'You lose'}</h2>${why}`
-    + `<p>${Math.round(sim.t)} s · your 76 mm: ${st.hits} of ${st.shells} hit · theirs: ${es.hits} of ${es.shells}</p><p><kbd>R</kbd> to fight again</p></section>`;
+    + `<p>${Math.round(sim.t)} s · your 76 mm: ${st.hits} of ${st.shells} hit · theirs: ${es.hits} of ${es.shells}</p>`
+    + `<ol class="dh-log">${LOG.slice(-14).map((r) => `<li class="${r.kind}"><time>${mmss(r.t)}</time>${r.text}</li>`).join('')}</ol><p><kbd>R</kbd> to fight again</p></section>`;
 }
 let lastHtml = '';
 let hudOn = true;
@@ -917,6 +965,8 @@ function restart() {
   for (const v of ships) v.wake.clear();
   tracers.forEach((t) => { t.on = false; });
   banner.hidden = true;
+  LOG.length = 0;
+  endKill();
   alarmEl.classList.remove('hit');
   if (view === 'radar') setView(viewBeforeRadar);
   input.aim = null;
@@ -929,6 +979,7 @@ function startBanner() {
   say(`Enemy ${relName(sim.relBearing(sim.player))}, ${kmText(sim.range())}: close, turn to bring your gun to bear, and keep her off your stern`, '', 5200);
 }
 window.addEventListener('keydown', (e) => {
+  if (KILL.on && (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter')) { endKill(); e.preventDefault(); return; } // skip the kill-cam
   if (INTRO.phase === 'tour' && (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter')) { toAsk(); e.preventDefault(); return; } // skip the tour
   if (view === 'radar' && (e.key === 'Shift' || e.key === 'Control')) { radarKeys[e.key === 'Shift' ? 'zi' : 'zo'] = 1; return; } // Shift closes the lens, Ctrl opens it
   if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -1587,6 +1638,7 @@ renderer.setAnimationLoop((now) => {
   frameDt = dt;
   syncShips();
   introStep(dt);
+  if (KILL.on && (KILL.t += dt) > KILL.dur) endKill();
   if (fireLatch) input.fire = 1;
   updateAim();
   sim.advance(dt, input);
@@ -1624,4 +1676,4 @@ renderer.setAnimationLoop((now) => {
   if (frames++ === 0) loadingEl?.remove();
 });
 
-window.__duel = { sim, camera, controls, scene, renderer, ships, setView, restart, fx, hooks: eventHooks, input, sight, intro: INTRO };
+window.__duel = { sim, camera, controls, scene, renderer, ships, setView, restart, fx, hooks: eventHooks, input, sight, intro: INTRO, log: LOG, kill: KILL };
