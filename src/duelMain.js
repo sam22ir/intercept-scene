@@ -716,9 +716,9 @@ const shipEl = document.createElement('div');
 shipEl.id = 'duel-ship';
 shipEl.className = 'duel-ship';
 // The two propellers stand outside the dome, one each side, and turn with the ship's speed (counter-rotating; backwards when she goes astern).
-const PROP_SVG = '<svg viewBox="-24 -24 48 48" aria-hidden="true"><defs><radialGradient id="pp-brass" cx="0" cy="-11" r="13" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f3dc92"/><stop offset="0.6" stop-color="#d6b25c"/><stop offset="1" stop-color="#a9843a"/></radialGradient></defs><circle r="22" class="pp-disc"/><g class="pp-rot">'
-  + [0, 120, 240].map((a) => `<path transform="rotate(${a})" d="M-1.6 -7 C-6.5 -10.5 -7 -18 -2.5 -21.5 C2 -23.5 8 -21.5 8.6 -17.8 C6.2 -13 3.4 -9 1.8 -7 Z" class="pp-blade"/>`).join('')
-  + '</g><circle r="5.2" class="pp-hubring"/><circle r="3" class="pp-hub"/></svg>';
+const PROP_SVG = '<svg viewBox="-24 -24 48 48" aria-hidden="true"><defs><linearGradient id="pp-brass" x1="0" y1="-23" x2="9" y2="-6" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f6e4a2"/><stop offset="0.55" stop-color="#d9b45c"/><stop offset="1" stop-color="#9b7632"/></linearGradient></defs><g class="pp-rot">'
+  + [0, 90, 180, 270].map((a) => `<g transform="rotate(${a})"><path d="M-2 -6 C-8.5 -9.5 -9.5 -19 -4 -22.6 C1 -24.5 8.4 -22 9 -17.6 C7 -12 4 -8 2.2 -6 Z" class="pp-blade"/><path d="M-3.4 -9 C-6 -13 -5.8 -18 -3 -20.6" class="pp-edge"/></g>`).join('')
+  + '</g><circle r="5.4" class="pp-hubring"/><circle r="3" class="pp-hub"/><circle r="1" class="pp-cap"/></svg>';
 const propL = document.createElement('div'), propR = document.createElement('div'), domeHost = document.createElement('div');
 propL.className = propR.className = 'hs-prop';
 propL.innerHTML = propR.innerHTML = PROP_SVG;
