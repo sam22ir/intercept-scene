@@ -19,7 +19,7 @@ import { menuText } from './menu.js';
 import { compass, relName, kmText, RUDDER_MAX, HALF_LENGTH, HALF_BEAM } from './hull.js';
 import {
   DuelSim, TELEGRAPH, COMPARTMENTS, COMP_IDS, HULL_HP, LEVELS, DUEL_LEVELS, MAIN_ARC, MAIN_RANGE, GUN_MOUNT_LOCAL, GUN_RANGE, sinkState,
-  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, zoneAt, AMMO_TYPES, SWITCH_TIME, CREWS, REPAIR_TIME, REPAIR_WAIT, FRIEND_MAX, LOCK_FRACTION, FOCUS_FRACTION,
+  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, zoneAt, SWITCH_TIME, CREWS, REPAIR_TIME, REPAIR_WAIT, FRIEND_MAX, LOCK_FRACTION, FOCUS_FRACTION,
 } from './duel.js';
 import { createDuelAudio } from './duelAudio.js';
 import { createDuelMap } from './duelMap.js';
@@ -507,7 +507,7 @@ function handleEvents() {
       startKill(e.ship);
       for (let k = 0; k < 3; k++) fx.explosion(_c.set(e.pos[0] + (k - 1) * 14, e.pos[1], e.pos[2]), sim.t + k * 0.35);
     } else if (e.type === 'ammo') {
-      if (e.ship === 0) say(`${AMMO_TYPES[e.kind].name} loaded`, '', 1400);
+      
     } else if (e.type === 'repair') {
       if (e.ship === 0) say(e.phase === 'start' ? `Repairing the ${COMPARTMENTS[e.comp].name.toLowerCase()}: ${REPAIR_TIME} s` : `${COMPARTMENTS[e.comp].name} repaired`, e.phase === 'start' ? 'warn' : 'ok', 2000);
     } else if (e.type === 'fire') {
@@ -873,7 +873,6 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>F</kbd>', `Fire the 76 mm (hold): the gun trains on the enemy by itself within ${Math.round((MAIN_ARC * 180) / Math.PI)}° of the bow and ${kmText(MAIN_RANGE)}, and fires once it is on the aim and loaded`],
   ['<kbd>G</kbd>', `Fire the two 30 mm guns aft (hold): ${kmText(GUN_RANGE)}, astern and abeam only`],
   ['<kbd>A</kbd>', 'The 30 mm guns on automatic'],
-  ['<kbd>Q</kbd>', `Change the 76 mm round, HE or AP: HE starts fires and floods, AP hits one compartment harder; changing costs a ${SWITCH_TIME} s reload`],
   ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
   ['<kbd>E</kbd>', `Repair the compartment Z has picked (or press FIX on its bar in the radar view): ${REPAIR_TIME} s, then its fire is out, its leak is stopped and it gets 40 % of its points back; that part can be repaired again after ${REPAIR_WAIT} s`],
   ['<kbd>K</kbd>', 'Call a friendly frigate (or the button at the bottom right): she comes in from astern at full speed and fights; up to three, one every few seconds'],
@@ -919,10 +918,10 @@ const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}"><kbd>$
 function keysHtml() {
   if (view === 'radar') {
     return `${k('← → ↑ ↓', 'aim')}${k('Shift Ctrl', 'zoom')}${k('click · Space', 'lock a part', !!sight.lock)}${k('F · Enter', fireLatch ? 'firing: F stops' : 'fire (hold)', input.fire || fireLatch)}`
-      + `${k('Tab', 'next target')}${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('B', sim.heliUp ? 'heli: land' : 'heli: go', sim.heliUp)}${k('M', 'heli missile')}${k('K', 'friend')}${k('Esc', 'helm')}`;
+      + `${k('Tab', 'next target')}${k('B', sim.heliUp ? 'heli: land' : 'heli: go', sim.heliUp)}${k('M', 'heli missile')}${k('K', 'friend')}${k('Esc', 'helm')}`;
   }
   return `${k('← →', 'rudder', input.left || input.right)}${k('↑ ↓', `thrust ${TELEGRAPH[sim.player.order].name}`)}${k('F', 'fire 76 mm (hold)', input.fire)}${k('G', '30 mm (hold)', input.gat)}${k('Tab', 'target')}`
-    + `${k('Q', `ammo ${AMMO_TYPES[sim.player.gun.type].name}`)}${k('Z X', 'crews')}${k('E', 'repair', sim.player.fix[COMP_IDS[selComp]].left > 0)}${k('B', sim.heliUp ? 'heli: land' : 'heli: go', sim.heliUp)}${k('M', `heli missile ${sim.hop?.ammo ?? 0}`)}`
+    + `${k('Z X', 'crews')}${k('E', 'repair', sim.player.fix[COMP_IDS[selComp]].left > 0)}${k('B', sim.heliUp ? 'heli: land' : 'heli: go', sim.heliUp)}${k('M', `heli missile ${sim.hop?.ammo ?? 0}`)}`
     + `${k('A', 'auto 30 mm', sim.player.auto)}${k('1–5', 'views')}${k('R', 'again')}`;
 }
 let lastKeys = '';
@@ -1032,7 +1031,6 @@ window.addEventListener('keydown', (e) => {
     case 'ArrowUp': sim.telegraph(0, +1); break;
     case 'ArrowDown': sim.telegraph(0, -1); break;
     case 'a': sim.toggleAuto(0); break;
-    case 'q': sim.switchAmmo(0); break;
     case 'z': selComp = (selComp + 1) % COMP_IDS.length; break;
     case 'e': sim.startRepair(0, COMP_IDS[selComp]); break;
     case 'b': say(sim.heliRequest(), ''); break;
@@ -1131,17 +1129,19 @@ const radarEl = document.createElement('div');
 radarEl.className = 'duel-radar';
 radarEl.hidden = true;
 radarEl.innerHTML = '<div class="hr-marks"></div><div class="rc">'
-  + '<div class="rc-main"><div class="rc-top"><b class="hr-mode">AUTO</b><span class="hr-brg"></span><button type="button" class="rc-lock" data-act="lock">⌖ Lock<kbd>Space</kbd></button></div>'
-  + '<div class="rc-zoom"><span>WIDE</span><div class="rc-track" aria-label="Zoom"><i class="rc-ticks"></i><i class="rc-fill"></i><i class="rc-thumb"></i></div><span>CLOSE</span><b class="hr-zv"></b></div></div>'
-  + '<div class="rc-gun"><button type="button" class="rc-fire" data-act="fire"><span>FIRE</span><kbd>F</kbd></button><button type="button" class="rc-ammo" data-act="ammo"><b class="rc-am"></b><kbd>Q</kbd></button></div></div>';
+  + '<div class="rc-main"><div class="rc-top"><b class="hr-mode">AUTO</b><span class="hr-brg"></span><b class="hr-zv"></b></div></div>'
+  + '<div class="rc-gun"><div class="rc-dial"><svg class="rc-ring" viewBox="0 0 150 150" aria-label="Zoom"><circle class="rc-rtrack" r="70" cx="75" cy="75"/><circle class="rc-rfill" r="70" cx="75" cy="75"/><circle class="rc-hit" r="70" cx="75" cy="75"/><circle class="rc-rthumb" r="7"/></svg>'
+  + '<button type="button" class="rc-fire" data-act="fire"><span>FIRE</span><small class="rc-am"></small><kbd>F</kbd></button></div>'
+  + '<button type="button" class="rc-lock" data-act="lock">⌖ Lock<kbd>Space</kbd></button></div></div>';
 document.body.appendChild(radarEl);
 const radarMode = radarEl.querySelector('.hr-mode');
 const radarBrg = radarEl.querySelector('.hr-brg');
 const radarZoom = radarEl.querySelector('.hr-zv');
 const marksEl = radarEl.querySelector('.hr-marks');
-const trackEl = radarEl.querySelector('.rc-track');
-const thumbEl = radarEl.querySelector('.rc-thumb');
-const fillEl = radarEl.querySelector('.rc-fill');
+const hitEl = radarEl.querySelector('.rc-hit');
+const thumbEl = radarEl.querySelector('.rc-rthumb');
+const fillEl = radarEl.querySelector('.rc-rfill');
+const RING_ARC = 2 * Math.PI * 70 * 0.75; // the zoom ring runs 270 degrees, wide at the lower left round to close at the lower right
 const fireEl = radarEl.querySelector('.rc-fire');
 const lockBtn = radarEl.querySelector('.rc-lock');
 let fireLatch = false; // a long press on FIRE keeps the gun firing until the button is tapped again
@@ -1173,13 +1173,14 @@ radarEl.addEventListener('pointerdown', (e) => {
     sight.manual = false;
     return;
   }
-  if (e.target.closest('.rc-track')) { // the zoom track
+  if (e.target.closest('.rc-hit')) { // the zoom ring: drag round it
     e.preventDefault();
     dragOn(e, (ev) => {
       if (!ev) return;
-      const r = trackEl.getBoundingClientRect();
-      const t = clamp((ev.clientX - r.left) / r.width, 0, 1);
-      sightZoomGoal = clamp(0.1 * Math.exp((1 - t) * ZOOM_SPAN), 0.1, 8);
+      const r = hitEl.getBoundingClientRect();
+      let a = (Math.atan2(ev.clientY - (r.top + r.height / 2), ev.clientX - (r.left + r.width / 2)) * 180 / Math.PI - 135 + 720) % 360;
+      if (a > 270) a = a > 315 ? 0 : 270; // the gap at the bottom snaps to the nearer end
+      sightZoomGoal = clamp(0.1 * Math.exp((1 - a / 270) * ZOOM_SPAN), 0.1, 8);
     });
     return;
   }
@@ -1196,7 +1197,6 @@ radarEl.addEventListener('pointerdown', (e) => {
   else if (b.dataset.act === 'auto') { sight.manual = false; sight.lock = null; }
   else if (b.dataset.act === 'lock') toggleLock();
   else if (b.dataset.act === 'next') pickNextTarget();
-  else if (b.dataset.act === 'ammo') sim.switchAmmo(0);
   else if (b.dataset.act === 'back') setView(viewBeforeRadar);
 });
 function pickNextTarget() {
@@ -1468,15 +1468,17 @@ function updateRadarUi() {
   radarBrg.textContent = `${relName(rel)} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${camera.fov.toFixed(camera.fov < 3 ? 2 : 1)}°`;
   radarZoom.textContent = `×${(30 / camera.fov).toFixed(camera.fov < 3 ? 0 : 1)}`;
   const zf = clamp(zoomFrac(), 0, 1) * 100;
-  thumbEl.style.left = `${zf}%`;
-  fillEl.style.width = `${zf}%`;
+  const ang = (135 + 2.7 * zf) * Math.PI / 180;
+  thumbEl.setAttribute('cx', (75 + 70 * Math.cos(ang)).toFixed(1));
+  thumbEl.setAttribute('cy', (75 + 70 * Math.sin(ang)).toFixed(1));
+  fillEl.style.strokeDasharray = `${(RING_ARC * zf / 100).toFixed(1)} 440`;
   const gn = sim.player.gun;
   fireEl.style.setProperty('--rl', clamp(1 - gn.cool / sim.reloadTime(sim.player), 0, 1).toFixed(3));
   fireEl.classList.toggle('ready', gn.cool <= 0 && gn.onTarget && !sight.warn && !!sight.lock);
   fireEl.classList.toggle('weak', !sight.lock && !sight.warn);
   fireEl.classList.toggle('sea', !sight.lock && !sight.snap && !sight.warn);
   fireEl.classList.toggle('hold', !!sight.warn || sim.player.comp.gun <= 0);
-  ammoEl.textContent = `${AMMO_TYPES[gn.type].name} ${gn.stock[gn.type]}`;
+  ammoEl.textContent = `${gn.stock.he + gn.stock.ap} rds`;
   const g = sim.player.gun;
   const foes = sim.ships.filter((o) => o.team === 1);
   const which = foes.length > 1 ? ` ${foes.indexOf(sim.enemy) + 1}/${foes.length}` : '';
@@ -1485,7 +1487,7 @@ function updateRadarUi() {
   sightEl.classList.toggle('warn', !!sight.warn);
   const pct = (f) => Math.round(f * 100);
   const aim = sight.zone ? `${sight.lock ? `LOCKED: ${COMPARTMENTS[sight.zone].name.toUpperCase()} · ${pct(LOCK_FRACTION)}% a hit` : sight.snap ? `FOCUS: ${COMPARTMENTS[sight.zone].name.toUpperCase()} · ${pct(FOCUS_FRACTION)}% a hit, Space locks` : 'NO FOCUS: the shell falls in the sea'}` : sight.warn ?? 'NO FOCUS: the shell falls in the sea';
-  sightTxt.textContent = `${aim} · enemy${which} ${kmText(sim.range())} · ${AMMO_TYPES[g.type].name} ${g.stock[g.type]} · ${gunStatus(sim.player)}`;
+  sightTxt.textContent = `${aim} · enemy${which} ${kmText(sim.range())} · ${g.stock.he + g.stock.ap} rds · ${gunStatus(sim.player)}`;
   map.sight = { yaw, locked: !!sight.zone };
 }
 
