@@ -11,33 +11,44 @@
     <div id="loading" class="loading" hidden><div class="spinner"></div><div>Building the scene…</div></div>
 
     <div id="chooser" class="chooser" hidden>
+      <svg class="ch-bg" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">
+        <path class="bg-grid" d="M0 100H1000M0 200H1000M0 300H1000M0 400H1000M0 500H1000M100 0V600M200 0V600M300 0V600M400 0V600M500 0V600M600 0V600M700 0V600M800 0V600M900 0V600"/>
+        <g class="bg-radar">
+          <circle class="bg-ring" cx="500" cy="660" r="160"/><circle class="bg-ring" cx="500" cy="660" r="320"/><circle class="bg-ring" cx="500" cy="660" r="480"/><circle class="bg-ring" cx="500" cy="660" r="640"/>
+          <g class="bg-sweep"><path d="M500 660 L500 20 A640 640 0 0 1 870 138Z"/></g>
+          <circle class="bg-blip" cx="300" cy="300" r="4"/><circle class="bg-blip b2" cx="760" cy="230" r="4"/><circle class="bg-blip b3" cx="640" cy="420" r="4"/>
+        </g>
+      </svg>
       <div class="mm">
         <header class="menu-head">
-          <div class="menu-brand"><span class="dot" aria-hidden="true"></span><b>Simulation</b><span>drones · frigates · missiles</span></div>
+          <div class="menu-brand">
+            <svg class="brand-radar" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="5"/><g class="brand-sweep"><path d="M12 12 L12 2 A10 10 0 0 1 20.7 7Z"/></g><circle class="brand-dot" cx="12" cy="12" r="1.6"/></svg>
+            <b>Simulation</b><span>drones · frigates · missiles</span>
+          </div>
           <p class="menu-hint"><kbd>M</kbd> next mission · <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> variant · <kbd>Enter</kbd> start</p>
           <div class="tabs" role="radiogroup" aria-label="What to do">
             <button class="tab" role="radio" aria-checked="true" data-tab="watch" title="Replays you can scrub both ways">
-              <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M4 20 Q20 6 36 20 Q20 34 4 20Z"/><circle cx="20" cy="20" r="5"/></svg>
-              <span class="tab-txt"><b>Watch</b><small>Replays you can scrub both ways</small></span>
+              <svg viewBox="0 0 40 40" aria-hidden="true"><g class="t-eye"><path d="M4 20 Q20 6 36 20 Q20 34 4 20Z"/><circle cx="20" cy="20" r="5"/></g></svg>
+              <span class="tab-txt"><b>Watch</b></span><em class="tab-n" data-count="watch"></em>
             </button>
             <button class="tab" role="radio" aria-checked="false" data-tab="play" title="You take the controls">
-              <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="14"/><path d="M20 6 V34 M6 20 H34"/><circle cx="20" cy="20" r="3.5"/></svg>
-              <span class="tab-txt"><b>Play</b><small>You take the controls</small></span>
+              <svg viewBox="0 0 40 40" aria-hidden="true"><g class="t-sight"><circle cx="20" cy="20" r="14"/><path d="M20 6 V34 M6 20 H34"/></g><circle cx="20" cy="20" r="3.5"/></svg>
+              <span class="tab-txt"><b>Play</b></span><em class="tab-n" data-count="play"></em>
             </button>
             <button class="tab" role="radio" aria-checked="false" data-tab="command" title="Give orders to a squadron">
-              <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M5 28 H15 L19 30.5 L15 33 H5Z"/><path d="M5 18 H15 L19 20.5 L15 23 H5Z"/><path d="M24 8 H35 L31 10.5 L35 13 H24Z"/><path d="M20 21 Q26 16 29 11"/></svg>
-              <span class="tab-txt"><b>Command</b><small>Give orders to a squadron</small></span>
+              <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M5 28 H15 L19 30.5 L15 33 H5Z"/><path d="M5 18 H15 L19 20.5 L15 23 H5Z"/><path d="M24 8 H35 L31 10.5 L35 13 H24Z"/><path class="t-order" d="M20 21 Q26 16 29 11"/></svg>
+              <span class="tab-txt"><b>Command</b></span><em class="tab-n" data-count="command"></em>
             </button>
             <button class="tab" role="radio" aria-checked="false" data-tab="drill" title="Naval exercises run on orders">
-              <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M6 12 H22 L28 16 L22 20 H6Z"/><path d="M6 26 H22 L28 30 L22 34 H6Z"/></svg>
-              <span class="tab-txt"><b>Drill</b><small>Naval exercises run on orders</small></span>
+              <svg viewBox="0 0 40 40" aria-hidden="true"><path class="t-ship" d="M6 12 H22 L28 16 L22 20 H6Z"/><path class="t-ship t2" d="M6 26 H22 L28 30 L22 34 H6Z"/></svg>
+              <span class="tab-txt"><b>Drill</b></span><em class="tab-n" data-count="drill"></em>
             </button>
           </div>
         </header>
 
         <div class="menu-body">
           <section class="menu-list" aria-label="Missions">
-            <p class="menu-sub" id="ch-tabhint"></p>
+            <h2 class="menu-sub" id="ch-tabhint"></h2>
             <div class="missions" role="radiogroup" aria-label="Mission">
               <button class="mission" role="radio" aria-checked="true" data-group="watch" data-mode="intercept">
                 <svg viewBox="0 0 40 40" aria-hidden="true"><path class="i-arc" d="M6 34 Q10 10 28 12"/><path class="i-drone" d="M24 10 h10 M29 6 v8"/><circle class="i-burst" cx="29" cy="11" r="6"/></svg>
@@ -75,17 +86,22 @@
                 <em class="m-kind">Drill</em>
               </button>
             </div>
-            <div class="stage" id="ch-stage" aria-hidden="true"></div>
+            <figure class="monitor" aria-hidden="true">
+              <div class="stage" id="ch-stage"></div>
+              <figcaption class="monitor-cap"><i class="live-dot"></i>Live preview</figcaption>
+              <span class="scan"></span>
+            </figure>
           </section>
 
           <section class="brief" aria-live="polite" aria-labelledby="ch-title">
-            <div class="brief-top">
-              <div class="brief-head">
-                <p class="brief-kind" id="ch-kind"></p>
-                <h1 id="ch-title"></h1>
-                <p class="brief-tag" id="ch-tag"></p>
-                <ul class="brief-facts" id="ch-facts"></ul>
-              </div>
+            <header class="brief-head">
+              <p class="brief-kind" id="ch-kind"></p>
+              <h1 id="ch-title"></h1>
+              <ul class="brief-facts" id="ch-facts"></ul>
+            </header>
+            <div class="brief-story">
+              <p class="brief-tag" id="ch-tag"></p>
+              <button class="brief-more" id="ch-more" type="button" aria-expanded="false" hidden>More</button>
             </div>
             <div class="brief-ship variant" aria-labelledby="ch-step2">
               <h2 id="ch-step2">Launcher</h2>

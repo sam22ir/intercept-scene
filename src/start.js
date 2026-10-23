@@ -35,7 +35,7 @@ function showFatal(err) {
   document.body.appendChild(box);
 }
 
-import { MISSION_IDS, FIXED_SHIP, ENTRIES, GROUPS, ENEMY_LEVELS, DEFAULT_LEVEL, SQUADRON_SCENARIOS, DEFAULT_SCENARIO, groupOf, missionById, menuText } from './menu.js';
+import { MISSIONS, MISSION_IDS, FIXED_SHIP, ENTRIES, GROUPS, ENEMY_LEVELS, DEFAULT_LEVEL, SQUADRON_SCENARIOS, DEFAULT_SCENARIO, groupOf, missionById, menuText } from './menu.js';
 import { previewArt } from './menuArt.js';
 
 const MODES = MISSION_IDS;
@@ -90,9 +90,10 @@ async function launch(id) {
   }
 }
 
-// Three tabs (Watch, Play, Drill), a mission list for the tab, and a briefing that follows the choice: an
-// animated preview, what it is, a variant where the mission has one (the launcher, or the number of ships
-// in a drill) and its controls; then Start. Selection changes only on click or key; hover is visual only,
+// Four tabs (Watch, Play, Command, Drill, each with its number of missions), the tab's missions with the selected
+// one's animated preview under them, and a briefing that follows the choice: what it is, the facts, the story
+// (three lines, More shows the rest), the set-up steps where the mission has any (the launcher, the number of
+// ships in a drill, the enemy's level, the scenario) and its controls; then Start. Selection changes only on click or key; hover is visual only,
 // so the summary and the Start target never follow the mouse. Every word the screen says for a choice
 // comes from menu.js (and test/menu.test.mjs checks it); the previews come from menuArt.js.
 function showChooser(preselect, preselectLevel = null, preselectScenario = null) {
@@ -120,6 +121,9 @@ function showChooser(preselect, preselectLevel = null, preselectScenario = null)
   const keysEl = $('#ch-keys');
   const moreEl = $('#ch-keys-more');
   const tabHint = $('#ch-tabhint');
+  const story = chooser.querySelector('.brief-story');
+  const moreBtn = $('#ch-more');
+  for (const n of chooser.querySelectorAll('[data-count]')) n.textContent = String(MISSIONS.filter((m) => m.group === n.dataset.count).length);
   const li = (text) => Object.assign(document.createElement('li'), { textContent: text });
   const reduced = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } })();
 
@@ -157,7 +161,12 @@ function showChooser(preselect, preselectLevel = null, preselectScenario = null)
     if (key !== artKey) { artKey = key; stage.innerHTML = previewArt(mode, ship, !reduced); } // a fresh svg restarts the loop
     kindEl.textContent = t.kind;
     titleEl.textContent = t.title;
-    tagEl.textContent = t.tagline;
+    if (tagEl.textContent !== t.tagline) {
+      tagEl.textContent = t.tagline;
+      story.classList.remove('open');
+      moreBtn.setAttribute('aria-expanded', 'false');
+      moreBtn.textContent = 'More';
+    }
     factsEl.replaceChildren(...t.facts.map(li));
     const all = group === 'play' || group === 'command' || t.keys.length <= 5;
     const shown = all ? t.keys : t.keys.slice(0, 4);
@@ -180,6 +189,8 @@ function showChooser(preselect, preselectLevel = null, preselectScenario = null)
     sub.textContent = t.note;
     lastEl.hidden = lastPlayed !== mode;
     document.title = t.tabTitle;
+    // More only when the story is cut short (measured once it is laid out at three lines).
+    requestAnimationFrame(() => { moreBtn.hidden = !story.classList.contains('open') && tagEl.scrollHeight <= tagEl.clientHeight + 2; });
   };
   const setMode = (m) => { mode = m; lastIn[groupOf(m)] = m; paint(); };
   const setShip = (id) => { if (missionById(mode).ship) { shipFor[mode] = id; paint(); } };
@@ -232,6 +243,11 @@ function showChooser(preselect, preselectLevel = null, preselectScenario = null)
   cards.forEach((c) => {
     c.addEventListener('click', () => setShip(c.dataset.ship));
     c.addEventListener('dblclick', go); // a double click still starts straight away
+  });
+  moreBtn.addEventListener('click', () => {
+    const open = story.classList.toggle('open');
+    moreBtn.setAttribute('aria-expanded', String(open));
+    moreBtn.textContent = open ? 'Less' : 'More';
   });
   $('#ch-start').addEventListener('click', go);
   window.addEventListener('keydown', onKey);
