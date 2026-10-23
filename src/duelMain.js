@@ -18,7 +18,7 @@ import { CameraRig } from './cameraRig.js';
 import { menuText } from './menu.js';
 import { compass, relName, kmText, RUDDER_MAX, HALF_LENGTH, HALF_BEAM } from './hull.js';
 import {
-  DuelSim, TELEGRAPH, COMPARTMENTS, COMP_IDS, HULL_HP, LEVELS, DUEL_LEVELS, MAIN_ARC, MAIN_RANGE, GUN_MOUNT_LOCAL, GUN_RANGE, sinkState,
+  DuelSim, TELEGRAPH, COMPARTMENTS, COMP_IDS, HULL_HP, LEVELS, DUEL_LEVELS, MAIN_ARC, MAIN_RANGE, GUN_MOUNT_LOCAL, sinkState,
   MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, zoneAt, SWITCH_TIME, CREWS, REPAIR_TIME, REPAIR_WAIT, FRIEND_MAX, LOCK_FRACTION, FOCUS_FRACTION,
 } from './duel.js';
 import { createDuelAudio } from './duelAudio.js';
@@ -105,7 +105,7 @@ const clamp = THREE.MathUtils.clamp;
 let level = 'normal';
 try { level = globalThis.__DUEL_LEVEL ?? new URLSearchParams(location.search).get('level') ?? 'normal'; } catch { /* no address */ }
 if (!DUEL_LEVELS.includes(level)) level = 'normal';
-const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, helmPlayer: true, scouting: true, intro: true, playerReload: 0.5, playerDamage: 2, playerFlankKn: 38, easyGunSafe: true, firingReveals: true });
+const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, helmPlayer: true, scouting: true, intro: true, playerReload: 0.5, playerDamage: 2, playerFlankKn: 38, gunRange: MAIN_RANGE - 500, gatAnswers: true, easyGunSafe: true, firingReveals: true });
 seaHook = () => { const i = env.seaInfo(); if (i) sim.setSea(i.hs, i.dir); };
 seaHook();
 
@@ -985,7 +985,7 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>←</kbd> <kbd>→</kbd>', 'Rudder to port / starboard while held; let go and it comes back amidships'],
   ['<kbd>↑</kbd> <kbd>↓</kbd>', 'Engine telegraph (thrust), one step: slow astern, stop, dead slow, slow, half, full, flank. Hulls that touch collide: damage by the closing speed, where they meet'],
   ['<kbd>F</kbd>', `Fire the 76 mm (hold): the gun trains on the enemy by itself within ${Math.round((MAIN_ARC * 180) / Math.PI)}° of the bow and ${kmText(MAIN_RANGE)}, and fires once it is on the aim and loaded`],
-  ['<kbd>G</kbd>', `Fire the two 30 mm guns aft (hold): ${kmText(GUN_RANGE)}, astern and abeam only`],
+  ['<kbd>G</kbd>', `Fire the two 30 mm guns aft (hold): ${kmText(sim.gunRange)}, astern and abeam only; they answer by themselves when hers open fire`],
   ['<kbd>A</kbd>', 'The 30 mm guns on automatic'],
   ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
   ['<kbd>E</kbd>', `Repair the compartment Z has picked (or press FIX on its bar in the radar view): ${REPAIR_TIME} s, then its fire is out, its leak is stopped and it gets 40 % of its points back; that part can be repaired again after ${REPAIR_WAIT} s`],
@@ -1719,7 +1719,7 @@ const STOPS = [
   { ang: 0.4, r: 170, h: 34, look: [0, 8, 0], fov: 46, title: 'Hostile frigate', text: () => `${relName(sim.relBearing(sim.player))} · ${kmText(sim.range())} · ${Math.round(sim.knots(sim.enemy))} kn` },
   { ang: 0.62, r: 58, h: 13, look: [32, 7.5, 0], fov: 32, title: '76 mm bow gun', text: () => `Her main weapon: it reaches ${kmText(MAIN_RANGE)}. Knock it out and she cannot hurt you at range.` },
   { ang: 1.45, r: 48, h: 31, look: [9.2, 22.5, 0], fov: 36, title: 'Bridge and fire-control radar', text: () => 'She has seen you too. Hit the bridge and her shells scatter.' },
-  { ang: 2.55, r: 56, h: 19, look: [-33.6, 13.8, 0], fov: 34, title: 'Two 30 mm guns aft', text: () => `Deadly inside ${kmText(GUN_RANGE)}. Keep off her stern.` },
+  { ang: 2.55, r: 56, h: 19, look: [-33.6, 13.8, 0], fov: 34, title: 'Two 30 mm guns aft', text: () => `Deadly inside ${kmText(sim.gunRange)}. Keep off her stern.` },
   { ang: 3.35, r: 72, h: 14, look: [-45, 5, 0], fov: 38, title: 'Engine and rudder', text: () => 'Her weak point: hit them and she can neither run nor turn.' },
 ];
 const TOUR = { fly: 2.6, whip: 0.8, hold: 2.2, back: 1.5 };

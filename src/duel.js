@@ -241,8 +241,10 @@ function makeShip(idx, x, z, psi, team = idx === 0 ? 0 : 1, kind = 'frigate') {
 
 export class DuelSim {
   // `level` is the enemy's; `auto` ('easy' | 'normal' | 'hard') hands the player's ship to the same kind of helmsman (tests).
-  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, helmPlayer = false, scouting = false, intro = false, playerReload = 1, playerDamage = 1, easyGunSafe = false, firingReveals = false, playerFlankKn = 0 } = {}) {
+  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, helmPlayer = false, scouting = false, intro = false, playerReload = 1, playerDamage = 1, easyGunSafe = false, firingReveals = false, playerFlankKn = 0, gunRange = GUN_RANGE, gatAnswers = false } = {}) {
     this.seed = seed;
+    this.gunRange = gunRange; // reach of the 30 mm guns (the scene sets 500 m under the 76 mm)
+    this.gatAnswers = gatAnswers; // the player's 30 mm fire by themselves while an enemy's are firing
     this.playerFlankKn = playerFlankKn; // the top of the player's telegraph in knots (0: the shared Flank), so other missions keep theirs
     this.playerReload = playerReload; // how long the player's 76 mm takes to reload, as a part of MAIN_RELOAD (the scene makes it 0.5)
     this.playerDamage = playerDamage; // what the player's 76 mm shells do to a hostile ship, times the usual (the scene makes it 2)
@@ -1250,7 +1252,8 @@ export class DuelSim {
   stepGats(s, dt) {
     const o = this.foe(s);
     const sunk = s.tSunk !== null || o.tSunk !== null || (this.scouting && s.team === 0 && o.team === 1 && o.det === false);
-    const trigger = !sunk && (s.auto || s.cmd.gat) && !this.held(s);
+    const answer = this.gatAnswers && s.idx === 0 && this.ships.some((o) => o.team === 1 && o.tSunk === null && o.gats.some((g) => g.firing));
+    const trigger = !sunk && (s.auto || s.cmd.gat || answer) && !this.held(s);
     const gunsHp = s.comp.guns / COMPARTMENTS.guns.hp;
     for (let i = 0; i < s.gats.length; i++) {
       const g = s.gats[i];
@@ -1258,7 +1261,7 @@ export class DuelSim {
       let wantYaw = GUN_STOW.yaw, wantPitch = GUN_STOW.pitch, engage = false;
       if (!sunk && working && g.ammo > 0) {
         const sol = this.solve(s, GUN_MOUNT_LOCAL[i], GUN_MUZZLE_V, false);
-        if (sol.range <= GUN_RANGE && !gunBlind(i, sol.yaw)) {
+        if (sol.range <= this.gunRange && !gunBlind(i, sol.yaw)) {
           wantYaw = sol.yaw;
           wantPitch = clamp(sol.pitch, rad(-5), rad(85));
           engage = true;

@@ -75,7 +75,7 @@ export function createDuelMap() {
     if (scale === 'auto') {
       let far = sim.range();
       for (const o of sim.ships) if (o.idx > 0 && o.tSunk === null && o.det !== false) far = Math.max(far, Math.min(sim.distance(sim.player, o), 16000)); // everyone afloat
-      scale = SCALES.find((s) => s >= Math.max(far * 1.12, GUN_RANGE * 1.1)) ?? SCALES[SCALES.length - 1];
+      scale = SCALES.find((s) => s >= Math.max(far * 1.12, (sim.gunRange ?? GUN_RANGE) * 1.1)) ?? SCALES[SCALES.length - 1];
     }
     const k = (R - 6) / scale;
     // World point -> screen, heading up: your bow is screen up, starboard is right.
@@ -125,7 +125,7 @@ export function createDuelMap() {
     if (show.gat) {
       ctx.beginPath();
       ctx.moveTo(R, R);
-      ctx.arc(R, R, Math.min(GUN_RANGE * k, R - 4), aOf(GUN_BLOCK), aOf(2 * Math.PI - GUN_BLOCK));
+      ctx.arc(R, R, Math.min((sim.gunRange ?? GUN_RANGE) * k, R - 4), aOf(GUN_BLOCK), aOf(2 * Math.PI - GUN_BLOCK));
       ctx.closePath();
       ctx.fillStyle = 'rgba(80, 200, 255, 0.07)';
       ctx.fill();
