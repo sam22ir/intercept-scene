@@ -255,3 +255,15 @@ describe('calling friends', () => {
     assert.ok(sim.planWaves().some((w) => w.kind === 'ally'));
   });
 });
+
+describe('the player reloads the 76 mm in half the time (playerReload)', () => {
+  it('halves the player\'s reload and leaves everyone else\'s, and the default, alone', () => {
+    const quick = new DuelSim({ seed: 3, level: 'easy', playerReload: 0.5 });
+    const plain = new DuelSim({ seed: 3, level: 'easy' });
+    assert.equal(quick.reloadTime(quick.player), plain.reloadTime(plain.player) / 2);
+    assert.equal(quick.reloadTime(quick.enemy), plain.reloadTime(plain.enemy));
+    quick.player.gun.cool = 0; plain.player.gun.cool = 0;
+    quick.fireMain(quick.player); plain.fireMain(plain.player);
+    assert.ok(Math.abs(quick.player.gun.cool - plain.player.gun.cool / 2) < 1e-9);
+  });
+});

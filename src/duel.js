@@ -240,8 +240,9 @@ function makeShip(idx, x, z, psi, team = idx === 0 ? 0 : 1, kind = 'frigate') {
 
 export class DuelSim {
   // `level` is the enemy's; `auto` ('easy' | 'normal' | 'hard') hands the player's ship to the same kind of helmsman (tests).
-  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, scouting = false, intro = false } = {}) {
+  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, scouting = false, intro = false, playerReload = 1 } = {}) {
     this.seed = seed;
+    this.playerReload = playerReload; // how long the player's 76 mm takes to reload, as a part of MAIN_RELOAD (the scene makes it 0.5)
     // The opening (the scene turns it on): the radar is off until startRadar(), so no enemy is known, and no ship but yours fires until you have
     // fired your first shot (the event 'firstshot'): the first shot is always the player's.
     this.intro = !!intro;
@@ -995,9 +996,12 @@ export class DuelSim {
     this.fireMain(s);
   }
 
+  // Seconds between rounds of this ship's 76 mm (the player's may be quicker).
+  reloadTime(s) { return MAIN_RELOAD * (s.idx === 0 ? this.playerReload : 1); }
+
   fireMain(s) {
     const g = s.gun;
-    g.cool = MAIN_RELOAD;
+    g.cool = this.reloadTime(s);
     this.noteShot(s);
     g.stock[g.type] -= 1;
     g.ammo = g.stock.he + g.stock.ap;

@@ -104,7 +104,7 @@ const clamp = THREE.MathUtils.clamp;
 let level = 'normal';
 try { level = globalThis.__DUEL_LEVEL ?? new URLSearchParams(location.search).get('level') ?? 'normal'; } catch { /* no address */ }
 if (!DUEL_LEVELS.includes(level)) level = 'normal';
-const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, scouting: true, intro: true });
+const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, scouting: true, intro: true, playerReload: 0.5 });
 seaHook = () => { const i = env.seaInfo(); if (i) sim.setSea(i.hs, i.dir); };
 seaHook();
 
@@ -464,6 +464,7 @@ function setView(v) {
     say('Radar: arrows or a drag aim the sight, Space locks, Enter fires. The helm is locked: Esc goes back', 'warn', 4200);
   } else if (v !== 'radar' && view === 'radar') {
     input.fire = 0;
+    if (fireLatch) setFireLatch(false);
     setManual(radarPrevManual);
   }
   view = v;
@@ -682,7 +683,7 @@ function boardHtml() {
   const hullF = clamp(p.hp / HULL_HP, 0, 1);
   const g = p.gun;
   const dry = p.gats.every((x) => x.ammo <= 0);
-  const reload = g.cool > 0 ? clamp(1 - g.cool / MAIN_RELOAD, 0, 1) : 1;
+  const reload = g.cool > 0 ? clamp(1 - g.cool / sim.reloadTime(p), 0, 1) : 1;
   const any = COMP_IDS.some((id) => p.fix[id].left <= 0 && p.fix[id].wait <= 0 && (p.comp[id] < COMPARTMENTS[id].hp || p.fire[id] > 0 || p.leak[id] > 0.005));
   return `<div class="bd-head"><b>YOUR SHIP</b><span class="${hullF < 0.35 ? 'bad' : hullF < 0.7 ? 'hurt' : ''}">HULL ${Math.round(p.hp)}</span></div>`
     + `<div class="bd-bar"><s style="width:${Math.round(hullF * 100)}%;background:${healthColour(hullF >= 0.99 ? 1 : hullF < 0.35 ? 0.2 : 0.7)}"></s></div>`
@@ -921,6 +922,7 @@ function restart() {
   input.aim = null;
   selComp = 0;
   setManual(false);
+  if (fireLatch) setFireLatch(false);
   startIntro();
 }
 function startBanner() {
@@ -1059,6 +1061,13 @@ const trackEl = radarEl.querySelector('.rc-track');
 const thumbEl = radarEl.querySelector('.rc-thumb');
 const fillEl = radarEl.querySelector('.rc-fill');
 const fireEl = radarEl.querySelector('.rc-fire');
+let fireLatch = false; // a long press on FIRE keeps the gun firing until the button is tapped again
+function setFireLatch(on) {
+  fireLatch = on;
+  fireEl.classList.toggle('latched', on);
+  fireEl.querySelector('span').textContent = on ? 'FIRING' : 'FIRE';
+  if (!on) input.fire = 0;
+}
 const ammoEl = radarEl.querySelector('.rc-am');
 const ZOOM_SPAN = Math.log(80); // the zoom goal runs from 8 (wide) to 0.1 (close) along the track
 const zoomFrac = () => 1 - Math.log(sightZoomGoal / 0.1) / ZOOM_SPAN;
@@ -1095,7 +1104,12 @@ radarEl.addEventListener('pointerdown', (e) => {
   if (!b) return;
   e.preventDefault();
   const release = (fn) => { const up = () => { fn(); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); }; window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up); };
-  if (b.dataset.act === 'fire') { input.fire = 1; release(() => { input.fire = 0; }); }
+  if (b.dataset.act === 'fire') {
+    if (fireLatch) { setFireLatch(false); return; } // a tap while it is firing stops it
+    input.fire = 1;
+    const hold = setTimeout(() => { setFireLatch(true); say('Firing continuously: tap FIRE to stop', 'warn', 2400); }, 500);
+    release(() => { clearTimeout(hold); if (!fireLatch) input.fire = 0; });
+  }
   else if (b.dataset.act === 'auto') { sight.manual = false; sight.lock = null; }
   else if (b.dataset.act === 'lock') toggleLock();
   else if (b.dataset.act === 'next') pickNextTarget();
@@ -1371,7 +1385,7 @@ function updateRadarUi() {
   thumbEl.style.left = `${zf}%`;
   fillEl.style.width = `${zf}%`;
   const gn = sim.player.gun;
-  fireEl.style.setProperty('--rl', clamp(1 - gn.cool / MAIN_RELOAD, 0, 1).toFixed(3));
+  fireEl.style.setProperty('--rl', clamp(1 - gn.cool / sim.reloadTime(sim.player), 0, 1).toFixed(3));
   fireEl.classList.toggle('ready', gn.cool <= 0 && gn.onTarget && !sight.warn && !!sight.lock);
   fireEl.classList.toggle('weak', !sight.lock && !sight.warn);
   fireEl.classList.toggle('sea', !sight.lock && !sight.snap && !sight.warn);
@@ -1573,6 +1587,7 @@ renderer.setAnimationLoop((now) => {
   frameDt = dt;
   syncShips();
   introStep(dt);
+  if (fireLatch) input.fire = 1;
   updateAim();
   sim.advance(dt, input);
   handleEvents();
