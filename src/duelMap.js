@@ -229,25 +229,37 @@ export function createDuelMap() {
       }
     }
 
-    // Where the radar view is looking: a thin line out to the rim, a pointer on the rim and the true bearing (no sector).
+    // Where the radar view is looking: a sector out to the rim as wide as the lens (it narrows as the radar zooms in), a centre line and the true bearing.
     if (sightView) {
       const a0 = sightView.yaw - sim.player.psi - Math.PI / 2;
       const col = sightView.locked ? '61, 220, 132' : '255, 196, 84';
       const ux = Math.cos(a0);
       const uy = Math.sin(a0);
-      ctx.strokeStyle = `rgba(${col}, 0.8)`;
-      ctx.lineWidth = 1;
+      const half = Math.max(0.018, Math.min(sightView.fov / 2, Math.PI / 2.2)); // at least a thin wedge, so the tightest zoom still shows
+      const rim = R - 9;
+      const g = ctx.createRadialGradient(R, R, 4, R, R, rim);
+      g.addColorStop(0, `rgba(${col}, 0.05)`);
+      g.addColorStop(1, `rgba(${col}, 0.42)`);
+      ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.moveTo(R + ux * 8, R + uy * 8);
-      ctx.lineTo(R + ux * (R - 9), R + uy * (R - 9));
-      ctx.stroke();
-      ctx.fillStyle = `rgb(${col})`;
-      ctx.beginPath();
-      ctx.moveTo(R + ux * (R - 2), R + uy * (R - 2));
-      ctx.lineTo(R + ux * (R - 11) - uy * 4, R + uy * (R - 11) + ux * 4);
-      ctx.lineTo(R + ux * (R - 11) + uy * 4, R + uy * (R - 11) - ux * 4);
+      ctx.moveTo(R, R);
+      ctx.arc(R, R, rim, a0 - half, a0 + half);
       ctx.closePath();
       ctx.fill();
+      ctx.strokeStyle = `rgba(${col}, 0.9)`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(R, R);
+      ctx.lineTo(R + Math.cos(a0 - half) * rim, R + Math.sin(a0 - half) * rim);
+      ctx.arc(R, R, rim, a0 - half, a0 + half);
+      ctx.lineTo(R, R);
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(${col}, 0.35)`;
+      ctx.beginPath();
+      ctx.moveTo(R + ux * 8, R + uy * 8);
+      ctx.lineTo(R + ux * rim, R + uy * rim);
+      ctx.stroke();
+      ctx.fillStyle = `rgb(${col})`;
       const brg = ((Math.round((sightView.yaw * 180) / Math.PI) % 360) + 360) % 360;
       const txt = `${String(brg).padStart(3, '0')}°`;
       ctx.font = '700 9px system-ui, sans-serif';

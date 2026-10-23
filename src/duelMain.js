@@ -1591,7 +1591,7 @@ function updateRadarUi() {
   const pct = (f) => Math.round(f * 100);
   const aim = sight.zone ? `${sight.lock ? `LOCKED: ${COMPARTMENTS[sight.zone].name.toUpperCase()} · ${pct(LOCK_FRACTION)}% a hit` : sight.snap ? `FOCUS: ${COMPARTMENTS[sight.zone].name.toUpperCase()} · ${pct(FOCUS_FRACTION)}% a hit, Space locks` : 'NO FOCUS: the shell falls in the sea'}` : sight.warn ?? 'NO FOCUS: the shell falls in the sea';
   sightTxt.textContent = `${aim} · enemy${which} ${kmText(sim.range())} · ${g.stock.he + g.stock.ap} rds · ${gunStatus(sim.player)}`;
-  map.sight = { yaw, locked: !!sight.zone };
+  map.sight = { yaw, locked: !!sight.zone, fov: 2 * Math.atan(Math.tan(rad(camera.fov / 2)) * camera.aspect) }; // the lens's width on the map
 }
 
 // --- Loop --------------------------------------------------------------------------------------------------------------------
