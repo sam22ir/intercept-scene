@@ -9,7 +9,8 @@ import { Kit } from './kit.js';
 const lit = (color, glow = 0.22) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: glow, roughness: 0.85, metalness: 0.15 });
 const glow = (color) => new THREE.MeshBasicMaterial({ color, toneMapped: false });
 
-export function createBridge() {
+// `classicWheel` swaps the plain helm for a spoked wooden ship's wheel with brass fittings on a wooden pedestal (the surface battle's bridge; Solo Air Defense keeps its own).
+export function createBridge({ classicWheel = false } = {}) {
   const M = {
     wall: lit(0x3a444c),
     trim: lit(0x1b2126, 0.15),
@@ -18,6 +19,9 @@ export function createBridge() {
     seat: lit(0x1d2a3a, 0.2),
     brass: lit(0xb08a3c, 0.3),
     wheel: lit(0x6a4a2a, 0.3),
+    woodD: lit(0x5a3216, 0.32),
+    woodL: lit(0x8a5628, 0.34),
+    brassB: lit(0xe0b445, 0.5),
     light: glow(0xfff1d0),
     green: glow(0x2c9c78),
     cyan: glow(0x2480ad),
@@ -61,7 +65,12 @@ export function createBridge() {
   }
   for (let i = 0; i < 12; i++) box(i % 3 ? M.green : M.amber, 0.03, 0.03, 0.06, 14.6, Y0 + 1.1, -3.3 + i * 0.6, [0, 0, -0.35]);
   // The helm: a pedestal with the wheel on it, and the telegraphs either side.
-  k.add(new THREE.CylinderGeometry(0.2, 0.28, 0.95, 14), M.console, { pos: [13.5, Y0 + 0.5, 0] });
+  if (classicWheel) { // a wooden post behind the wheel, with brass studs and a base board
+    k.add(new THREE.BoxGeometry(0.2, 1.5, 0.42), M.woodD, { pos: [13.78, Y0 + 0.75, 0] });
+    k.add(new THREE.CylinderGeometry(0.21, 0.21, 0.2, 16, 1, false, 0, Math.PI), M.woodD, { pos: [13.78, Y0 + 1.5, 0], rot: [0, 0, Math.PI / 2] });
+    k.add(new THREE.BoxGeometry(0.34, 0.07, 0.62), M.woodL, { pos: [13.78, Y0 + 0.035, 0] });
+    for (const z of [-0.12, 0.12]) k.add(new THREE.SphereGeometry(0.025, 8, 6), M.brassB, { pos: [13.665, Y0 + 0.28, z] });
+  } else k.add(new THREE.CylinderGeometry(0.2, 0.28, 0.95, 14), M.console, { pos: [13.5, Y0 + 0.5, 0] });
   for (const z of [-1.25, 1.25]) {
     k.add(new THREE.CylinderGeometry(0.15, 0.2, 0.9, 12), M.console, { pos: [13.9, Y0 + 0.5, z] });
     box(M.brass, 0.3, 0.04, 0.3, 13.9, Y0 + 0.97, z);
@@ -79,13 +88,29 @@ export function createBridge() {
 
   // The wheel: a rim and spokes in a vertical plane facing aft, turning about the x axis (to starboard: clockwise from behind).
   const wheel = new THREE.Group();
-  wheel.position.set(13.5, Y0 + 1.25, 0);
+  wheel.position.set(13.5, Y0 + (classicWheel ? 1.42 : 1.25), 0);
   const wk = new Kit();
-  wk.add(new THREE.TorusGeometry(0.34, 0.025, 8, 28), M.wheel, { rot: [0, Math.PI / 2, 0] });
-  wk.add(new THREE.CylinderGeometry(0.06, 0.06, 0.12, 10), M.brass, { rot: [0, 0, Math.PI / 2] });
-  for (let i = 0; i < 6; i++) {
-    const a = (i * Math.PI) / 3;
-    wk.rod([0, Math.cos(a) * 0.04, Math.sin(a) * 0.04], [0, Math.cos(a) * 0.4, Math.sin(a) * 0.4], 0.012, M.wheel, 5);
+  if (classicWheel) {
+    const at = (a, r) => [0, Math.cos(a) * r, Math.sin(a) * r];
+    wk.add(new THREE.TorusGeometry(0.33, 0.032, 10, 40), M.woodD, { rot: [0, Math.PI / 2, 0] });
+    wk.add(new THREE.TorusGeometry(0.296, 0.01, 6, 40), M.brassB, { rot: [0, Math.PI / 2, 0], pos: [-0.012, 0, 0] });
+    wk.add(new THREE.CylinderGeometry(0.085, 0.085, 0.07, 18), M.brassB, { rot: [0, 0, Math.PI / 2] });
+    wk.add(new THREE.CylinderGeometry(0.055, 0.055, 0.1, 14), M.woodD, { rot: [0, 0, Math.PI / 2], pos: [-0.03, 0, 0] });
+    wk.add(new THREE.SphereGeometry(0.032, 10, 8), M.brassB, { pos: [-0.075, 0, 0] });
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4;
+      wk.rod(at(a, 0.07), at(a, 0.33), 0.015, M.woodL, 6, 0.012);
+      wk.rod(at(a, 0.325), at(a, 0.365), 0.036, M.brassB, 8); // the brass ferrule
+      wk.rod(at(a, 0.365), at(a, 0.5), 0.028, M.woodL, 8, 0.016); // the turned handle
+      wk.add(new THREE.SphereGeometry(0.02, 8, 6), M.woodL, { pos: at(a, 0.5) });
+    }
+  } else {
+    wk.add(new THREE.TorusGeometry(0.34, 0.025, 8, 28), M.wheel, { rot: [0, Math.PI / 2, 0] });
+    wk.add(new THREE.CylinderGeometry(0.06, 0.06, 0.12, 10), M.brass, { rot: [0, 0, Math.PI / 2] });
+    for (let i = 0; i < 6; i++) {
+      const a = (i * Math.PI) / 3;
+      wk.rod([0, Math.cos(a) * 0.04, Math.sin(a) * 0.04], [0, Math.cos(a) * 0.4, Math.sin(a) * 0.4], 0.012, M.wheel, 5);
+    }
   }
   wheel.add(wk.build({ name: 'wheel', castShadow: false, receiveShadow: false }));
   group.add(wheel);

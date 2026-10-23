@@ -224,7 +224,7 @@ const tracerVis = streaks(400, 1.1, 0xff6a1f, 34); // the 30 mm tracers
 const tracers = Array.from({ length: 400 }, () => ({ on: false, p: new THREE.Vector3(), v: new THREE.Vector3(), t0: 0 }));
 let tracerNext = 0;
 syncShips(); // the two ships to start with (more are added as they arrive)
-const bridge = createBridge(); // the wheelhouse's inside, shown only in the bridge view (as in Solo Air Defense)
+const bridge = createBridge({ classicWheel: true }); // the wheelhouse's inside, shown only in the bridge view (as in Solo Air Defense)
 bridge.group.visible = false;
 ships[0].group.add(bridge.group);
 
