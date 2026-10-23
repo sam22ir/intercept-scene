@@ -66,6 +66,11 @@ let lookPitch = -0.03;
 const _a = new THREE.Vector3();
 const _vel = new THREE.Vector3();
 wireWeather({ look: env.look });
+// No fog: the haze starts only at the far edge of the sea plane (30 km), so ships and islands keep their colour to the horizon.
+env.ocean.material.uniforms.uFogNear.value = 24000;
+env.ocean.material.uniforms.uFogFar.value = 31000;
+scene.fog.near = 24000;
+scene.fog.far = 31000;
 
 // --- The state of the sea (a slider in the menu, kept between visits, applied at once) ---------------------------------------------
 // 0 is a flat calm and 100 is very high waves. The waves' steepness and the whitecaps follow the slider, and so does how much the ships
