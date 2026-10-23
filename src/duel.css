@@ -679,9 +679,7 @@ body.mission-duel #fly-keys { bottom: auto; height: auto; align-content: start; 
 .hs-prop .pp-hubring { fill: #c9a24d; stroke: #6e5320; stroke-width: 0.7; }
 .hs-prop .pp-hub { fill: #4a2f14; }
 
-/* The level bars beside the propellers: filled by the ship's speed */
-.duel-ship .hs-lvl { flex: none; align-self: flex-end; position: relative; width: 9px; height: 46px; margin-bottom: 4px; border-radius: 5px; background: rgba(255, 255, 255, 0.12); box-shadow: 0 0 0 1px rgba(214, 178, 92, 0.45); overflow: visible; }
-.hs-lvl .lv-fill { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--lvl, 0) * 100%); border-radius: 5px; background: linear-gradient(0deg, #a9843a, #f3dc92); transition: height 0.2s linear; }
-.hs-lvl.flank .lv-fill { background: linear-gradient(0deg, #d6b25c, #ff7a1a); }
-.hs-prop .pp-edge { fill: none; stroke: rgba(255, 255, 255, 0.55); stroke-width: 0.9; stroke-linecap: round; }
-.hs-prop .pp-cap { fill: #e8c870; }
+/* The throttle bars beside the propellers: five notches, lit up from the bottom with the telegraph order */
+.duel-ship .hs-lvl { flex: none; align-self: flex-end; width: 14px; height: 48px; margin-bottom: 3px; display: flex; flex-direction: column; gap: 3px; }
+.hs-lvl i { flex: 1; border-radius: 3px; background: rgba(255, 255, 255, 0.14); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35); transition: background 0.15s; }
+.hs-lvl i.on { background: linear-gradient(180deg, #f3dc92, #c9a24d); } .hs-lvl i.top { background: linear-gradient(180deg, #ffb066, #ff7a1a); } .hs-lvl i.astern { background: #35c8ff; }

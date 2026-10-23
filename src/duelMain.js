@@ -724,8 +724,8 @@ propL.className = propR.className = 'hs-prop';
 propL.innerHTML = propR.innerHTML = PROP_SVG;
 domeHost.className = 'hs-domehost';
 const barL = document.createElement('div'), barR = document.createElement('div');
-barL.className = barR.className = 'hs-lvl'; // a sliding bar for each engine: filled by the ship's speed
-barL.innerHTML = barR.innerHTML = '<i class="lv-fill"></i>';
+barL.className = barR.className = 'hs-lvl'; // a sliding bar for each engine: five notches: dead slow, slow, half, full, flank (your throttle, not the speed)
+barL.innerHTML = barR.innerHTML = '<i></i><i></i><i></i><i></i><i></i>';
 shipEl.append(barL, propL, domeHost, propR, barR);
 document.body.appendChild(shipEl);
 const propRotL = propL.querySelector('.pp-rot'), propRotR = propR.querySelector('.pp-rot');
@@ -735,9 +735,11 @@ function spinProps(dt) {
   propAng = (propAng + kn * 0.18 * dt) % (Math.PI * 2); // 38 kn: about one turn a second
   const deg = (propAng * 180) / Math.PI;
   propRotL.style.transform = `rotate(${-deg}deg)`; propRotR.style.transform = `rotate(${deg}deg)`;
-  const lvl = clamp(Math.abs(kn) / 38, 0, 1).toFixed(3), fl = kn > 28.5; // the bar fills with the real speed (38 kn is full); orange past the old top speed
-  barL.style.setProperty('--lvl', lvl); barR.style.setProperty('--lvl', lvl);
-  barL.classList.toggle('flank', fl); barR.classList.toggle('flank', fl);
+  const ord = sim.player.order;
+  for (const bar of [barL, barR]) { // top notch first: the bar fills from the bottom with the throttle (slow astern lights the bottom one in blue)
+    const n = bar.children.length;
+    for (let q = 0; q < n; q++) { const lit = ord === 0 ? q === n - 1 : (n - 1 - q) < ord - 1; bar.children[q].className = lit ? (ord === 0 ? 'astern' : q === 0 ? 'top' : 'on') : ''; }
+  }
   const fast = Math.min(1, Math.abs(kn) / 20);
   propL.style.setProperty('--blur', fast.toFixed(2)); propR.style.setProperty('--blur', fast.toFixed(2));
 }
