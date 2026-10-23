@@ -430,7 +430,7 @@ function nextEnemyStep() {
   if (next.stats.shells > 0) { // she is already firing: no question, straight into the sight, the gun firing
     setView('radar');
     setFireLatch(true);
-    say(`Enemy ${relName(sim.relBearing(sim.player))} is firing on you: engaging (F stops)`, 'bad', 3600, 'alarm');
+    say(`Under fire · ${relName(sim.relBearing(sim.player))}`, 'bad', 3600, 'alarm');
   } else {
     INTRO.again = true;
     toAsk('Another hostile');
@@ -449,7 +449,7 @@ function handleEvents() {
       v.flash = 0.09;
       for (let k = 0; k < 7; k++) fx.gunSmoke(_c, _b.set(e.dir[0] * 9, e.dir[1] * 9, e.dir[2] * 9), sim.t);
     } else if (e.type === 'contact') {
-      say(`Contact: enemy ${relName(e.rel)}, ${kmText(e.range)}${e.heli ? ' (the helicopter has her)' : ''}`, 'warn', 3600, 'ping');
+      say(`Contact ${relName(e.rel)} · ${kmText(e.range)}`, 'warn', 3600, 'ping');
     } else if (e.type === 'lost') {
       say('Contact lost', '', 2400);
     } else if (e.type === 'hgun') {
@@ -470,29 +470,29 @@ function handleEvents() {
       fx.shellBurst(_c.set(...e.pos), sim.t);
     } else if (e.type === 'ground') {
       for (let k = 0; k < 3; k++) fx.explosion(_c.set(e.pos[0] + (k - 1) * 10, 4, e.pos[2]), sim.t + k * 0.25);
-      if (e.ship === 0) { say('Aground: the engine room is holed, back her off', 'bad', 3600, 'alarm'); slamShake = Math.max(slamShake, 2); }
+      if (e.ship === 0) { say('Aground: back off', 'bad', 3600, 'alarm'); slamShake = Math.max(slamShake, 2); }
     } else if (e.type === 'hit') {
       fx.shellBurst(_c.set(...e.pos), sim.t);
       if (e.ship === 0) {
         alarmEl.classList.remove('hit'); void alarmEl.offsetWidth; alarmEl.classList.add('hit');
         say(`Hit: ${COMPARTMENTS[e.comp].name}${e.out ? ' out' : ''}`, 'bad', 2200);
       } else if (e.neutral) {
-        if (e.owner === 0) say('You hit a merchant ship: hold fire, sinking her loses the duel', 'bad', 3600, 'alarm');
+        if (e.owner === 0) say('Merchant hit: hold fire', 'bad', 3600, 'alarm');
       } else if (e.owner === 0) say(`Hit on her ${COMPARTMENTS[e.comp].name.toLowerCase()}${e.out ? ': out' : ''}`, 'ok', 2200);
     } else if (e.type === 'arrive') {
       const where = relName(e.rel);
       if (e.kind === 'enemy') {
         const live = sim.ships.filter((o) => o.team === 1 && o.tSunk === null).length;
         const help = live > 1 ? sim.callFriend() : { ok: false };
-        say(`Another enemy frigate ${where}, ${kmText(e.range)}${help.ok ? ': a friendly frigate is coming to help' : ''}`, 'warn', 4200, 'alarm');
+        say(`Enemy frigate ${where} · ${kmText(e.range)}`, 'warn', 4200, 'alarm');
       }
-      else if (e.kind === 'ally') say(`Friendly frigate ${where}, ${kmText(e.range)}: coming to help`, 'ok', 4200, 'ping');
-      else say(`Merchant ship crossing ${where}: do not fire on her`, '', 4200, 'ping');
+      else if (e.kind === 'ally') say(`Friendly ${where} · ${kmText(e.range)}`, 'ok', 4200, 'ping');
+      else say(`Merchant ${where}: hold fire`, '', 4200, 'ping');
     } else if (e.type === 'collision') {
       for (let k = 0; k < 4; k++) fx.shellBurst(_c.set(e.pos[0] + (Math.random() - 0.5) * 10, e.pos[1] + Math.random() * 4, e.pos[2] + (Math.random() - 0.5) * 10), sim.t);
       if (e.a === 0 || e.b === 0) {
         alarmEl.classList.remove('hit'); void alarmEl.offsetWidth; alarmEl.classList.add('hit');
-        say(`Collision at ${e.impact.toFixed(0)} m/s`, 'bad', 2600, 'alarm');
+        say('Collision', 'bad', 2600, 'alarm');
       }
     } else if (e.type === 'gunhit') {
       if (e.ship === 0) { alarmEl.classList.remove('hit'); void alarmEl.offsetWidth; alarmEl.classList.add('hit'); }
@@ -501,7 +501,7 @@ function handleEvents() {
       if (e.miss < 60) say(e.owner === 0 ? 'Near miss' : 'Their shell falls close', e.owner === 0 ? '' : 'warn', 1400);
     } else if (e.type === 'out') {
       const moved = e.ship !== 0 ? sightPastOut(e.ship, e.comp) : null;
-      say(`${who(e.ship)} ${COMPARTMENTS[e.comp].name.toLowerCase()} is out${moved ? `: sight on her ${COMPARTMENTS[moved].name.toLowerCase()}` : ''}`, e.ship === 0 ? 'bad' : 'ok', 3000, e.ship === 0 ? 'alarm' : 'ping');
+      say(`${who(e.ship)} ${COMPARTMENTS[e.comp].name.toLowerCase()} out`, e.ship === 0 ? 'bad' : 'ok', 3000, e.ship === 0 ? 'alarm' : 'ping');
     } else if (e.type === 'sunk') {
       if (sim.ships[e.ship]?.team === 1) nextEnemyPending = true;
       startKill(e.ship);
@@ -509,11 +509,11 @@ function handleEvents() {
     } else if (e.type === 'ammo') {
       
     } else if (e.type === 'repair') {
-      if (e.ship === 0) say(e.phase === 'start' ? `Repairing the ${COMPARTMENTS[e.comp].name.toLowerCase()}: ${REPAIR_TIME} s` : `${COMPARTMENTS[e.comp].name} repaired`, e.phase === 'start' ? 'warn' : 'ok', 2000);
+      if (e.ship === 0) say(e.phase === 'start' ? `Repairing ${COMPARTMENTS[e.comp].name.toLowerCase()}` : `${COMPARTMENTS[e.comp].name} repaired`, e.phase === 'start' ? 'warn' : 'ok', 2000);
     } else if (e.type === 'fire') {
-      if (e.ship === 0) say(`Fire in the ${COMPARTMENTS[e.comp].name.toLowerCase()}: send a crew`, 'warn', 2400, 'alarm');
+      if (e.ship === 0) say(`Fire: ${COMPARTMENTS[e.comp].name.toLowerCase()}`, 'warn', 2400, 'alarm');
     } else if (e.type === 'over') {
-      say(e.reason === 'merchant' ? 'You sank a merchant ship: you lose' : e.winner === 0 ? 'The enemy is going down: you win' : 'Your ship is sinking: you lose', e.winner === 0 ? 'ok' : 'bad', 60000, e.winner === 0 ? 'ping' : 'alarm');
+      say(e.reason === 'merchant' ? 'Merchant sunk: you lose' : e.winner === 0 ? 'You win' : 'You lose', e.winner === 0 ? 'ok' : 'bad', 60000, e.winner === 0 ? 'ping' : 'alarm');
     }
   }
 }
@@ -541,7 +541,7 @@ function setView(v) {
     radarPrevManual = sim.player.manual;
     input.left = input.right = 0;
     setManual(true);
-    say('Radar: arrows or a drag aim the sight, Space locks, Enter fires. The helm is locked: Esc goes back', 'warn', 4200);
+    say('Aim: arrows · lock: Space · fire: F · Esc: helm', 'warn', 4200);
   } else if (v !== 'radar' && view === 'radar') setManual(radarPrevManual); // the gun goes on firing: a latched FIRE or a held key carries over
   view = v;
   radarKeys.l = radarKeys.r = radarKeys.u = radarKeys.d = radarKeys.zi = radarKeys.zo = 0;
@@ -672,14 +672,14 @@ function gunStatus(s) {
   const g = s.gun;
   if (s.tSunk !== null) return '';
   if (s.comp.gun <= 0) return 'OUT';
-  if (g.ammo <= 0) return 'NO AMMUNITION';
-  if (s.idx === 0 && fireLatch) return 'FIRING · F stops';
+  if (g.ammo <= 0) return 'NO AMMO';
+  if (s.idx === 0 && fireLatch) return 'FIRING';
   if (g.landBlocked) return 'LAND IN THE WAY';
   const sol = Math.abs(sim.relBearing(s));
-  if (sim.range() > MAIN_RANGE) return `OUT OF RANGE (${kmText(MAIN_RANGE)})`;
-  if (sol > MAIN_ARC) return 'OUT OF ARC: turn her';
+  if (sim.range() > MAIN_RANGE) return 'OUT OF RANGE';
+  if (sol > MAIN_ARC) return 'OUT OF ARC';
   if (g.cool > 0) return `LOADING ${g.cool.toFixed(1)} s`;
-  if (s.manual) return g.engaged ? (g.onTarget ? 'ON YOUR AIM' : 'TRAINING') : 'point at her';
+  if (s.manual) return g.engaged ? (g.onTarget ? 'ON YOUR AIM' : 'TRAINING') : 'aim at her';
   return g.onTarget ? 'ON TARGET' : 'TRAINING';
 }
 function endHtml() {
@@ -939,6 +939,17 @@ strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" ti
 document.body.appendChild(strip);
 viewButtons.push(...strip.querySelectorAll('button'));
 viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+{ // the keys button: shows or hides the key bar (hidden at the start)
+  const kb = document.createElement('button');
+  kb.type = 'button';
+  kb.className = 'duel-keys-btn';
+  kb.title = 'Keys';
+  kb.setAttribute('aria-label', 'Show the keys');
+  kb.setAttribute('aria-pressed', 'false');
+  kb.innerHTML = '<svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>';
+  strip.appendChild(kb);
+  kb.addEventListener('click', () => { const on = keysEl.classList.toggle('show'); kb.classList.toggle('active', on); kb.setAttribute('aria-pressed', String(on)); kb.blur(); });
+}
 
 keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>←</kbd> <kbd>→</kbd>', 'Rudder to port / starboard while held; let go and it comes back amidships'],
@@ -1023,10 +1034,8 @@ const keysEl = document.createElement('div');
 keysEl.id = 'fly-keys';
 keysEl.className = 'fly-keys';
 document.body.appendChild(keysEl);
-let keysTimer = 0;
-// The key bar is out of the way: it shows for a few seconds when the view changes, then fades.
-function flashKeys(ms = 6000) { keysEl.classList.add('show'); clearTimeout(keysTimer); keysTimer = setTimeout(() => keysEl.classList.remove('show'), ms); }
-flashKeys(9000); // and at the start
+// The key bar stays hidden until the keys button (next to the views) is pressed.
+function flashKeys() { /* the key bar no longer pops up by itself: the keys button next to the views shows it */ }
 const input = { left: 0, right: 0, fire: 0, gat: 0, aim: null };
 const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`;
 function keysHtml() {
@@ -1100,7 +1109,7 @@ function restart() {
   startIntro();
 }
 function startBanner() {
-  say(`Enemy ${relName(sim.relBearing(sim.player))}, ${kmText(sim.range())}: close, turn to bring your gun to bear, and keep her off your stern`, '', 5200);
+  say(`Enemy ${relName(sim.relBearing(sim.player))} · ${kmText(sim.range())}`, '', 5200);
 }
 window.addEventListener('keydown', (e) => {
   if (KILL.on && (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter')) { endKill(); e.preventDefault(); return; } // skip the kill-cam
@@ -1306,7 +1315,7 @@ radarEl.addEventListener('pointerdown', (e) => {
   if (b.dataset.act === 'fire') {
     if (fireLatch) { setFireLatch(false); return; } // a tap while it is firing stops it
     input.fire = 1;
-    const hold = setTimeout(() => { setFireLatch(true); say('Firing continuously: tap FIRE to stop', 'warn', 2400); }, 500);
+    const hold = setTimeout(() => { setFireLatch(true); say('Firing: tap to stop', 'warn', 2400); }, 500);
     release(() => { clearTimeout(hold); if (!fireLatch) input.fire = 0; });
   }
   else if (b.dataset.act === 'auto') { sight.manual = false; sight.lock = null; }
@@ -1317,7 +1326,7 @@ radarEl.addEventListener('pointerdown', (e) => {
 function pickNextTarget() {
   sight.lock = null; // a lock is on one ship's hull: a new target lets it go
   const to = sim.cycleTarget(0);
-  if (to) say(`Target: enemy ${relName(wrapAngle(Math.atan2(to.z - sim.player.z, to.x - sim.player.x) - sim.player.psi))}, ${kmText(sim.distance(sim.player, to))}`, '', 1800);
+  if (to) say(`Target ${relName(wrapAngle(Math.atan2(to.z - sim.player.z, to.x - sim.player.x) - sim.player.psi))} · ${kmText(sim.distance(sim.player, to))}`, '', 1800);
   return to;
 }
 // In the sailing views, a click on an enemy ship (or near her) asks whether to attack her: yes turns the target to her and opens the radar view.
@@ -1602,8 +1611,8 @@ function updateRadarUi() {
   sightEl.classList.toggle('searching', !sight.zone);
   sightEl.classList.toggle('warn', !!sight.warn);
   const pct = (f) => Math.round(f * 100);
-  const aim = sight.zone ? `${sight.lock ? `LOCKED: ${COMPARTMENTS[sight.zone].name.toUpperCase()} · ${pct(LOCK_FRACTION)}% a hit` : sight.snap ? `FOCUS: ${COMPARTMENTS[sight.zone].name.toUpperCase()} · ${pct(FOCUS_FRACTION)}% a hit, Space locks` : 'NO FOCUS: the shell falls in the sea'}` : sight.warn ?? 'NO FOCUS: the shell falls in the sea';
-  sightTxt.textContent = `${aim} · enemy${which} ${kmText(sim.range())} · ${g.stock.he + g.stock.ap} rds · ${gunStatus(sim.player)}`;
+  const aim = sight.zone ? `${sight.lock ? `LOCK ${COMPARTMENTS[sight.zone].name.toUpperCase()} ${pct(LOCK_FRACTION)}%` : sight.snap ? `FOCUS ${COMPARTMENTS[sight.zone].name.toUpperCase()} ${pct(FOCUS_FRACTION)}% · Space` : 'NO AIM'}` : sight.warn ?? 'NO AIM';
+  sightTxt.textContent = `${aim} · ${kmText(sim.range())}${which} · ${gunStatus(sim.player)}`;
   map.sight = { yaw, locked: !!sight.zone, fov: 2 * Math.atan(Math.tan(rad(camera.fov / 2)) * camera.aspect) }; // the lens's width on the map
 }
 
@@ -1665,13 +1674,13 @@ function startIntro(withShow = false) {
     showEl.hidden = false;
     return;
   }
-  say('Radar: searching…', '', 3000);
+  say('Searching…', '', 3000);
 }
 function endShow() {
   showEl.hidden = true;
   INTRO.phase = 'scan'; INTRO.t = 0;
   document.body.classList.remove('duel-cine');
-  say('Radar: searching…', '', 3000);
+  say('Searching…', '', 3000);
 }
 function endIntro() {
   INTRO.phase = 'off';
@@ -1684,7 +1693,7 @@ function toAsk(tag = 'Hostile contact') {
   const e = sim.enemy;
   calloutEl.hidden = true;
   document.body.classList.remove('duel-cine');
-  if (!e || e.det === false || e.tSunk !== null) { endIntro(); say('No contact on the radar: find her', 'warn', 3600); return; }
+  if (!e || e.det === false || e.tSunk !== null) { endIntro(); say('No contact', 'warn', 3600); return; }
   INTRO.phase = 'ask';
   banner.hidden = true;
   introEl.innerHTML = `<div class="dz-stripe"></div><p class="dz-tag">⚠ ${tag}</p><h2>Enemy frigate</h2>`
@@ -1695,11 +1704,11 @@ function toAsk(tag = 'Hostile contact') {
 function engage() {
   endIntro();
   setView('radar');
-  say('Weapons free: aim at a part of her, then fire (F)', 'warn', 4200);
+  say('Weapons free: aim, then F', 'warn', 4200);
 }
 function holdFire() {
   endIntro();
-  say('Fire when you are ready: F or Enter', '', 3600);
+  say('Fire when ready: F', '', 3600);
 }
 introEl.addEventListener('click', (e) => {
   if (e.target.closest('[data-go]')) engage();
@@ -1729,7 +1738,7 @@ function introStep(dt) {
       INTRO.p0.copy(camera.position);
       camera.getWorldDirection(INTRO.l0).multiplyScalar(60).add(camera.position);
       document.body.classList.add('duel-cine');
-      say('Radar contact: hostile', 'bad', 2400);
+      say('Hostile contact', 'bad', 2400);
     }
   } else if (INTRO.phase === 'tour') {
     if (INTRO.t >= TOUR_LEN) { toAsk(); return; }
@@ -1931,7 +1940,7 @@ let lastHeliBtn = '';
 function heliMissile() {
   const comp = sight.lock ? sight.lock.comp : sight.snap ?? null; // the part aimed at in the radar view
   const r = sim.heliMissile(view === 'radar' ? comp : null);
-  say(r.ok ? (r.queued ? `Helicopter: moving into your view to fire at the ${COMPARTMENTS[r.comp].name.toLowerCase()}` : `Helicopter: missile away at the ${COMPARTMENTS[r.comp].name.toLowerCase()}`) : r.why, r.ok ? 'warn' : 'warn', 2800);
+  say(r.ok ? (r.queued ? 'Heli: moving in' : `Heli: missile at ${COMPARTMENTS[r.comp].name.toLowerCase()}`) : r.why, r.ok ? 'warn' : 'warn', 2800);
 }
 heliBtn.addEventListener('click', () => { say(sim.heliRequest(), ''); heliBtn.blur(); });
 missBtn.addEventListener('click', () => { heliMissile(); missBtn.blur(); });
@@ -1955,7 +1964,7 @@ function updateHeliButtons() {
 let lastFriend = '';
 function callFriend() {
   const r = sim.callFriend();
-  say(r.ok ? 'Calling a friendly frigate: she comes in from astern' : r.why, r.ok ? 'ok' : 'warn', 2600);
+  say(r.ok ? 'Frigate called' : r.why, r.ok ? 'ok' : 'warn', 2600);
 }
 friendBtn.addEventListener('click', () => { callFriend(); friendBtn.blur(); });
 function updateFriendBtn() {

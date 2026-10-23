@@ -555,3 +555,7 @@ body.mission-duel #fly-keys { flex-wrap: nowrap; overflow: hidden; max-width: ca
 .duel-title small { display: block; font-size: 12px; letter-spacing: 0.3em; text-transform: uppercase; color: #8fd0ff; margin-bottom: 6px; }
 .duel-title h2 { margin: 0; font-size: clamp(30px, 6vw, 58px); font-weight: 300; letter-spacing: 0.14em; text-transform: uppercase; line-height: 1.05; }
 .duel-title p { margin: 10px 0 0; font-size: 13px; letter-spacing: 0.06em; opacity: 0.85; border-top: 1px solid rgba(143, 208, 255, 0.5); padding-top: 8px; }
+/* The key bar is hidden until the keys button (last in the views strip) shows it; it then stays until it is pressed again. */
+body.mission-duel #fly-keys:not(.show) { opacity: 0; pointer-events: none; }
+.duel-views .duel-keys-btn { margin-left: 4px; border-left: 1px solid rgba(255, 255, 255, 0.18); border-radius: 0 999px 999px 0; }
+.duel-views .duel-keys-btn svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
