@@ -1670,6 +1670,20 @@ function resize() {
   pointScale.value = (h * renderer.getPixelRatio()) / (2 * Math.tan(rad(camera.fov / 2)));
 }
 window.addEventListener('resize', resize);
+// Adaptive resolution: the sea and the shadows are fill-rate bound on integrated graphics, so the render scale follows the frame rate
+// (down in steps of 0.1 to 0.75 when under 40 fps, back up toward the device cap when over 55). The interface and the look are untouched.
+const PR_MAX = Math.min(window.devicePixelRatio, 1.5), PR_MIN = 0.75;
+let prAcc = 0, prN = 0;
+function adaptScale(dt) {
+  if (dt <= 0.0001 || document.hidden) return;
+  prAcc += dt; prN++;
+  if (prAcc < 1.5) return;
+  const avg = prAcc / prN;
+  prAcc = 0; prN = 0;
+  const pr = renderer.getPixelRatio();
+  const next = avg > 1 / 40 ? Math.max(PR_MIN, pr - 0.1) : avg < 1 / 55 ? Math.min(PR_MAX, pr + 0.05) : pr;
+  if (Math.abs(next - pr) > 0.001) { renderer.setPixelRatio(next); resize(); }
+}
 resize();
 setView('behind');
 
@@ -2045,6 +2059,7 @@ renderer.setAnimationLoop((now) => {
   const dt = Math.max(0, Math.min((now - last) / 1000, 0.1));
   last = now;
   frameDt = dt;
+  adaptScale(dt);
   syncShips();
   introStep(dt);
   nextEnemyStep();
