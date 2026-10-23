@@ -504,7 +504,11 @@ body.duel-cine .duel-pts { opacity: 0; }
 .pt .pi { stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .pt.hurt .pi { stroke: #f2c94c; } .pt.bad .pi { stroke: #ff9f43; } .pt.out { opacity: 0.8; } .pt.out .pi { stroke: #ff5d61; }
 .pt.hull { width: 48px; height: 48px; margin-bottom: 2px; }
-.pt.foe .pi { stroke: #ff8a8d; }
+.pt.mine { background: rgba(10, 30, 52, 0.82); box-shadow: 0 0 0 2px rgba(74, 163, 255, 0.55), 0 4px 12px rgba(0, 0, 0, 0.35); }
+.pt.foe { background: rgba(52, 12, 16, 0.82); box-shadow: 0 0 0 2px rgba(255, 82, 90, 0.6), 0 4px 12px rgba(0, 0, 0, 0.35); }
+.pt.mine .pi, .pt.mine.hurt .pi, .pt.mine.bad .pi { stroke: #7cc4ff; }
+.pt.foe .pi, .pt.foe.hurt .pi, .pt.foe.bad .pi { stroke: #ff8a8d; }
+.pt.mine.out .pi, .pt.foe.out .pi { stroke: #8b94a0; }
 .pt.sel { outline: 2px solid rgba(255, 255, 255, 0.7); outline-offset: 2px; }
 .pt.aim { outline: 2px dashed #f2c94c; outline-offset: 2px; }
 .pt .pm { position: absolute; right: -3px; bottom: -3px; display: flex; gap: 1px; text-decoration: none; }
@@ -661,3 +665,9 @@ body.mission-duel .minimap { bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) 
 body.mission-duel #fly-keys { left: calc(var(--gap, 14px) + var(--safe-l, 0px)); right: auto; top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 62px); transform: none; width: 232px; max-width: 232px; display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: flex-start; gap: 4px; padding: 8px 10px; border-radius: 12px; font-size: 11px; overflow-x: hidden; overflow-y: auto; max-height: calc(100vh - var(--map-d, 150px) - var(--gap, 14px) * 2 - 130px); pointer-events: none; z-index: 8; }
 body.mission-duel #fly-keys .fk { white-space: nowrap; }
 body.mission-duel #fly-keys kbd { min-width: 34px; flex: none; }
+body.mission-duel #fly-keys { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; row-gap: 3px; width: 350px; max-width: 350px; max-height: none; overflow: visible; font-size: 10.5px; padding: 8px 10px; }
+body.mission-duel #fly-keys kbd { min-width: 30px; }
+/* The entries of the key help that can be clicked. */
+body.mission-duel #fly-keys .fk-btn { pointer-events: auto; cursor: pointer; border-radius: 6px; padding: 1px 3px; margin: -1px -3px; }
+body.mission-duel #fly-keys .fk-btn:hover { background: rgba(255, 255, 255, 0.14); } body.mission-duel #fly-keys .fk-btn:active { background: rgba(255, 255, 255, 0.26); }
+body.mission-duel #fly-keys { bottom: auto; height: auto; align-content: start; }

@@ -806,7 +806,7 @@ function partBadges(s, mine, aim = null) {
     const rep = mine && fix.left > 0 ? 1 - fix.left / REPAIR_TIME : null;
     const state = f <= 0 ? 'OUT' : `${Math.round(f * 100)}%`;
     const note = mine ? (fix.left > 0 ? ' · repairing' : fix.wait > 0 ? ` · can be repaired in ${Math.ceil(fix.wait)} s` : f < 1 ? ' · click to repair' : '') : '';
-    const cls = (f <= 0 ? ' out' : f < 0.5 ? ' bad' : f < 0.99 ? ' hurt' : '') + (mine && COMP_IDS[selComp] === id ? ' sel' : '') + (aim === id ? ' aim' : '');
+    const cls = (mine ? ' mine' : ' foe') + (f <= 0 ? ' out' : f < 0.5 ? ' bad' : f < 0.99 ? ' hurt' : '') + (mine && COMP_IDS[selComp] === id ? ' sel' : '') + (aim === id ? ' aim' : '');
     return badge(id, f, { tip: `${COMPARTMENTS[id].name} · ${state}${note}`, cls, marks, rep, data: mine ? ` data-fix="${id}"` : '' });
   }).join('');
 }
@@ -819,7 +819,7 @@ function boardHtml() {
   const p = sim.player;
   const hullF = clamp(p.hp / HULL_HP, 0, 1);
   const any = COMP_IDS.some((id) => p.fix[id].left <= 0 && p.fix[id].wait <= 0 && (p.comp[id] < COMPARTMENTS[id].hp || p.fire[id] > 0 || p.leak[id] > 0.005));
-  const hull = badge('hull', hullF, { tip: `Your hull · ${Math.round(p.hp)} · ${floodText(p)}`, cls: `${hullF < 0.35 ? ' bad' : hullF < 0.7 ? ' hurt' : ''} hull`, marks: p.flood > 0.02 ? '<i class="leak">≈</i>' : '' });
+  const hull = badge('hull', hullF, { tip: `Your hull · ${Math.round(p.hp)} · ${floodText(p)}`, cls: `${hullF < 0.35 ? ' bad' : hullF < 0.7 ? ' hurt' : ''} hull mine`, marks: p.flood > 0.02 ? '<i class="leak">≈</i>' : '' });
   return hull + partBadges(p, true);
 }
 boardEl.addEventListener('click', (e) => {
@@ -1072,7 +1072,16 @@ document.body.appendChild(keysEl);
 // The key bar stays hidden until the keys button (next to the views) is pressed.
 function flashKeys() { /* the key bar no longer pops up by itself: the keys button next to the views shows it */ }
 const input = { left: 0, right: 0, fire: 0, gat: 0, aim: null };
-const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}"><kbd>${key}</kbd>${label}</span>`;
+// A click on an entry of the key help presses that key (a tap: down, then up); entries for keys that are held to steer or zoom stay plain.
+const KEY_CLICK = { F: 'f', G: 'g', Tab: 'Tab', 'Z X': 'x', E: 'e', W: 'w', B: 'b', M: 'm', A: 'a', R: 'r', K: 'k', Esc: 'Escape', 'click · Space': ' ', 'F · Enter': 'f' };
+const k = (key, label, on = false) => `<span class="fk${on ? ' on' : ''}${KEY_CLICK[key] ? ' fk-btn' : ''}"${KEY_CLICK[key] ? ` data-key="${KEY_CLICK[key]}" role="button" tabindex="-1"` : ''}><kbd>${key}</kbd>${label}</span>`;
+keysEl.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-key]');
+  if (!el) return;
+  const key = el.dataset.key;
+  window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+  setTimeout(() => window.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true })), key === 'f' || key === 'g' ? 350 : 60);
+});
 function keysHtml() {
   if (view === 'radar') {
     return `${k('← → ↑ ↓', 'aim')}${k('Shift Ctrl', 'zoom')}${k('click · Space', 'lock a part', !!sight.lock)}${k('F · Enter', fireLatch ? 'firing: F stops' : 'fire (hold)', input.fire || fireLatch)}`
@@ -1291,7 +1300,7 @@ radarEl.hidden = true;
 radarEl.innerHTML = '<div class="hr-marks"></div><div class="rc">'
   + '<div class="rc-main"><div class="rc-top"><b class="hr-mode">AUTO</b><span class="hr-brg"></span><b class="hr-zv"></b></div></div>'
   + '<div class="rc-gun"><div class="rc-dial"><svg class="rc-ring" viewBox="0 0 150 150" aria-label="Zoom"><circle class="rc-rtrack" r="70" cx="75" cy="75"/><circle class="rc-rfill" r="70" cx="75" cy="75"/><circle class="rc-hit" r="70" cx="75" cy="75"/><circle class="rc-rthumb" r="7"/></svg>'
-  + '<button type="button" class="rc-fire" data-act="fire" title="Fire (hold F)"><span>FIRE</span><kbd>F</kbd></button>'
+  + '<button type="button" class="rc-fire" data-act="fire" title="Fire (hold F)"><span>FIRE</span></button>'
   + '<button type="button" class="rc-lock" data-act="lock" title="Lock the part under the sight, or let the lock go (Space)">LOCK</button></div></div></div>';
 document.body.appendChild(radarEl);
 const radarMode = radarEl.querySelector('.hr-mode');
