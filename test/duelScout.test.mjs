@@ -13,7 +13,7 @@ describe('the plain duel is untouched', () => {
   it('has no islands, no helicopter and no contacts to find', () => {
     const sim = new DuelSim({ seed: 3, level: 'easy' });
     assert.deepEqual(sim.islands, []);
-    assert.equal(sim.heli, null);
+    assert.equal(sim.hop, null);
     run(sim, 3);
     assert.equal(sim.enemy.det, undefined);
   });
@@ -41,8 +41,9 @@ describe('radar contacts', () => {
     sim.islands = [{ x: 1600, z: 0, r: 300, h: 80 }];
     run(sim, 5);
     assert.equal(sim.enemy.det, false, 'hidden behind the island');
-    sim.heli.alt = 32; sim.heli.phase = 'hold';
-    run(sim, 1);
+    Object.assign(sim.hop, { phase: 'orbit', x: sim.player.x + 1500, z: sim.player.z, y: 90 }); // the helicopter is up, out ahead
+    sim.hop.target = -1;
+    run(sim, 0.2);
     assert.ok(sim.heliUp);
     assert.equal(sim.enemy.det, true, 'the helicopter has her');
     assert.ok(HELI_RADAR > 5200);
@@ -97,17 +98,160 @@ describe('islands', () => {
   });
 });
 
-describe('the deck helicopter', () => {
-  it('stays on deck with the enemy close or in a very rough sea, and flies off on a steady course otherwise', () => {
+describe('the strike helicopter', () => {
+  const up = (sim) => { for (let i = 0; i < 600 && sim.hop.phase !== 'orbit'; i++) sim.advance(0.1, {}); };
+  it('stays on deck in a very rough sea, and otherwise goes out over the enemy when told', () => {
     const sim = new DuelSim({ seed: 3, level: 'easy', scouting: true });
-    sim.enemy.x = sim.player.x + 1200; sim.enemy.z = sim.player.z;
-    assert.match(sim.heliRequest(), /stays on deck: the enemy is close/);
-    sim.enemy.x = sim.player.x + 3000;
     sim.setSea(8.5, 0);
     assert.match(sim.heliRequest(), /too rough/);
     sim.setSea(0, 0);
-    assert.doesNotMatch(sim.heliRequest(), /stays on deck/);
+    assert.match(sim.heliRequest(), /starting up/);
+    up(sim);
+    assert.equal(sim.hop.phase, 'orbit');
+    assert.ok(Math.hypot(sim.hop.x - sim.enemy.x, sim.hop.z - sim.enemy.z) < 400, 'circling the enemy');
+    assert.ok(sim.heliUp);
+  });
+  it('launches by itself at the first shot, and its gun hurts the enemy', () => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', scouting: true, intro: true });
+    sim.startRadar();
+    assert.equal(sim.hop.phase, 'deck');
+    run(sim, 20, { fire: 1 });
+    assert.notEqual(sim.hop.phase, 'deck', 'it went out');
+    const before = COMP_TOTAL(sim.enemy);
     run(sim, 40);
-    assert.ok(sim.heliUp || sim.heli.phase !== 'parked', `the helicopter is ${sim.heli.phase}`);
+    assert.ok(COMP_TOTAL(sim.enemy) < before, 'the helicopter chipped at her');
+  });
+  it('reports by radio: a compartment out, a hull mark, another ship joining', () => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', scouting: true });
+    sim.heliRequest();
+    up(sim);
+    sim.takeEvents();
+    sim.enemy.comp.gun = 0;
+    sim.enemy.comp.engine = 0;
+    sim.enemy.hp = 40;
+    sim.spawn({ t: sim.t, kind: 'enemy' });
+    sim.ships[sim.ships.length - 1].det = true;
+    run(sim, 20);
+    const said = sim.takeEvents().filter((e) => e.type === 'radio').map((e) => e.text).join(' | ');
+    assert.match(said, /76 mm gun out/);
+    assert.match(said, /Engine room out/);
+    assert.match(said, /hull at 50 per cent/);
+    assert.match(said, /Another enemy ship has joined/);
+  });
+  it('its missile takes half of the part it is sent to, once at a time, two to a sortie', () => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', scouting: true });
+    sim.heliRequest();
+    up(sim);
+    const t = sim.enemy;
+    const g0 = t.comp.gun;
+    const r = sim.heliMissile('gun');
+    assert.ok(r.ok);
+    assert.ok(!sim.heliMissile('gun').ok, 'reloading');
+    run(sim, 6);
+    assert.ok(t.comp.gun <= g0 - 15 + 1e-6 || t.comp.gun === 0, `gun ${g0} -> ${t.comp.gun}`);
+    run(sim, 9);
+    assert.ok(sim.heliMissile('engine').ok);
+    run(sim, 9);
+    assert.ok(!sim.heliMissile('bridge').ok, 'out of missiles');
+  });
+  it('when the player ship is lost it avenges her, then lands on a friendly frigate', () => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', scouting: true });
+    sim.callFriend();
+    const friend = sim.ships.find((s) => s.team === 0 && s.idx > 0);
+    friend.ai = null; friend.u = 0; friend.order = 1; // she lies still: a deck to land on
+    const killer = sim.enemy;
+    killer.passive = true; // so the friend and the wreck are left alone in this test
+    sim.player.lastHitBy = killer.idx;
+    sim.player.hp = 0;
+    sim.player.comp.gun = 0;
+    let landed = false;
+    for (let i = 0; i < 4200 && !landed; i++) { sim.advance(0.1, {}); landed = sim.hop.phase === 'landed'; }
+    assert.ok(killer.tSunk !== null, 'the ship that sank her is down');
+    assert.ok(landed, `the helicopter ended ${sim.hop.phase}`);
+    assert.equal(sim.hop.landOn, friend.idx);
+  });
+  it('ditches when there is no friendly deck left', () => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', scouting: true });
+    sim.player.lastHitBy = sim.enemy.idx;
+    sim.enemy.passive = true;
+    sim.player.hp = 0;
+    for (let i = 0; i < 4200 && sim.hop.phase !== 'gone'; i++) sim.advance(0.1, {});
+    assert.equal(sim.hop.phase, 'gone');
+    assert.ok(sim.enemy.tSunk !== null);
+  });
+});
+
+const COMP_TOTAL = (s) => Object.values(s.comp).reduce((a, b) => a + b, 0) + s.hp;
+
+describe('the opening (intro)', () => {
+  it('knows no enemy until the radar comes on, and says so with a contact call', () => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', scouting: true, intro: true });
+    assert.equal(sim.enemy.det, false);
+    run(sim, 5);
+    assert.equal(sim.enemy.det, false, 'the radar is off: no contact on its own');
+    sim.takeEvents();
+    sim.startRadar();
+    assert.equal(sim.enemy.det, true);
+    assert.ok(types(sim).includes('contact'));
+  });
+  it('lets nobody but the player fire first: the enemy holds even at point blank, until the first shot', () => {
+    const sim = new DuelSim({ seed: 3, level: 'hard', scouting: true, intro: true });
+    sim.startRadar();
+    sim.enemy.x = sim.player.x + 900; sim.enemy.z = sim.player.z + 100;
+    run(sim, 40);
+    assert.equal(sim.enemy.stats.shells, 0, 'her 76 mm held');
+    assert.equal(sim.enemy.stats.bursts, 0, 'her 30 mm held');
+    assert.equal(sim.shotFired, false);
+    sim.takeEvents();
+    run(sim, 30, { fire: 1 });
+    assert.equal(sim.shotFired, true);
+    assert.ok(sim.player.stats.shells > 0);
+    run(sim, 30, { fire: 1 });
+    assert.ok(sim.enemy.stats.shells > 0 || sim.enemy.tSunk !== null, 'once the first shot is gone she fights back');
+  });
+  it('announces the first shot once', () => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', scouting: true, intro: true });
+    sim.startRadar();
+    run(sim, 30, { fire: 1 });
+    assert.equal(sim.takeEvents().filter((e) => e.type === 'firstshot').length, 1);
+  });
+  it('the plain duel has no hold at all', () => {
+    const sim = new DuelSim({ seed: 3, level: 'hard' });
+    sim.enemy.x = sim.player.x + 1500; sim.enemy.z = sim.player.z;
+    run(sim, 30);
+    assert.ok(sim.enemy.stats.shells > 0);
+  });
+});
+
+describe('calling friends', () => {
+  it('each call brings one friendly frigate in at full speed, up to three, with a short wait between', () => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', scouting: true });
+    assert.equal(sim.ships.filter((s) => s.team === 0 && s.idx > 0).length, 0, 'no friend of her own accord');
+    sim.takeEvents();
+    assert.ok(sim.callFriend().ok);
+    const f = sim.ships.find((s) => s.team === 0 && s.idx > 0);
+    assert.ok(f && f.ai, 'a friendly frigate with a helmsman');
+    assert.ok(sim.distance(sim.player, f) > 2500 && sim.distance(sim.player, f) < 3500);
+    assert.ok(f.u > 20 * 0.514 * 0.9, 'at full speed');
+    assert.ok(types(sim).includes('arrive'));
+    const again = sim.callFriend();
+    assert.ok(!again.ok && /can be called in/.test(again.why), 'a wait between calls');
+    for (let k = 0; k < 2; k++) { run(sim, 7); assert.ok(sim.callFriend().ok); }
+    run(sim, 7);
+    const last = sim.callFriend();
+    assert.ok(!last.ok && /No more/.test(last.why));
+    assert.equal(sim.ships.filter((s) => s.team === 0 && s.idx > 0).length, 3);
+  });
+  it('the called friend closes on the enemy and fights', () => {
+    const sim = new DuelSim({ seed: 5, level: 'normal', scouting: true });
+    sim.callFriend();
+    run(sim, 120);
+    const f = sim.ships.find((s) => s.team === 0 && s.idx > 0);
+    assert.ok(f.stats.shells > 0 || f.tSunk !== null, 'she fired');
+  });
+  it('the plain duel keeps its automatic friend and offers no call', () => {
+    const sim = new DuelSim({ seed: 3, level: 'easy', waves: true });
+    assert.equal(sim.callFriend().ok, false);
+    assert.ok(sim.planWaves().some((w) => w.kind === 'ally'));
   });
 });

@@ -35,7 +35,7 @@
 // loses the duel. Hulls that touch collide (damage by the closing speed where they meet).
 //
 // Coordinates are the scene's (see hull.js): metres, +Y up, the sea is y = 0. +X is north and +Z east.
-import { HeliFlight, PAD } from './heliFlight.js';
+import { PAD } from './heliFlight.js';
 import { TELEGRAPH, START_ORDER, RUDDER_MAX, KT, HALF_LENGTH, HALF_BEAM, GUN_MOUNT_LOCAL, GUN_DEAD, gunBlind, stepHull, stepHullReal, REAL_RADIUS } from './hull.js';
 
 export { TELEGRAPH, START_ORDER, KT, HALF_LENGTH, HALF_BEAM, GUN_MOUNT_LOCAL, gunBlind };
@@ -141,10 +141,15 @@ const PICK_EVERY = 0.5; // s between a ship's looks for a nearer target
 // merchants across the line of fire.
 const ENEMY_WAVES = { easy: [110], normal: [80, 175], hard: [70, 140, 215] };
 const ALLY_WAVE = 95;
+export const FRIEND_MAX = 3; // friendly frigates the player can call in one battle (scouting)
+const FRIEND_WAIT = 6; // s before another can be called
+const FRIEND_RANGE = 3000; // m: how far out she appears
 const MERCHANT_WAVES = [30, 125, 210];
 const START_RANGE = 3200; // m between the two frigates at the start
 export const HELI_RADAR = 7500; // m: how far the helicopter's radar sees (from the ship), over the islands
-const HELI_STAND_DOWN = 1800; // m: an enemy this close and the helicopter stays on deck (or comes in)
+export const HELI_ROUNDS = 2; // missiles the helicopter carries (a landing on a deck rearms it)
+export const HELI_MISSILE_FRACTION = 0.5; // of the struck compartment's points
+const HELI_ALT = 95, HELI_SPEED = 60, HELI_ORBIT = 280, HELI_GUN_RANGE = 800, HELI_MISSILE_COOL = 8, HELI_MISSILE_SPEED = 280;
 const ARRIVE_RANGE = 4800; // m from you where a warship appears
 
 // --- Damage control -------------------------------------------------------------------------------------------------
@@ -235,13 +240,19 @@ function makeShip(idx, x, z, psi, team = idx === 0 ? 0 : 1, kind = 'frigate') {
 
 export class DuelSim {
   // `level` is the enemy's; `auto` ('easy' | 'normal' | 'hard') hands the player's ship to the same kind of helmsman (tests).
-  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, scouting = false } = {}) {
+  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, scouting = false, intro = false } = {}) {
     this.seed = seed;
+    // The opening (the scene turns it on): the radar is off until startRadar(), so no enemy is known, and no ship but yours fires until you have
+    // fired your first shot (the event 'firstshot'): the first shot is always the player's.
+    this.intro = !!intro;
+    this.radarOn = !this.intro;
+    this.shotFired = false;
     // Scouting (the scene turns it on; see contacts, islands and the helicopter below): the enemy shows only once the radar has her, islands
     // hide ships and stop shells, and the deck helicopter extends the radar.
     this.scouting = !!scouting;
     this.islands = [];
-    this.heli = null;
+    this.hop = null; // the strike helicopter (see below)
+    this.hmiss = []; // its missiles in the air
     this.sea = null; // { hs, dir }: the waves' height and the direction they travel (the scene sets it; see setSea)
     this.realHandling = !!realHandling; // heavy handling (hull.js stepHullReal): slow rudder, a long swing, weight, a skid in turns (the scene turns it on)
     this.wavesOn = !!waves; // more ships arrive (the scene turns it on)
@@ -276,9 +287,39 @@ export class DuelSim {
     this.rngW = mulberry32((this.seed ^ 0x3a7e) >>> 0); // where the others come from: a stream of its own
     this.pending = this.wavesOn ? this.planWaves() : [];
     this.islands = this.scouting ? this.planIslands(this.ships[1].z) : [];
-    this.heli = this.scouting ? new HeliFlight((this.seed ^ 0x2718) >>> 0) : null;
-    if (this.heli) this.heli.wait = 1e9; // it flies only when the player asks (heliRequest), not by itself as in Solo Air Defense
-    if (this.scouting) this.updateContacts(0.1);
+    this.hmiss = [];
+    this.rngH = mulberry32((this.seed ^ 0x4e11) >>> 0); // the helicopter's own stream
+    this.hop = this.scouting ? this.makeHop() : null;
+    this.radarOn = !this.intro;
+    this.shotFired = false;
+    this.friendsCalled = 0;
+    this.friendReady = 0;
+    if (this.scouting) {
+      if (this.intro) { for (const o of this.ships) if (o.team === 1) o.det = false; } else this.updateContacts(0.1);
+    }
+  }
+  // The player calls a friendly frigate: she comes in from astern at full speed and fights (she holds fire only until the first shot, like everyone).
+  // Returns { ok, why }; at most FRIEND_MAX a battle, one every FRIEND_WAIT s.
+  callFriend() {
+    if (!this.scouting) return { ok: false, why: 'No friendly ships to call' };
+    if (this.winner !== null || this.ships[0].tSunk !== null) return { ok: false, why: 'The battle is over' };
+    if ((this.friendsCalled ?? 0) >= FRIEND_MAX) return { ok: false, why: 'No more friendly ships to call' };
+    const wait = (this.friendReady ?? 0) - this.t;
+    if (wait > 0) return { ok: false, why: `The next one can be called in ${Math.ceil(wait)} s` };
+    this.friendsCalled = (this.friendsCalled ?? 0) + 1;
+    this.friendReady = this.t + FRIEND_WAIT;
+    this.spawn({ t: this.t, kind: 'ally', near: true });
+    return { ok: true, why: '' };
+  }
+  // The radar comes on: whatever is in its reach is a contact at once (the events carry the calls).
+  startRadar() { this.radarOn = true; if (this.scouting) this.updateContacts(0.1); }
+  // Until the player's first shot, no other ship fires.
+  held(s) { return this.intro && !this.shotFired && s.idx !== 0; }
+  noteShot(s) {
+    if (s.idx !== 0 || this.shotFired) return;
+    this.shotFired = true;
+    this.events.push({ type: 'firstshot' });
+    if (this.hop && !this.heliStandDown()) this.heliLaunch(); // at the first shot the helicopter goes out over the enemy
   }
 
   // --- scouting: radar contacts, islands, the helicopter ---------------------------------------------------------------
@@ -303,22 +344,243 @@ export class DuelSim {
   }
   // The search radar's reach: the sea's clutter eats it (about 5.2 km in a calm, 1.6 km in a very high sea).
   radarRange() { return Math.max(1600, 5200 - 420 * (this.sea?.hs ?? 0)); }
-  // The helicopter's radar sees farther and over the islands.
-  get heliUp() { return !!this.heli && this.heli.state.flying && this.heli.state.y - PAD.y > 14; }
-  // Why the helicopter will not fly now, or '' (a gun fight under way, or too rough a sea).
-  heliStandDown() {
-    const me = this.ships[0];
-    if (me.tSunk !== null) return 'the ship is sinking';
-    if ((this.sea?.hs ?? 0) > 5.5) return 'the sea is too rough';
-    for (const o of this.hostiles(me)) if (o.det !== false && this.distance(me, o) < HELI_STAND_DOWN) return 'the enemy is close';
-    return '';
+  // --- the strike helicopter -------------------------------------------------------------------------------------------
+  // Off the deck at the first shot (or when the player sends it, B): it climbs, flies out over the enemy and circles her at 280 m, firing its
+  // gun, and reports what it sees by radio (a compartment out, a fire, the hull going down, another ship joining). The player can fire its
+  // missiles (each takes HELI_MISSILE_FRACTION of the struck compartment's points). When the player's ship is lost it avenges her: it
+  // takes off if it still can, hunts the ship that sank her with missiles until she goes down, and lands on a friendly frigate (or ditches).
+  makeHop() {
+    const p = this.heliPad();
+    return {
+      phase: 'deck', x: p[0], y: p[1], z: p[2], yaw: this.ships[0].psi, pitch: 0, roll: 0, rpm: 0, spin: 0, speed: 0, theta: 0,
+      t: 0, target: -1, ammo: HELI_ROUNDS, mCool: 0, gCool: 0, avenge: false, landOn: -1,
+      q: [], radioWait: 0, rep: {}, known: new Set(), status: 25,
+    };
   }
-  // The E key's cousin: take off or land, or why not.
+  heliPad(ship = this.ships[0]) { return this.toWorld(ship, [PAD.x, PAD.y, PAD.z]); }
+  // The helicopter's radar sees farther and over the islands, from where the helicopter is.
+  get heliUp() { const h = this.hop; return !!h && (h.phase === 'ingress' || h.phase === 'orbit' || h.phase === 'recall'); }
+  // Why the helicopter will not fly now, or '' (too rough a sea to launch in).
+  heliStandDown() { return (this.sea?.hs ?? 0) > 5.5 ? 'the sea is too rough' : ''; }
+  heliLaunch() {
+    const h = this.hop;
+    if (!h || h.phase !== 'deck') return false;
+    h.phase = 'spin'; h.t = 0;
+    return true;
+  }
+  // The B key: send it, or call it back (no steady course needed: this one is a fighting helicopter), or why not.
   heliRequest() {
-    if (!this.heli) return 'No helicopter';
-    const why = this.heliStandDown();
-    if (this.heli.action === 'takeoff' && why) return `Helicopter stays on deck: ${why}`;
-    return this.heli.request();
+    const h = this.hop;
+    if (!h) return 'No helicopter';
+    if (h.phase === 'deck') {
+      const why = this.heliStandDown();
+      if (why) return `Helicopter stays on deck: ${why}`;
+      this.heliLaunch();
+      return 'Helicopter: starting up';
+    }
+    if (h.phase === 'ingress' || h.phase === 'orbit') { h.phase = 'recall'; return 'Helicopter: coming back to land'; }
+    if (h.phase === 'spin') return 'The helicopter is starting up';
+    return 'The helicopter is landing';
+  }
+  radio(text) { if (this.hop) this.hop.q.push(text); }
+  // The ship the helicopter lands on: yours while she floats, else the nearest friendly frigate.
+  heliDeck() {
+    const me = this.ships[0];
+    if (me.tSunk === null) return me;
+    let best = null, bd = Infinity;
+    for (const o of this.ships) if (o.team === 0 && o.idx > 0 && !o.merchant && o.tSunk === null) { const d = Math.hypot(o.x - this.hop.x, o.z - this.hop.z); if (d < bd) { bd = d; best = o; } }
+    return best;
+  }
+  // What it is fighting: the ship that sank yours (once she has), else your target, else the nearest enemy it can see.
+  heliTarget() {
+    const h = this.hop, me = this.ships[0];
+    if (h.avenge) {
+      const k = this.ships[me.lastHitBy];
+      if (k && k.team === 1) return k.tSunk === null ? k : null; // the one that sank her: until she is down
+      let best = null, bd = Infinity; // no one to blame (a fire, the rocks): the nearest enemy
+      for (const o of this.ships) if (o.team === 1 && o.tSunk === null) { const d = Math.hypot(o.x - h.x, o.z - h.z); if (d < bd) { bd = d; best = o; } }
+      return best;
+    }
+    const e = this.enemy;
+    if (e && e.team === 1 && e.tSunk === null && e.det !== false) return e;
+    let best = null, bd = Infinity;
+    for (const o of this.ships) if (o.team === 1 && o.tSunk === null && o.det !== false) { const d = Math.hypot(o.x - h.x, o.z - h.z); if (d < bd) { bd = d; best = o; } }
+    return best;
+  }
+  // Fire a missile at `tgt`'s compartment `comp`.
+  launchHeliMissile(tgt, comp) {
+    const h = this.hop;
+    this.hmiss.push({ p: [h.x, h.y - 2, h.z], v: [0, 0, 0], target: tgt.idx, comp, t0: this.t });
+    this.events.push({ type: 'hmissile', ship: tgt.idx, comp, pos: [h.x, h.y - 2, h.z] });
+  }
+  // The player's missile: at `comp` (the compartment aimed at in the radar view) or, with none given, the first working one (gun, engine, ...).
+  heliMissile(comp = null) {
+    const h = this.hop;
+    if (!h || (h.phase !== 'ingress' && h.phase !== 'orbit')) return { ok: false, why: 'The helicopter is not on station' };
+    if (h.ammo <= 0) return { ok: false, why: 'The helicopter has no missiles left' };
+    if (h.mCool > 0) return { ok: false, why: `The helicopter is reloading: ${Math.ceil(h.mCool)} s` };
+    const tgt = this.heliTarget();
+    if (!tgt) return { ok: false, why: 'The helicopter has no target' };
+    if (Math.hypot(tgt.x - h.x, tgt.z - h.z) > 5500) return { ok: false, why: 'The target is out of range' };
+    const c = comp && tgt.comp[comp] > 0 ? comp : (['gun', 'engine', 'bridge', 'guns', 'steering'].find((id) => tgt.comp[id] > 0) ?? 'gun');
+    this.launchHeliMissile(tgt, c);
+    h.ammo -= 1; h.mCool = HELI_MISSILE_COOL;
+    return { ok: true, why: '', comp: c };
+  }
+  stepHeli(dt) {
+    const h = this.hop;
+    if (!h) return;
+    const me = this.ships[0];
+    h.t += dt;
+    h.spin += 30 * h.rpm * dt;
+    h.gCool = Math.max(0, h.gCool - dt);
+    h.mCool = Math.max(0, h.mCool - dt);
+    // Her mother ship is lost: it fights on (it takes off at once if it is still on the deck).
+    if (me.tSunk !== null && !h.avenge) {
+      h.avenge = true; h.ammo = 99;
+      this.radio('Mother ship is down: engaging the ship that sank her');
+      if (h.phase === 'deck') { h.phase = 'spin'; h.t = 0; } else if (h.phase === 'recall' || h.phase === 'landing') h.phase = 'ingress';
+    }
+    const follow = (ship) => { const p = this.heliPad(ship); h.x = p[0]; h.y = p[1]; h.z = p[2]; h.yaw = ship.psi; h.pitch = 0; h.roll = 0; };
+    const flyTo = (tx, tz, alt, vmax) => {
+      const dx = tx - h.x, dz = tz - h.z, d = Math.hypot(dx, dz);
+      const want = Math.atan2(dz, dx);
+      h.yaw += clamp(wrapPi(want - h.yaw), -0.9 * dt, 0.9 * dt);
+      h.speed = Math.min(vmax, h.speed + 14 * dt);
+      const v = Math.min(h.speed, d / Math.max(dt, 1e-3));
+      h.x += Math.cos(h.yaw) * v * dt; h.z += Math.sin(h.yaw) * v * dt;
+      h.y += clamp(alt - h.y, -7 * dt, 7 * dt);
+      h.pitch = -0.1 * Math.min(1, h.speed / HELI_SPEED);
+      h.roll = clamp(wrapPi(want - h.yaw) * 0.5, -0.4, 0.4);
+      return d;
+    };
+    switch (h.phase) {
+      case 'deck': follow(me); h.rpm = Math.max(0, h.rpm - dt / 8); break;
+      case 'spin':
+        follow(me.tSunk === null ? me : me);
+        h.rpm = Math.min(1, h.rpm + dt / (h.avenge ? 2 : 3.5));
+        if (h.rpm >= 1) { h.phase = 'ingress'; h.t = 0; h.speed = 0; this.radio('Airborne, heading for the enemy'); }
+        break;
+      case 'ingress': case 'orbit': {
+        const tgt = this.heliTarget();
+        if (!tgt) {
+          if (h.avenge || me.tSunk !== null) { h.phase = 'recall'; this.radio(h.avenge ? 'Enemy destroyed' : 'No enemy to engage'); break; }
+          flyTo(me.x, me.z, 70, HELI_SPEED); // nothing to fight yet: it waits over the ship
+          break;
+        }
+        h.target = tgt.idx;
+        const dx = h.x - tgt.x, dz = h.z - tgt.z, d = Math.hypot(dx, dz);
+        if (h.phase === 'ingress') {
+          flyTo(tgt.x + dx / (d || 1) * HELI_ORBIT, tgt.z + dz / (d || 1) * HELI_ORBIT, HELI_ALT, HELI_SPEED);
+          if (d < HELI_ORBIT * 1.5 && h.y > HELI_ALT - 12) { h.phase = 'orbit'; h.theta = Math.atan2(dz, dx); this.radio(`On station over the enemy: hull ${Math.round(tgt.hp)}`); }
+        } else {
+          h.theta += (46 / HELI_ORBIT) * dt;
+          const px = tgt.x + Math.cos(h.theta) * HELI_ORBIT, pz = tgt.z + Math.sin(h.theta) * HELI_ORBIT;
+          const k = Math.min(1, dt * 2.5);
+          h.x += (px - h.x) * k; h.z += (pz - h.z) * k;
+          h.y += clamp(HELI_ALT - h.y, -5 * dt, 5 * dt);
+          h.yaw = h.theta + Math.PI / 2; h.speed = 46; h.pitch = -0.06; h.roll = 0.32;
+          // its gun, and (avenging) a missile as soon as one is ready
+          if (h.gCool <= 0 && Math.hypot(tgt.x - h.x, tgt.z - h.z) <= HELI_GUN_RANGE) {
+            h.gCool = 0.8;
+            const live = COMP_IDS.filter((id) => tgt.comp[id] > 0);
+            const id = live.length ? live[Math.floor(this.rngH() * live.length)] : 'gun';
+            this.damage(tgt, id, 0.6, SHELL_HULL, 0);
+            this.events.push({ type: 'hgun', pos: [h.x, h.y - 1, h.z], to: [tgt.x + (this.rngH() - 0.5) * 30, 6, tgt.z + (this.rngH() - 0.5) * 30] });
+          }
+          if (h.avenge && h.mCool <= 0) {
+            const id = ['gun', 'engine', 'bridge', 'guns', 'steering'].find((c) => tgt.comp[c] > 0) ?? 'engine';
+            this.launchHeliMissile(tgt, id);
+            h.mCool = 5;
+          }
+        }
+        this.heliReports(dt, tgt);
+        break;
+      }
+      case 'recall': {
+        const L = this.heliDeck();
+        if (!L) { h.phase = 'gone'; this.radio('No friendly deck left to land on: ditching'); break; }
+        const p = this.heliPad(L);
+        const d = flyTo(p[0], p[2], Math.max(p[1] + 30, 40), HELI_SPEED);
+        if (d < 130) { h.phase = 'landing'; h.landOn = L.idx; }
+        break;
+      }
+      case 'landing': {
+        const L = this.ships[h.landOn];
+        if (!L || L.tSunk !== null) { h.phase = 'recall'; break; }
+        const p = this.heliPad(L);
+        const k = Math.min(1, dt * 1.8);
+        h.x += (p[0] - h.x) * k; h.z += (p[2] - h.z) * k;
+        h.yaw += wrapPi(L.psi - h.yaw) * Math.min(1, dt * 1.2);
+        h.y += clamp(p[1] - h.y, -4 * dt, 4 * dt);
+        h.pitch *= 1 - Math.min(1, dt * 2); h.roll *= 1 - Math.min(1, dt * 2);
+        if (Math.abs(h.y - p[1]) < 0.25 && Math.hypot(h.x - p[0], h.z - p[2]) < 3) {
+          if (L === this.ships[0]) { h.phase = 'deck'; h.ammo = HELI_ROUNDS; h.avenge = false; h.rep = {}; h.known = new Set(); this.radio('Landed on deck'); } else { h.phase = 'landed'; this.radio(`Landed on the friendly frigate ${L.idx}`); }
+        }
+        break;
+      }
+      case 'landed': {
+        const L = this.ships[h.landOn];
+        if (L) follow(L);
+        h.rpm = Math.max(0, h.rpm - dt / 8);
+        break;
+      }
+      default: break; // gone
+    }
+    // the radio: one call at a time
+    h.radioWait -= dt;
+    if (h.radioWait <= 0 && h.q.length) { this.events.push({ type: 'radio', text: h.q.shift() }); h.radioWait = 3.2; }
+  }
+  // What it sees of the enemy ships, said by radio when it changes.
+  heliReports(dt, tgt) {
+    const h = this.hop, me = this.ships[0];
+    const foes = this.ships.filter((o) => o.team === 1);
+    for (const o of foes) {
+      if (o.det === false && o.tSunk === null && o !== tgt) continue;
+      const rr = (h.rep[o.idx] ??= { out: {}, fire: {}, mark: 100, sunk: false });
+      if (!h.known.has(o.idx)) {
+        if (h.known.size > 0) this.radio(`Another enemy ship has joined: ${relNameOf(wrapPi(Math.atan2(o.z - me.z, o.x - me.x) - me.psi))}, ${kmOf(this.distance(me, o))} from you`);
+        h.known.add(o.idx);
+      }
+      const name = foes.length > 1 ? `Enemy ${foes.indexOf(o) + 1}` : 'Enemy';
+      for (const id of COMP_IDS) {
+        if (o.comp[id] <= 0 && !rr.out[id]) { rr.out[id] = true; this.radio(`${name}: ${COMPARTMENTS[id].name} out`); }
+        if (o.fire[id] > 0 && !rr.fire[id]) { rr.fire[id] = true; this.radio(`${name}: fire in the ${COMPARTMENTS[id].name.toLowerCase()}`); }
+        if (o.fire[id] <= 0) rr.fire[id] = false;
+      }
+      for (const m of [75, 50, 25]) if (o.hp <= m && rr.mark > m) { rr.mark = m; this.radio(`${name}: hull at ${m} per cent`); }
+      if (o.tSunk !== null && !rr.sunk) { rr.sunk = true; this.radio(`${name} is going down`); }
+    }
+    h.status -= dt;
+    if (h.status <= 0 && tgt.tSunk === null) {
+      h.status = 25;
+      const out = COMP_IDS.filter((id) => tgt.comp[id] <= 0).map((id) => COMPARTMENTS[id].name);
+      this.radio(`Status: enemy hull ${Math.round(tgt.hp)}${out.length ? `, out: ${out.join(', ')}` : ', all systems working'}`);
+    }
+  }
+  // The helicopter's missiles: they home on the ship's middle and take a part of the compartment they were sent to.
+  stepHeliMissiles(dt) {
+    for (const m of [...this.hmiss]) {
+      const tgt = this.ships[m.target];
+      if (!tgt || this.t - m.t0 > 20) { this.hmiss.splice(this.hmiss.indexOf(m), 1); continue; }
+      const dx = tgt.x - m.p[0], dy = 6 - m.p[1], dz = tgt.z - m.p[2], d = Math.hypot(dx, dy, dz) || 1;
+      const step = HELI_MISSILE_SPEED * dt;
+      if (d <= step + 14) {
+        this.hmiss.splice(this.hmiss.indexOf(m), 1);
+        if (tgt.tSunk !== null) continue;
+        const dmg = COMPARTMENTS[m.comp].hp * HELI_MISSILE_FRACTION;
+        this.damage(tgt, m.comp, dmg, SHELL_HULL, 0);
+        if (this.hop?.avenge) tgt.hp = Math.max(0, tgt.hp - 12); // it goes for the waterline
+        tgt.lastHitBy = 0;
+        if (this.rngF() < 0.4) this.ignite(tgt, m.comp, 0.3);
+        tgt.stats.taken += 1;
+        this.events.push({ type: 'hit', owner: 0, ship: tgt.idx, comp: m.comp, dmg, kind: 'ap', pos: [tgt.x, 6, tgt.z], local: [0, 6, 0], out: tgt.comp[m.comp] <= 0, neutral: false, heli: true });
+        this.radio(`Missile hit: ${COMPARTMENTS[m.comp].name.toLowerCase()}${tgt.comp[m.comp] <= 0 ? ' out' : ''}`);
+        continue;
+      }
+      m.v = [(dx / d) * HELI_MISSILE_SPEED, (dy / d) * HELI_MISSILE_SPEED, (dz / d) * HELI_MISSILE_SPEED];
+      m.p[0] += (dx / d) * step; m.p[1] += (dy / d) * step; m.p[2] += (dz / d) * step;
+    }
   }
   // Who the radar has: an enemy comes in as a contact (an event with her range and bearing) and is lost again only after 3 s unseen.
   updateContacts(dt) {
@@ -328,7 +590,7 @@ export class DuelSim {
       if (o.team !== 1 || o.tSunk !== null) continue;
       if (o.det === undefined) o.det = false;
       const d = this.distance(me, o);
-      const seen = (d <= R && !this.blocked(me.x, me.z, o.x, o.z)) || (up && d <= HELI_RADAR);
+      const seen = (d <= R && !this.blocked(me.x, me.z, o.x, o.z)) || (up && Math.hypot(o.x - this.hop.x, o.z - this.hop.z) <= HELI_RADAR);
       if (seen) {
         o.unseen = 0;
         if (!o.det) { o.det = true; this.events.push({ type: 'contact', ship: o.idx, range: d, rel: wrapPi(Math.atan2(o.z - me.z, o.x - me.x) - me.psi), heli: up && d > R }); }
@@ -370,7 +632,7 @@ export class DuelSim {
 
   planWaves() {
     const list = (ENEMY_WAVES[this.level] ?? ENEMY_WAVES.normal).map((t) => ({ t, kind: 'enemy' }));
-    list.push({ t: ALLY_WAVE, kind: 'ally' });
+    if (!this.scouting) list.push({ t: ALLY_WAVE, kind: 'ally' }); // with scouting the player calls them (callFriend)
     for (const t of MERCHANT_WAVES) list.push({ t, kind: 'merchant' });
     return list.sort((a, b) => a.t - b.t);
   }
@@ -532,10 +794,9 @@ export class DuelSim {
     if (this.islands.length) this.stepGround(dt);
     if (this.ships.length > 2) this.stepCollisions();
     if (this.scouting) {
-      this.updateContacts(dt);
-      const steady = me.tSunk === null && Math.abs(me.r) < rad(0.4) && Math.abs(me.rudder) < rad(2); // a fixed course: no rudder, no turn
-      this.heli.step(dt, steady, me.r, this.heliStandDown() !== '');
+      if (this.radarOn) this.updateContacts(dt);
     }
+    if (this.hop) { this.stepHeli(dt); this.stepHeliMissiles(dt); }
     for (const s of this.ships) {
       if (s.merchant) continue;
       const k = Math.min(1, dt / (s.ai ? s.ai.p.track : TRACK_PLAYER));
@@ -596,11 +857,13 @@ export class DuelSim {
       s.passive = this.level === 'easy'; // on Easy the ones that arrive only show themselves: they do not fire
     } else { // the friendly frigate: from astern of you, heading for the enemy
       const brg = me.psi + Math.PI + (r() * 2 - 1) * rad(40);
-      const sx = me.x + Math.cos(brg) * 4500, sz = me.z + Math.sin(brg) * 4500;
+      const dist = w.near ? FRIEND_RANGE : 4500;
+      const sx = me.x + Math.cos(brg) * dist, sz = me.z + Math.sin(brg) * dist;
       s = makeShip(idx, sx, sz, Math.atan2(foe.z - sz, foe.x - sx), 0);
       s.ai = this.makeAi('normal');
+      if (w.near) s.order = TELEGRAPH.length - 2; // a called friend comes at full speed
     }
-    if (!s.merchant) s.u = TELEGRAPH[START_ORDER].kn * KT;
+    if (!s.merchant) s.u = TELEGRAPH[s.order ?? START_ORDER].kn * KT;
     this.ships.push(s);
     this.pickTargets();
     this.events.push({ type: 'arrive', ship: idx, kind: w.kind, rel: wrapPi(Math.atan2(s.z - me.z, s.x - me.x) - me.psi), range: this.distance(me, s) });
@@ -728,13 +991,14 @@ export class DuelSim {
     g.pitch += clamp(wantPitch - g.pitch, -MAIN_PITCH_RATE * dt, MAIN_PITCH_RATE * dt);
     if (!g.engaged) return;
     g.onTarget = Math.abs(wrapPi(wantYaw - g.yaw)) < AIM_OK && Math.abs(wantPitch - g.pitch) < AIM_OK;
-    if (!g.onTarget || !s.cmd.fire || g.cool > 0) return;
+    if (!g.onTarget || !s.cmd.fire || g.cool > 0 || this.held(s)) return;
     this.fireMain(s);
   }
 
   fireMain(s) {
     const g = s.gun;
     g.cool = MAIN_RELOAD;
+    this.noteShot(s);
     g.stock[g.type] -= 1;
     g.ammo = g.stock.he + g.stock.ap;
     s.stats.shells += 1;
@@ -906,7 +1170,7 @@ export class DuelSim {
   stepGats(s, dt) {
     const o = this.foe(s);
     const sunk = s.tSunk !== null || o.tSunk !== null || (this.scouting && s.team === 0 && o.team === 1 && o.det === false);
-    const trigger = !sunk && (s.auto || s.cmd.gat);
+    const trigger = !sunk && (s.auto || s.cmd.gat) && !this.held(s);
     const gunsHp = s.comp.guns / COMPARTMENTS.guns.hp;
     for (let i = 0; i < s.gats.length; i++) {
       const g = s.gats[i];
@@ -937,6 +1201,7 @@ export class DuelSim {
       g.rounds += n;
       while (g.rounds >= GUN_BURST) {
         g.rounds -= GUN_BURST;
+        this.noteShot(s);
         s.stats.bursts += 1;
         const range = Math.hypot(o.x - s.x, o.z - s.z);
         if (this.rng() < clamp(1.1 - range / 2200, 0.05, 0.9)) {
@@ -1006,6 +1271,9 @@ export class DuelSim {
     s.cmd.gat = true;
   }
 }
+
+const relNameOf = (r) => { const d = Math.round((r * 180) / Math.PI); return Math.abs(d) <= 2 ? 'right ahead' : Math.abs(d) >= 178 ? 'right astern' : `${d > 0 ? 'green' : 'red'} ${String(Math.abs(d)).padStart(3, '0')}`; };
+const kmOf = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`);
 
 // The closest approach of two segments in the plane ([x, z] ends): the distance and the two nearest points.
 function segSeg(p1, q1, p2, q2) {

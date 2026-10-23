@@ -17,7 +17,7 @@ import { menuText } from './menu.js';
 import { compass, relName, kmText, RUDDER_MAX, HALF_LENGTH, HALF_BEAM } from './hull.js';
 import {
   DuelSim, TELEGRAPH, COMPARTMENTS, COMP_IDS, HULL_HP, LEVELS, DUEL_LEVELS, MAIN_ARC, MAIN_RANGE, GUN_MOUNT_LOCAL, GUN_RANGE, sinkState,
-  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, zoneAt, AMMO_TYPES, SWITCH_TIME, CREWS, REPAIR_TIME, REPAIR_WAIT, LOCK_FRACTION, FOCUS_FRACTION,
+  MAIN_MOUNT, MAIN_RELOAD, MUZZLE_V, zoneAt, AMMO_TYPES, SWITCH_TIME, CREWS, REPAIR_TIME, REPAIR_WAIT, FRIEND_MAX, LOCK_FRACTION, FOCUS_FRACTION,
 } from './duel.js';
 import { createDuelAudio } from './duelAudio.js';
 import { createDuelMap } from './duelMap.js';
@@ -102,7 +102,7 @@ const clamp = THREE.MathUtils.clamp;
 let level = 'normal';
 try { level = globalThis.__DUEL_LEVEL ?? new URLSearchParams(location.search).get('level') ?? 'normal'; } catch { /* no address */ }
 if (!DUEL_LEVELS.includes(level)) level = 'normal';
-const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, scouting: true });
+const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, scouting: true, intro: true });
 seaHook = () => { const i = env.seaInfo(); if (i) sim.setSea(i.hs, i.dir); };
 seaHook();
 
@@ -381,7 +381,7 @@ function handleEvents() {
     } else if (e.type === 'arrive') {
       const where = relName(e.rel);
       if (e.kind === 'enemy') say(`Another enemy frigate ${where}, ${kmText(e.range)}`, 'warn', 4200);
-      else if (e.kind === 'ally') say(`A friendly frigate joins you, ${where}`, 'ok', 4200);
+      else if (e.kind === 'ally') say(`Friendly frigate ${where}, ${kmText(e.range)}: coming to help`, 'ok', 4200);
       else say(`Merchant ship crossing ${where}: do not fire on her`, '', 4200);
     } else if (e.type === 'collision') {
       for (let k = 0; k < 4; k++) fx.shellBurst(_c.set(e.pos[0] + (Math.random() - 0.5) * 10, e.pos[1] + Math.random() * 4, e.pos[2] + (Math.random() - 0.5) * 10), sim.t);
@@ -457,6 +457,7 @@ let frameDt = 1 / 60;
 let behindHead = 0, behindT = 0, behindOn = false; // the behind camera's own heading, which trails the ship's
 function updateCamera() {
   slamShake *= Math.exp(-4 * frameDt);
+  if (introCamera()) return;
   if (view !== 'behind') behindOn = false;
   const me = ships[0].group;
   const foe = sim.enemy;
@@ -789,6 +790,7 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>Q</kbd>', `Change the 76 mm round, HE or AP: HE starts fires and floods, AP hits one compartment harder; changing costs a ${SWITCH_TIME} s reload`],
   ['<kbd>Z</kbd> <kbd>X</kbd>', `Z picks the next compartment, X sends a repair crew there (or calls it back): ${CREWS} crews, each puts out fire, slows flooding and mends one compartment`],
   ['<kbd>E</kbd>', `Repair the compartment Z has picked (or press FIX on its bar in the radar view): ${REPAIR_TIME} s, then its fire is out, its leak is stopped and it gets 40 % of its points back; that part can be repaired again after ${REPAIR_WAIT} s`],
+  ['<kbd>K</kbd>', 'Call a friendly frigate (or the button at the bottom right): she comes in from astern at full speed and fights; up to three, one every few seconds'],
   ['<kbd>B</kbd>', 'The helicopter: take off, or land (only on a steady course: no rudder, no turn). Up, its radar reaches 7.5 km and sees over the islands; it stays on deck with the enemy close or in a very rough sea'],
   ['<kbd>1</kbd> to <kbd>5</kbd>', 'Behind, bridge, above, orbit, radar'],
   ['<kbd>2</kbd>', 'The wheelhouse, as in Solo Air Defense: the wheel turns with the rudder, the telegraph levers follow the engine order, and a drag looks round (double click looks ahead)'],
@@ -890,12 +892,13 @@ function restart() {
   input.aim = null;
   selComp = 0;
   setManual(false);
-  startBanner();
+  startIntro();
 }
 function startBanner() {
   say(`Enemy ${relName(sim.relBearing(sim.player))}, ${kmText(sim.range())}: close, turn to bring your gun to bear, and keep her off your stern`, '', 5200);
 }
 window.addEventListener('keydown', (e) => {
+  if (INTRO.phase === 'tour' && (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter')) { toAsk(); e.preventDefault(); return; } // skip the tour
   if (view === 'radar' && (e.key === 'Shift' || e.key === 'Control')) { radarKeys[e.key === 'Shift' ? 'zi' : 'zo'] = 1; return; } // Shift closes the lens, Ctrl opens it
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const tag = e.target?.tagName;
@@ -935,7 +938,8 @@ window.addEventListener('keydown', (e) => {
     case 'q': sim.switchAmmo(0); break;
     case 'z': selComp = (selComp + 1) % COMP_IDS.length; break;
     case 'e': sim.startRepair(0, COMP_IDS[selComp]); break;
-    case 'b': say(sim.heliRequest(), ''); break; // the helicopter: take off or land
+    case 'b': say(sim.heliRequest(), ''); break;
+    case 'k': callFriend(); break; // call a friendly frigate // the helicopter: take off or land
     case 'x': sim.assignCrew(0, COMP_IDS[selComp]); break;
     case 'r': restart(); break;
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
@@ -1368,8 +1372,139 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 setView('behind');
-startBanner();
 
+// --- The opening: the radar spots her, a cinematic tour of the ship, the question, the first shot ---------------------------------
+// The battle does not start by itself. The radar sweeps (3 s), then finds an enemy ship and calls her; a short cinematic goes through the
+// ship (the search radar, the 76 mm, the two 30 mm) and ends on the contact through a long lens; then the question: open fire? Yes lays the
+// gun on her and fires the first shot (the camera behind the gun, then riding the shell), and from that shot on everyone may fire; not
+// yet leaves it to you (F). The first shot is always yours: nobody else fires before it (sim.held). Esc, Space or Enter skip the tour.
+const SHOT_LIST = [ // [x, y, z] in the ship's frame; the camera dollies from `from` to `to` looking at `look`
+  { text: 'Search radar: sweeping', dur: 3.2, from: [-9, 31, 14], to: [4, 27.5, 10.5], look: [9.2, 22.5, 0], fov: 52 },
+  { text: '76 mm: loaded, training on the contact', dur: 3.2, from: [9, 14, 12], to: [24, 10, 9.5], look: [32, 7.5, 0], fov: 50 },
+  { text: 'Two 30 mm: on automatic', dur: 2.8, from: [-52, 19, -12], to: [-41, 16.5, 11], look: [-33.6, 13.8, 0], fov: 52 },
+  { text: null, dur: 3.6, from: [46, 17, 4], to: [49, 17, 3], look: 'enemy', fov: 15 },
+];
+const INTRO = { phase: 'off', t: 0, shot: -1, local: 0 }; // scan | tour | ask | fire | follow | off
+const cineBars = document.createElement('div');
+cineBars.className = 'duel-bars';
+cineBars.innerHTML = '<i></i><i></i>';
+document.body.appendChild(cineBars);
+const introEl = document.createElement('div');
+introEl.className = 'duel-attack duel-intro';
+introEl.hidden = true;
+document.body.appendChild(introEl);
+function startIntro() {
+  INTRO.phase = 'scan'; INTRO.t = 0; INTRO.shot = -1; INTRO.local = 0;
+  introEl.hidden = true;
+  document.body.classList.remove('duel-cine');
+  say('Radar: searching…', '', 3000);
+}
+function endIntro() {
+  INTRO.phase = 'off';
+  introEl.hidden = true;
+  document.body.classList.remove('duel-cine');
+  input.fire = 0;
+}
+function toAsk() {
+  const e = sim.enemy;
+  document.body.classList.remove('duel-cine');
+  if (!e || e.det === false || e.tSunk !== null) { endIntro(); say('No contact on the radar: find her', 'warn', 3600); return; }
+  INTRO.phase = 'ask';
+  introEl.innerHTML = `<b>Enemy contact</b><small>${relName(sim.relBearing(sim.player))} · ${kmText(sim.range())} · hull ${Math.round(e.hp)}</small>`
+    + '<div><button type="button" data-go>Open fire</button><button type="button" data-no>Not yet</button></div>';
+  introEl.style.left = '50%';
+  introEl.style.top = '58%';
+  introEl.hidden = false;
+}
+introEl.addEventListener('click', (e) => {
+  if (e.target.closest('[data-go]')) {
+    introEl.hidden = true;
+    INTRO.phase = 'fire'; INTRO.t = 0;
+    document.body.classList.add('duel-cine');
+    say('Open fire', 'warn', 2000);
+  } else if (e.target.closest('[data-no]')) {
+    endIntro();
+    say('Fire when you are ready: F or Enter', '', 3600);
+  }
+});
+function introStep(dt) {
+  if (INTRO.phase === 'off') return;
+  INTRO.t += dt;
+  if (sim.shotFired && ['scan', 'tour', 'ask'].includes(INTRO.phase)) { endIntro(); return; } // you fired first yourself
+  if (INTRO.phase === 'scan') {
+    if (INTRO.t > 2.4 && !sim.radarOn) sim.startRadar();
+    if (INTRO.t > 3.4) { INTRO.phase = 'tour'; INTRO.t = 0; INTRO.shot = -1; document.body.classList.add('duel-cine'); }
+  } else if (INTRO.phase === 'tour') {
+    let acc = 0, idx = 0;
+    for (; idx < SHOT_LIST.length; idx++) { if (INTRO.t < acc + SHOT_LIST[idx].dur) break; acc += SHOT_LIST[idx].dur; }
+    if (idx >= SHOT_LIST.length) { toAsk(); return; }
+    if (idx !== INTRO.shot) {
+      INTRO.shot = idx;
+      say(SHOT_LIST[idx].text ?? `Contact: enemy ${relName(sim.relBearing(sim.player))}, ${kmText(sim.range())}`, idx === SHOT_LIST.length - 1 ? 'warn' : '', 3000);
+    }
+    INTRO.local = (INTRO.t - acc) / SHOT_LIST[idx].dur;
+  } else if (INTRO.phase === 'fire') {
+    input.fire = 1; // the gun is laid on her by the fire control; it fires as soon as it is on (the first shot)
+    if (sim.shotFired) { input.fire = 0; INTRO.phase = 'follow'; INTRO.t = 0; }
+    else if (INTRO.t > 12) { endIntro(); say('Turn her to bring the gun to bear', 'warn', 4000); }
+  } else if (INTRO.phase === 'follow') {
+    if (INTRO.t > 3 || (INTRO.t > 0.5 && !sim.shells.some((s) => s.owner === 0))) endIntro();
+  }
+}
+const smooth01 = (u) => { const x = clamp(u, 0, 1); return x * x * (3 - 2 * x); };
+// The cinematic camera, or false when the normal one is to run.
+function introCamera() {
+  const ph = INTRO.phase;
+  const me = ships[0]?.group;
+  if (!me || (ph !== 'tour' && ph !== 'fire' && ph !== 'follow')) return false;
+  if (ph === 'tour') {
+    const sh = SHOT_LIST[Math.max(0, INTRO.shot)];
+    const u = smooth01(INTRO.local);
+    _a.set(sh.from[0] + (sh.to[0] - sh.from[0]) * u, sh.from[1] + (sh.to[1] - sh.from[1]) * u, sh.from[2] + (sh.to[2] - sh.from[2]) * u);
+    camera.position.copy(me.localToWorld(_a));
+    if (sh.look === 'enemy') _b.set(sim.enemy.x, 6, sim.enemy.z); else me.localToWorld(_b.set(...sh.look));
+    camera.lookAt(_b);
+    setFov(sh.fov);
+    return true;
+  }
+  if (ph === 'fire') { // behind and above the 76 mm, looking where it points
+    camera.position.copy(me.localToWorld(_a.set(17, 12.5, -7)));
+    ships[0].mainGun.muzzle.getWorldPosition(_b);
+    _a.set(Math.cos(sim.player.psi + sim.player.gun.yaw * -1), 0.03, Math.sin(sim.player.psi + sim.player.gun.yaw * -1)).multiplyScalar(60).add(_b);
+    camera.lookAt(_a);
+    setFov(46);
+    return true;
+  }
+  const sh = sim.shells.find((s) => s.owner === 0); // follow: riding behind the shell
+  if (!sh) return false;
+  const sp = Math.hypot(sh.v[0], sh.v[1], sh.v[2]) || 1;
+  camera.position.set(sh.p[0] - (sh.v[0] / sp) * 18, sh.p[1] + 3.5, sh.p[2] - (sh.v[2] / sp) * 18);
+  camera.lookAt(sh.p[0] + (sh.v[0] / sp) * 60, sh.p[1] + (sh.v[1] / sp) * 60, sh.p[2] + (sh.v[2] / sp) * 60);
+  setFov(40);
+  return true;
+}
+
+// --- Calling friends: a button (and K); each call brings one friendly frigate in from astern at full speed, up to three -----------------
+const friendBtn = document.createElement('button');
+friendBtn.type = 'button';
+friendBtn.className = 'duel-friend';
+document.body.appendChild(friendBtn);
+let lastFriend = '';
+function callFriend() {
+  const r = sim.callFriend();
+  say(r.ok ? 'Calling a friendly frigate: she comes in from astern' : r.why, r.ok ? 'ok' : 'warn', 2600);
+}
+friendBtn.addEventListener('click', () => { callFriend(); friendBtn.blur(); });
+function updateFriendBtn() {
+  const left = FRIEND_MAX - (sim.friendsCalled ?? 0), wait = Math.max(0, (sim.friendReady ?? 0) - sim.t);
+  const txt = left <= 0 ? 'No more friends to call' : wait > 0 ? `Next friend in ${Math.ceil(wait)} s` : `Call a friend (K) · ${left} left`;
+  if (txt === lastFriend) return;
+  lastFriend = txt;
+  friendBtn.textContent = txt;
+  friendBtn.disabled = left <= 0 || wait > 0;
+}
+
+startIntro(); // the opening begins (everything it uses is defined above)
 let last = performance.now();
 let frames = 0;
 renderer.setAnimationLoop((now) => {
@@ -1377,6 +1512,7 @@ renderer.setAnimationLoop((now) => {
   last = now;
   frameDt = dt;
   syncShips();
+  introStep(dt);
   updateAim();
   sim.advance(dt, input);
   handleEvents();
@@ -1391,6 +1527,7 @@ renderer.setAnimationLoop((now) => {
   audio.update(sim, camera);
   if (hudOn) {
     updateHud();
+    updateFriendBtn();
     const sh = shipHtml();
     if (sh !== lastShip) { shipEl.innerHTML = sh; lastShip = sh; }
     if (view === 'radar') {
@@ -1410,4 +1547,4 @@ renderer.setAnimationLoop((now) => {
   if (frames++ === 0) loadingEl?.remove();
 });
 
-window.__duel = { sim, camera, controls, scene, renderer, ships, setView, restart, fx, hooks: eventHooks, input, sight };
+window.__duel = { sim, camera, controls, scene, renderer, ships, setView, restart, fx, hooks: eventHooks, input, sight, intro: INTRO };
