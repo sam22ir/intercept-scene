@@ -241,8 +241,9 @@ function makeShip(idx, x, z, psi, team = idx === 0 ? 0 : 1, kind = 'frigate') {
 
 export class DuelSim {
   // `level` is the enemy's; `auto` ('easy' | 'normal' | 'hard') hands the player's ship to the same kind of helmsman (tests).
-  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, helmPlayer = false, scouting = false, intro = false, playerReload = 1, playerDamage = 1, easyGunSafe = false, firingReveals = false } = {}) {
+  constructor({ seed = 11, level = 'normal', auto = null, waves = false, realHandling = false, helmPlayer = false, scouting = false, intro = false, playerReload = 1, playerDamage = 1, easyGunSafe = false, firingReveals = false, playerFlankKn = 0 } = {}) {
     this.seed = seed;
+    this.playerFlankKn = playerFlankKn; // the top of the player's telegraph in knots (0: the shared Flank), so other missions keep theirs
     this.playerReload = playerReload; // how long the player's 76 mm takes to reload, as a part of MAIN_RELOAD (the scene makes it 0.5)
     this.playerDamage = playerDamage; // what the player's 76 mm shells do to a hostile ship, times the usual (the scene makes it 2)
     this.firingReveals = !!firingReveals; // an enemy whose 76 mm fires shows on your radar for FIRED_SEEN s, whatever is in the way (the scene turns it on)
@@ -973,7 +974,7 @@ export class DuelSim {
       s.sway = 0;
       stepHull(s, dt, {
         want: sunk ? 0 : s.cmd.want,
-        orderKn: sunk ? 0 : TELEGRAPH[s.order].kn,
+        orderKn: sunk ? 0 : (this.playerFlankKn && s.order === TELEGRAPH.length - 1 ? this.playerFlankKn : TELEGRAPH[s.order].kn),
         rudderLimit: RUDDER_MAX * (0.25 + 0.75 * s.comp.steering / COMPARTMENTS.steering.hp),
         speedCap: s.comp.engine <= 0 ? 5 / TELEGRAPH[s.order].kn : 0.35 + 0.65 * engine,
       });

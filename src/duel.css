@@ -107,6 +107,7 @@ body.duel-radarview canvas#scene { filter: saturate(0.6) contrast(1.12); }
 .dome-svg line.mj { stroke: rgba(255, 255, 255, 0.9); stroke-width: 1.6; }
 .dome-svg .dl { fill: #fff; font: 700 12.5px 'Segoe UI', system-ui, sans-serif; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.75); stroke-width: 2.4px; stroke-linejoin: round; }
 .dome-svg .hd { fill: #fff; font: 800 18px 'Segoe UI', system-ui, sans-serif; letter-spacing: 0.03em; text-anchor: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.7); stroke-width: 2.6px; stroke-linejoin: round; }
+.dome-svg .tg { fill: rgba(255, 255, 255, 0.16); } .dome-svg .tg.on { fill: var(--accent); } .dome-svg .tg.astern { fill: #35c8ff; } .dome-svg .tg.flank { fill: #ff7a1a; }
 .dome-svg .lub { fill: var(--accent); }
 .dome-svg .rt { fill: none; stroke: rgba(255, 255, 255, 0.14); stroke-width: 5; stroke-linecap: round; }
 .dome-svg .rf { fill: none; stroke-width: 5; stroke-linecap: round; }

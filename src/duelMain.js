@@ -105,7 +105,7 @@ const clamp = THREE.MathUtils.clamp;
 let level = 'normal';
 try { level = globalThis.__DUEL_LEVEL ?? new URLSearchParams(location.search).get('level') ?? 'normal'; } catch { /* no address */ }
 if (!DUEL_LEVELS.includes(level)) level = 'normal';
-const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, helmPlayer: true, scouting: true, intro: true, playerReload: 0.5, playerDamage: 2, easyGunSafe: true, firingReveals: true });
+const sim = new DuelSim({ seed: (Date.now() % 100000) | 0, level, waves: true, realHandling: true, helmPlayer: true, scouting: true, intro: true, playerReload: 0.5, playerDamage: 2, playerFlankKn: 38, easyGunSafe: true, firingReveals: true });
 seaHook = () => { const i = env.seaInfo(); if (i) sim.setSea(i.hs, i.dir); };
 seaHook();
 
@@ -713,6 +713,12 @@ let lastShip = '';
 const DOME_R = 94;
 const DOME_K = 1.5;
 const COMP_ABBR = { gun: '76', bridge: 'BRG', engine: 'ENG', guns: '30', steering: 'STR' };
+// The two engines' telegraph levers: a column of seven notches each (slow astern up to flank), lit up to the ordered level.
+function tgBar(x, order) {
+  let r = '';
+  for (let i = 0; i < TELEGRAPH.length; i++) r += `<rect x="${x - 3}" y="${(97 - (i + 1) * 3.7).toFixed(1)}" width="6" height="2.8" rx="1" class="tg${i <= order ? (i === 0 ? ' astern' : ' on') : ''}${i === TELEGRAPH.length - 1 && i <= order ? ' flank' : ''}"/>`;
+  return r;
+}
 function domeSvg() {
   const p = sim.player;
   const h = sim.headingDeg(p);
@@ -736,6 +742,7 @@ function domeSvg() {
     + `<text x="${cx}" y="79" class="hd">${String(Math.round(h) % 360).padStart(3, '0')}°</text>`
     + `<path d="M${pl[0]},${pl[1]} A${RR},${RR} 0 0 1 ${pr[0]},${pr[1]}" class="rt"/>${fill}`
     + `<line x1="${p0[0]}" y1="${(Number(p0[1]) - 5).toFixed(1)}" x2="${p0[0]}" y2="${(Number(p0[1]) + 5).toFixed(1)}" class="rm"/>`
+    + tgBar(66, p.order) + tgBar(134, p.order)
     + `<text x="${cx}" y="94" class="sp">${sim.knots(p).toFixed(1)}<tspan> kn</tspan></text></svg>`;
 }
 function shipHtml() { // the strip is the dome alone (heading, rudder, speed), centred: the parts are on the board, the guns in the key bar and the sight
