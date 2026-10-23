@@ -683,3 +683,9 @@ body.mission-duel #fly-keys { bottom: auto; height: auto; align-content: start; 
 .duel-ship .hs-lvl { flex: none; align-self: flex-end; width: 14px; height: 48px; margin-bottom: 3px; display: flex; flex-direction: column; gap: 3px; }
 .hs-lvl i { flex: 1; border-radius: 3px; background: rgba(255, 255, 255, 0.14); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35); transition: background 0.15s; }
 .hs-lvl i.on { background: linear-gradient(180deg, #f3dc92, #c9a24d); } .hs-lvl i.top { background: linear-gradient(180deg, #ffb066, #ff7a1a); } .hs-lvl i.astern { background: #35c8ff; }
+
+/* The top view's ship-marks button (in the views bar, only there) */
+.duel-views .duel-ids-btn { margin-left: 2px; border-radius: 999px; }
+.duel-views .duel-ids-btn[hidden] { display: none; }
+.duel-views .duel-ids-btn svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.duel-views .duel-ids-btn.active { background: rgba(255, 77, 85, 0.25); color: #ff8a8d; }

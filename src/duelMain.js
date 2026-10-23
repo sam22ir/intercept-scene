@@ -60,6 +60,8 @@ const fx = createLiveFx(scene);
 
 const BRIDGE_EYE = new THREE.Vector3(16.9, 11.4, 0); // the long-lens sight on the bridge roof, in the ship's frame
 const HELM_EYE = new THREE.Vector3(11.7, 11.0, 0); // inside the wheelhouse, behind the helm wheel (models/bridge.js; as in Solo Air Defense)
+let idsBtn = null; // the top view's ship-marks button (built with the views bar)
+const idState = { until: 0, labels: true }; // the ship marks: shown until this time (ms) in the chase and orbit views, always in the top view unless switched off
 let aboveAng = 0, aboveFresh = true; // the Above view's heading of the screen, eased
 let camYaw = 0, camPitch = 0; // behind and above: the drag's swing round the ship and lift, back to nothing on every view change
 let lookYaw = 0; // bridge: degrees off the bow, + to starboard
@@ -494,6 +496,7 @@ function handleEvents() {
         if (e.owner === 0) say('Merchant hit: hold fire', 'bad', 3600, 'alarm');
       } else if (e.owner === 0) say(`Hit on her ${COMPARTMENTS[e.comp].name.toLowerCase()}${e.out ? ': out' : ''}`, 'ok', 2200);
     } else if (e.type === 'arrive') {
+      idState.until = performance.now() + 5000;
       const where = relName(e.rel);
       if (e.kind === 'enemy') {
         const live = sim.ships.filter((o) => o.team === 1 && o.tSunk === null).length;
@@ -558,6 +561,8 @@ function setView(v) {
     say('Aim: arrows · lock: Space · fire: F · Esc: helm', 'warn', 4200);
   } else if (v !== 'radar' && view === 'radar') setManual(radarPrevManual); // the gun goes on firing: a latched FIRE or a held key carries over
   view = v;
+  if (idsBtn) idsBtn.hidden = v !== 'above';
+  if (v === 'orbit' || v === 'behind') idState.until = performance.now() + 5000;
   camYaw = camPitch = 0; aboveFresh = true; lookYaw = 0; lookPitch = -0.03; // going back to a view always opens on its default angle
   radarKeys.l = radarKeys.r = radarKeys.u = radarKeys.d = radarKeys.zi = radarKeys.zo = 0;
   sight.manual = false; // the radar's own controls start on automatic every time
@@ -582,10 +587,10 @@ function setView(v) {
 // start again. The view is tilted down a little so the horizon stands 70 % of the way up the screen (at its default height).
 const ORBIT_TILT = Math.atan(0.4 * Math.tan(rad(25)));
 let orbitDrag = false;
-let orbitFresh = true, orbitAz = 0, orbitZoom = 1, orbitEl = 0; // orbitEl: the drag's lift of the camera (radians above the level view)
-const orbitPos = new THREE.Vector3(), orbitLook = new THREE.Vector3();
+let orbitFresh = true, orbitAz = 0, orbitZoom = 1, orbitEl = 0.1; // orbitEl: the drag's lift of the camera (radians above the level view)
+const orbitPos = new THREE.Vector3(), orbitCur = new THREE.Vector3(), orbitLook = new THREE.Vector3();
 let orbitDist = 300;
-function orbitOnBoth() { orbitFresh = true; orbitAz = 0; orbitZoom = 1; orbitEl = 0; }
+function orbitOnBoth() { orbitFresh = true; orbitAz = 0; orbitZoom = 1; orbitEl = 0.1; } // it opens a little above the water, looking down on both ships
 function orbitCamera() {
   setFov(50);
   const p = sim.player, e = sim.enemy;
@@ -594,19 +599,18 @@ function orbitCamera() {
   const len = both ? Math.hypot(e.x - p.x, e.z - p.z) : 0;
   const ux = both ? (e.x - p.x) / (len || 1) : 1, uz = both ? (e.z - p.z) / (len || 1) : 0;
   // How much of the width is free of readouts: the ships' span must fit in it.
-  const wide = window.innerWidth > 900;
-  const free = !hudOn ? 0.84 : wide ? 0.7 : 0.78;
-  const tanH = Math.tan(rad(camera.fov / 2)) * camera.aspect;
-  const half = len / 2 + 80;
-  const want = clamp(half / (tanH * free), 220, 9000) * orbitZoom;
+  const want = 300 * orbitZoom; // close on your own ship: she stands large at the lower right, the enemy far off beyond her bow
   const k = orbitFresh ? 1 : 1 - Math.exp(-frameDt / 0.6); // the distance eases; the camera itself follows the hand at once
   orbitDist += (want - orbitDist) * k;
-  const ang = Math.atan2(ux, -uz) + orbitAz; // the camera stands on the line's left, rotated by the drag
-  orbitLook.set(mx, 22, mz);
-  orbitPos.set(mx + Math.cos(ang) * orbitDist * Math.cos(orbitEl), 22 + Math.sin(orbitEl) * orbitDist, mz + Math.sin(ang) * orbitDist * Math.cos(orbitEl));
-  camera.position.lerp(orbitPos, orbitFresh || orbitDrag ? 1 : 1 - Math.exp(-frameDt / 0.2));
+  const ang = Math.atan2(-uz, -ux) - rad(80) + orbitAz; // the camera stands behind her, to the side away from the enemy's line, rotated by the drag
+  orbitLook.set(p.x, 15, p.z);
+  orbitPos.set(p.x + Math.cos(ang) * orbitDist * Math.cos(orbitEl), 15 + Math.sin(orbitEl) * orbitDist, p.z + Math.sin(ang) * orbitDist * Math.cos(orbitEl));
+  orbitCur.lerp(orbitPos, orbitFresh || orbitDrag ? 1 : 1 - Math.exp(-frameDt / 0.2)); // smoothed apart from the camera, which is then slid aside
+  camera.position.copy(orbitCur);
   camera.lookAt(orbitLook);
   camera.rotateX(-ORBIT_TILT); // the same extra tilt at every height
+  camera.translateX(-orbitDist * 0.3); // slid aside and up, so she sits low at the right
+  camera.translateY(orbitDist * 0.1);
   orbitFresh = false;
 }
 canvas.style.touchAction = 'none';
@@ -620,7 +624,7 @@ canvas.addEventListener('pointerdown', (e) => {
   window.addEventListener('pointerup', up);
   window.addEventListener('pointercancel', up);
 });
-canvas.addEventListener('wheel', (e) => { if (view === 'orbit') orbitZoom = clamp(orbitZoom * Math.exp(e.deltaY * 0.001), 0.5, 2.5); }, { passive: true });
+canvas.addEventListener('wheel', (e) => { if (view === 'orbit') orbitZoom = clamp(orbitZoom * Math.exp(e.deltaY * 0.001), 0.5, 6); }, { passive: true });
 const _fwd = new THREE.Vector3();
 function setCamHint() { // tells the simulation what the camera sees, so the helicopter fires where it can be seen
   camera.getWorldDirection(_fwd);
@@ -643,6 +647,9 @@ let behindHead = 0, behindT = 0, behindOn = false; // the behind camera's own he
 function updateCamera() {
   slamShake *= Math.exp(-4 * frameDt);
   if (introCamera() || killCamera()) return;
+  viewCamera();
+}
+function viewCamera() { // the camera of the view you are in
   if (view !== 'behind') behindOn = false;
   const me = ships[0].group;
   const foe = sim.enemy;
@@ -1026,6 +1033,13 @@ viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.v
   kb.setAttribute('aria-pressed', 'false');
   kb.innerHTML = '<svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>';
   strip.appendChild(kb);
+  const ib = document.createElement('button'); // top view only: switches the ship marks off and on
+  ib.type = 'button'; ib.className = 'duel-ids-btn'; ib.title = 'Ship marks on or off (top view)'; ib.setAttribute('aria-label', 'Ship marks'); ib.hidden = true;
+  ib.classList.add('active'); ib.setAttribute('aria-pressed', 'true');
+  ib.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.4"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></svg>';
+  strip.appendChild(ib);
+  idsBtn = ib;
+  ib.addEventListener('click', () => { idState.labels = !idState.labels; ib.classList.toggle('active', idState.labels); ib.setAttribute('aria-pressed', String(idState.labels)); ib.blur(); });
   kb.addEventListener('click', () => { const on = keysEl.classList.toggle('show'); kb.classList.toggle('active', on); kb.setAttribute('aria-pressed', String(on)); kb.blur(); });
 }
 
@@ -1230,7 +1244,6 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     return;
   }
-  if (view === 'radar' && e.key === 'Enter') { input.fire = 1; e.preventDefault(); return; } // Enter fires, like F
   if (view === 'radar' && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_')) { // zoom the lens while held
     radarKeys[e.key === '-' || e.key === '_' ? 'zo' : 'zi'] = 1;
     e.preventDefault();
@@ -1246,8 +1259,11 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     return;
   }
-  if (e.key === 'f' || e.key === 'F') { // F fires while held; with FIRE latched (a long press, in any view) a tap of F stops it
-    if (fireLatch && !e.repeat) { setFireLatch(false); say('Ceasefire', '', 1400); } else input.fire = 1;
+  if (e.key === 'f' || e.key === 'F' || e.key === 'Enter') { // F or Enter fires while held; a long press latches it on (in any view) and a tap stops it
+    if (fireLatch && !e.repeat) { setFireLatch(false); say('Ceasefire', '', 1400); } else if (!fireLatch) {
+      input.fire = 1;
+      if (!e.repeat && !fireKeyHold) fireKeyHold = setTimeout(() => { fireKeyHold = 0; setFireLatch(true); say('Firing: tap F or Enter to stop', 'warn', 2400); }, 500);
+    }
     e.preventDefault(); return;
   }
   if (e.key === 'g' || e.key === 'G') { input.gat = 1; e.preventDefault(); return; }
@@ -1280,13 +1296,14 @@ window.addEventListener('keydown', (e) => {
   }
   if (key !== 'Escape') e.preventDefault();
 });
+let fireKeyHold = 0; // the timer of a long press on F or Enter
 window.addEventListener('keyup', (e) => {
   if (e.key === '+' || e.key === '=' || e.key === 'Shift') radarKeys.zi = 0;
   if (e.key === '-' || e.key === '_' || e.key === 'Control') radarKeys.zo = 0;
   if (e.key.startsWith('Arrow')) radarKeys[{ ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd' }[e.key]] = 0;
   if (e.key === 'ArrowLeft') input.left = 0;
   if (e.key === 'ArrowRight') input.right = 0;
-  if (e.key === 'f' || e.key === 'F' || e.key === 'Enter') input.fire = 0;
+  if (e.key === 'f' || e.key === 'F' || e.key === 'Enter') { clearTimeout(fireKeyHold); fireKeyHold = 0; if (!fireLatch) input.fire = 0; }
   if (e.key === 'g' || e.key === 'G') input.gat = 0;
 });
 window.addEventListener('blur', () => { radarKeys.zi = radarKeys.zo = 0; input.left = 0; input.right = 0; input.fire = 0; input.gat = 0; });
@@ -1772,7 +1789,7 @@ const STOPS = [
 ];
 const TOUR = { fly: 2.6, whip: 0.8, hold: 2.2, back: 1.5 };
 const TOUR_LEN = TOUR.fly + STOPS.length * (TOUR.whip + TOUR.hold) + TOUR.back;
-const INTRO = { phase: 'off', t: 0, seg: null, stop: -1, p0: new THREE.Vector3(), l0: new THREE.Vector3() }; // scan | tour | ask | off
+const INTRO = { phase: 'off', t: 0, seg: null, stop: -1, p0: new THREE.Vector3(), l0: new THREE.Vector3(), q0: new THREE.Quaternion(), f0: 55 }; // scan | tour | ask | off
 const cineBars = document.createElement('div');
 cineBars.className = 'duel-bars';
 cineBars.innerHTML = '<i></i><i></i>';
@@ -1863,6 +1880,8 @@ function introStep(dt) {
       INTRO.phase = 'tour'; INTRO.t = 0; INTRO.stop = -1;
       INTRO.p0.copy(camera.position);
       camera.getWorldDirection(INTRO.l0).multiplyScalar(60).add(camera.position);
+      INTRO.q0.copy(camera.quaternion); INTRO.f0 = camera.fov; // the tour leaves from the camera as it is, in whatever view, and comes back to it
+      camera.up.set(0, 1, 0);
       document.body.classList.add('duel-cine');
       say('Hostile contact', 'bad', 2400);
     }
@@ -1884,7 +1903,7 @@ function introStep(dt) {
 const smooth01 = (u) => { const x = clamp(u, 0, 1); return x * x * (3 - 2 * x); };
 const whipEase = (u) => 1 - Math.pow(1 - clamp(u, 0, 1), 4); // fast off the mark, slowing onto the weapon
 const lerp = (a, b, u) => a + (b - a) * u;
-const _tp = new THREE.Vector3(), _tl = new THREE.Vector3(), _tq = new THREE.Vector3();
+const _tp = new THREE.Vector3(), _tl = new THREE.Vector3(), _tq = new THREE.Vector3(), _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 // A stop's camera and look point in the world, blended from stop `a` to stop `b` by u, the circle drifting on by `drift` radians.
 function stopPose(foe, a, b, u, drift, pos, look) {
   const A = STOPS[a], B = STOPS[b];
@@ -1940,28 +1959,39 @@ function introCamera() {
   {
     const foe = ships[sim.enemy.idx]?.group, g = INTRO.seg;
     if (!foe || !g) return false;
+    bridge.group.visible = false; // the wheelhouse is no part of the tour
     let fov;
     if (g.kind === 'fly') { // out from your ship to her, low over the sea, banking, the lens widening with the speed
       const u = smooth01(g.u);
       const end = stopPose(foe, 0, 0, 0, 0, _tp, _tl);
-      fov = lerp(55, end, u) + Math.sin(Math.PI * u) * 22;
+      fov = lerp(INTRO.f0, end, u) + Math.sin(Math.PI * u) * 22;
       camera.position.lerpVectors(INTRO.p0, _tp, u);
       camera.position.y = lerp(INTRO.p0.y, _tp.y, u) * (1 - 0.55 * Math.sin(Math.PI * u)); // dips toward the sea mid-way
       _b.lerpVectors(INTRO.l0, _tl, smooth01(g.u * 1.6));
       camera.lookAt(_b);
+      _q1.copy(camera.quaternion);
+      camera.quaternion.copy(INTRO.q0).slerp(_q1, smooth01(g.u * 2.2)); // turns from the view's own aim onto her
       camera.rotateZ(Math.sin(Math.PI * u) * 0.22 + Math.sin(INTRO.t * 23) * 0.004 * Math.sin(Math.PI * u)); // bank, and a tremor at speed
       setFov(fov);
       return true;
     } else if (g.kind === 'stop') { // whip round her to the weapon, then a slow drift while the callout reads
       fov = stopPose(foe, Math.max(0, g.i - 1), g.i, whipEase(g.u), g.held * 0.035, camera.position, _b);
-    } else { // back to your ship, fast and low
+    } else { // back to the view you were in, fast and low: from the last stop's pose to where that view's own camera stands now
       stopPose(foe, g.i, g.i, 1, TOUR.hold * 0.035, _tp, _tl);
-      behindPose(_tq, _a);
+      camera.up.set(0, 1, 0);
+      camera.position.copy(_tp); camera.lookAt(_tl);
+      _q1.copy(camera.quaternion);
+      const f1 = STOPS[g.i].fov;
+      viewCamera(); // the view's camera, laid down now: it is the target
+      _tq.copy(camera.position); _q2.copy(camera.quaternion);
+      const f2 = camera.fov;
       const u = smooth01(g.u);
       camera.position.lerpVectors(_tp, _tq, u);
       camera.position.y += Math.sin(Math.PI * u) * 20;
-      _b.lerpVectors(_tl, _a, smooth01(g.u * 1.4));
-      fov = lerp(STOPS[g.i].fov, 55, u);
+      camera.quaternion.copy(_q1).slerp(_q2, smooth01(g.u * 1.3));
+      setFov(lerp(f1, f2, u));
+      bridge.group.visible = view === 'bridge' && g.u > 0.92;
+      return true;
     }
     camera.lookAt(_b);
     setFov(fov);
@@ -1999,6 +2029,96 @@ const hostileFx = (() => {
   scene.add(g);
   return { g, ring, inner, ticks, pings };
 })();
+// --- The ship marks: a ring on the sea under every other ship, in the hostile ring's style, with her kind and distance lying on the water -------
+// Red for an enemy, green for a friend, amber for a merchant. They show for 5 s when the view opens (chase or orbit) and when a ship arrives,
+// and stay, lighter, in the top view, where a button in the views bar removes them.
+const ID_STYLE = { 0: { col: 0x3ddc84, css: '#3ddc84', name: 'FRIENDLY' }, 1: { col: 0xff2a33, css: '#ff4d55', name: 'HOSTILE' }, 2: { col: 0xf2c94c, css: '#f2c94c', name: 'MERCHANT' } };
+const idMarks = new Map();
+function makeIdMark(team) {
+  const st = ID_STYLE[team] ?? ID_STYLE[2];
+  const g = new THREE.Group();
+  const mat = (o) => new THREE.MeshBasicMaterial({ color: st.col, transparent: true, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(96, 102, 96), mat(0.9));
+  const inner = new THREE.Mesh(new THREE.RingGeometry(78, 79.5, 96), mat(0.5));
+  const ping = new THREE.Mesh(new THREE.RingGeometry(98, 103, 96), mat(0.6));
+  const ticks = new THREE.Group();
+  for (let k = 0; k < 4; k++) {
+    const t = new THREE.Mesh(new THREE.PlaneGeometry(22, 3), mat(0.9));
+    const a = (k * Math.PI) / 2;
+    t.position.set(Math.cos(a) * 114, 0, Math.sin(a) * 114);
+    t.rotation.set(-Math.PI / 2, 0, -a);
+    ticks.add(t);
+  }
+  for (const m of [ring, inner, ping]) m.rotation.x = -Math.PI / 2;
+  const cv = document.createElement('canvas');
+  cv.width = 512; cv.height = 192;
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const lm = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide, toneMapped: false });
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(256, 96), lm);
+  label.rotation.x = -Math.PI / 2;
+  const lab = new THREE.Group(); // turned about the vertical so the writing stands upright for whoever looks
+  lab.add(label);
+  g.add(ring, inner, ping, ticks, lab);
+  g.visible = false;
+  g.traverse((o) => { o.renderOrder = 5; });
+  scene.add(g);
+  return { g, ring, inner, ping, ticks, lab, label, cv, tex, lm, st, text: '', mats: [ring, inner, ping, ...ticks.children].map((m) => m.material), base: [0.9, 0.5, 0.6, 0.9, 0.9, 0.9, 0.9] };
+}
+function paintIdMark(m, text) {
+  const c = m.cv.getContext('2d');
+  c.clearRect(0, 0, 512, 192);
+  c.textAlign = 'center'; c.lineJoin = 'round';
+  c.font = '800 44px system-ui, sans-serif';
+  c.lineWidth = 9; c.strokeStyle = 'rgba(0,0,0,0.75)'; c.fillStyle = m.st.css;
+  c.strokeText(m.st.name, 256, 62); c.fillText(m.st.name, 256, 62);
+  c.font = '800 78px system-ui, sans-serif';
+  c.strokeText(text, 256, 148); c.fillStyle = '#ffffff'; c.fillText(text, 256, 148);
+  m.tex.needsUpdate = true;
+  m.text = text;
+}
+const _idUp = new THREE.Vector3();
+let idT = 0;
+function updateIdMarks(dt) {
+  idT += dt;
+  const now = performance.now();
+  const top = view === 'above';
+  const show = view === 'bridge' || view === 'radar' ? 0 : top ? (idState.labels ? 0.5 : 0) : clamp((idState.until - now) / 700, 0, 1);
+  const live = new Set();
+  if (show > 0.01 && sim.player.tSunk === null) {
+    camera.updateMatrixWorld();
+    _idUp.setFromMatrixColumn(camera.matrixWorld, 1); // the screen's up, laid on the sea, is the way the writing's top points
+    _idUp.y = 0;
+    if (_idUp.lengthSq() < 0.01) _idUp.set(0, 0, -1);
+    _idUp.normalize();
+    const spin = Math.atan2(-_idUp.x, -_idUp.z);
+    for (const o of sim.ships) {
+      if (o.idx === 0 || o.tSunk !== null) continue;
+      if (o.team === 1 && o.det === false) continue;
+      const d = sim.distance(sim.player, o);
+      if (d > 12000) continue;
+      live.add(o.idx);
+      let m = idMarks.get(o.idx);
+      if (!m || m.team !== o.team) { if (m) { scene.remove(m.g); } m = makeIdMark(o.team); m.team = o.team; idMarks.set(o.idx, m); }
+      const txt = kmText(d);
+      if (txt !== m.text) paintIdMark(m, txt);
+      const cd = camera.position.distanceTo(_c.set(o.x, 0, o.z));
+      const k = clamp(cd / 1200, 0.8, 9); // a ring that stays readable from far off
+      m.g.visible = true;
+      m.g.position.set(o.x, 0.8, o.z);
+      m.g.scale.setScalar(k);
+      m.ticks.rotation.y = idT * 0.6;
+      const u = ((idT + o.idx * 0.4) % 1.8) / 1.8;
+      m.ping.scale.setScalar(1 + u * 2.2);
+      m.mats.forEach((mt, q) => { mt.opacity = m.base[q] * show; });
+      m.ping.material.opacity = 0.6 * (1 - u) * show;
+      m.lab.rotation.y = spin;
+      m.lab.position.set(-_idUp.x * 170, 0.2, -_idUp.z * 170); // below the ring, in the screen's sense
+      m.lm.opacity = show;
+    }
+  }
+  for (const [idx, m] of idMarks) if (!live.has(idx)) m.g.visible = false;
+}
 const lockEl = document.createElement('div');
 lockEl.className = 'duel-lock';
 lockEl.hidden = true;
@@ -2147,6 +2267,7 @@ renderer.setAnimationLoop((now) => {
   fadeWeatherCards();
   setCamHint();
   updateHostileFx(dt);
+  updateIdMarks(dt);
   env.follow(camera.position);
   env.setShadowFocus(_b.set((sim.player.x + sim.enemy.x) / 2, 0, (sim.player.z + sim.enemy.z) / 2), clamp(sim.range() * 0.5, 120, 600));
   fx.update(sim.t);
