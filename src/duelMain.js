@@ -553,22 +553,50 @@ function setView(v) {
   if (ships[0]) ships[0].mainGun.group.visible = v !== 'radar'; // its barrel, trained on her, stood as a white bar up the middle of the sight
   document.body.classList.toggle('duel-radarview', v === 'radar');
   map.sight = null;
-  controls.enabled = v === 'orbit';
+  controls.enabled = false;
   if (v === 'orbit') orbitOnBoth();
-  else rig.free();
+  rig.free();
   camera.up.set(0, 1, 0);
   viewButtons.forEach((b) => { const on = b.dataset.view === v; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
 }
-// The orbit view: the camera behind and off to one side of your ship and above her, so the enemy shows past her; it orbits the point a
-// third of the way from you to her (it follows both). With no enemy in sight it orbits your ship.
-function orbitOnBoth() {
+// The orbit view: a level camera (the horizon sits in the middle of the screen) at the side of the line between the two ships, far enough back
+// that both stand in the gap between the readouts. A drag swings it round them, the wheel moves it in and out; it follows both. With no
+// enemy in sight it frames your ship alone.
+let orbitFresh = true, orbitAz = 0, orbitZoom = 1;
+const orbitPos = new THREE.Vector3(), orbitLook = new THREE.Vector3();
+let orbitDist = 300;
+function orbitOnBoth() { orbitFresh = true; orbitAz = 0; orbitZoom = 1; }
+function orbitCamera() {
+  setFov(50);
   const p = sim.player, e = sim.enemy;
-  if (!e || e.tSunk !== null || e.det === false) { rig.focus('ship', (out) => out.set(p.x, 8, p.z), 230, 25); return; }
-  const dx = p.x - e.x, dz = p.z - e.z, r = Math.hypot(dx, dz) || 1, ux = dx / r, uz = dz / r;
-  const dist = clamp(r * 0.55, 260, 1800);
-  camera.position.set(p.x + ux * dist * 0.75 - uz * dist * 0.5, dist * 0.32, p.z + uz * dist * 0.75 + ux * dist * 0.5);
-  rig.focus('both', (out) => { const f = sim.enemy && sim.enemy.tSunk === null ? sim.enemy : sim.player; return out.set(lerp(sim.player.x, f.x, 0.33), 8, lerp(sim.player.z, f.z, 0.33)); }, dist, 25);
+  const both = e && e.tSunk === null && e.det !== false;
+  const mx = both ? (p.x + e.x) / 2 : p.x, mz = both ? (p.z + e.z) / 2 : p.z;
+  const len = both ? Math.hypot(e.x - p.x, e.z - p.z) : 0;
+  const ux = both ? (e.x - p.x) / (len || 1) : 1, uz = both ? (e.z - p.z) / (len || 1) : 0;
+  // How much of the width is free of readouts: the ships' span must fit in it.
+  const wide = window.innerWidth > 900;
+  const free = !hudOn ? 0.84 : wide ? 0.44 : 0.7;
+  const tanH = Math.tan(rad(camera.fov / 2)) * camera.aspect;
+  const half = len / 2 + 80;
+  const want = clamp(half / (tanH * free), 220, 9000) * orbitZoom;
+  const k = orbitFresh ? 1 : 1 - Math.exp(-frameDt / 0.6);
+  orbitDist += (want - orbitDist) * k;
+  const ang = Math.atan2(ux, -uz) + orbitAz; // the camera stands on the line's left, rotated by the drag
+  orbitLook.set(mx, 22, mz);
+  orbitPos.set(mx + Math.cos(ang) * orbitDist, 22, mz + Math.sin(ang) * orbitDist);
+  camera.position.lerp(orbitPos, orbitFresh ? 1 : 1 - Math.exp(-frameDt / 0.25));
+  camera.lookAt(orbitLook);
+  orbitFresh = false;
 }
+canvas.addEventListener('pointerdown', (e) => {
+  if (view !== 'orbit') return;
+  let x = e.clientX;
+  const move = (ev) => { orbitAz -= (ev.clientX - x) * 0.006; x = ev.clientX; };
+  const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+});
+canvas.addEventListener('wheel', (e) => { if (view === 'orbit') orbitZoom = clamp(orbitZoom * Math.exp(e.deltaY * 0.001), 0.5, 2.5); }, { passive: true });
 let frameDt = 1 / 60;
 let behindHead = 0, behindT = 0, behindOn = false; // the behind camera's own heading, which trails the ship's
 function updateCamera() {
@@ -578,7 +606,7 @@ function updateCamera() {
   const me = ships[0].group;
   const foe = sim.enemy;
   bridge.group.visible = view === 'bridge';
-  if (view === 'orbit') { setFov(50); rig.update(); controls.update(); return; }
+  if (view === 'orbit') { orbitCamera(); return; }
   if (view === 'behind') {
     setFov(55);
     // Not bolted to the ship: the camera trails her heading (it swings out when she turns), rises and falls and sways with the sea,
