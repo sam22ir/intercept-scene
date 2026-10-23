@@ -570,6 +570,10 @@ function setView(v) {
 // The orbit view: a level camera (the horizon sits in the middle of the screen) at the side of the line between the two ships, far enough back
 // that both stand in the gap between the readouts. A drag swings it round them, the wheel moves it in and out; it follows both. With no
 // enemy in sight it frames your ship alone.
+// The orbit view, in one line: drag sideways to swing round the ships, drag up to rise (down to sink back), wheel to move in and out, double click to
+// start again. The view is tilted down a little so the horizon stands 70 % of the way up the screen (at its default height).
+const ORBIT_TILT = Math.atan(0.4 * Math.tan(rad(25)));
+let orbitDrag = false;
 let orbitFresh = true, orbitAz = 0, orbitZoom = 1, orbitEl = 0; // orbitEl: the drag's lift of the camera (radians above the level view)
 const orbitPos = new THREE.Vector3(), orbitLook = new THREE.Vector3();
 let orbitDist = 300;
@@ -587,24 +591,26 @@ function orbitCamera() {
   const tanH = Math.tan(rad(camera.fov / 2)) * camera.aspect;
   const half = len / 2 + 80;
   const want = clamp(half / (tanH * free), 220, 9000) * orbitZoom;
-  const k = orbitFresh ? 1 : 1 - Math.exp(-frameDt / 0.6);
+  const k = orbitFresh ? 1 : 1 - Math.exp(-frameDt / 0.6); // the distance eases; the camera itself follows the hand at once
   orbitDist += (want - orbitDist) * k;
   const ang = Math.atan2(ux, -uz) + orbitAz; // the camera stands on the line's left, rotated by the drag
   orbitLook.set(mx, 22, mz);
   orbitPos.set(mx + Math.cos(ang) * orbitDist * Math.cos(orbitEl), 22 + Math.sin(orbitEl) * orbitDist, mz + Math.sin(ang) * orbitDist * Math.cos(orbitEl));
-  camera.position.lerp(orbitPos, orbitFresh ? 1 : 1 - Math.exp(-frameDt / 0.25));
+  camera.position.lerp(orbitPos, orbitFresh || orbitDrag ? 1 : 1 - Math.exp(-frameDt / 0.2));
   camera.lookAt(orbitLook);
-  // The horizon stands 70 % of the way up the screen (a view tilted down by the angle that puts it there); lifting the camera by hand takes the tilt away.
-  camera.rotateX(-Math.atan(0.4 * Math.tan(rad(camera.fov / 2))) * clamp(1 - orbitEl / 0.5, 0, 1));
+  camera.rotateX(-ORBIT_TILT); // the same extra tilt at every height
   orbitFresh = false;
 }
+canvas.style.touchAction = 'none';
 canvas.addEventListener('pointerdown', (e) => {
-  if (view !== 'orbit') return;
+  if (view !== 'orbit' || e.button !== 0) return;
   let x = e.clientX, y = e.clientY;
-  const move = (ev) => { orbitAz -= (ev.clientX - x) * 0.006; orbitEl = clamp(orbitEl - (ev.clientY - y) * 0.004, 0, 1.25); x = ev.clientX; y = ev.clientY; };
-  const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+  orbitDrag = true;
+  const move = (ev) => { orbitAz -= (ev.clientX - x) * 0.006; orbitEl = clamp(orbitEl - (ev.clientY - y) * 0.004, 0, 1.4); x = ev.clientX; y = ev.clientY; };
+  const up = () => { orbitDrag = false; window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
 });
 canvas.addEventListener('wheel', (e) => { if (view === 'orbit') orbitZoom = clamp(orbitZoom * Math.exp(e.deltaY * 0.001), 0.5, 2.5); }, { passive: true });
 const _fwd = new THREE.Vector3();
@@ -1469,7 +1475,7 @@ window.addEventListener('pointermove', (e) => {
   sight.dragPitch -= dy * THREE.MathUtils.degToRad(camera.fov) / window.innerHeight;
 });
 canvas.addEventListener('wheel', (e) => { if (view === 'radar') zoomSight(Math.exp(e.deltaY * 0.0012)); }, { passive: true });
-canvas.addEventListener('dblclick', () => { camYaw = camPitch = 0; sightZoomGoal = SIGHT_ZOOM0; lookYaw = 0; lookPitch = -0.03; });
+canvas.addEventListener('dblclick', () => { camYaw = camPitch = 0; if (view === 'orbit') orbitOnBoth(); sightZoomGoal = SIGHT_ZOOM0; lookYaw = 0; lookPitch = -0.03; });
 // On the bridge a drag looks round the wheelhouse (as in Solo Air Defense): drag left and it turns left.
 let lookDrag = null;
 canvas.addEventListener('pointerdown', (e) => { if (e.button === 0 && view === 'bridge') lookDrag = { x: e.clientX, y: e.clientY }; });
