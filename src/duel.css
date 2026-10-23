@@ -353,7 +353,6 @@ body.duel-cine .duel-labels { opacity: 0; }
 
 /* Every view shows the same readouts: your ship's board down the left, the enemy card at the top right, the dome strip at the bottom
    (its hull cells are on the board, so the strip keeps the dome and the guns). #hud only holds the end card, in the middle. */
-body.mission-duel .duel-ship .hs-hull { display: none; }
 body.mission-duel #hud.duel-root:not(.dh-over) { display: none; }
 body.mission-duel #hud.duel-root.dh-over { position: fixed; left: 50%; top: 50%; right: auto; bottom: auto; transform: translate(-50%, -50%); width: min(400px, calc(100vw - 32px)); max-height: 72vh; z-index: 20; padding: 0; background: none; border: 0; box-shadow: none; pointer-events: auto; }
 body.mission-duel #hud.duel-root .dh-end { padding: 16px 18px; background: rgba(9, 14, 21, 0.92); box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55); backdrop-filter: blur(6px); }
@@ -415,7 +414,6 @@ body.duel-radarview .duel-ship { display: none; }
 .duel-friend.duel-heli { border-color: rgba(242, 201, 76, 0.45); border-left-color: #f2c94c; } .duel-heli .sp-ico { background: rgba(242, 201, 76, 0.16); }
 .duel-friend.duel-miss { border-color: rgba(255, 93, 97, 0.45); border-left-color: #ff5d61; color: #ff8a8d; } .duel-miss .sp-ico { background: rgba(255, 93, 97, 0.16); } .duel-miss .sp-txt b { color: #fff; }
 @media (max-width: 900px) { .duel-actions { width: 200px; } .duel-friend .sp-txt small { display: none; } }
-.duel-ship .hs-latch { color: #ff7a7d; animation: rc-pulse 0.8s ease-in-out infinite; }
 /* The key bar wraps onto a second row rather than losing keys off its ends; the banner keeps below it. */
 @media (min-width: 901px) {
   body.mission-duel .fly-keys { flex-wrap: wrap; justify-content: center; overflow: visible; max-width: min(1100px, calc(100vw - 560px)); }

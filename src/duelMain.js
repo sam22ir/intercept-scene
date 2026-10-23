@@ -627,7 +627,7 @@ function gunStatus(s) {
   if (s.tSunk !== null) return '';
   if (s.comp.gun <= 0) return 'OUT';
   if (g.ammo <= 0) return 'NO AMMUNITION';
-  if (s.idx === 0 && fireLatch) return '<b class="hs-latch">FIRING · F stops</b>';
+  if (s.idx === 0 && fireLatch) return 'FIRING · F stops';
   const sol = Math.abs(sim.relBearing(s));
   if (sim.range() > MAIN_RANGE) return `OUT OF RANGE (${kmText(MAIN_RANGE)})`;
   if (sol > MAIN_ARC) return 'OUT OF ARC: turn her';
@@ -688,20 +688,8 @@ function domeSvg() {
     + `<line x1="${p0[0]}" y1="${(Number(p0[1]) - 5).toFixed(1)}" x2="${p0[0]}" y2="${(Number(p0[1]) + 5).toFixed(1)}" class="rm"/>`
     + `<text x="${cx}" y="94" class="sp">${sim.knots(p).toFixed(1)}<tspan> kn</tspan></text></svg>`;
 }
-function shipHtml() {
-  const p = sim.player;
-  const cells = COMP_IDS.map((id) => {
-    const f = p.comp[id] / COMPARTMENTS[id].hp;
-    const crew = p.crews.filter((c) => c.to === id).length;
-    return `<i class="cp ${f <= 0 ? 'out' : f < 0.5 ? 'bad' : f < 0.99 ? 'hurt' : ''}${COMP_IDS[selComp] === id ? ' sel' : ''}" title="${COMPARTMENTS[id].name}"><b>${COMP_ABBR[id]}</b><s style="height:${Math.round(clamp(f, 0, 1) * 100)}%"></s>`
-      + `<em>${p.fire[id] > 0 ? '<u class="fire">▲</u>' : ''}${p.leak[id] > 0.005 ? '<u class="leak">≈</u>' : ''}${crew ? '<u class="crew">⛑</u>' : ''}</em></i>`;
-  }).join('');
-  const g = p.gun;
-  const dry = p.gats.every((x) => x.ammo <= 0);
-  return `<div class="hs-rect hs-hull${p.hp < HULL_HP ? ' hurt' : ''}"><span>HULL <b>${Math.round(p.hp)}</b>${p.tSunk !== null ? ' · SINKING' : ''}</span><div class="hs-cells">${cells}</div></div>`
-    + `<div class="hs-dome">${domeSvg()}</div>`
-    + `<div class="hs-rect hs-wpn"><span>76 mm <b>${AMMO_TYPES[g.type].name}</b> · HE ${g.stock.he} AP ${g.stock.ap} · ${gunStatus(p)}</span>`
-    + `<span>30 mm <b>${dry ? 'DRY' : p.auto ? 'AUTO' : 'HOLD G'}</b> · crews <b>${p.crews.filter((c) => c.to).length}/${CREWS}</b> · ${COMPARTMENTS[COMP_IDS[selComp]].name}</span></div>`;
+function shipHtml() { // the strip is the dome alone (heading, rudder, speed), centred: the parts are on the board, the guns in the key bar and the sight
+  return `<div class="hs-dome">${domeSvg()}</div>`;
 }
 
 // --- The status boards (radar view) ---------------------------------------------------------------------------------------------
