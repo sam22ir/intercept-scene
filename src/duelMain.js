@@ -60,6 +60,7 @@ const fx = createLiveFx(scene);
 
 const BRIDGE_EYE = new THREE.Vector3(16.9, 11.4, 0); // the long-lens sight on the bridge roof, in the ship's frame
 const HELM_EYE = new THREE.Vector3(11.7, 11.0, 0); // inside the wheelhouse, behind the helm wheel (models/bridge.js; as in Solo Air Defense)
+let camYaw = 0, camPitch = 0; // behind and above: the drag's swing round the ship and lift, back to nothing on every view change
 let lookYaw = 0; // bridge: degrees off the bow, + to starboard
 let lookPitch = -0.03;
 const _a = new THREE.Vector3();
@@ -544,6 +545,7 @@ function setView(v) {
     say('Aim: arrows · lock: Space · fire: F · Esc: helm', 'warn', 4200);
   } else if (v !== 'radar' && view === 'radar') setManual(radarPrevManual); // the gun goes on firing: a latched FIRE or a held key carries over
   view = v;
+  camYaw = camPitch = 0; lookYaw = 0; lookPitch = -0.03; // going back to a view always opens on its default angle
   radarKeys.l = radarKeys.r = radarKeys.u = radarKeys.d = radarKeys.zi = radarKeys.zo = 0;
   sight.manual = false; // the radar's own controls start on automatic every time
   sight.lock = null;
@@ -638,7 +640,8 @@ function updateCamera() {
     const bob = ride ? ride.heave * 0.85 : (Math.sin(sim.t * 0.9) * 1.0 + Math.sin(sim.t * 1.7 + 1) * 0.5) * swell;
     const sway = Math.sin(sim.t * 0.55 + 2) * 0.6 * swell;
     const hx = Math.cos(behindHead), hz = Math.sin(behindHead);
-    camera.position.set(p.x - hx * 110 - hz * sway, 34 + bob, p.z - hz * 110 + hx * sway);
+    const cy = Math.cos(behindHead + camYaw), sy = Math.sin(behindHead + camYaw), cp = Math.cos(camPitch), sp = Math.sin(camPitch);
+    camera.position.set(p.x - cy * 110 * cp - hz * sway, 34 + bob + 110 * sp, p.z - sy * 110 * cp + hx * sway);
     camera.lookAt(p.x + Math.cos(p.psi) * 45, 6 + bob * 0.3, p.z + Math.sin(p.psi) * 45);
     camera.rotateZ(wrapAngle(p.psi - behindHead) * -0.3 + Math.sin(sim.t * 0.8) * 0.012 * swell);
     if (slamShake > 0.01) { camera.position.y += Math.sin(sim.t * 38) * 0.7 * slamShake; camera.rotateX(Math.sin(sim.t * 29) * 0.012 * slamShake); }
@@ -656,7 +659,7 @@ function updateCamera() {
     setFov(50);
     const mx = (sim.player.x + foe.x) / 2, mz = (sim.player.z + foe.z) / 2;
     const h = Math.max(380, sim.range() * 1.05);
-    camera.up.set(Math.cos(sim.player.psi), 0, Math.sin(sim.player.psi));
+    camera.up.set(Math.cos(sim.player.psi + camYaw), 0, Math.sin(sim.player.psi + camYaw));
     camera.position.set(mx, h, mz);
     camera.lookAt(mx, 0, mz);
   }
@@ -1425,7 +1428,7 @@ window.addEventListener('pointermove', (e) => {
   sight.dragPitch -= dy * THREE.MathUtils.degToRad(camera.fov) / window.innerHeight;
 });
 canvas.addEventListener('wheel', (e) => { if (view === 'radar') zoomSight(Math.exp(e.deltaY * 0.0012)); }, { passive: true });
-canvas.addEventListener('dblclick', () => { sightZoomGoal = SIGHT_ZOOM0; lookYaw = 0; lookPitch = -0.03; });
+canvas.addEventListener('dblclick', () => { camYaw = camPitch = 0; sightZoomGoal = SIGHT_ZOOM0; lookYaw = 0; lookPitch = -0.03; });
 // On the bridge a drag looks round the wheelhouse (as in Solo Air Defense): drag left and it turns left.
 let lookDrag = null;
 canvas.addEventListener('pointerdown', (e) => { if (e.button === 0 && view === 'bridge') lookDrag = { x: e.clientX, y: e.clientY }; });
@@ -1436,6 +1439,17 @@ window.addEventListener('pointermove', (e) => {
   lookDrag = { x: e.clientX, y: e.clientY };
   lookYaw = ((lookYaw + dx * 0.25 + 540) % 360) - 180;
   lookPitch = clamp(lookPitch - dy * 0.004, -0.9, 0.6);
+});
+// Behind and above: a drag swings the camera round the ship (and lifts or lowers it behind); it opens on the default angle again after a view change.
+let swingDrag = null;
+canvas.addEventListener('pointerdown', (e) => { if (e.button === 0 && (view === 'behind' || view === 'above')) swingDrag = { x: e.clientX, y: e.clientY }; });
+window.addEventListener('pointerup', () => { swingDrag = null; });
+window.addEventListener('pointermove', (e) => {
+  if (!swingDrag || (view !== 'behind' && view !== 'above')) return;
+  const dx = e.clientX - swingDrag.x, dy = e.clientY - swingDrag.y;
+  swingDrag = { x: e.clientX, y: e.clientY };
+  camYaw = wrapAngle(camYaw - dx * 0.006);
+  if (view === 'behind') camPitch = clamp(camPitch + dy * 0.004, -0.12, 1.0);
 });
 const _w1 = new THREE.Vector3();
 const _w2 = new THREE.Vector3();
