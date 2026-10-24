@@ -770,7 +770,8 @@ function aimSight(dt, d) {
   }
   else if (sight.phase === 'lock' && off > THREE.MathUtils.degToRad(3.5)) sight.phase = 'slew'; // lost it: swing back onto it
   camera.lookAt(_e.copy(camera.position).add(sight.aim));
-  const wantFov = Math.max(fovWant * sightZoom, 1);
+  sightBase = fovWant;
+  const wantFov = Math.max(fovWant * sightZoom, LENS_MIN);
   const found = sight.phase === 'lock';
   sightTxt.textContent = found
     ? `${d.name} · ${relName(sim.relBearing(d.pos))} · ${kmText(sim.rangeTo(d.pos))} · ${Math.round(d.pos.y)} m${sim.engageable(d) ? '' : ' · IN ARC'}`
@@ -1038,6 +1039,7 @@ function renderPip() {
 
 let behindYaw = 0;
 let sightZoom = 1;
+let sightBase = 24; // the lens (degrees) the sight wants before the zoom is applied, set each frame
 // The fire-control director's mount (see updateCamera): its aim, its turning speed and where it is in finding the target.
 const SIGHT_RATE = THREE.MathUtils.degToRad(55); // the fastest it turns, per second
 const SIGHT_WIDE = 24; // degrees: the lens while it looks for the target
@@ -1068,7 +1070,10 @@ const RICON = { // 32 x 32 drawings, animated by CSS in helm.css (.hr-sweep, .hr
 };
 const optHtml = (icon, title, sub, key) => `<i class="sp-ico">${icon}</i><span class="sp-txt"><b>${title}</b><small>${sub}</small></span><kbd>${key}</kbd>`;
 const optBtn = (cls, act, icon, title, sub, key) => `<button type="button" class="helm-act hr-opt ${cls}" data-act="${act}">${optHtml(icon, title, sub, key)}</button>`;
-const ZOOM_MIN = 0.3, ZOOM_MAX = 4, ZOOM_SPAN = Math.log(ZOOM_MAX / ZOOM_MIN);
+// The ring shows the lens itself, in degrees (wide at the lower left, close at the lower right), not the multiplier on it:
+// a lock closes the lens on its own, and the dot follows that too.
+const LENS_MIN = 1, LENS_MAX = SIGHT_WIDE * 4, ZOOM_SPAN = Math.log(LENS_MAX / LENS_MIN);
+const SIGHT_ZOOM_MIN = 0.02, SIGHT_ZOOM_MAX = 40; // the multiplier on the lens the sight would have anyway
 const RING_ARC = 2 * Math.PI * 70 * 0.75; // the zoom ring runs 270 degrees, from the lower left round to the lower right
 radarEl.innerHTML = '<div class="hr-marks"></div><div class="hr-console">'
   + '<div class="hr-read"><b class="hr-mode">AUTO</b><span class="hr-brg"></span></div>'
@@ -1138,7 +1143,8 @@ radarEl.addEventListener('pointerdown', (e) => {
       const r = hitEl.getBoundingClientRect();
       let a = (Math.atan2(ev.clientY - (r.top + r.height / 2), ev.clientX - (r.left + r.width / 2)) * 180 / Math.PI - 135 + 720) % 360;
       if (a > 270) a = a > 315 ? 0 : 270; // the gap at the bottom snaps to the nearer end
-      sightZoom = THREE.MathUtils.clamp(ZOOM_MIN * Math.exp((1 - a / 270) * ZOOM_SPAN), ZOOM_MIN, ZOOM_MAX);
+      const lens = LENS_MIN * Math.exp((1 - a / 270) * ZOOM_SPAN);
+      sightZoom = THREE.MathUtils.clamp(lens / sightBase, SIGHT_ZOOM_MIN, SIGHT_ZOOM_MAX);
     });
     return;
   }
@@ -1209,7 +1215,8 @@ function aimManual(dt) {
   sightEl.classList.toggle('lock', !!d);
   sightEl.classList.toggle('searching', !d);
   sightTxt.textContent = d ? `${d.name} in the sight · ${relName(sim.relBearing(d.pos))} · ${kmText(sim.rangeTo(d.pos))} · locking…` : 'Manual: aim at a drone';
-  return Math.max(SIGHT_WIDE * sightZoom, 1);
+  sightBase = SIGHT_WIDE;
+  return Math.max(SIGHT_WIDE * sightZoom, LENS_MIN);
 }
 // Brackets on every detected drone in the picture, and the pad's readout.
 const radarMarkEls = new Map();
@@ -1224,7 +1231,7 @@ function updateRadarUi() {
   fireBall.classList.toggle('empty', !canFire);
   fireBall.classList.toggle('ready', !!sim.shot?.hold);
   fireBall.classList.toggle('lock', !!sim.shot?.locked);
-  const zf = 1 - Math.log(sightZoom / ZOOM_MIN) / ZOOM_SPAN, ang = (135 + 270 * zf) * Math.PI / 180;
+  const zf = THREE.MathUtils.clamp(1 - Math.log(Math.max(fov, LENS_MIN) / LENS_MIN) / ZOOM_SPAN, 0, 1), ang = (135 + 270 * zf) * Math.PI / 180;
   thumbEl.setAttribute('cx', (75 + 70 * Math.cos(ang)).toFixed(1));
   thumbEl.setAttribute('cy', (75 + 70 * Math.sin(ang)).toFixed(1));
   fillEl.style.strokeDasharray = `${(RING_ARC * zf).toFixed(1)} 440`;
@@ -1278,7 +1285,7 @@ canvas.addEventListener('dblclick', () => { lookYaw = 0; lookPitch = -0.03; behi
 canvas.addEventListener('wheel', (e) => {
   if (view === 'behind') behindDist = THREE.MathUtils.clamp(behindDist * Math.exp(e.deltaY * 0.001), 60, 1200);
   else if (view === 'above') aboveH = THREE.MathUtils.clamp(aboveH * Math.exp(e.deltaY * 0.001), 150, 24000); // high enough to see the land, 5 km and more away
-  else if (view === 'sight') sightZoom = THREE.MathUtils.clamp(sightZoom * Math.exp(e.deltaY * 0.001), 0.3, 4);
+  else if (view === 'sight') sightZoom = THREE.MathUtils.clamp(sightZoom * Math.exp(e.deltaY * 0.001), SIGHT_ZOOM_MIN, SIGHT_ZOOM_MAX);
 }, { passive: true });
 
 // --- Readouts --------------------------------------------------------------------------------------------------------
@@ -1351,6 +1358,26 @@ heliBtn.type = missBtn.type = 'button';
 heliBtn.className = 'helm-act helm-act-heli';
 missBtn.className = 'helm-act helm-act-miss';
 actions.append(heliBtn, missBtn);
+const ICON_GUN = '<svg viewBox="0 0 32 32" aria-hidden="true"><path class="fill" d="M3 21h11v5H3z"/><circle class="fill" cx="12" cy="16" r="5"/><path class="fill" d="M16 13.5h10v5H16z"/><path d="M16 16h10M12 11v-3"/><path class="muzzle" d="M27 13l4 3-4 3"/><path class="trace t1" d="M22 8h4"/><path class="trace t2" d="M17 6h3"/></svg>';
+const ICON_AUTO = '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="9"/><path d="M16 3v6M16 23v6M3 16h6M23 16h6"/><g class="hr-sweep" style="transform-origin:16px 16px"><path d="M16 16l6-6"/></g><circle cx="16" cy="16" r="2" style="fill:currentColor;stroke:none"/></svg>';
+const ICON_DRONE = '<svg viewBox="0 0 32 32" aria-hidden="true"><g transform="rotate(-24 16 16)"><path d="M1 22h22"/><g class="launch"><circle class="puff p1" cx="6" cy="16" r="1.6"/><circle class="puff p2" cx="6" cy="16" r="1.6"/><path class="flame" d="M9 14.6L2 16l7 1.4z"/><path class="fill" d="M9 14.5h14l2 1.5-2 1.5H9z"/><path class="fill" d="M14 8h4v16h-4z"/><path class="fill" d="M9 12h3v8H9z"/><path class="prop" d="M26.5 11.5v9"/></g></g></svg>';
+const gunBtn = document.createElement('button'), autoBtn = document.createElement('button'), droneBtn = document.createElement('button');
+gunBtn.type = autoBtn.type = droneBtn.type = 'button';
+gunBtn.className = 'helm-act helm-act-gun'; autoBtn.className = 'helm-act helm-act-auto'; droneBtn.className = 'helm-act helm-act-drone';
+gunBtn.innerHTML = supportHtml(ICON_GUN, 'Guns', 'hold to fire', 'G');
+autoBtn.innerHTML = supportHtml(ICON_AUTO, 'Auto guns', 'on', 'A');
+droneBtn.innerHTML = supportHtml(ICON_DRONE, 'Add a drone', 'send one in', 'D');
+actions.append(gunBtn, autoBtn, droneBtn);
+// The guns fire while the button is held, like G; the other two do what their key does.
+gunBtn.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  input.gun = 1;
+  const up = () => { input.gun = 0; window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
+});
+autoBtn.addEventListener('click', () => { sim.toggleAutoGuns(); autoBtn.blur(); });
+droneBtn.addEventListener('click', () => { sim.summon(); droneBtn.blur(); });
 heliBtn.addEventListener('click', () => { say(sim.heliRequest(), ''); heliBtn.blur(); });
 missBtn.addEventListener('click', () => { if (sim.shot?.hold) sim.launchReady(); else sim.arm(); missBtn.blur(); });
 let lastActs = '';
@@ -1363,11 +1390,25 @@ function updateActions() {
   const mTitle = mHold ? 'Launch the missile' : 'Make a missile ready';
   const mSub = sim.cellsLeft <= 0 && !sim.shot ? 'none left' : mHold ? (sim.shot.locked ? 'locked: press to launch' : 'acquiring the target') : `${sim.cellsLeft} left · on the target`;
   const mOn = sim.cellsLeft > 0 || !!sim.shot;
-  const key = [hTitle, hSub, hOn, mTitle, mSub, mOn].join('|');
+  const mLocked = !!sim.shot?.locked;
+  const key = [hTitle, hSub, hOn, mTitle, mSub, mOn, mHold, mLocked].join('|');
   if (key === lastActs) return;
   lastActs = key;
   heliBtn.innerHTML = supportHtml(ICON_HELI, hTitle, hSub, 'E'); heliBtn.disabled = !hOn;
-  missBtn.innerHTML = supportHtml(ICON_MISS, mTitle, mSub, mHold ? 'F' : 'M'); missBtn.disabled = !mOn;
+  missBtn.innerHTML = supportHtml(ICON_MISS, mTitle, mSub, mHold ? 'F' : 'M') + (mHold ? '<em class="act-tag">FIRE</em>' : ''); missBtn.disabled = !mOn;
+  // First press readies the missile; then the same button is the FIRE button (red and pulsing, green once the lock is made).
+  missBtn.classList.toggle('armed', mHold); missBtn.classList.toggle('locked', mHold && mLocked);
+}
+// The guns' state changes without the heli/missile text changing, so it has its own cheap update.
+let lastGunState = '';
+function updateGunButtons() {
+  const k = `${input.gun}|${sim.gunsAuto}`;
+  if (k === lastGunState) return;
+  lastGunState = k;
+  gunBtn.classList.toggle('on', input.gun === 1);
+  autoBtn.classList.toggle('on', !!sim.gunsAuto);
+  autoBtn.querySelector('small').textContent = sim.gunsAuto ? 'on' : 'off';
+  autoBtn.setAttribute('aria-pressed', String(!!sim.gunsAuto));
 }
 // The dome: its rim is a heading tape (the degrees slide round it, the heading itself fixed and bold at the top), inside it
 // a needle from the foot swings left and right with the rudder, and the speed is under the needle.
@@ -1773,21 +1814,25 @@ viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.v
   item(document.querySelector('#btn-ship'), 'Main menu', '', 'menu');
   item(hudButton, 'Readouts', 'H', 'readouts');
   item(mapButton, 'Radar map', 'N', 'map');
+  const secMissile = document.createElement('button'), secGuns = document.createElement('button');
+  item(secMissile, 'Map: missile sector', '', 'map'); item(secGuns, 'Map: gun sector', '', 'map');
   item(tagsButton, 'Drone tags', 'L', 'tags');
   item(cineButton, 'Intercept camera', 'I', 'cine');
   item(soundButton, 'Sound', 'S', 'sound');
   item(fsButton, 'Fullscreen', '', 'full');
   item(foldButton, 'Hide the interface', 'C', 'hide');
   item(document.querySelector('#btn-keys'), 'Keyboard shortcuts', '?', 'keys');
-  menuEl.replaceChildren(head('Mission'), restartButton, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, tagsButton, cineButton, foldButton, fsButton,
+  menuEl.replaceChildren(head('Mission'), restartButton, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, secMissile, secGuns, tagsButton, cineButton, foldButton, fsButton,
     head('Sound'), soundButton, head('Sea'), ...[seaRow, weatherBtn].filter(Boolean), head('Help'), document.querySelector('#btn-keys'));
-  [hudButton, mapButton, soundButton, tagsButton, cineButton].forEach((b) => b.setAttribute('aria-pressed', 'true'));
+  [hudButton, mapButton, secMissile, secGuns, soundButton, tagsButton, cineButton].forEach((b) => b.setAttribute('aria-pressed', 'true'));
+  secMissile.addEventListener('click', () => { map.setSector('missile', !map.sector('missile')); refreshGear(); });
+  secGuns.addEventListener('click', () => { map.setSector('guns', !map.sector('guns')); refreshGear(); });
   tagsButton.addEventListener('click', () => { tagsOn = !tagsOn; refreshGear(); });
   cineButton.addEventListener('click', () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'i' })); refreshGear(); });
   fsButton.addEventListener('click', () => { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch { /* not allowed here */ } });
   function refreshGear() {
     const set = (b, on) => { b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); };
-    set(hudButton, hudOn); set(mapButton, map.enabled); set(tagsButton, tagsOn); set(cineButton, cineOn); set(soundButton, audio.enabled);
+    set(hudButton, hudOn); set(mapButton, map.enabled); set(secMissile, map.sector('missile')); set(secGuns, map.sector('guns')); set(tagsButton, tagsOn); set(cineButton, cineOn); set(soundButton, audio.enabled);
   }
   menuButton.addEventListener('click', refreshGear);
 }
@@ -1935,6 +1980,7 @@ renderer.setAnimationLoop((now) => {
     if (dm !== lastDome) { domeHost.innerHTML = dm; lastDome = dm; }
     spinProps(dt);
     updateActions();
+    updateGunButtons();
     updateRange();
   }
   const keys = keysHtml();

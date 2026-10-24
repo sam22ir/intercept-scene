@@ -8,7 +8,8 @@ import { RADAR_RANGE, ARC, MIN_RANGE, MISSILE_RANGE, GUN_RANGE, gunBlind, kmText
 // missiles in flight and the crosses where drones went down. Click it to change the range; M hides it.
 
 const SCALES = [1000, 2000, 3000, 6000]; // metres to the rim
-const ZOOMS = ['auto', 2000, 6000, 12000, 20000]; // the last two show the land (a backdrop: it keeps its bearing and distance however far she sails)
+const ZOOMS = ['auto', 2000, 6000, 12000]; // the last two show the land (a backdrop: it keeps its bearing and distance however far she sails)
+const SLIDE_MIN = 1000, SLIDE_MAX = 12000; // the thin slider's range, metres to the rim (log scale)
 const SWEEP = 2.5; // s per turn of the aerial
 const TRACK_STEP = 1; // s between own-track samples
 const TRACK_MAX = 180;
@@ -83,8 +84,20 @@ export function createHelmMap() {
   const track = [];
   let lastTrack = -Infinity;
   let sightView = null; // in the radar view: { yaw (world, radians from north), half (the lens's half-width), locked }
-  root.addEventListener('click', () => { zoom = (zoom + 1) % ZOOMS.length; });
-  root.title = 'Radar, heading up: click to change the range (M hides it)';
+  let custom = null; // metres to the rim while the slider has been moved; a click on the map goes back to the steps
+  const show = { missile: true, guns: true }; // the two fire sectors, switched in the settings menu
+  try { const v = JSON.parse(localStorage.getItem('intercept.helm.sectors') ?? 'null'); if (v) { show.missile = v.missile !== false; show.guns = v.guns !== false; } } catch { /* storage unavailable */ }
+  const slider = document.createElement('input');
+  slider.type = 'range'; slider.className = 'mm-zoom'; slider.min = '0'; slider.max = '1000'; slider.step = '1';
+  slider.setAttribute('aria-label', 'Radar map zoom');
+  slider.title = 'Zoom the radar map';
+  const toSlide = (m) => Math.round(1000 * Math.log(Math.min(SLIDE_MAX, Math.max(SLIDE_MIN, m)) / SLIDE_MIN) / Math.log(SLIDE_MAX / SLIDE_MIN));
+  const fromSlide = (v) => SLIDE_MIN * (SLIDE_MAX / SLIDE_MIN) ** (v / 1000);
+  slider.addEventListener('input', () => { custom = fromSlide(Number(slider.value)); });
+  for (const ev of ['click', 'pointerdown']) slider.addEventListener(ev, (e) => e.stopPropagation());
+  root.append(slider);
+  root.addEventListener('click', () => { custom = null; zoom = (zoom + 1) % ZOOMS.length; });
+  root.title = 'Radar, heading up: click to change the range, the slider zooms (M hides it)';
 
   function draw(sim) {
     measure();
@@ -92,7 +105,8 @@ export function createHelmMap() {
     const live = sim.detected;
     // Range: the smallest scale that holds every contact (auto), or the one picked.
     let scale = ZOOMS[zoom];
-    if (scale === 'auto') {
+    if (custom !== null) scale = custom;
+    else if (scale === 'auto') {
       const far = live.reduce((m, d) => Math.max(m, sim.rangeTo(d.pos)), 0);
       scale = SCALES.find((s) => s >= Math.max(far * 1.12, GUN_RANGE * 1.1)) ?? SCALES[SCALES.length - 1];
     }
@@ -135,6 +149,7 @@ export function createHelmMap() {
     const aOf = (th) => -Math.PI / 2 + th; // bearing off the bow (+ to starboard) -> canvas angle
     const rIn = MIN_RANGE * k;
     const rOut = MISSILE_RANGE * k;
+    if (show.missile) {
     ctx.beginPath();
     ctx.arc(R, R, rOut, aOf(-ARC), aOf(ARC));
     ctx.arc(R, R, rIn, aOf(ARC), aOf(-ARC), true);
@@ -144,13 +159,14 @@ export function createHelmMap() {
     ctx.strokeStyle = 'rgba(255, 122, 26, 0.45)';
     ctx.lineWidth = 1;
     ctx.stroke();
+    }
     const rg = GUN_RANGE * k;
     const covered = (th) => !gunBlind(0, -th) || !gunBlind(1, -th);
     const STEP = Math.PI / 90;
     ctx.fillStyle = 'rgba(80, 200, 255, 0.07)';
     ctx.strokeStyle = 'rgba(80, 200, 255, 0.45)';
     ctx.lineWidth = 1;
-    for (let th = -Math.PI; th < Math.PI; th += STEP) {
+    for (let th = -Math.PI; show.guns && th < Math.PI; th += STEP) {
       if (!covered(th + STEP / 2) || (covered(th - STEP / 2) && th > -Math.PI)) continue; // start of a covered run
       let end = th;
       while (end < Math.PI && covered(end + STEP / 2)) end += STEP;
@@ -341,13 +357,19 @@ export function createHelmMap() {
     ctx.textAlign = 'center';
     ctx.fillText('N', R + Math.cos(nb) * (R - 9), R + Math.sin(nb) * (R - 9));
 
-    label.textContent = `${zoom === 0 ? 'AUTO · ' : ''}${kmText(scale)}`;
+    label.textContent = `${zoom === 0 && custom === null ? 'AUTO · ' : ''}${kmText(scale)}`;
+    if (document.activeElement !== slider) slider.value = String(toSlide(scale));
   }
 
   return {
     get enabled() { return enabled; },
     setEnabled(on) { enabled = on; root.hidden = !on; },
     set sight(v) { sightView = v; },
+    sector: (id) => show[id],
+    setSector(id, on) {
+      show[id] = on;
+      try { localStorage.setItem('intercept.helm.sectors', JSON.stringify(show)); } catch { /* storage unavailable */ }
+    },
     update(sim) { if (enabled) draw(sim); },
   };
 }
