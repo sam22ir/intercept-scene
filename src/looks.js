@@ -120,6 +120,14 @@ export const LOOKS = {
     clouds: { count: 40, alt: [1100, 2600], size: [900, 2200], opacity: 0.85, low: { count: 26, alt: [350, 700], size: [500, 1400], opacity: 0.8 } },
     scenery: { islands: 7, buoys: 130, ships: 3 }, weather: 'clear',
   },
+  // Harbour pilot: a clear Mediterranean afternoon over Jijel, the sun in the south-west over the town, a near-flat sea in the
+  // port. No scenery: the port, the town and the hills are the mission's own.
+  harbour: {
+    elev: 40, az: 215, overcast: 0, cover: 0.0, fog: [5000, 24000],
+    sea: { state: 0.45, caps: 0.0, wind: [0.3, 0.2], glitter: 0.7, reflect: 0.85 },
+    clouds: { count: 24, alt: [1200, 2600], size: [800, 2000], opacity: 0.75 },
+    scenery: { islands: 0, buoys: 0, ships: 0 }, weather: 'clear',
+  },
   // The ship duel: heavy grey weather and a rough sea.
   duel: {
     elev: 20, az: 200, overcast: 0.85, cover: 0.9, fog: [1800, 12000],

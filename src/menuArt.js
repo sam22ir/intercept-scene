@@ -167,11 +167,25 @@ function squadron(animate) {
     + burst(236, 132, 0.84, animate, 14);
 }
 
+// Harbour pilot: the port of Jijel in plan view (north up); she leaves the central pier, goes out between the pier heads,
+// rounds the fairway buoy and comes back alongside the north breakwater (berth 7, in green).
+function harbour(animate) {
+  const land = '<path class="a-hull" d="M0 0H105V50L160 61L30 72V100L66 131L163 109L178 122L83 174L97 205L162 173L171 188L250 145L258 150L171 207L180 220H0Z"/>';
+  const bw = '<path class="a-hull" d="M105 29L270 53L296 65L302 126L294 132L274 70L171 55L105 45Z"/>';
+  const lights = '<circle cx="256" cy="147" r="3" fill="#ff5d61"/><circle cx="297" cy="131" r="3" fill="#3ddc84"/><circle cx="440" cy="156" r="4" fill="#fff" stroke="#ff5d61" stroke-width="2"/>';
+  const berth = '<path d="M214 66L246 71" stroke="#3ddc84" stroke-width="3"/>';
+  const path = 'M110 113L200 98Q262 100 280 142Q300 172 400 170Q470 168 452 140Q432 116 380 148Q320 166 285 140Q262 112 230 73';
+  const own = '<path class="a-ship" d="M-12 -3.5H6L12 0L6 3.5H-12Z"/>';
+  return `<rect class="a-water" width="480" height="220"/>${land}${bw}${berth}${lights}${trail(path)}`
+    + mover(own, { path, kt: [0.04, 0.92], still: [380, 170, 0] }, animate);
+}
+
 const SCENES = {
   intercept: (ship, a) => intercept(ship, a),
   chute: (_s, a) => chute(a),
   fly: (_s, a) => fly(a),
   helm: (_s, a) => helm(a),
+  harbour: (_s, a) => harbour(a),
   duel: (_s, a) => duel(a),
   squadron: (_s, a) => squadron(a),
   maneuvers2: (_s, a) => drill(2, a),
