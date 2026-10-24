@@ -113,7 +113,7 @@ export const PATH_FIXED = [
 // astern that exits level 40 m abeam, a low close pass up the port side, a long shallow
 // climb out ahead of the bow, then a left turn back onto a straight, gently descending
 // inbound run at the ship.
-const INTERCEPT_PATH_FWD = [
+const RECOVERY_PATH_FWD = [
   [2, 29, -65], [38, 38, -108], [64, 40, -149], [79, 43, -195],
   [81, 47, -244], [72, 51, -292], [50, 55, -336], [18, 59, -372],
   [-23, 61, -400], [-69, 63, -416], [-118, 66, -420], [-166, 70, -411],
@@ -150,10 +150,24 @@ const INTERCEPT_PATH_AFT = [
   [-811, 114, -70], [-767, 114, -49], [-719, 114, -40], [-581, 108, -32],
   [-443, 99, -24], [-306, 90, -16], [-168, 81, -8], [-30, 75, 0],
 ];
+// The forward launcher's Intercept path: the same release, left-hand loop astern, close pass and
+// climb as Recovery (the first 30 points, out to 715 m ahead), then the second loop of a figure
+// eight on the other side: straight on to 900 m, a right-hand turn (R = 190 m, 15 degree steps)
+// round the starboard side that stays beyond the 650 m launch range, then a long straight,
+// gently descending inbound run from ahead-starboard onto the ship, on which it is shot down.
+const INTERCEPT_PATH_FWD = [
+  ...RECOVERY_PATH_FWD.slice(0, 30),
+  [800, 97, -40], [900, 100, -40], [949, 101, -34], [995, 101, -15],
+  [1034, 102, 16], [1065, 102, 55], [1084, 103, 101], [1090, 104, 150],
+  [1084, 104, 199], [1065, 105, 245], [1034, 105, 284], [995, 106, 315],
+  [949, 107, 334], [900, 107, 340], [832, 108, 328], [716, 101, 283],
+  [599, 95, 239], [482, 88, 194], [365, 82, 150], [249, 75, 106],
+  [132, 69, 61], [15, 62, 17],
+];
 const INTERCEPT_PATH = SHIP_VARIANT === 'aft' ? INTERCEPT_PATH_AFT : INTERCEPT_PATH_FWD;
-// Recovery uses the forward ship's flight up to the middle of the inbound run (index 45,
+// Recovery uses the old forward flight up to the middle of its inbound run (index 45,
 // about 400 m off the ship), where the parachute opens, for both ships (no missile).
-const CHUTE_PATH = INTERCEPT_PATH_FWD.slice(0, 46);
+const CHUTE_PATH = RECOVERY_PATH_FWD.slice(0, 46);
 export const DEFAULT_PATH = CHUTE_MODE ? CHUTE_PATH : INTERCEPT_PATH;
 
 // A custom path drawn in the editor is stored per browser and applied on load.
