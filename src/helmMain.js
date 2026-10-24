@@ -1317,16 +1317,20 @@ propL.className = propR.className = 'hs-prop';
 propL.innerHTML = propR.innerHTML = PROP_SVG;
 barL.className = barR.className = 'hs-lvl'; // one bar for each engine, five notches: dead slow, slow, half, full, flank (the throttle, not the speed)
 barL.innerHTML = barR.innerHTML = '<i></i><i></i><i></i><i></i><i></i>';
-centre.append(barL, propL, domeHost, propR, barR);
+const domeWrap = document.createElement('div'); // the propellers stand inside the dome's two lower corners
+domeWrap.className = 'hs-domewrap';
+propL.classList.add('pp-l'); propR.classList.add('pp-r');
+domeWrap.append(domeHost, propL, propR);
+centre.append(barL, domeWrap, barR);
 shipEl.append(statHost, centre, wpnHost);
 document.body.appendChild(shipEl);
 const propRotL = propL.querySelector('.pp-rot'), propRotR = propR.querySelector('.pp-rot');
 let propAng = 0;
 function spinProps(dt) {
   const kn = sim.knots;
-  propAng = (propAng + kn * 0.18 * dt) % (Math.PI * 2); // about one turn a second at 38 kn; backwards astern
+  propAng = (propAng + kn * 0.198 * dt) % (Math.PI * 2); // about one turn a second at 38 kn; backwards astern
   const deg = (propAng * 180) / Math.PI;
-  propRotL.style.transform = `rotate(${-deg}deg)`; propRotR.style.transform = `rotate(${deg}deg)`;
+  propRotL.style.transform = `rotate(${deg}deg)`; propRotR.style.transform = `rotate(${-deg}deg)`;
   const ord = sim.order;
   for (const bar of [barL, barR]) { // the bar fills from the bottom with the throttle (slow astern lights the bottom notch in blue)
     const n = bar.children.length;
@@ -1427,12 +1431,12 @@ function domeSvg() {
     const major = d % 30 === 0;
     ticks += `<line x1="${pt(DOME_R, a).split(',')[0]}" y1="${pt(DOME_R, a).split(',')[1]}" x2="${pt(DOME_R - (major ? 9 : d % 10 === 0 ? 6 : 3.5), a).split(',')[0]}" y2="${pt(DOME_R - (major ? 9 : d % 10 === 0 ? 6 : 3.5), a).split(',')[1]}" class="${major ? 'mj' : ''}"/>`;
     if (d % 30 === 0) {
-      const [x, y] = pt(DOME_R - 21, a).split(',');
+      const [x, y] = pt(DOME_R - 23, a).split(',');
       labels += `<text x="${x}" y="${y}" class="dl">${String(((d % 360) + 360) % 360).padStart(3, '0')}</text>`;
     }
   }
-  // The rudder: an arc just inside the scale, from the top (midships) filling left in red (port) or right in green (starboard).
-  const RR = 60;
+  // The rudder: an arc against the scale (its outer line), from the top (midships) filling left in red (port) or right in green (starboard).
+  const RR = DOME_R - 12; // against the scale, just inside the longest ticks
   const span = THREE.MathUtils.degToRad(62);
   const fr = THREE.MathUtils.clamp(sim.rudder / RUDDER_MAX, -1, 1);
   const th = fr * span;
@@ -1447,7 +1451,7 @@ function domeSvg() {
     + `<path d="M${cx - 4},${cy - DOME_R - 1} L${cx + 4},${cy - DOME_R - 1} L${cx},${cy - DOME_R + 6} Z" class="lub"/>`
     + `<text x="${cx}" y="79" class="hd">${f(((h % 360) + 360) % 360).padStart(3, '0')}°</text>`
     + `<path d="M${pl[0]},${pl[1]} A${RR},${RR} 0 0 1 ${pr[0]},${pr[1]}" class="rt"/>${fill}`
-    + `<line x1="${p0[0]}" y1="${(Number(p0[1]) - 5).toFixed(1)}" x2="${p0[0]}" y2="${(Number(p0[1]) + 5).toFixed(1)}" class="rm"/>`
+    + `<line x1="${p0[0]}" y1="${(Number(p0[1]) - 4).toFixed(1)}" x2="${p0[0]}" y2="${(Number(p0[1]) + 4).toFixed(1)}" class="rm"/>`
     + `<text x="${cx}" y="94" class="sp">${f(sim.knots, 1)}<tspan> kn</tspan></text></svg>`;
 }
 // The weapons card: one row per weapon (the missile cells as little missiles, the guns' ammunition as a bar), and empty slots

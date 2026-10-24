@@ -113,8 +113,8 @@ body.mission-helm .topbar .brand, body.mission-helm .brand { display: none; }
 .dome-svg .dl { fill: #fff; font: 700 11.5px 'Segoe UI', system-ui, sans-serif; letter-spacing: 0.02em; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.75); stroke-width: 2.4px; stroke-linejoin: round; }
 .dome-svg .hd { fill: #fff; font: 800 17px 'Segoe UI', system-ui, sans-serif; letter-spacing: 0.03em; text-anchor: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.7); stroke-width: 2.6px; stroke-linejoin: round; }
 .dome-svg .lub { fill: var(--accent); }
-.dome-svg .rt { fill: none; stroke: rgba(255, 255, 255, 0.14); stroke-width: 5; stroke-linecap: round; }
-.dome-svg .rf { fill: none; stroke-width: 5; stroke-linecap: round; }
+.dome-svg .rt { fill: none; stroke: rgba(255, 255, 255, 0.14); stroke-width: 4; stroke-linecap: round; }
+.dome-svg .rf { fill: none; stroke-width: 4; stroke-linecap: round; }
 .dome-svg .rf.stbd { stroke: #3ddc84; }
 .dome-svg .rf.port { stroke: #ff5d61; }
 .dome-svg line.rm { stroke: rgba(255, 255, 255, 0.8); stroke-width: 1.4; }
@@ -765,7 +765,7 @@ body.mission-drone .topbar .brand, body.mission-drone .brand { display: none; }
 .helm-act { pointer-events: auto; }
 /* The propellers sit in the empty lower corners of the dome, over it, so the dome keeps its size. */
 .helm-ship .hs-domewrap { position: relative; flex: none; align-self: flex-end; --ps: 44px; }
-.helm-ship .hs-domewrap .hs-prop { position: absolute; width: var(--ps); height: var(--ps); margin: 0; bottom: calc(38% - var(--ps) / 2); }
+.helm-ship .hs-domewrap .hs-prop { position: absolute; width: var(--ps); height: var(--ps); margin: 0; bottom: 1px; }
 .helm-ship .hs-domewrap .hs-prop.pp-l { left: calc(21.7% - var(--ps) / 2); }
 .helm-ship .hs-domewrap .hs-prop.pp-r { right: calc(21.7% - var(--ps) / 2); }
 @media (max-width: 1279px) { .helm-ship .hs-domewrap { --ps: 34px; } }
