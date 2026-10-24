@@ -810,9 +810,9 @@ function wreckShot(dt) {
 }
 
 // --- The opening shot ------------------------------------------------------------------------------------------------------
-// On entering: straight down over the ship (bow up), then the camera comes down and circles her once, and settles into the behind
+// On entering: straight down over the ship (bow up), then the camera comes down and swings a little way round her, and settles into the behind
 // view, each part eased into the next. Any key or click cuts it short: the camera glides from where it is to the behind view.
-const INTRO_TOP = 3, INTRO_ORBIT = 6, INTRO_SETTLE = 3; // seconds: the plan view, the descent and circle, the settle behind her
+const INTRO_TOP = 3, INTRO_ORBIT = 6, INTRO_SETTLE = 3; // seconds: the plan view, the descent and swing, the settle behind her
 let intro = new URLSearchParams(location.search).get('intro') === '0' ? null : { t: 0, from: null, skipT: 0 };
 const smooth = (x) => { const c = THREE.MathUtils.clamp(x, 0, 1); return c * c * (3 - 2 * c); };
 const _ip = new THREE.Vector3(), _il = new THREE.Vector3(), _bp = new THREE.Vector3(), _bl = new THREE.Vector3(), _iu = new THREE.Vector3();
@@ -829,7 +829,7 @@ function updateIntro(dt) {
   const u = smooth((intro.t - INTRO_TOP) / INTRO_ORBIT);
   const el = THREE.MathUtils.degToRad(THREE.MathUtils.lerp(88, 24, u));
   const r = intro.t < INTRO_TOP ? THREE.MathUtils.lerp(470, 400, smooth(intro.t / INTRO_TOP)) : THREE.MathUtils.lerp(400, 240, u);
-  const az = u * Math.PI * 2;
+  const az = THREE.MathUtils.degToRad(60) * u; // swings round to her quarter only, so the picture turns a little, then the settle brings it astern
   const hx = -fx * Math.cos(az) + fz * Math.sin(az), hz = -fx * Math.sin(az) - fz * Math.cos(az);
   _ip.set(sim.x + r * Math.cos(el) * hx, 10 + r * Math.sin(el), sim.z + r * Math.cos(el) * hz);
   _il.set(sim.x, 10, sim.z);
@@ -1495,8 +1495,8 @@ function domeSvg() {
     }
   }
   // The rudder: an arc against the scale (its outer line), from the top (midships) filling left in red (port) or right in green (starboard).
-  const RR = DOME_R - 12; // against the scale, just inside the longest ticks
-  const span = THREE.MathUtils.degToRad(62);
+  const RR = DOME_R + 2.5; // on the outer perimeter of the semicircle, around the scale
+  const span = THREE.MathUtils.degToRad(74);
   const fr = THREE.MathUtils.clamp(sim.rudder / RUDDER_MAX, -1, 1);
   const th = fr * span;
   const p0 = pt(RR, Math.PI / 2).split(',');
