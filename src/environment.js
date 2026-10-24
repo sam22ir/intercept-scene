@@ -36,7 +36,7 @@ function readWeather() {
 // `look` (a name from looks.js, e.g. 'intercept') gives a mission its own time of day, sky, sea state, scenery and weather;
 // the weather can be overridden with ?weather= or localStorage['intercept.weather'] (read once). Without `look` the original
 // default or `calm` look is used, unchanged.
-export function createEnvironment(renderer, scene, { calm = false, tallMountains = false, look: lookName = null, realSea = false } = {}) {
+export function createEnvironment(renderer, scene, { calm = false, tallMountains = false, landTurn = 0, look: lookName = null, realSea = false } = {}) {
   const look = !calm && lookName ? resolveLook(lookName, readWeather()) : null;
   const horizon = look ? new THREE.Color(...fromDisplay(look.horizon)) : calm ? CALM_HORIZON : HORIZON;
   const zenith = look ? new THREE.Color(...fromDisplay(look.zenith)) : calm ? CALM_ZENITH : ZENITH;
@@ -142,7 +142,7 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
   scene.add(ocean);
   const clouds = createClouds(calm, look);
   const mountains = calm ? (tallMountains ? createTallMountains() : createMountains()) : null;
-  if (mountains) scene.add(mountains);
+  if (mountains) { scene.add(mountains); if (tallMountains) setLandTurn(landTurn, mountains); }
   scene.add(clouds);
   // Scenery that stands still in the world (so it is a yardstick for speed and height), and weather on the horizon.
   // Everything here repeats every WORLD_PERIOD metres around a far-flying camera; the period is at least twice the fog
@@ -511,6 +511,20 @@ function createClouds(calm = false, look = null) {
 // thickens with distance and clears toward the tops. One mesh of about 90,000 vertices, no textures, no lights. Static, far enough
 // that moving the camera barely shifts it. The ridge line that hides far drones (`ridgeAngle`) comes from the same heightfield.
 const MOUNT_ARC = [-0.3, 3.4]; // radians: an arc of about 210 degrees
+// Solo Air Defense can turn the whole range (mountains, town, radar map, the ridge line that hides drones) about the ship, by landTurn
+// radians from north toward east; every other mission keeps it at 0.
+let landTurn = 0;
+export function setLandTurn(t, group = null) {
+  landTurn = t;
+  if (group) group.rotation.y = -t;
+}
+// The bearing of (dx, dz) in the range's own frame, wrapped to start at the arc's first edge.
+function rangeAngle(dx, dz) {
+  let a = Math.atan2(dz, dx) - landTurn;
+  while (a < MOUNT_ARC[0]) a += 2 * Math.PI;
+  while (a >= MOUNT_ARC[0] + 2 * Math.PI) a -= 2 * Math.PI;
+  return a;
+}
 const T_COLS = 900;
 const T_ROWS = 80;
 const T_R0 = 4800; // m: the nearest the land comes (so the radar map's 6 km range reaches the shore)
@@ -616,14 +630,12 @@ function terrain() {
 // the direction on the sea, x north and z east as in the scene. Used to hide what lies behind the mountains.
 // The height of the land at (dx, dz) metres from the ship, x north and z east (-1 over the sea), for the radar map.
 export function landHeightAt(dx, dz) {
-  let a = Math.atan2(dz, dx);
-  if (a < MOUNT_ARC[0]) a += 2 * Math.PI;
+  const a = rangeAngle(dx, dz);
   if (a > MOUNT_ARC[1]) return -1;
   return terrainH(a, Math.hypot(dx, dz));
 }
 export function ridgeAngle(dx, dz) {
-  let a = Math.atan2(dz, dx);
-  if (a < MOUNT_ARC[0]) a += 2 * Math.PI;
+  const a = rangeAngle(dx, dz);
   if (a > MOUNT_ARC[1]) return -Infinity;
   const f = ((a - MOUNT_ARC[0]) / (MOUNT_ARC[1] - MOUNT_ARC[0])) * T_COLS;
   const i = Math.min(T_COLS - 1, Math.floor(f));
@@ -848,7 +860,8 @@ function townLayout() {
 }
 // Where the buildings are, metres from the ship (x north, z east) with their size, for the radar map.
 export function townSpots() {
-  return townLayout().buildings.map((b) => [b.x, b.z, Math.max(b.w, b.dp)]);
+  const c = Math.cos(landTurn), sn = Math.sin(landTurn);
+  return townLayout().buildings.map((b) => [b.x * c - b.z * sn, b.x * sn + b.z * c, Math.max(b.w, b.dp)]);
 }
 // A tile of one floor of plain wall with a window, repeated up and across the walls (the vertex colours tint it).
 function windowTexture() {

@@ -783,3 +783,10 @@ body.mission-helm .helm-act-heli[data-state='blocked'] { border-color: rgba(255,
   body.mission-helm .helm-act-heli[data-state='land'] { animation: hv-firepulse 1.6s ease-in-out infinite; }
 }
 .hs-badge.hb-gun { cursor: pointer; }
+/* The key bar, when shown, is a card of key tiles in two columns, on the free left side under the views bar. */
+body.mission-helm #fly-keys, body.mission-fly #fly-keys { left: calc(var(--gap, 14px) + var(--safe-l, 0px)); right: auto; top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 62px); bottom: auto; transform: none; width: 420px; max-width: calc(100vw - 2 * var(--gap, 14px)); height: auto; max-height: none; overflow: visible; display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; row-gap: 7px; align-content: start; padding: 14px 16px; border-radius: 16px; font-size: 14px; color: var(--muted, #9aa4af); background: rgba(40, 46, 54, 0.66); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.12); z-index: 8; }
+body.mission-helm #fly-keys .fk, body.mission-fly #fly-keys .fk { display: flex; align-items: center; gap: 12px; white-space: nowrap; min-height: 30px; }
+body.mission-helm #fly-keys kbd, body.mission-fly #fly-keys kbd { flex: none; min-width: 46px; height: 28px; padding: 0 7px; display: inline-grid; place-items: center; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.08); color: #c8d0d8; font: 700 12px ui-monospace, 'Cascadia Mono', Consolas, monospace; }
+body.mission-helm #fly-keys .fk.on, body.mission-fly #fly-keys .fk.on { color: #fff; font-weight: 700; }
+body.mission-helm #fly-keys .fk.on kbd, body.mission-fly #fly-keys .fk.on kbd { background: var(--accent, #ff7a1a); border-color: var(--accent, #ff7a1a); color: #1a0d02; }
+body.mission-helm #fly-keys .fk-btn, body.mission-fly #fly-keys .fk-btn { padding: 1px 4px; margin: -1px -4px; border-radius: 9px; }

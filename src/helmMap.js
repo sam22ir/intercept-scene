@@ -93,7 +93,7 @@ export function createHelmMap() {
   slider.title = 'Zoom the radar map';
   const toSlide = (m) => Math.round(1000 * Math.log(Math.min(SLIDE_MAX, Math.max(SLIDE_MIN, m)) / SLIDE_MIN) / Math.log(SLIDE_MAX / SLIDE_MIN));
   const fromSlide = (v) => SLIDE_MIN * (SLIDE_MAX / SLIDE_MIN) ** (v / 1000);
-  slider.addEventListener('input', () => { custom = fromSlide(Number(slider.value)); });
+  slider.addEventListener('input', () => { custom = fromSlide(1000 - Number(slider.value)); }); // up zooms in
   document.body.classList.add('has-map-zoom');
   document.body.append(slider); // stands upright beside the disc (the disc clips what is inside it)
   root.addEventListener('click', () => { custom = null; zoom = (zoom + 1) % ZOOMS.length; });
@@ -358,7 +358,7 @@ export function createHelmMap() {
     ctx.fillText('N', R + Math.cos(nb) * (R - 9), R + Math.sin(nb) * (R - 9));
 
     label.textContent = `${zoom === 0 && custom === null ? 'AUTO · ' : ''}${kmText(scale)}`;
-    if (document.activeElement !== slider) slider.value = String(toSlide(scale));
+    if (document.activeElement !== slider) slider.value = String(1000 - toSlide(scale));
   }
 
   return {
