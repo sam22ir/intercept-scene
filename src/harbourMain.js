@@ -10,7 +10,7 @@ import { menuText } from './menu.js';
 import { createHarbour } from './harbourScene.js';
 import { createHarbourMap } from './harbourMap.js';
 import { createHarbourAudio } from './harbourAudio.js';
-import { createHarbourCrew } from './harbourCrew.js';
+import { createHarbourDetails } from './harbourDetails.js';
 import {
   HarbourSim, TELEGRAPH, STOP_ORDER, RUDDER_MAX, KT, STAGES, SPEED_LIMIT, TARGET_BERTH, START_BERTH, LIGHTS, FAIRWAY, HALF_BEAM, BERTH_TOL, compass, thrusterFactor,
 } from './harbour.js';
@@ -58,7 +58,7 @@ const wake = createWake(scene);
 const map = createHarbourMap();
 const audio = createHarbourAudio();
 const sim = new HarbourSim();
-const crew = createHarbourCrew({ scene, ship, bridge, landHeight: harbour.landHeight }); // the bridge team, the line handlers, the people ashore
+const details = createHarbourDetails({ scene, ship, bridge }); // the bridge's screens, the mooring lines, the gulls
 
 // --- The banner --------------------------------------------------------------------------------------------------------
 const banner = document.querySelector('#shot-caption');
@@ -73,7 +73,7 @@ function say(text, tone = '', ms = 3400) {
 // --- Views ---------------------------------------------------------------------------------------------------------------
 const VIEWS = ['bridge', 'wing', 'behind', 'above', 'orbit', 'tower'];
 const VIEW_NAMES = { bridge: 'Bridge', wing: 'Bridge wing', behind: 'Behind her', above: 'Chart view', orbit: 'Orbit', tower: 'Pier-head tower' };
-const BRIDGE_EYE = new THREE.Vector3(11.9, 11.0, 1.5); // a pace to starboard of the helmsman, who stands at the wheel on the centreline
+const BRIDGE_EYE = new THREE.Vector3(11.7, 11.0, 0); // behind the wheel, on the centreline (models/bridge.js)
 let view = 'behind';
 let lookYaw = 0, lookPitch = -0.04; // bridge: degrees off the bow (+ starboard), radians up
 let wingSide = 1; // +1 the starboard wing
@@ -636,7 +636,7 @@ function applyState() {
   env.ocean.material.uniforms.uTime.value = t;
   if (!sim.lines) wake.update({ t, x: sim.x, z: sim.z, psi: sim.psi, r: sim.r, u: sim.u });
   harbour.update(t);
-  crew.update(t, sim, { bridgeView: view === 'bridge' || view === 'wing' });
+  details.update(t, sim, { bridgeView: view === 'bridge' || view === 'wing' });
   harbour.ghost.visible = sim.stage === 'berth';
 }
 
@@ -649,8 +649,7 @@ renderer.setAnimationLoop((now) => {
   for (const e of sim.takeEvents()) {
     audio.event(e);
     if (e.type === 'say') say(e.text, e.tone, e.tone === 'danger' ? 4200 : 3600);
-    else if (e.type === 'telegraph') { // the officer of the watch rings it down and repeats the order
-      crew.telegraph(sim.t);
+    else if (e.type === 'telegraph') { // the order is repeated back
       const o = TELEGRAPH[e.order];
       say(`${o.kn > 0 ? `${o.name} ahead` : o.kn === 0 ? 'Stop engines' : o.name}, aye`, '', 1700);
     }
