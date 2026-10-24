@@ -63,3 +63,22 @@ body.mission-drone .hud-live:empty + .hud-debrief:not([hidden]) + .hud-spark { d
   body.mission-drone .hud-debrief .mcard-deb { width: auto; }
 }
 @media (max-height: 500px) { body.mission-drone .hud-spark { display: none; } }
+
+/* Watch missions in the theme of Solo Air Defense: icons on the camera strip, a gear, round badges at the foot. */
+body.mission-drone #menu button.mi-item:not([hidden]), body.mission-drone #menu a.mi-item { display: flex; align-items: center; }
+body.mission-drone .seg.cam .cs-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 32px; height: 32px; padding: 0; border-radius: 999px; border-color: transparent; background: transparent; color: var(--muted); }
+body.mission-drone .seg.cam .cs-btn[hidden] { display: none; }
+body.mission-drone .seg.cam .cs-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+body.mission-drone .seg.cam .cs-btn span { display: none; font-size: 12px; }
+body.mission-drone .seg.cam .cs-btn.active { padding: 0 11px 0 9px; background: var(--accent); border-color: var(--accent); color: #1a0d02; font-weight: 700; }
+body.mission-drone .seg.cam .cs-btn.active span { display: inline; }
+body.mission-drone .seg.cam .cs-btn:not(.active):hover { background: rgba(255, 255, 255, 0.1); color: var(--text); }
+body.mission-drone .seg.cam .cs-keys { margin-left: 4px; border-left: 1px solid rgba(255, 255, 255, 0.18); border-radius: 0 999px 999px 0; }
+body.mission-drone .seg.cam .cs-btn .lines { animation: none; }
+@media (prefers-reduced-motion: no-preference) { body.mission-drone .seg.cam .cs-btn.active .lines { animation: hv-lines 0.9s linear infinite; } }
+body.mission-drone .timeline .tbtn { border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(9, 14, 21, 0.78); }
+body.mission-drone .timeline .tbtn:hover { background: rgba(24, 38, 54, 0.92); }
+body.mission-drone .timeline .tbtn.play { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255, 138, 40, 0.22), 0 6px 18px rgba(0, 0, 0, 0.35); }
+.watch-badges { position: fixed; z-index: 9; right: calc(var(--gap, 14px) + var(--safe-r, 0px)); bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) + 4px); display: flex; gap: 8px; align-items: flex-end; }
+body:not(.mission-drone) .watch-badges, body.ui-hidden .watch-badges, body.mission-drone.editing .watch-badges, body.mission-drone.engaging .watch-badges { display: none; }
+@media (max-width: 900px) { .watch-badges { display: none; } }

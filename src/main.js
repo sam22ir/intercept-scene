@@ -27,6 +27,7 @@ import { createRecorder } from './recorder.js';
 import { createShare, readShareParams, stripShareParams } from './share.js';
 import { createEngagePanel, SEEK_KEY } from './engagePanel.js';
 import { createVTrack, createCamStrip } from './vtrack.js';
+import './helm.css';
 import './layout-v.css';
 
 // The drill's look and layout (body.mission-maneuvers in style.css: the vertical timeline, the camera strip, the
@@ -641,6 +642,7 @@ renderer.setAnimationLoop((now) => {
   vtrack.update(clock.t);
   hud.update(clock.t, rig.id);
   minimap.update(clock.t);
+  updateWatchBadges(clock.t);
   const draw = needsRender();
   if (draw) {
     renderer.render(scene, camera);
@@ -651,6 +653,121 @@ renderer.setAnimationLoop((now) => {
   }
   sampleFrame(now, draw);
 });
+
+// --- The look of Solo Air Defense, for the watch missions: a gear menu, icons on the camera strip with a keys button, round badges for the
+// drone, the missile and the ship at the foot. (Styles: helm.css, layout-v.css, scoped to body.mission-drone.) --------------------------------
+const watchBadges = document.createElement('div');
+{
+  const MOTION = !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const DRONE = '<path class="hb-fill" d="M12 3.4c.9 1.2 1.2 3 1.2 5.2l.2 7.6-1.4 3-1.4-3 .2-7.6c0-2.2.3-4 1.2-5.2z"/><path d="M12 9.4L2.6 12.2l.6 2L12 12.8l8.8 1.4.6-2z"/><path d="M12 18l-4.2 1.2.4 1.6 3.8-.6 3.8.6.4-1.6z"/>';
+  const MISSILE = '<path class="hb-fill" d="M12 2.5c1.7 1.7 2.1 4.2 2.1 6.8v7.2H9.9V9.3c0-2.6.4-5.1 2.1-6.8z"/><path class="hb-flame" d="M10.7 17.2h2.6L12 21.6z"/><path d="M9.9 13l-2.6 3.8h2.6M14.1 13l2.6 3.8h-2.6"/>';
+  const FRIGATE = '<g class="hb-bob"><path class="hb-fill" d="M2 15h18.2l3-1.6-2.1 5.6H4.6z"/><path d="M8.6 15l1.5-4h6l2.2 4"/><path d="M11.6 11l.9-2.6h3.3l.8 2.6"/><path d="M14.3 8.4V3.6M13 5.2h2.6"/><circle cx="7.4" cy="13.1" r="1.4"/><path d="M18.4 14.9v-1.3h1.5v1.3M19.9 14.2h2"/><path d="M2.6 14.1h3.4"/></g><path class="hb-wave" d="M1 21.4q2-1.3 4 0t4 0 4 0 4 0 4 0 4 0"/>';
+  const CAM = {
+    free: '<g transform="rotate(-25 12 12)"><ellipse cx="12" cy="12" rx="9.5" ry="4.6"/>' + (MOTION ? '<circle r="1.7" style="fill:currentColor"><animateMotion dur="3.2s" repeatCount="indefinite" path="M21.5 12a9.5 4.6 0 1 1 -19 0a9.5 4.6 0 1 1 19 0"/></circle>' : '<circle cx="21.5" cy="12" r="1.7" style="fill:currentColor"/>') + '</g><circle cx="12" cy="12" r="1.3" style="fill:currentColor"/>',
+    plane: '<g transform="rotate(90 12 12) scale(.8) translate(3 3)">' + DRONE + '</g><g class="lines"><path d="M2 8h4M1 12h5M2 16h4"/></g>',
+    missile: '<path d="M3 19C7 6 15 3.5 20 8"/><path d="M16 4.8l4.4 3.4-4.8 2.4"/><circle cx="3.5" cy="18.5" r="1.4" style="fill:currentColor;stroke:none"/><g class="lines"><path d="M8 20.5h4M13 20.5h3"/></g>',
+    ship: '<path class="hb-fill" d="M2 15h18.2l3-1.6-2.1 5.6H4.6z"/><path d="M8.6 15l1.5-4h6l2.2 4M14.3 11V5.6"/><path d="M1 21.4q2-1.3 4 0t4 0 4 0 4 0 4 0"/>',
+  };
+  CAM.plane2 = CAM.plane; CAM.missile2 = CAM.missile;
+  for (const b of document.querySelectorAll('.seg.cam [data-focus]')) {
+    const label = b.textContent.trim();
+    b.classList.add('cs-btn');
+    b.setAttribute('aria-label', label);
+    b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + (CAM[b.dataset.focus] ?? CAM.free) + '</svg><span>' + label + '</span>';
+  }
+  { // the keys button at the end of the camera strip
+    const kb = document.createElement('button');
+    kb.type = 'button';
+    kb.className = 'cs-btn cs-keys';
+    kb.title = 'Keyboard shortcuts (?)';
+    kb.setAttribute('aria-label', 'Keyboard shortcuts');
+    kb.innerHTML = '<svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>';
+    document.querySelector('.seg.cam').appendChild(kb);
+    kb.addEventListener('click', () => { setKeys(keysEl.hidden); kb.blur(); });
+  }
+
+  { // the gear
+    menuButton.innerHTML = '<svg><use href="#i-gear"/></svg>';
+    menuButton.title = 'Settings';
+    menuButton.setAttribute('aria-label', 'Settings');
+    const MI = {
+      menu: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+      cine: '<rect x="3" y="7" width="13" height="10" rx="2"/><path d="M16 11l5-3v8l-5-3"/>',
+      tags: '<path d="M3.5 12.2V4.5h7.7l9 9a1.6 1.6 0 0 1 0 2.2l-5 5a1.6 1.6 0 0 1-2.2 0z"/><circle cx="8" cy="9" r="1.3"/>',
+      trails: '<path d="M3 19C7 6 15 3.5 20 8"/><path d="M16 4.8l4.4 3.4-4.8 2.4"/><circle cx="3.5" cy="18.5" r="1.4" style="fill:currentColor;stroke:none"/>',
+      readouts: '<rect x="3.5" y="4.5" width="17" height="12" rx="2"/><path d="M7 13l3-3.2 2.4 2 3.6-4.3M9 20h6M12 16.5V20"/>',
+      map: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><path class="mi-a" d="M12 12l5.5-5"/>',
+      sound: '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="mi-w1" d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path class="mi-w2" d="M18.2 6.8a7.5 7.5 0 0 1 0 10.4"/>',
+      units: '<path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/>',
+      edit: '<path d="M4 20l1-4 11-11 3 3L8 19z"/><path d="M14 7l3 3"/>',
+      engage: '<circle cx="12" cy="12" r="7"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/>',
+      rec: '<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="3" style="fill:currentColor"/>',
+      link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+      hide: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path class="mi-a" d="M4 4l16 16"/>',
+      keys: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7.5 14h9"/>',
+      dl: '<path d="M12 4v11M7.5 11L12 15.5 16.5 11M5 20h14"/>',
+    };
+    const q = (id) => document.querySelector(id);
+    const item = (b, label, key, ic) => { b.className = 'mi-item'; b.setAttribute('role', 'menuitem'); b.innerHTML = '<span class="mi-l"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true">' + MI[ic] + '</svg>' + label + '</span>' + (key ? '<kbd>' + key + '</kbd>' : ''); return b; };
+    const head = (t) => { const h = document.createElement('div'); h.className = 'menu-h'; h.textContent = t; return h; };
+    const keep = (el) => el;
+    const link = q('#dl-offline');
+    if (link) { link.className = 'mi-item'; link.innerHTML = '<span class="mi-l"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true">' + MI.dl + '</svg>Download offline version</span>'; }
+    const shipBtn = q('#btn-ship'), keysBtn = q('#btn-keys');
+    item(shipBtn, 'Main menu', '', 'menu');
+    item(q('#btn-director'), 'Cinematic camera', 'D', 'cine');
+    item(q('#btn-labels'), 'Tags and missile path', 'L', 'tags');
+    item(q('#btn-trails'), 'Trajectories', 'T', 'trails');
+    item(q('#btn-hud'), 'Readouts', 'H', 'readouts');
+    item(q('#btn-map'), 'Mini map', 'M', 'map');
+    item(q('#btn-sound'), 'Sound', 'S', 'sound');
+    item(q('#btn-units'), 'Speeds in knots', 'U', 'units');
+    item(q('#btn-edit'), 'Edit flight path', 'E', 'edit');
+    item(q('#btn-engage'), 'Missile engagement', 'G', 'engage');
+    item(q('#btn-record'), 'Record', '', 'rec');
+    item(q('#btn-link'), 'Copy link to this moment', '', 'link');
+    item(foldButton, 'Hide the interface', 'C', 'hide');
+    item(keysBtn, 'Keyboard shortcuts', '?', 'keys');
+    menuEl.replaceChildren(head('Mission'), shipBtn, head('Camera'), q('#btn-director'), q('#btn-labels'), q('#btn-trails'),
+      head('Display'), q('#btn-hud'), q('#btn-map'), q('#btn-units'), foldButton,
+      head('Sound'), q('#btn-sound'), head('Sea'), ...[q('#sea-row'), q('#btn-weather')].filter(keep),
+      head('Tools'), q('#btn-edit'), q('#btn-engage'), q('#btn-record'), q('#btn-link'), head('Help'), keysBtn, ...[link].filter(keep));
+  }
+
+  // The badges: drone altitude and speed, the missile, the frigate's range.
+  watchBadges.className = 'watch-badges';
+  document.body.appendChild(watchBadges);
+}
+const WB_RING = 2 * Math.PI * 20;
+const wbIcon = {
+  alt: '<path class="hb-fill" d="M2 20.5l6.2-9.5 4 5.2 3-4 6.8 8.3z"/><g class="hb-lift"><path d="M12 8.2V2.6M9.4 5L12 2.4 14.6 5"/></g>',
+  speed: '<path d="M3.2 17.5a8.8 8.8 0 1 1 17.6 0"/><path d="M5.6 17.5h1.6M16.8 17.5h1.6M12 8.7v1.6M6.2 11.2l1.1 1.1M17.8 11.2l-1.1 1.1"/><g class="hb-needle"><path d="M12 17.5l4.2-5.6"/></g><circle cx="12" cy="17.5" r="1.5" style="fill:currentColor;stroke:none"/>',
+  missile: '<path class="hb-fill" d="M12 2.5c1.7 1.7 2.1 4.2 2.1 6.8v7.2H9.9V9.3c0-2.6.4-5.1 2.1-6.8z"/><path class="hb-flame" d="M10.7 17.2h2.6L12 21.6z"/><path d="M9.9 13l-2.6 3.8h2.6M14.1 13l2.6 3.8h-2.6"/>',
+  ship: '<g class="hb-bob"><path class="hb-fill" d="M2 15h18.2l3-1.6-2.1 5.6H4.6z"/><path d="M8.6 15l1.5-4h6l2.2 4"/><path d="M11.6 11l.9-2.6h3.3l.8 2.6"/><path d="M14.3 8.4V3.6M13 5.2h2.6"/><circle cx="7.4" cy="13.1" r="1.4"/><path d="M18.4 14.9v-1.3h1.5v1.3M19.9 14.2h2"/><path d="M2.6 14.1h3.4"/></g><path class="hb-wave" d="M1 21.4q2-1.3 4 0t4 0 4 0 4 0 4 0 4 0"/>',
+};
+function wbBadge(cls, icon, frac, title, sub, chip) {
+  const fr = Math.max(0, Math.min(1, frac));
+  return '<div class="hs-badge ' + cls + '"><svg class="hb-ring" viewBox="0 0 46 46" aria-hidden="true"><circle class="hb-bg" cx="23" cy="23" r="20"/><circle class="hb-fg" cx="23" cy="23" r="20" style="stroke-dasharray:' + (WB_RING * fr).toFixed(1) + ' 126"/></svg>'
+    + '<span class="hb-ico"><svg viewBox="0 0 24 24">' + icon + '</svg></span>' + (chip === '' ? '' : '<i class="hb-chip">' + chip + '</i>') + '<span class="hb-tip"><b>' + title + '</b><small>' + sub + '</small></span></div>';
+}
+let lastWb = '';
+const _wb = new THREE.Vector3();
+function updateWatchBadges(t) {
+  const { tHit } = scenario;
+  const down = t >= tHit;
+  const alt = Math.max(0, telemetry.planeAlt);
+  const spd = telemetry.planeSpeed;
+  const pos = t < tHit ? plane.group.position : dronePosAt(t, _wb);
+  const rng = pos.distanceTo(ship.group.position);
+  const ms = telemetry.missileSpeed;
+  let html = wbBadge('hb-alt' + (down ? ' out' : alt < 15 ? ' low' : ''), wbIcon.alt, alt / 200, 'Drone altitude', Math.round(alt) + ' m' + (down ? ' · wreck' : ''), String(Math.round(alt)))
+    + wbBadge('hb-spd' + (down ? ' out' : ''), wbIcon.speed, spd / 110, 'Drone speed', Math.round(spd) + ' m/s · ' + Math.round(spd * 3.6) + ' km/h', String(Math.round(spd)));
+  if (scenario.mode !== 'chute') {
+    html += wbBadge('hb-msl ' + (ms === null || ms === undefined ? (t > tHit ? 'out' : 'ok') : 'arm'), wbIcon.missile, ms ? ms / 400 : 0, 'Missile', ms ? Math.round(ms) + ' m/s · ' + Math.round(telemetry.range ?? 0) + ' m to the drone' : (t > tHit ? 'spent' : 'waiting in its tube'), ms ? String(Math.round(ms)) : '');
+  }
+  html += wbBadge('hb-hull', wbIcon.ship, 1 - rng / 2500, 'Frigate', Math.round(rng) + ' m from the drone', rng >= 1000 ? (rng / 1000).toFixed(1) : String(Math.round(rng)));
+  if (html !== lastWb) { watchBadges.innerHTML = html; lastWb = html; }
+}
 
 // Debug/inspection handle.
 window.__scene = {

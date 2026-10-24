@@ -13,7 +13,7 @@ body.mission-helm.ui-hidden .labels-layer.helm-labels { display: none; }
 }
 .helm-views button { padding: 5px 12px; border-radius: 999px; font-size: 12px; border-color: transparent; background: transparent; }
 .helm-views button.active { background: var(--accent); border-color: var(--accent); color: #1a0d02; font-weight: 700; }
-body:not(.mission-helm) .helm-views, body.ui-hidden .helm-views { display: none; }
+body:not(.mission-helm):not(.mission-fly) .helm-views, body.ui-hidden .helm-views { display: none; }
 @media (max-width: 900px) { .helm-views { top: auto; bottom: calc(var(--gap) + var(--safe-b) + 44px); } .helm-views button { padding: 5px 9px; } }
 
 /* The fire-control sight: a reticle over the long lens. */
@@ -137,7 +137,9 @@ body.mission-helm .hud { background: rgba(9, 14, 21, 0.38); backdrop-filter: blu
 @media (min-width: 901px) {
   .helm-ship { bottom: var(--gap, 14px); }
   body.mission-helm .shot-caption { top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 96px); bottom: auto; }
+  body.mission-fly .shot-caption { top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 96px); bottom: auto; }
   body.mission-helm .fly-keys { width: max-content; flex-wrap: nowrap; bottom: auto; top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 56px); padding: 4px 12px; gap: 4px 12px; font-size: 11px; background: rgba(9, 14, 21, 0.35); backdrop-filter: none; border-color: rgba(255, 255, 255, 0.08); }
+  body.mission-fly .fly-keys { width: max-content; flex-wrap: nowrap; bottom: auto; top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 56px); padding: 4px 12px; gap: 4px 12px; font-size: 11px; background: rgba(9, 14, 21, 0.35); backdrop-filter: none; border-color: rgba(255, 255, 255, 0.08); }
 }
 .helm-ship .hs-dome { flex: none; }
 .helm-ship .hs-rect { flex: 1 1 0; min-width: 0; }
@@ -203,9 +205,13 @@ body.mission-helm .hud { width: 236px; padding: 9px 11px 10px; }
 .tag .tag-hits { color: #ff7478; letter-spacing: 0.02em; }
 
 body.mission-helm .fly-keys { pointer-events: none; }
+body.mission-fly .fly-keys { pointer-events: none; }
 body.mission-helm .fly-keys .fk-btn { pointer-events: auto; cursor: pointer; padding: 2px 4px; border-radius: 6px; }
+body.mission-fly .fly-keys .fk-btn { pointer-events: auto; cursor: pointer; padding: 2px 4px; border-radius: 6px; }
 body.mission-helm .fly-keys .fk-btn:hover { background: rgba(255, 255, 255, 0.12); }
+body.mission-fly .fly-keys .fk-btn:hover { background: rgba(255, 255, 255, 0.12); }
 body.mission-helm .fly-keys .fk-btn:active { background: rgba(255, 255, 255, 0.22); }
+body.mission-fly .fly-keys .fk-btn:active { background: rgba(255, 255, 255, 0.22); }
 
 /* The weapons card: missiles as little missiles, the guns' ammunition as a bar, empty slots for what comes next. */
 .helm-ship .hs-wpn { flex: 1 1 0; min-width: 210px; max-width: 290px; padding: 7px 12px 8px; border-radius: 14px 14px 0 0; background: linear-gradient(180deg, rgba(16, 28, 44, 0.7), rgba(8, 13, 20, 0.55)); border: 1px solid rgba(120, 190, 255, 0.22); border-bottom: 0; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 -4px 18px rgba(0, 0, 0, 0.25); color: var(--text); backdrop-filter: blur(4px); display: grid; gap: 6px; font-variant-numeric: tabular-nums; }
@@ -399,24 +405,62 @@ body.helm-radarview .helm-ship { display: none; }
 
 /* The top bar is a single gear (its menu opens under it); the views are icons beside it, the one in use opens into a pill with its name. */
 body.mission-helm .bar-tools > :not(#btn-menu) { display: none; }
+body.mission-fly .bar-tools > :not(#btn-menu) { display: none; }
+body.mission-drone .bar-tools > :not(#btn-menu) { display: none; }
 body.mission-helm .bar-tools { border-left: 0; padding-left: 0; }
+body.mission-fly .bar-tools { border-left: 0; padding-left: 0; }
+body.mission-drone .bar-tools { border-left: 0; padding-left: 0; }
 body.mission-helm .topbar { padding: 4px; }
+body.mission-fly .topbar { padding: 4px; }
+body.mission-drone .topbar { padding: 4px; }
 body.mission-helm #btn-menu { min-width: 40px; min-height: 36px; padding: 0; place-items: center; }
+body.mission-fly #btn-menu { min-width: 40px; min-height: 36px; padding: 0; place-items: center; }
+body.mission-drone #btn-menu { min-width: 40px; min-height: 36px; padding: 0; place-items: center; }
 body.mission-helm #btn-menu svg { width: 22px; height: 22px; }
+body.mission-fly #btn-menu svg { width: 22px; height: 22px; }
+body.mission-drone #btn-menu svg { width: 22px; height: 22px; }
 body.mission-helm #btn-fold { display: none; }
+body.mission-fly #btn-fold { display: none; }
+body.mission-drone #btn-fold { display: none; }
 body.mission-helm #menu { left: 0; right: auto; min-width: 250px; }
+body.mission-fly #menu { left: 0; right: auto; min-width: 250px; }
+body.mission-drone #menu { left: 0; right: auto; min-width: 250px; }
 body.mission-helm #menu .menu-h { padding: 8px 10px 3px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+body.mission-fly #menu .menu-h { padding: 8px 10px 3px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+body.mission-drone #menu .menu-h { padding: 8px 10px 3px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
 body.mission-helm #menu .menu-slider { padding: 4px 10px 8px; }
+body.mission-fly #menu .menu-slider { padding: 4px 10px 8px; }
+body.mission-drone #menu .menu-slider { padding: 4px 10px 8px; }
 body.mission-helm #menu button { color: var(--text); font-size: 13px; }
+body.mission-fly #menu button { color: var(--text); font-size: 13px; }
+body.mission-drone #menu button { color: var(--text); font-size: 13px; }
 body.mission-helm #menu #btn-ship { color: var(--accent); }
+body.mission-fly #menu #btn-ship { color: var(--accent); }
+body.mission-drone #menu #btn-ship { color: var(--accent); }
 body.mission-helm #menu #btn-fold, body.mission-helm #menu #btn-fullscreen { display: flex; }
+body.mission-fly #menu #btn-fold, body.mission-fly #menu #btn-fullscreen { display: flex; }
+body.mission-drone #menu #btn-fold, body.mission-drone #menu #btn-fullscreen { display: flex; }
 body.mission-helm #menu button[aria-pressed]::after { content: 'OFF'; order: 3; font: 700 9px system-ui, sans-serif; letter-spacing: 0.08em; opacity: 0.5; }
+body.mission-fly #menu button[aria-pressed]::after { content: 'OFF'; order: 3; font: 700 9px system-ui, sans-serif; letter-spacing: 0.08em; opacity: 0.5; }
+body.mission-drone #menu button[aria-pressed]::after { content: 'OFF'; order: 3; font: 700 9px system-ui, sans-serif; letter-spacing: 0.08em; opacity: 0.5; }
 body.mission-helm #menu button[aria-pressed="true"]::after { content: 'ON'; color: #3ddc84; opacity: 1; }
+body.mission-fly #menu button[aria-pressed="true"]::after { content: 'ON'; color: #3ddc84; opacity: 1; }
+body.mission-drone #menu button[aria-pressed="true"]::after { content: 'ON'; color: #3ddc84; opacity: 1; }
 body.mission-helm #menu button kbd { margin-left: auto; }
+body.mission-fly #menu button kbd { margin-left: auto; }
+body.mission-drone #menu button kbd { margin-left: auto; }
 body.mission-helm #menu .mi-l { display: inline-flex; align-items: center; gap: 10px; }
+body.mission-fly #menu .mi-l { display: inline-flex; align-items: center; gap: 10px; }
+body.mission-drone #menu .mi-l { display: inline-flex; align-items: center; gap: 10px; }
 body.mission-helm #menu .mi { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; opacity: 0.85; }
+body.mission-fly #menu .mi { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; opacity: 0.85; }
+body.mission-drone #menu .mi { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; opacity: 0.85; }
 body.mission-helm #menu button:hover .mi { opacity: 1; }
+body.mission-fly #menu button:hover .mi { opacity: 1; }
+body.mission-drone #menu button:hover .mi { opacity: 1; }
 body.mission-helm #menu [aria-pressed="false"] .mi { opacity: 0.4; }
+body.mission-fly #menu [aria-pressed="false"] .mi { opacity: 0.4; }
+body.mission-drone #menu [aria-pressed="false"] .mi { opacity: 0.4; }
 
 .helm-views { left: calc(var(--gap) + var(--safe-l) + 52px); top: calc(var(--gap) + var(--safe-t) + 4px); transform: none; gap: 2px; padding: 3px; }
 .helm-views button { display: inline-flex; align-items: center; gap: 6px; padding: 0; min-width: 32px; height: 32px; justify-content: center; color: var(--muted); }
@@ -432,7 +476,9 @@ body.mission-helm #menu [aria-pressed="false"] .mi { opacity: 0.4; }
 @media (max-width: 900px) { .helm-views { top: calc(var(--gap) + var(--safe-t) + 4px); bottom: auto; } .helm-views button { padding: 0; } .helm-views button.active { padding: 0 9px 0 7px; } }
 /* The key bar stays hidden until the keys button (last in the views strip) shows it. */
 body.mission-helm #fly-keys:not(.show) { opacity: 0; pointer-events: none; }
+body.mission-fly #fly-keys:not(.show) { opacity: 0; pointer-events: none; }
 body.mission-helm #fly-keys:not(.show) .fk-btn { pointer-events: none; }
+body.mission-fly #fly-keys:not(.show) .fk-btn { pointer-events: none; }
 @keyframes hv-spin { to { transform: rotate(360deg); } }
 @keyframes hv-lines { from { transform: translateX(-2px); opacity: 0.3; } to { transform: translateX(2px); opacity: 1; } }
 @keyframes hv-blink { 0% { opacity: 1; } 100% { opacity: 0.1; } }
@@ -442,9 +488,17 @@ body.mission-helm #fly-keys:not(.show) .fk-btn { pointer-events: none; }
   .helm-views button.active .wheel { transform-origin: 12px 12px; animation: hv-spin 6s ease-in-out infinite alternate; }
   .helm-views button.active .sweep { transform-origin: 12px 12px; animation: hv-spin 2.6s linear infinite; }
   body.mission-helm #menu button:hover .mi-a { transform-origin: 12px 12px; animation: hv-spin 1.2s linear infinite; }
+  body.mission-fly #menu button:hover .mi-a { transform-origin: 12px 12px; animation: hv-spin 1.2s linear infinite; }
+  body.mission-drone #menu button:hover .mi-a { transform-origin: 12px 12px; animation: hv-spin 1.2s linear infinite; }
   body.mission-helm #menu #btn-sound[aria-pressed="true"] .mi-w1 { animation: hv-blink 0.9s ease-in-out infinite alternate; }
+  body.mission-fly #menu #btn-sound[aria-pressed="true"] .mi-w1 { animation: hv-blink 0.9s ease-in-out infinite alternate; }
+  body.mission-drone #menu #btn-sound[aria-pressed="true"] .mi-w1 { animation: hv-blink 0.9s ease-in-out infinite alternate; }
   body.mission-helm #menu #btn-sound[aria-pressed="true"] .mi-w2 { animation: hv-blink 0.9s ease-in-out 0.3s infinite alternate; }
+  body.mission-fly #menu #btn-sound[aria-pressed="true"] .mi-w2 { animation: hv-blink 0.9s ease-in-out 0.3s infinite alternate; }
+  body.mission-drone #menu #btn-sound[aria-pressed="true"] .mi-w2 { animation: hv-blink 0.9s ease-in-out 0.3s infinite alternate; }
   body.mission-helm #menu button:hover .mi { animation: hv-bob 0.9s ease-in-out infinite; }
+  body.mission-fly #menu button:hover .mi { animation: hv-bob 0.9s ease-in-out infinite; }
+  body.mission-drone #menu button:hover .mi { animation: hv-bob 0.9s ease-in-out infinite; }
 }
 
 /* The dome with a propeller and a throttle bar each side; the hull and weapons cards stand aside it. */
@@ -630,5 +684,35 @@ body.mission-helm .minimap { bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) 
 /* The key bar as in Surface battle: one line, small, centred in the top row. Only where the screen is wide enough to leave the view strip and the contact card clear; narrower windows keep it under the strip. */
 @media (min-width: 1700px) {
   body.mission-helm .fly-keys { top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 6px); left: 50%; transform: translateX(-50%); max-width: calc(100vw - 920px); overflow: hidden; padding: 4px 12px; gap: 4px 12px; font-size: 10.5px; }
+  body.mission-fly .fly-keys { top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 6px); left: 50%; transform: translateX(-50%); max-width: calc(100vw - 920px); overflow: hidden; padding: 4px 12px; gap: 4px 12px; font-size: 10.5px; }
   body.mission-helm .shot-caption { top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 56px); }
+  body.mission-fly .shot-caption { top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 56px); }
 }
+
+/* Fly the drone, in the same theme: the bottom row sits at the foot (the key bar is hidden until the keys button), the dome shows the bank. */
+body.mission-fly .helm-ship { bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) - 1px); }
+body.mission-fly .helm-ship .hs-cmds { display: flex; }
+.hs-badge.hb-alt { color: #5fd6ff; } .hs-badge.hb-alt.low { color: #ff9f43; } .hs-badge.hb-alt.out, .hs-badge.hb-spd.out { color: #8b94a0; }
+.hs-badge.hb-spd { color: #3ddc84; }
+.hs-badge.hb-hull { color: #ffc454; }
+.hb-needle { transform-box: view-box; transform-origin: 12px 17.5px; }
+.hb-lift { transform-box: fill-box; }
+.helm-act.fu-eng.on { border-color: rgba(61, 220, 132, 0.7); } .helm-act.fu-eng.on .sp-ico { color: #3ddc84; }
+.helm-act.fu-cat .sp-ico { color: #ffb066; } .helm-act.fu-again { border-color: rgba(53, 200, 255, 0.55); } .helm-act.fu-again .sp-ico { color: #5fd6ff; }
+.helm-act.go { box-shadow: 0 0 0 2px rgba(242, 201, 76, 0.55), 0 0 16px rgba(242, 201, 76, 0.5); }
+@keyframes fu-slide { 0%, 100% { transform: translateX(-3px); } 50% { transform: translateX(5px); } }
+@keyframes fu-pulse { from { opacity: 0.6; } to { opacity: 1; } }
+@keyframes fu-turn { to { transform: rotate(360deg); } }
+@keyframes fu-gauge { from { transform: rotate(-24deg); } to { transform: rotate(14deg); } }
+@keyframes fu-up { 0%, 100% { transform: translateY(1.5px); } 50% { transform: translateY(-1.5px); } }
+@media (prefers-reduced-motion: no-preference) {
+  .helm-act .fu-slide { animation: fu-slide 1.1s ease-in-out infinite; }
+  .helm-act .fu-pulse { animation: fu-pulse 0.9s ease-in-out infinite alternate; }
+  .helm-act:hover .fu-turn { transform-origin: 16px 16px; animation: fu-turn 1s linear infinite; }
+  .hb-needle { animation: fu-gauge 1.6s ease-in-out infinite alternate; }
+  .hb-lift { animation: fu-up 1.4s ease-in-out infinite; }
+}
+@media (max-width: 1279px) { body.mission-fly .helm-ship .hs-cmds { display: grid; grid-template-columns: repeat(2, 46px); } }
+
+body.mission-fly .topbar .brand, body.mission-fly .brand { display: none; }
+body.mission-drone .topbar .brand, body.mission-drone .brand { display: none; }
