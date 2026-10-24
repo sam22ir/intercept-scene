@@ -273,6 +273,8 @@ export class HarbourSim {
     this.acc = 0;
   }
 
+  get kind() { return 'harbour'; }
+  get stageText() { return STAGES[this.stage]; }
   get speedKn() { return this.u / KT; }
   get ordered() { return TELEGRAPH[this.order].kn; }
   get inside() { return inPoly(INSIDE, this.x, this.z); }
@@ -496,5 +498,169 @@ export class HarbourSim {
   }
 }
 const mid = (a, b) => ({ x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 });
+
+// --- The man overboard drill (mission `mob`) -------------------------------------------------------------------------------------
+// She is at sea in the bay off Jijel at 10 knots when someone goes over the side. The drill, as a bridge watchkeeper is taught it:
+//   1. at once, the rudder hard over to the side he fell (the stern, and the screws, swing away from him);
+//   2. the Williamson turn: hold it until she is 60 degrees off the original course, then hard over the other way, until she is
+//      steady on the reciprocal course: she comes back down her own wake, to where he went in;
+//   3. slow down early, and stop with him abeam, close to her side but clear of it, and hold her there while he is recovered.
+// He drifts with the wind and sea (`MOB_DRIFT`), the lifebuoy with its smoke float a little faster. Running him down, or drawing him
+// into the screws while they turn, ends the drill. Any way of getting back counts; the Williamson turn is scored.
+// Her waterline half-beam at x metres from her middle (the outline of HULL_PTS, straight between its points).
+export function waterlineHalf(x) {
+  const side = HULL_OUTLINE.slice(0, HULL_OUTLINE.findIndex(([, b], i) => i > 0 && b === 0) + 1); // the starboard half, bow to stern
+  if (x > side[0][0] || x < side[side.length - 1][0]) return -1;
+  for (let i = 1; i < side.length; i++) {
+    const [x0, z0] = side[i - 1], [x1, z1] = side[i];
+    if (x <= x0 && x >= x1) return x0 === x1 ? Math.max(z0, z1) : z0 + ((z1 - z0) * (x - x0)) / (x1 - x0);
+  }
+  return -1;
+}
+export const MOB_START = { x: 350, z: 950, psi: rad(25), kn: 10 };
+export const MOB_DRIFT = { x: -0.05, z: 0.11 }; // m/s: the casualty, set to the south-east
+export const BUOY_DRIFT = { x: -0.08, z: 0.17 }; // m/s: the lifebuoy and smoke float, with more windage
+export const MOB_ZONE = { aft: -28, fwd: 16, near: HALF_BEAM + 2, far: HALF_BEAM + 20, speed: 1.0 * KT, hold: 5 };
+export const MOB_STAGES = {
+  underway: { title: 'On passage', task: 'Steady on 025 at 10 knots in the bay off Jijel. Keep a good lookout.' },
+  mob: { title: 'Man overboard!', task: 'Rudder hard over toward the side he fell. Then the Williamson turn: at 60° off, hard over the other way, onto the reciprocal course.' },
+  recover: { title: 'Recovering him', task: 'Hold her there, stopped, with him abeam: the crew have a line on him.' },
+  done: { title: 'Casualty recovered', task: 'He is aboard and in the sick bay. Well handled.' },
+  wrecked: { title: 'Holed', task: 'She hit too hard to go on: R to try again.' },
+  lost: { title: 'Casualty lost', task: 'He went under her. R to try again.' },
+};
+export const MOB_STEPS = ['underway', 'mob', 'recover'];
+
+export class MobSim extends HarbourSim {
+  constructor(opts = {}) { super(); this.opts = opts; this.reset(); }
+
+  reset() {
+    super.reset();
+    const o = this.opts ?? {};
+    this.x = MOB_START.x; this.z = MOB_START.z; this.psi = MOB_START.psi;
+    this.lines = false;
+    this.stage = 'underway';
+    this.order = TELEGRAPH.findIndex((x) => x.kn === MOB_START.kn);
+    this.u = MOB_START.kn * KT;
+    this.alarmAt = o.alarmAt ?? 10 + Math.random() * 15;
+    this.side = o.side ?? (Math.random() < 0.5 ? 1 : -1); // +1 he fell from the starboard side
+    this.casualty = null; // { x, z, t0 } once he is in the water
+    this.tAlarm = null;
+    this.h0 = null; // her heading when he went
+    this.wt = { phase: 0, hard: false, offAt: null, maxDev: 0, reversedAt: null, recipAt: null, firstRudder: null, immediate: false };
+    this.recoverHold = 0;
+    this.closest = Infinity;
+  }
+
+  get kind() { return 'mob'; }
+  get over() { return this.stage === 'done' || this.stage === 'wrecked' || this.stage === 'lost'; }
+  get stageText() { return MOB_STAGES[this.stage]; }
+  // Where he is, and the lifebuoy, now.
+  casualtyPos(t = this.t) {
+    const c = this.casualty;
+    if (!c) return null;
+    const dt = t - c.t0;
+    return { x: c.x + MOB_DRIFT.x * dt, z: c.z + MOB_DRIFT.z * dt };
+  }
+  buoyPos(t = this.t) {
+    const c = this.casualty;
+    if (!c || t < c.t0 + 2) return null; // thrown from the bridge wing two seconds after the shout
+    const dt = t - c.t0 - 2;
+    return { x: c.bx + BUOY_DRIFT.x * dt, z: c.bz + BUOY_DRIFT.z * dt };
+  }
+  // Him in her own frame: ahead (+) of her middle, and out from her centreline (+ starboard).
+  rel(p = this.casualtyPos()) {
+    if (!p) return null;
+    const c = Math.cos(this.psi), s = Math.sin(this.psi), dx = p.x - this.x, dz = p.z - this.z;
+    return { ax: dx * c + dz * s, az: -dx * s + dz * c, d: Math.hypot(dx, dz) };
+  }
+  // How far she has come round from her course when he went, toward the side he fell (degrees).
+  get deviation() { return this.h0 === null ? 0 : deg(wrapPi(this.psi - this.h0)) * this.side; }
+  get mark() { const p = this.casualtyPos(); return p ? { ...p, name: 'Casualty' } : null; }
+
+  lineKey() { if (!this.over) this.say(this.casualty ? 'No lines to handle: get back to him' : 'No lines at sea', 'warn'); }
+
+  rules(dt) {
+    if (this.over) return;
+    if (this.stage === 'underway') {
+      if (this.t < this.alarmAt) return;
+      const c = Math.cos(this.psi), s = Math.sin(this.psi), ax = -6, az = this.side * (HALF_BEAM + 2); // over the side abaft the bridge
+      this.casualty = { x: this.x + ax * c - az * s, z: this.z + ax * s + az * c, t0: this.t };
+      const bz = this.side * (HALF_BEAM + 7); // where the lifebuoy lands, a little out from him
+      this.casualty.bx = this.x + 8 * c - bz * s - this.u * 2 * c; this.casualty.bz = this.z + 8 * s + bz * c - this.u * 2 * s;
+      this.tAlarm = this.t;
+      this.h0 = this.psi;
+      this.stage = 'mob';
+      this.events.push({ type: 'alarm', side: this.side });
+      this.say(`Man overboard, ${this.side > 0 ? 'starboard' : 'port'} side!`, 'danger', 'alarm');
+      return;
+    }
+    const tt = this.t - this.tAlarm;
+    // the first rudder order after the shout: toward his side is right (it swings the stern and the screws away from him)
+    const rFrac = this.rudder / RUDDER_MAX;
+    if (this.wt.firstRudder === null && Math.abs(rFrac) > 0.4) {
+      this.wt.firstRudder = Math.sign(rFrac) === this.side ? 'right' : 'wrong';
+      this.wt.immediate = this.wt.firstRudder === 'right' && tt < 6;
+      if (this.wt.firstRudder === 'wrong') this.say('Wrong way: the stern swings toward him', 'danger', 'warn');
+    }
+    // the Williamson turn, followed as she goes round
+    const dev = this.deviation;
+    if (this.wt.phase === 0) {
+      this.wt.maxDev = Math.max(this.wt.maxDev, dev);
+      // the reversal is when the wheel comes off hard over toward him (the rudder then swings across on its own)
+      // (the angle is taken when the wheel comes off hard over; it counts once the rudder is really over to the other side)
+      // (a rudder that rests amidships for more than two seconds was eased, not reversed: the reversal is taken again when it moves on)
+      const rs = rFrac * this.side;
+      if (rs > 0.9) { this.wt.hard = true; this.wt.offAt = null; }
+      this.wt.mid = Math.abs(rs) < 0.1 ? (this.wt.mid ?? 0) + dt : 0;
+      if (this.wt.mid > 2) this.wt.offAt = null;
+      else if (this.wt.hard && this.wt.offAt === null && rs < 0.8 && (rs > 0.1 || rs < -0.1)) this.wt.offAt = dev;
+      if (this.wt.hard && dev > 20 && rFrac * this.side < -0.3) {
+        const at = this.wt.offAt ?? dev;
+        this.wt.phase = 1; this.wt.reversedAt = at;
+        this.say(`Rudder reversed at ${Math.round(at)}° off`, at >= 50 && at <= 75 ? 'good' : 'warn');
+      }
+    } else if (this.wt.phase === 1 && Math.abs(deg(wrapPi(this.psi - this.h0 - Math.PI))) < 12) {
+      this.wt.phase = 2; this.wt.recipAt = tt;
+      this.say('On the reciprocal course: back down the wake', 'good', 'stage');
+    }
+    // him and her
+    const r = this.rel();
+    this.closest = Math.min(this.closest, r.d);
+    const screws = r.ax < -48 && r.ax > -68 && Math.abs(r.az) < 6 && this.ordered !== 0;
+    // she runs him down if her hull goes over him (he is inside her waterline), at any speed through the water
+    const under = Math.abs(r.az) < waterlineHalf(r.ax) && Math.hypot(this.u, this.v) > 0.3;
+    if (screws || under) {
+      this.stage = 'lost';
+      this.order = STOP_ORDER;
+      this.result = { kind: 'mob', lost: screws ? 'screws' : 'struck' };
+      this.say(screws ? 'He was drawn into the screws' : 'She ran him down', 'danger', 'crash');
+      return;
+    }
+    const Z = MOB_ZONE;
+    const inZone = r.ax > Z.aft && r.ax < Z.fwd && Math.abs(r.az) > Z.near && Math.abs(r.az) < Z.far && Math.hypot(this.u, this.v) < Z.speed && Math.abs(this.r) < rad(1);
+    if (inZone) {
+      if (this.stage === 'mob') { this.stage = 'recover'; this.say('Line on him: hold her there', 'good', 'stage'); }
+      this.recoverHold += dt;
+      if (this.recoverHold >= Z.hold) this.recovered(tt);
+    } else if (this.stage === 'recover') {
+      this.stage = 'mob'; this.recoverHold = 0;
+      this.say('She has moved off him: bring her back', 'warn');
+    }
+  }
+
+  recovered(tt) {
+    this.stage = 'done';
+    this.order = STOP_ORDER;
+    const w = this.wt;
+    const williamson = w.reversedAt !== null && w.reversedAt >= 50 && w.reversedAt <= 75 && w.recipAt !== null;
+    this.result = {
+      kind: 'mob', time: tt, immediate: w.immediate, firstRudder: w.firstRudder, reversedAt: w.reversedAt, recip: w.recipAt !== null, williamson,
+      contacts: { ...this.contacts }, damage: this.damage, stars: 1 + (tt < 300 ? 1 : 0) + (williamson && w.immediate ? 1 : 0),
+    };
+    this.tFast = null;
+    this.say('Casualty recovered', 'good', 'done');
+  }
+}
 
 export const compass = (r) => ((deg(r) % 360) + 360) % 360;

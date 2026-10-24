@@ -180,12 +180,25 @@ function harbour(animate) {
     + mover(own, { path, kt: [0.04, 0.92], still: [380, 170, 0] }, animate);
 }
 
+// Man overboard: a plan view of the Williamson turn: the ship runs north, swings right, then hard left round onto the reciprocal
+// and comes back down her own wake to the casualty (a red cross by the orange lifebuoy), where she stops.
+function mob(animate) {
+  const path = 'M240 205V120Q240 92 262 78Q290 62 300 40Q302 22 284 14Q262 8 252 30Q244 50 244 80V112';
+  const own = '<path class="a-ship" d="M-12 -3.5H6L12 0L6 3.5H-12Z"/>';
+  const casualty = '<circle cx="246" cy="118" r="6" fill="none" stroke="#ff8a2a" stroke-width="3"/><path d="M236 112l8 8M244 112l-8 8" stroke="#ff5d61" stroke-width="2.6"/>';
+  const ring = animate ? '<circle cx="240" cy="116" r="8" fill="none" stroke="#ff7a1a" stroke-width="1.5"><animate attributeName="r" values="6;22" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.9;0" dur="2s" repeatCount="indefinite"/></circle>' : '';
+  const grid = '<path class="a-line" d="M0 55H480M0 110H480M0 165H480M80 0V220M160 0V220M240 0V220M320 0V220M400 0V220"/>';
+  return `<rect class="a-water" width="480" height="220"/>${grid}${trail(path)}${casualty}${ring}`
+    + mover(own, { path, kt: [0.04, 0.9], still: [300, 40, 0] }, animate);
+}
+
 const SCENES = {
   intercept: (ship, a) => intercept(ship, a),
   chute: (_s, a) => chute(a),
   fly: (_s, a) => fly(a),
   helm: (_s, a) => helm(a),
   harbour: (_s, a) => harbour(a),
+  mob: (_s, a) => mob(a),
   duel: (_s, a) => duel(a),
   squadron: (_s, a) => squadron(a),
   maneuvers2: (_s, a) => drill(2, a),

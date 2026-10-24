@@ -89,6 +89,20 @@ export function createHarbourAudio() {
     }
   }
 
+  // The general alarm: a harsh two-tone warble for three seconds (man overboard).
+  function generalAlarm() {
+    if (!ctx || !enabled) return;
+    const t0 = ctx.currentTime;
+    const o = ctx.createOscillator(), g = ctx.createGain(), lp = ctx.createBiquadFilter();
+    o.type = 'square';
+    lp.type = 'lowpass'; lp.frequency.value = 2400;
+    for (let i = 0; i < 12; i++) o.frequency.setValueAtTime(i % 2 ? 620 : 880, t0 + i * 0.25);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.16, t0 + 0.05);
+    g.gain.setValueAtTime(0.16, t0 + 2.9); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.1);
+    o.connect(lp).connect(g).connect(master);
+    o.start(t0); o.stop(t0 + 3.2);
+  }
+
   return {
     get supported() { return !failed; },
     get enabled() { return enabled; },
@@ -109,6 +123,7 @@ export function createHarbourAudio() {
     event(e) {
       if (!ctx || !enabled) return;
       if (e.type === 'telegraph') bell();
+      else if (e.type === 'alarm') { generalAlarm(); this.horn(3.2); }
       else if (e.type === 'contact') shot('clunk', Math.min(0.25 + e.hit * 0.9, 1.2), 0.6);
       else if (e.type === 'say' && e.sound === 'lines') { shot('splash', 0.35, 1.6); setTimeout(() => shot('splash', 0.25, 1.8), 900); }
     },

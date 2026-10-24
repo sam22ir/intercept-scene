@@ -11,8 +11,9 @@ import { createHarbour } from './harbourScene.js';
 import { createHarbourMap } from './harbourMap.js';
 import { createHarbourAudio } from './harbourAudio.js';
 import { createHarbourDetails } from './harbourDetails.js';
+import { createMobScene } from './harbourMob.js';
 import {
-  HarbourSim, TELEGRAPH, STOP_ORDER, RUDDER_MAX, KT, STAGES, SPEED_LIMIT, TARGET_BERTH, START_BERTH, LIGHTS, FAIRWAY, HALF_BEAM, BERTH_TOL, compass, thrusterFactor,
+  HarbourSim, MobSim, MOB_STEPS, MOB_ZONE, TELEGRAPH, STOP_ORDER, RUDDER_MAX, KT, SPEED_LIMIT, TARGET_BERTH, START_BERTH, LIGHTS, FAIRWAY, HALF_BEAM, BERTH_TOL, compass, thrusterFactor,
 } from './harbour.js';
 import './helm.css'; // the manual flight's gear and menu (body.mission-fly)
 import './harbour.css';
@@ -57,7 +58,10 @@ ship.group.add(bridge.group);
 const wake = createWake(scene);
 const map = createHarbourMap();
 const audio = createHarbourAudio();
-const sim = new HarbourSim();
+// The exercise: the harbour (out and back in, mission `harbour`) or the man overboard drill (mission `mob`); start.js sets it.
+const DRILL = globalThis.__HARBOUR_DRILL ?? (new URLSearchParams(location.search).get('mode') === 'mob' ? 'mob' : 'harbour');
+const sim = DRILL === 'mob' ? new MobSim() : new HarbourSim();
+const mobScene = createMobScene(scene); // the casualty, the lifebuoy and its smoke, the recovery line (the drill only)
 const details = createHarbourDetails({ scene, ship, bridge }); // the bridge's screens, the mooring lines, the gulls
 
 // --- The banner --------------------------------------------------------------------------------------------------------
@@ -92,7 +96,11 @@ function quaySide() {
 }
 function setView(v, quiet = false) {
   if (v === 'wing' && view === 'wing') wingSide = -wingSide; // a second press goes to the other wing
-  else if (v === 'wing') { wingSide = sim.stage === 'alongside' || sim.stage === 'berth' ? quaySide() : wingSide; wingYaw = 0; wingPitch = 0; }
+  else if (v === 'wing') { // the wing over the quay she is at, or (the drill) over the side the casualty is on
+    const r = sim.kind === 'mob' ? sim.rel() : null;
+    wingSide = r ? (r.az > 0 ? 1 : -1) : sim.stage === 'alongside' || sim.stage === 'berth' ? quaySide() : wingSide;
+    wingYaw = 0; wingPitch = 0;
+  }
   view = v;
   if (!quiet) intro = null;
   camera.up.set(0, 1, 0);
@@ -223,15 +231,30 @@ const ORDER_STAGES = ['alongside', 'depart', 'sea', 'return', 'berth'];
 const brgTo = (x, z) => compass(Math.atan2(z - sim.z, x - sim.x));
 const pad3 = (d) => String(Math.round(d) % 360).padStart(3, '0');
 const dist = (m) => (m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`);
+const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+function wtHtml() { // the man overboard drill: the Williamson turn, ticked off as she does it
+  if (!sim.casualty) return '';
+  const w = sim.wt, sideName = sim.side > 0 ? 'starboard' : 'port', other = sim.side > 0 ? 'port' : 'starboard';
+  const recip = pad3(compass(sim.h0 + Math.PI));
+  const li = (done, now, text, cls = '') => `<li class="${done ? 'hb-done' : now ? 'hb-now' : ''} ${cls}">${text}</li>`;
+  const dev = Math.round(sim.deviation);
+  return `<ol class="hb-wt">`
+    + li(w.firstRudder === 'right', w.firstRudder === null, `Hard ${sideName}${w.firstRudder === 'wrong' ? ': wrong way first' : ''}`, w.firstRudder === 'wrong' ? 'bad' : '')
+    + li(w.phase >= 1, w.phase === 0 && w.firstRudder !== null, w.phase >= 1 ? `Hard ${other} at ${Math.round(w.reversedAt)}° off` : `At 60° off, hard ${other} · now ${Math.max(0, dev)}°`)
+    + li(w.phase >= 2, w.phase === 1, `Steady on ${recip}°, back down the wake`)
+    + li(sim.stage === 'done', w.phase >= 2 || sim.stage === 'recover', 'Slow down, stop with him abeam')
+    + `</ol><div class="hb-mark"><span>In the water</span><b>${mmss(sim.t - sim.tAlarm)}</b></div>`;
+}
 function taskHtml() {
-  const st = STAGES[sim.stage];
-  const n = ORDER_STAGES.indexOf(sim.stage);
-  const steps = ORDER_STAGES.map((s, i) => `<i class="${i < n || sim.stage === 'done' ? 'done' : i === n ? 'now' : ''}"></i>`).join('');
+  const st = sim.stageText;
+  const list = sim.kind === 'mob' ? MOB_STEPS : ORDER_STAGES;
+  const n = list.indexOf(sim.stage);
+  const steps = list.map((s, i) => `<i class="${i < n || sim.stage === 'done' ? 'done' : i === n ? 'now' : ''}"></i>`).join('');
   const m = sim.mark;
   const mk = m ? `<div class="hb-mark"><span>${m.name}</span><b>${dist(Math.hypot(m.x - sim.x, m.z - sim.z))}</b><b>${pad3(brgTo(m.x, m.z))}°</b></div>` : '';
   const inside = sim.inside, kn = Math.abs(sim.u) / KT;
   const lim = inside ? `<div class="hb-limit ${kn > SPEED_LIMIT + 0.2 ? 'over' : ''}">Harbour speed limit <b>${SPEED_LIMIT} kn</b></div>` : '';
-  return `<div class="hb-steps">${steps}</div><div class="hb-ttl">${st.title}</div><p>${st.task}</p>${mk}${lim}`;
+  return `<div class="hb-steps">${steps}</div><div class="hb-ttl">${st.title}</div><p>${st.task}</p>${mk}${lim}${sim.kind === 'mob' ? wtHtml() : ''}`;
 }
 // --- The steering readouts: Solo Air Defense's strip (the .helm-ship styles in helm.css) --------------------------------------
 // Round badges at the left (hull, speed against the harbour limit, thrusters, contacts), the dome in the middle (the heading slides
@@ -337,9 +360,9 @@ const cmd = (cls, act, icon, title, sub, key, on) => `<button type="button" clas
 function cmdHtml() {
   const b = sim.stage === 'berth' ? sim.berthState() : null;
   const lt = sim.stage === 'alongside' ? ['Let go the lines', 'fore and aft, stern line first'] : b ? ['Make fast', b.ok ? 'she lies still: lines on' : b.why] : sim.stage === 'done' ? ['All fast', 'alongside berth 7'] : ['Lines', 'stowed: they go on at berth 7'];
-  return cmd('helm-act-heli hpc-lines', 'lines', CI.lines, lt[0], lt[1], 'L', sim.stage === 'alongside' || (b && b.ok))
+  return (sim.kind === 'mob' ? '' : cmd('helm-act-heli hpc-lines', 'lines', CI.lines, lt[0], lt[1], 'L', sim.stage === 'alongside' || (b && b.ok)))
     + cmd('hpc-horn', 'horn', CI.horn, 'Ship\'s horn', 'one prolonged blast leaving the berth', 'B', false)
-    + cmd('fu-again', 'again', CI.again, 'Sail again', 'back alongside berth 3', 'R', sim.over);
+    + cmd('fu-again', 'again', CI.again, 'Sail again', sim.kind === 'mob' ? 'the drill again, from the start' : 'back alongside berth 3', 'R', sim.over);
 }
 cmdHost.addEventListener('click', (e) => {
   const btn = e.target.closest('button');
@@ -357,7 +380,25 @@ function updateBottom(dt) {
   if (cm !== lastCmd) { cmdHost.innerHTML = cm; lastCmd = cm; }
   spinProps(dt);
 }
+function recoverHtml() {
+  const r = sim.rel();
+  if (!r || r.d > 350 || sim.stage === 'done') return '';
+  if (sim.stage !== 'recover' && sim.wt.phase < 2 && r.d > 60) return ''; // only once she is coming back to him
+  const Z = MOB_ZONE, off = Math.abs(r.az) - HALF_BEAM;
+  const sog = Math.hypot(sim.u, sim.v) / KT;
+  const abeam = r.ax > Z.aft && r.ax < Z.fwd;
+  const okOff = Math.abs(r.az) > Z.near && Math.abs(r.az) < Z.far;
+  const hold = sim.recoverHold / Z.hold;
+  const why = !abeam ? (r.ax > 0 ? `He is ${Math.round(r.ax)} m ahead: come on slowly` : `He is ${Math.round(-r.ax)} m astern: she has overshot`)
+    : !okOff ? (off < 2 ? 'Too close: keep him clear of her side' : 'Closer: within 20 m of her side') : sog >= Z.speed / KT ? 'Stop her: under 1 knot' : 'Hold her steady';
+  return `<div class="hb-dtl">Casualty · ${r.az > 0 ? 'starboard' : 'port'} side</div>`
+    + `<div class="hb-gaps"><div><span>Ahead</span><b class="${abeam ? 'ok' : 'far'}">${Math.round(r.ax)}<small>m</small></b></div><div><span>Off her side</span><b class="${okOff ? 'ok' : off < 2 ? 'bad' : 'far'}">${Math.max(0, off).toFixed(0)}<small>m</small></b></div></div>`
+    + `<div class="hb-row"><span>Speed over the ground</span><b class="${sog >= Z.speed / KT ? 'bad' : ''}">${sog.toFixed(1)} kn</b></div>`
+    + `<div class="hb-row"><span>Range</span><b>${Math.round(r.d)} m</b></div>`
+    + (sim.stage === 'recover' ? `<div class="hb-ready">Line on him: hauling in <i style="--p:${Math.min(hold, 1).toFixed(2)}"></i></div>` : `<div class="hb-why">${why}</div>`);
+}
 function dockHtml() {
+  if (sim.kind === 'mob') return recoverHtml();
   if (sim.stage !== 'berth' && sim.stage !== 'done') return '';
   const b = sim.berthState();
   if (b.dist > 320) return '';
@@ -375,10 +416,20 @@ function dockHtml() {
 const HARD_KN = 0.5;
 function endHtml() {
   const r = sim.result;
+  const again = '<div class="hb-end-b"><button type="button" data-act="again">Try again <kbd>R</kbd></button><button type="button" data-act="menu">Main menu</button></div>';
+  if (sim.kind === 'mob' && sim.stage === 'lost') {
+    return `<div class="hb-end-k bad">Casualty lost</div><h2>${r.lost === 'screws' ? 'Drawn into the screws' : 'She ran him down'}</h2><p>${r.lost === 'screws' ? 'Keep the stern swung away from him and stop the screws before he is near them.' : 'Come up to him slowly, with him on her side, never under her bow.'}</p>${again}`;
+  }
+  if (sim.kind === 'mob' && sim.stage === 'done') {
+    const stars = '★'.repeat(r.stars) + '<i>' + '★'.repeat(3 - r.stars) + '</i>';
+    return `<div class="hb-end-k">Casualty recovered</div><div class="hb-stars">${stars}</div><h2>He is aboard</h2>`
+      + `<dl><dt>In the water</dt><dd>${mmss(r.time)}</dd><dt>First rudder</dt><dd>${r.firstRudder === 'right' ? (r.immediate ? 'toward him, at once' : 'toward him, but late') : r.firstRudder === 'wrong' ? 'away from him: the stern swung at him' : 'none'}</dd>`
+      + `<dt>Williamson turn</dt><dd>${r.williamson ? `yes: reversed at ${Math.round(r.reversedAt)}° off` : r.reversedAt !== null ? `reversed at ${Math.round(r.reversedAt)}° off (50 to 75 is right)` : 'not used'}</dd>`
+      + `<dt>Contacts</dt><dd>${r.contacts.touch + r.contacts.hard + r.contacts.crash}</dd></dl>${again}`;
+  }
   if (sim.stage === 'wrecked') {
     return `<div class="hb-end-k">Holed</div><h2>The pilot is relieved</h2><p>She hit too hard to go on: ${sim.contacts.hard} hard contacts and ${sim.contacts.crash} collisions.</p><div class="hb-end-b"><button type="button" data-act="again">Sail again <kbd>R</kbd></button><button type="button" data-act="menu">Main menu</button></div>`;
   }
-  const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
   const stars = '★'.repeat(r.stars) + '<i>' + '★'.repeat(3 - r.stars) + '</i>';
   return `<div class="hb-end-k">All fast · berth 7</div><div class="hb-stars">${stars}</div><h2>Finished with engines</h2>`
     + `<dl><dt>Time from letting go</dt><dd>${mmss(r.time)}</dd><dt>Fastest inside</dt><dd>${r.maxInside.toFixed(1)} kn${r.overLimit > 1 ? ` · ${Math.round(r.overLimit)} s over ${SPEED_LIMIT} kn` : ''}</dd>`
@@ -478,7 +529,7 @@ document.querySelector('#btn-ship').addEventListener('click', () => {
   try { sessionStorage.setItem('intercept.chooser', '1'); location.reload(); } catch { location.search = ''; }
 });
 {
-  const t = menuText('harbour');
+  const t = menuText(DRILL);
   document.querySelector('.brand b').textContent = t.brand;
   const sub = document.querySelector('#mission-sub');
   if (sub) sub.textContent = t.sub;
@@ -544,7 +595,10 @@ mapButton.addEventListener('click', () => setMap(!map.enabled));
   item(fsButton, 'Fullscreen', '', 'full');
   item(foldButton, 'Hide the interface', 'C', 'hide');
   item(document.querySelector('#btn-keys'), 'Keyboard shortcuts', '?', 'keys');
-  menuEl.replaceChildren(head('Mission'), restartButton, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, foldButton, fsButton, head('Sound'), soundButton, head('Help'), document.querySelector('#btn-keys'));
+  const switchButton = document.createElement('button');
+  item(switchButton, DRILL === 'mob' ? 'Harbour: out and back in' : 'Drill: man overboard', '', 'restart');
+  switchButton.addEventListener('click', () => { try { const u = new URL(location.href); u.searchParams.set('mode', DRILL === 'mob' ? 'harbour' : 'mob'); u.searchParams.set('start', '1'); location.href = u.toString(); } catch { /* not allowed here */ } });
+  menuEl.replaceChildren(head('Mission'), restartButton, switchButton, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, foldButton, fsButton, head('Sound'), soundButton, head('Help'), document.querySelector('#btn-keys'));
   menuButton.addEventListener('click', () => {
     for (const [b, on] of [[hudButton, hudOn], [mapButton, map.enabled], [soundButton, audio.enabled]]) { b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }
   });
@@ -564,7 +618,9 @@ keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>S</kbd>', 'Sound on / off'],
   ['<kbd>H</kbd> <kbd>C</kbd>', 'Readouts, hide the interface'],
 ].map(([k, d]) => `<dt>${k}</dt><dd>${d}</dd>`).join('');
-keysSheet.querySelector('.keys-note').textContent = 'Jijel naval harbour: out between the pier heads, round the fairway buoy, back in and alongside berth 7 · 6 knots inside';
+keysSheet.querySelector('.keys-note').textContent = DRILL === 'mob'
+  ? 'Man overboard: hard over toward his side at once, the Williamson turn (reverse at 60° off), back down the wake, stop with him abeam'
+  : 'Jijel naval harbour: out between the pier heads, round the fairway buoy, back in and alongside berth 7 · 6 knots inside';
 
 // --- Keys --------------------------------------------------------------------------------------------------------------------
 const input = { wheel: 0, turn: 0, slide: 0 };
@@ -581,7 +637,7 @@ function restart() {
   endEl.hidden = true;
   banner.hidden = true;
   setView('behind', true);
-  say('Alongside berth 3, lines fast. L lets go', '', 4000);
+  say(DRILL === 'mob' ? 'On passage at 10 knots. Keep a good lookout' : 'Alongside berth 3, lines fast. L lets go', '', 4000);
 }
 
 window.addEventListener('keydown', (e) => {
@@ -638,6 +694,7 @@ function applyState() {
   harbour.update(t);
   details.update(t, sim, { bridgeView: view === 'bridge' || view === 'wing' });
   harbour.ghost.visible = sim.stage === 'berth';
+  mobScene.update(t, sim, ship, camera.position);
 }
 
 let lastTask = '', lastDock = '', lastKeys = '', frames = 0, last = performance.now();
@@ -674,5 +731,5 @@ renderer.setAnimationLoop((now) => {
 });
 
 setView('behind', true);
-say('Alongside berth 3 in Jijel, lines fast. L lets go, then take her out', '', 6000);
+say(DRILL === 'mob' ? 'On passage off Jijel at 10 knots. Man overboard drill: be ready' : 'Alongside berth 3 in Jijel, lines fast. L lets go, then take her out', '', 6000);
 window.__harbour = { sim, camera, controls, renderer, scene, env, harbour, ship: ship.group, setView, restart, FAIRWAY, get view() { return view; } };

@@ -66,6 +66,17 @@ export function drawChart(g, W, H, sim, { half = 700, cx = sim.x, cz = sim.z, dp
     g.beginPath(); g.moveTo(x, y - 5 * dpr); g.lineTo(x + 3.5 * dpr, y + 3 * dpr); g.lineTo(x - 3.5 * dpr, y + 3 * dpr); g.fill();
   }
   if (paper) return k; // the paper chart is printed once: no ship on it
+  // the man overboard drill: where he went in (a small circle), the lifebuoy (orange) and him (a red cross)
+  if (sim.casualty) {
+    const [dx, dy] = P(sim.casualty.x, sim.casualty.z);
+    g.strokeStyle = 'rgba(255,255,255,0.6)'; g.lineWidth = dpr; g.beginPath(); g.arc(dx, dy, 4 * dpr, 0, Math.PI * 2); g.stroke();
+    const b = sim.buoyPos();
+    if (b) { const [bx, by] = P(b.x, b.z); g.fillStyle = '#ff8a2a'; g.beginPath(); g.arc(bx, by, 2.6 * dpr, 0, Math.PI * 2); g.fill(); }
+    const c = sim.casualtyPos();
+    const [cx2, cy2] = P(c.x, c.z), q = 5 * dpr;
+    g.strokeStyle = '#ff4d4d'; g.lineWidth = 2.2 * dpr;
+    g.beginPath(); g.moveTo(cx2 - q, cy2 - q); g.lineTo(cx2 + q, cy2 + q); g.moveTo(cx2 + q, cy2 - q); g.lineTo(cx2 - q, cy2 + q); g.stroke();
+  }
   g.fillStyle = C.track;
   for (let i = 0; i < sim.track.length; i += 2) { const [x, y] = P(sim.track[i].x, sim.track[i].z); g.fillRect(x - dpr, y - dpr, 2 * dpr, 2 * dpr); }
   const m = sim.mark;
