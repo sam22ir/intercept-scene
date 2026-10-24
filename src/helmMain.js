@@ -1290,13 +1290,13 @@ const head = (title, chip, tone) => `<div class="hud-head"><b>${title}</b><span 
 const shipEl = document.createElement('div');
 shipEl.id = 'helm-ship';
 shipEl.className = 'helm-ship';
-// The strip is three parts: the hull card, the dome with a propeller and a throttle bar each side (as in Surface battle), and the weapons card.
-// The two cards are rebuilt as text; the propellers and bars stay put so they can turn and light up every frame.
+// The strip is three parts: the hull and kills badges, the dome with a propeller and a throttle bar each side (as in Surface battle), and the
+// missiles and guns badges. The badges are rebuilt as text; the propellers and bars stay put so they can turn and light up every frame.
 const PROP_SVG = '<svg viewBox="-24 -24 48 48" aria-hidden="true"><defs><linearGradient id="pp-brass" x1="0" y1="-23" x2="9" y2="-6" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f6e4a2"/><stop offset="0.55" stop-color="#d9b45c"/><stop offset="1" stop-color="#9b7632"/></linearGradient></defs><g class="pp-rot">'
   + [0, 90, 180, 270].map((a) => `<g transform="rotate(${a})"><path d="M-2 -6 C-8.5 -9.5 -9.5 -19 -4 -22.6 C1 -24.5 8.4 -22 9 -17.6 C7 -12 4 -8 2.2 -6 Z" class="pp-blade"/><path d="M-3.4 -9 C-6 -13 -5.8 -18 -3 -20.6" class="pp-edge"/></g>`).join('')
   + '</g><circle r="5.4" class="pp-hubring"/><circle r="3" class="pp-hub"/><circle r="1" class="pp-cap"/></svg>';
 const statHost = document.createElement('div'), centre = document.createElement('div'), wpnHost = document.createElement('div'), domeHost = document.createElement('div');
-statHost.className = wpnHost.className = 'hs-host';
+statHost.className = wpnHost.className = 'hs-badges'; // the hull and kills badges (left), the missiles and guns badges (right)
 centre.className = 'hs-centre';
 const propL = document.createElement('div'), propR = document.createElement('div'), barL = document.createElement('div'), barR = document.createElement('div');
 propL.className = propR.className = 'hs-prop';
@@ -1407,26 +1407,39 @@ function domeSvg() {
 // The weapons card: one row per weapon (the missile cells as little missiles, the guns' ammunition as a bar), and empty slots
 // kept for the weapons still to come.
 function weaponsHtml() {
-  let mState = sim.cellsLeft > 0 ? 'READY' : 'EMPTY';
-  if (sim.shot) mState = sim.shot.locked ? 'LOCKED' : sim.shot.acquiring ? 'ACQUIRING' : 'TURNING';
-  else if (sim.shipMissiles.length) mState = `${sim.shipMissiles.length} AWAY`;
-  const cls = sim.shot ? (sim.shot.locked ? 'arm lock' : 'arm') : sim.cellsLeft > 0 ? 'on' : '';
-  const pips = Array.from({ length: CELLS }, (_, i) => `<i class="${i === sim.cellsLeft - 1 ? cls : i < sim.cellsLeft ? 'on' : ''}"></i>`).join('');
-  const cells = `<div class="hw-pips">${pips}</div><span class="hw-n">${sim.cellsLeft}</span>`;
+  let mState = sim.cellsLeft > 0 ? 'ready' : 'empty';
+  if (sim.shot) mState = sim.shot.locked ? 'locked' : sim.shot.acquiring ? 'acquiring' : 'turning';
+  else if (sim.shipMissiles.length) mState = `${sim.shipMissiles.length} away`;
+  const mCls = sim.shot ? (sim.shot.locked ? 'lock' : 'arm') : sim.cellsLeft > 0 ? 'ok' : 'out';
   const firing = sim.guns.some((g) => g.firing);
-  const gState = firing ? 'FIRING' : sim.gunRounds <= 0 ? 'EMPTY' : sim.gunsAuto ? 'AUTO' : 'HOLD G';
+  const gState = firing ? 'firing' : sim.gunRounds <= 0 ? 'empty' : sim.gunsAuto ? 'auto' : 'hold G to fire';
   const gMax = GUN_ROUNDS * sim.guns.length;
-  const gPct = Math.max(0, Math.min(100, sim.gunRounds / gMax * 100)).toFixed(1);
-  return `<div class="hs-wpn">`
-    + `<div class="hw-row hw-msl${sim.shot?.locked ? ' lock' : ''}"><b>MISSILES</b><div class="hw-cells">${cells}</div><em>${mState}</em></div>`
-    + `<div class="hw-row hw-gun${firing ? ' fire' : sim.gunsAuto ? ' auto' : ''}"><b>GUNS</b><div class="hw-bar"><i style="width:${gPct}%"></i><s>${sim.gunRounds}</s></div><em>${gState}</em></div>`
-    + '</div>';
+  const gCls = firing ? 'fire' : sim.gunRounds <= 0 ? 'out' : sim.gunsAuto ? 'auto' : 'ok';
+  return badge(`hb-msl ${mCls}`, `<svg viewBox="0 0 24 24">${BI.missile}</svg>`, sim.cellsLeft / CELLS, 'Missiles', `${sim.cellsLeft} of ${CELLS} · ${mState}`, String(sim.cellsLeft))
+    + badge(`hb-gun ${gCls}`, `<svg viewBox="0 0 24 24">${BI.guns}</svg>`, sim.gunRounds / gMax, 'Guns', `${sim.gunRounds} rounds · ${gState}`, sim.gunsAuto ? 'A' : '');
 }
-function statHtml() {
-  const hull = Array.from({ length: 3 }, (_, i) => `<i class="${i < sim.strikes ? 'hit' : ''}"></i>`).join('');
-  return `<div class="hs-stat${sim.strikes ? ' hurt' : ''}"><div class="st-hull"><div class="st-head"><span>HULL</span><em>${sim.out ? 'OUT OF ACTION' : sim.strikes ? `${sim.strikes} OF 3 HITS` : 'INTACT'}</em></div><div class="st-segs">${hull}</div></div>`
-    + `<div class="st-kills"><span>KILLS</span><b>${sim.kills}</b></div></div>`;
+// A round badge: an animated icon in a ring that shows how much is left, a chip for the number or state, and a tip that opens on hover.
+const RING_C = 2 * Math.PI * 20;
+function badge(cls, icon, frac, title, sub, chip) {
+  const f = Math.max(0, Math.min(1, frac));
+  return `<div class="hs-badge ${cls}"><svg class="hb-ring" viewBox="0 0 46 46" aria-hidden="true"><circle class="hb-bg" cx="23" cy="23" r="20"/><circle class="hb-fg" cx="23" cy="23" r="20" style="stroke-dasharray:${(RING_C * f).toFixed(1)} 126"/></svg>`
+    + `<span class="hb-ico">${icon}</span>${chip === '' ? '' : `<i class="hb-chip">${chip}</i>`}<span class="hb-tip"><b>${title}</b><small>${sub}</small></span></div>`;
 }
+const BI = { // 24 x 24 drawings, animated by CSS (helm.css .hb-*)
+  hull: '<g class="hb-bob"><path d="M3 14h18l-2.5 4h-13z"/><path d="M8 14v-3.5h6l2 3.5"/><path d="M11 10.5V7.5h2"/></g><path class="hb-wave" d="M1 21q2-1.4 4 0t4 0 4 0 4 0 4 0 4 0"/>',
+  kills: '<g class="hb-spin"><circle cx="12" cy="12" r="7"/><path d="M12 2.5v5M12 16.5v5M2.5 12h5M16.5 12h5"/></g><circle cx="12" cy="12" r="1.6" style="fill:currentColor;stroke:none"/>',
+  missile: '<g transform="rotate(-45 12 12)"><path class="hb-flame" d="M6.5 10.8L1 12l5.5 1.2z"/><path class="hb-fill" d="M6.5 10.2h8.5l5 1.8-5 1.8H6.5z"/><path d="M6.5 10.2L4.2 7.6h4.2l1.4 2.6M6.5 13.8l-2.3 2.6h4.2l1.4-2.6M12 10.2v3.6"/></g>',
+  guns: '<g class="hb-recoil"><path class="hb-fill" d="M3 15.5h5l2-3h8.5v5.5H10l-2-2.5H3z"/></g><path class="hb-muzzle" d="M20.5 13.2l2.3-1.6M21 15.2h2.6M20.5 17.2l2.3 1.6"/><path d="M6 19.5v2M13 19.5v2"/>',
+};
+function hullBadgeHtml() {
+  const left = 3 - sim.strikes;
+  const tone = sim.out ? 'out' : sim.strikes === 0 ? 'ok' : sim.strikes === 1 ? 'hurt' : 'bad';
+  return badge(`hb-hull ${tone}`, `<svg viewBox="0 0 24 24">${BI.hull}</svg>`, sim.out ? 0 : left / 3, 'Hull', sim.out ? 'out of action' : sim.strikes ? `${sim.strikes} of 3 hits` : 'intact', '');
+}
+function killsBadgeHtml() {
+  return badge('hb-kills', `<svg viewBox="0 0 24 24">${BI.kills}</svg>`, 1, 'Kills', `${sim.kills} drone${sim.kills === 1 ? '' : 's'} shot down`, String(sim.kills));
+}
+function statHtml() { return hullBadgeHtml() + killsBadgeHtml(); }
 
 // The fire-zone gauges: for each weapon a range bar (0 to ZONE_SCALE) with the band it can engage in lit and a marker for the
 // target, plus one short word: READY, or what is still missing (km to close, degrees to turn, blocked).
