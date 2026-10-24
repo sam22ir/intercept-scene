@@ -12,7 +12,7 @@ import { createHarbourMap } from './harbourMap.js';
 import { createHarbourAudio } from './harbourAudio.js';
 import { createHarbourCrew } from './harbourCrew.js';
 import {
-  HarbourSim, TELEGRAPH, RUDDER_MAX, KT, STAGES, SPEED_LIMIT, TARGET_BERTH, START_BERTH, LIGHTS, FAIRWAY, HALF_BEAM, BERTH_TOL, compass, thrusterFactor,
+  HarbourSim, TELEGRAPH, STOP_ORDER, RUDDER_MAX, KT, STAGES, SPEED_LIMIT, TARGET_BERTH, START_BERTH, LIGHTS, FAIRWAY, HALF_BEAM, BERTH_TOL, compass, thrusterFactor,
 } from './harbour.js';
 import './helm.css'; // the manual flight's gear and menu (body.mission-fly)
 import './harbour.css';
@@ -212,14 +212,12 @@ canvas.addEventListener('wheel', (e) => {
 // display (left, near the berth: her distance off the quay at the bow and the stern, and how far along), and the end card.
 const taskEl = document.createElement('div');
 taskEl.className = 'hb-task';
-const connEl = document.createElement('div');
-connEl.className = 'hb-conn';
 const dockEl = document.createElement('div');
 dockEl.className = 'hb-dock';
 const endEl = document.createElement('div');
 endEl.className = 'hb-end';
 endEl.hidden = true;
-document.body.append(taskEl, connEl, dockEl, endEl);
+document.body.append(taskEl, dockEl, endEl);
 
 const ORDER_STAGES = ['alongside', 'depart', 'sea', 'return', 'berth'];
 const brgTo = (x, z) => compass(Math.atan2(z - sim.z, x - sim.x));
@@ -235,38 +233,129 @@ function taskHtml() {
   const lim = inside ? `<div class="hb-limit ${kn > SPEED_LIMIT + 0.2 ? 'over' : ''}">Harbour speed limit <b>${SPEED_LIMIT} kn</b></div>` : '';
   return `<div class="hb-steps">${steps}</div><div class="hb-ttl">${st.title}</div><p>${st.task}</p>${mk}${lim}`;
 }
-const RUD_R = 38;
-function rudderSvg() {
-  const a = THREE.MathUtils.clamp(sim.rudder / RUDDER_MAX, -1, 1) * 70; // degrees on the dial
-  const ticks = [-70, -35, 0, 35, 70].map((d) => { const r = (d * Math.PI) / 180; return `<path d="M${50 + Math.sin(r) * (RUD_R - 6)} ${50 - Math.cos(r) * (RUD_R - 6)}L${50 + Math.sin(r) * RUD_R} ${50 - Math.cos(r) * RUD_R}"/>`; }).join('');
-  const r = (a * Math.PI) / 180;
-  return `<svg viewBox="0 6 100 56" class="hb-rud"><path class="arc p" d="M${50 - Math.sin(1.22) * RUD_R} ${50 - Math.cos(1.22) * RUD_R}A${RUD_R} ${RUD_R} 0 0 1 50 ${50 - RUD_R}"/><path class="arc s" d="M50 ${50 - RUD_R}A${RUD_R} ${RUD_R} 0 0 1 ${50 + Math.sin(1.22) * RUD_R} ${50 - Math.cos(1.22) * RUD_R}"/><g class="tk">${ticks}</g><path class="ndl" d="M50 50L${50 + Math.sin(r) * (RUD_R - 4)} ${50 - Math.cos(r) * (RUD_R - 4)}"/><circle cx="50" cy="50" r="3.5" class="hub"/></svg>`;
-}
-function tapeSvg() {
-  const h = compass(sim.psi);
-  let s = '';
-  for (let d = Math.floor(h / 10) * 10 - 40; d <= h + 40; d += 5) {
-    const x = 60 + (d - h) * 1.4;
-    const major = d % 10 === 0;
-    s += `<path d="M${x} ${major ? 14 : 18}V24"/>`;
-    if (d % 30 === 0) s += `<text x="${x}" y="11">${pad3((d + 360) % 360)}</text>`;
+// --- The steering readouts: Solo Air Defense's strip (the .helm-ship styles in helm.css) --------------------------------------
+// Round badges at the left (hull, speed against the harbour limit, thrusters, contacts), the dome in the middle (the heading slides
+// round its rim, the rudder is the arc on its outer line, the speed under it) between two brass propellers and the telegraph bars,
+// and round command buttons at the right (the lines, the horn, sail again). Each badge and button tells what it is on hover.
+const PROP_SVG = '<svg viewBox="-24 -24 48 48" aria-hidden="true"><defs><linearGradient id="pp-brass" x1="0" y1="-23" x2="9" y2="-6" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f6e4a2"/><stop offset="0.55" stop-color="#d9b45c"/><stop offset="1" stop-color="#9b7632"/></linearGradient></defs><g class="pp-rot">'
+  + [0, 90, 180, 270].map((a) => `<g transform="rotate(${a})"><path d="M-2 -6 C-8.5 -9.5 -9.5 -19 -4 -22.6 C1 -24.5 8.4 -22 9 -17.6 C7 -12 4 -8 2.2 -6 Z" class="pp-blade"/><path d="M-3.4 -9 C-6 -13 -5.8 -18 -3 -20.6" class="pp-edge"/></g>`).join('')
+  + '</g><circle r="5.4" class="pp-hubring"/><circle r="3" class="pp-hub"/><circle r="1" class="pp-cap"/></svg>';
+const shipEl = document.createElement('div');
+shipEl.id = 'harbour-ship';
+shipEl.className = 'helm-ship hp-ship';
+const statHost = document.createElement('div'), centre = document.createElement('div'), cmdHost = document.createElement('div'), domeHost = document.createElement('div');
+statHost.className = 'hs-badges';
+cmdHost.className = 'hs-badges hs-cmds';
+centre.className = 'hs-centre';
+const propL = document.createElement('div'), propR = document.createElement('div'), barL = document.createElement('div'), barR = document.createElement('div');
+propL.className = 'hs-prop pp-l'; propR.className = 'hs-prop pp-r';
+propL.innerHTML = propR.innerHTML = PROP_SVG;
+propL.title = propR.title = 'The two screws: they turn with the engine order (backwards astern)';
+barL.className = barR.className = 'hs-lvl'; // the telegraph: four notches ahead (dead slow to full), lit from the bottom; astern lights them blue
+barL.innerHTML = barR.innerHTML = '<i></i><i></i><i></i><i></i>';
+barL.title = barR.title = 'Engine telegraph (↑ ↓)';
+centre.append(barL, propL, domeHost, propR, barR);
+shipEl.append(statHost, centre, cmdHost);
+document.body.appendChild(shipEl);
+const propRotL = propL.querySelector('.pp-rot'), propRotR = propR.querySelector('.pp-rot');
+let propAng = 0, rev = 0;
+function spinProps(dt) {
+  rev += ((sim.ordered / 16) - rev) * (1 - Math.exp(-dt / 1.5)); // the screws run up and down with the order, not at once
+  propAng = (propAng + rev * 7 * dt) % (Math.PI * 2);
+  const deg = (propAng * 180) / Math.PI;
+  propRotL.style.transform = `rotate(${-deg}deg)`; propRotR.style.transform = `rotate(${deg}deg)`; // twin screws, turning outward
+  const ahead = Math.max(0, sim.order - STOP_ORDER), astern = Math.max(0, STOP_ORDER - sim.order);
+  for (const bar of [barL, barR]) {
+    const n = bar.children.length;
+    for (let q = 0; q < n; q++) {
+      const fromBottom = n - 1 - q;
+      bar.children[q].className = fromBottom < ahead ? (fromBottom === n - 1 ? 'top' : 'on') : fromBottom < astern ? 'astern' : '';
+    }
   }
-  return `<svg viewBox="0 0 120 26" class="hb-tape"><g>${s}</g><path class="ptr" d="M60 25l-3.5 -6h7z"/></svg>`;
+  const blur = Math.min(1, Math.abs(rev)).toFixed(2);
+  propL.style.setProperty('--blur', blur); propR.style.setProperty('--blur', blur);
 }
-function connHtml() {
+const DOME_R = 94, DOME_K = 1.5; // the rim's radius (svg units) and how many degrees of arc a degree of heading takes
+const f1 = (v, d = 0) => v.toFixed(d);
+function domeSvg() {
+  const h = compass(sim.psi);
+  const cx = 100, cy = 100;
+  const pt = (r, a) => [(cx + r * Math.cos(a)).toFixed(1), (cy - r * Math.sin(a)).toFixed(1)];
+  let ticks = '', labels = '';
+  for (let d = Math.ceil((h - 58) / 5) * 5; d <= h + 58; d += 5) {
+    const a = Math.PI / 2 - THREE.MathUtils.degToRad((d - h) * DOME_K);
+    if (a < 0.05 || a > Math.PI - 0.05) continue;
+    const major = d % 30 === 0;
+    const [x1, y1] = pt(DOME_R, a), [x2, y2] = pt(DOME_R - (major ? 9 : d % 10 === 0 ? 6 : 3.5), a);
+    ticks += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="${major ? 'mj' : ''}"/>`;
+    if (major) { const [x, y] = pt(DOME_R - 23, a); labels += `<text x="${x}" y="${y}" class="dl">${String(((d % 360) + 360) % 360).padStart(3, '0')}</text>`; }
+  }
+  // the rudder: an arc on the rim's outer line, from the top (midships), red to port and green to starboard
+  const RR = DOME_R + 2.5, span = THREE.MathUtils.degToRad(74);
+  const th = THREE.MathUtils.clamp(sim.rudder / RUDDER_MAX, -1, 1) * span;
+  const p0 = pt(RR, Math.PI / 2), p1 = pt(RR, Math.PI / 2 - th), pl = pt(RR, Math.PI / 2 + span), pr = pt(RR, Math.PI / 2 - span);
+  const fill = Math.abs(th) > 0.01 ? `<path d="M${p0[0]},${p0[1]} A${RR},${RR} 0 0 ${th > 0 ? 1 : 0} ${p1[0]},${p1[1]}" class="rf ${th > 0 ? 'stbd' : 'port'}"/>` : '';
   const kn = sim.u / KT;
-  const rot = (sim.r * 180 / Math.PI) * 60; // degrees a minute
-  const thrF = thrusterFactor(sim.u);
-  const tel = TELEGRAPH.map((o, i) => `<li class="${i === sim.order ? 'on' : ''} ${o.kn < 0 ? 'ast' : o.kn > 0 ? 'ahd' : 'stp'}">${o.name}</li>`).reverse().join('');
-  const arrow = (v, cls) => `<i class="hb-thr ${cls} ${v < -0.05 ? 'l' : v > 0.05 ? 'r' : ''}" style="--a:${Math.abs(v).toFixed(2)}"></i>`;
-  const bow = sim.thr.yaw + sim.thr.sway, stern = -sim.thr.yaw + sim.thr.sway; // + pushes to starboard
-  const hull = 100 - sim.damage;
-  return `<div class="hb-c hb-c-rud"><span>Rudder</span>${rudderSvg()}<b>${Math.abs(Math.round(sim.rudder * 180 / Math.PI))}° ${sim.rudder > 0.01 ? 'stbd' : sim.rudder < -0.01 ? 'port' : 'mid'}</b></div>`
-    + `<div class="hb-c hb-c-hdg"><span>Heading</span><b class="big">${pad3(compass(sim.psi))}°</b>${tapeSvg()}<small>Turn ${rot >= 0 ? '▶' : '◀'} ${Math.abs(rot).toFixed(0)}°/min</small></div>`
-    + `<div class="hb-c hb-c-spd"><span>Speed</span><b class="big">${Math.abs(kn).toFixed(1)}<small>kn</small></b><small>${kn > 0.05 ? 'ahead' : kn < -0.05 ? 'astern' : 'stopped'}${Math.abs(sim.v) > 0.03 ? ` · ${(Math.abs(sim.v) / KT).toFixed(1)} kn ${sim.v > 0 ? 'to stbd' : 'to port'}` : ''}</small></div>`
-    + `<div class="hb-c hb-c-tel"><span>Telegraph</span><ul>${tel}</ul></div>`
-    + `<div class="hb-c hb-c-thr ${thrF < 0.05 ? 'off' : ''}"><span>Thrusters</span><div class="hb-hull">${arrow(bow, 'bow')}<svg viewBox="0 0 20 60"><path d="M10 2C15 10 16 20 16 30V56H4V30C4 20 5 10 10 2Z"/></svg>${arrow(stern, 'stern')}</div><small>${thrF < 0.05 ? `above ${5} kn` : `${Math.round(thrF * 100)} %`}</small></div>`
-    + `<div class="hb-c hb-c-dmg ${hull < 60 ? 'bad' : hull < 99 ? 'warn' : ''}"><span>Hull</span><b>${Math.round(hull)}<small>%</small></b><div class="hb-bar"><i style="width:${hull}%"></i></div><small>${sim.contacts.touch + sim.contacts.hard + sim.contacts.crash} contacts</small></div>`;
+  const way = kn > 0.05 ? 'ahead' : kn < -0.05 ? 'astern' : 'stopped';
+  const side = Math.abs(sim.v) > 0.03 ? ` · ${f1(Math.abs(sim.v) / KT, 1)} ${sim.v > 0 ? '▶' : '◀'}` : '';
+  return `<svg viewBox="0 0 200 104" class="dome-svg" aria-hidden="true"><path d="M6,100 A${DOME_R},${DOME_R} 0 0 1 194,100" class="rim"/>${ticks}${labels}`
+    + `<path d="M${cx - 4},${cy - DOME_R - 1} L${cx + 4},${cy - DOME_R - 1} L${cx},${cy - DOME_R + 6} Z" class="lub"/>`
+    + `<text x="${cx}" y="79" class="hd">${pad3(h)}°</text>`
+    + `<path d="M${pl[0]},${pl[1]} A${RR},${RR} 0 0 1 ${pr[0]},${pr[1]}" class="rt"/>${fill}`
+    + `<line x1="${p0[0]}" y1="${(Number(p0[1]) - 4).toFixed(1)}" x2="${p0[0]}" y2="${(Number(p0[1]) + 4).toFixed(1)}" class="rm"/>`
+    + `<text x="${cx}" y="94" class="sp">${f1(Math.abs(kn), 1)}<tspan> kn ${way}${side}</tspan></text></svg>`;
+}
+const RING_C = 2 * Math.PI * 20;
+function badge(cls, icon, frac, title, sub, chip) {
+  const k = Math.max(0, Math.min(1, frac));
+  return `<div class="hs-badge ${cls}"><svg class="hb-ring" viewBox="0 0 46 46" aria-hidden="true"><circle class="hb-bg" cx="23" cy="23" r="20"/><circle class="hb-fg" cx="23" cy="23" r="20" style="stroke-dasharray:${(RING_C * k).toFixed(1)} 126"/></svg>`
+    + `<span class="hb-ico"><svg viewBox="0 0 24 24">${icon}</svg></span>${chip === '' ? '' : `<i class="hb-chip">${chip}</i>`}<span class="hb-tip"><b>${title}</b><small>${sub}</small></span></div>`;
+}
+const BI = { // 24 x 24 drawings, animated by CSS (helm.css .hb-bob / .hb-wave, harbour.css .hpb-*)
+  hull: '<g class="hb-bob"><path class="hb-fill" d="M2 15h18.2l3-1.6-2.1 5.6H4.6z"/><path d="M8.6 15l1.5-4h6l2.2 4"/><path d="M11.6 11l.9-2.6h3.3l.8 2.6"/><path d="M14.3 8.4V3.6M13 5.2h2.6"/><circle cx="7.4" cy="13.1" r="1.4"/></g><path class="hb-wave" d="M1 21.4q2-1.3 4 0t4 0 4 0 4 0 4 0 4 0"/>',
+  speed: '<path d="M3.5 17a8.5 8.5 0 1 1 17 0"/><path d="M6 17h1.4M16.6 17H18M12 8.6V10M7.4 10.8l1 1M16.6 10.8l-1 1"/><g class="hpb-needle"><path class="hb-fill" d="M12 17l-1.2-1.2 5-4.4 .6.6z"/></g><circle cx="12" cy="17" r="1.4"/>',
+  thr: '<path class="hb-fill" d="M12 2.5c3 3 3.6 6.5 3.6 9.5v9.5H8.4V12c0-3 .6-6.5 3.6-9.5z"/><g class="hpb-push"><path d="M17.8 7.5h4M20 5.6l1.9 1.9L20 9.4"/><path d="M6.2 17.5h-4M4 15.6l-1.9 1.9L4 19.4"/></g>',
+  bump: '<path d="M3 20.5h18M5.5 20.5V8.5h3v12M15.5 20.5V8.5h3v12"/><rect class="hb-fill" x="9.6" y="11.5" width="4.8" height="6" rx="1.2"/><g class="hpb-hit"><path d="M12 3v3M8.6 4.4l1.3 2.2M15.4 4.4l-1.3 2.2"/></g>',
+};
+function badgesHtml() {
+  const hull = 100 - sim.damage, n = sim.contacts.touch + sim.contacts.hard + sim.contacts.crash;
+  const tone = sim.stage === 'wrecked' ? 'out' : sim.damage === 0 ? 'ok' : sim.damage < 40 ? 'hurt' : 'bad';
+  const kn = Math.abs(sim.u) / KT, inside = sim.inside;
+  const sCls = !inside ? 'sea' : kn > SPEED_LIMIT + 0.2 ? 'over' : kn > SPEED_LIMIT - 1 ? 'near' : 'ok';
+  const tf = thrusterFactor(sim.u), busy = Math.abs(sim.thr.yaw) + Math.abs(sim.thr.sway) > 0.05;
+  return badge(`hb-hull ${tone}`, BI.hull, hull / 100, 'Hull', `${Math.round(hull)} % · ${sim.contacts.hard} hard contacts, ${sim.contacts.crash} collisions`, '')
+    + badge(`hpb-speed ${sCls}`, BI.speed, kn / (inside ? SPEED_LIMIT : 16), inside ? `Harbour limit ${SPEED_LIMIT} kn` : 'Speed', `${f1(kn, 1)} kn${inside ? (sCls === 'over' ? ': too fast inside' : ' inside the harbour') : ' outside the harbour'}`, f1(kn, 0))
+    + badge(`hpb-thr ${tf < 0.05 ? 'off' : busy ? 'busy' : 'ok'}`, BI.thr, tf, 'Thrusters', tf < 0.05 ? 'no effect above 5 kn' : `${Math.round(tf * 100)} % · Q E turn, A D sideways`, '')
+    + badge(`hpb-bump ${sim.contacts.hard + sim.contacts.crash ? 'bad' : n ? 'warn' : 'ok'}`, BI.bump, 1, 'Contacts', n ? `${sim.contacts.touch} touches, ${sim.contacts.hard} hard, ${sim.contacts.crash} collisions` : 'none yet', String(n));
+}
+const CI = { // the commands' drawings, 32 x 32
+  lines: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 27h18M10 27v-9h4v9M18 27v-9h4v9M8.5 18h15"/><g class="hpc-rope"><path d="M12 18c0-5 2-9 8-11.5M20 6.5c2.5-1 5-.6 6.5 1"/><circle class="fill" cx="27" cy="8" r="2.2"/></g></svg>',
+  horn: '<svg viewBox="0 0 32 32" aria-hidden="true"><path class="fill" d="M5 13h4l9-6v18l-9-6H5z"/><path d="M9 13v6"/><g class="hpc-waves"><path d="M21.5 11.5a6 6 0 0 1 0 9"/><path class="w2" d="M24.5 8.5a10 10 0 0 1 0 15"/></g></svg>',
+  again: '<svg viewBox="0 0 32 32" aria-hidden="true"><g class="fu-turn"><path d="M26 16a10 10 0 1 1-3.2-7.4M26 6v6h-6"/></g></svg>',
+};
+const cmd = (cls, act, icon, title, sub, key, on) => `<button type="button" class="helm-act ${cls}${on ? ' go' : ''}" data-act="${act}"><i class="sp-ico">${icon}</i><span class="sp-txt"><b>${title}</b><small>${sub}</small></span><kbd>${key}</kbd></button>`;
+function cmdHtml() {
+  const b = sim.stage === 'berth' ? sim.berthState() : null;
+  const lt = sim.stage === 'alongside' ? ['Let go the lines', 'fore and aft, stern line first'] : b ? ['Make fast', b.ok ? 'she lies still: lines on' : b.why] : sim.stage === 'done' ? ['All fast', 'alongside berth 7'] : ['Lines', 'stowed: they go on at berth 7'];
+  return cmd('helm-act-heli hpc-lines', 'lines', CI.lines, lt[0], lt[1], 'L', sim.stage === 'alongside' || (b && b.ok))
+    + cmd('hpc-horn', 'horn', CI.horn, 'Ship\'s horn', 'one prolonged blast leaving the berth', 'B', false)
+    + cmd('fu-again', 'again', CI.again, 'Sail again', 'back alongside berth 3', 'R', sim.over);
+}
+cmdHost.addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  ({ lines: () => sim.lineKey(), horn: () => { audio.horn(); say('One prolonged blast', '', 1600); }, again: () => restart() })[btn.dataset.act]?.();
+  btn.blur();
+});
+let lastBadges = '', lastDome = '', lastCmd = '';
+function updateBottom(dt) {
+  const bd = badgesHtml();
+  if (bd !== lastBadges) { statHost.innerHTML = bd; lastBadges = bd; }
+  const dm = `<div class="hs-dome">${domeSvg()}</div>`;
+  if (dm !== lastDome) { domeHost.innerHTML = dm; lastDome = dm; }
+  const cm = cmdHtml();
+  if (cm !== lastCmd) { cmdHost.innerHTML = cm; lastCmd = cm; }
+  spinProps(dt);
 }
 function dockHtml() {
   if (sim.stage !== 'berth' && sim.stage !== 'done') return '';
@@ -303,38 +392,60 @@ endEl.addEventListener('click', (e) => {
   else if (a === 'menu') document.querySelector('#btn-ship').click();
 });
 
-// The keys for this moment, at the foot of the screen (hidden at the start: the keys button shows it).
+// The keys for this moment, as Solo Air Defense shows them (the #fly-keys tiles in helm.css; the keys button in the view strip shows
+// them). A tile can be clicked or held: it does what the key does.
 const keysEl = document.createElement('div');
-keysEl.className = 'hb-keys';
+keysEl.id = 'fly-keys';
+keysEl.className = 'fly-keys';
 document.body.appendChild(keysEl);
+const HELD = new Set(['ArrowLeft', 'ArrowRight', 'q', 'e', 'a', 'd']);
+keysEl.addEventListener('pointerdown', (e) => {
+  const key = e.target instanceof Element ? e.target.closest('.fk-btn')?.dataset.key : null;
+  if (!key) return;
+  e.preventDefault();
+  window.dispatchEvent(new KeyboardEvent('keydown', { key }));
+  const up = () => { window.dispatchEvent(new KeyboardEvent('keyup', { key })); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+  if (HELD.has(key)) { window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up); } else up();
+});
 function keysHtml() {
-  const k = (key, label, on = false) => `<span class="fk ${on ? 'on' : ''}"><kbd>${key}</kbd>${label}</span>`;
-  const out = [k('← →', 'rudder', input.wheel !== 0), k('↑ ↓', 'telegraph')];
-  out.push(k('Q E', 'turn on the spot', input.turn !== 0), k('A D', 'sideways', input.slide !== 0));
-  if (sim.stage === 'alongside') out.unshift(k('L', 'let go the lines', true));
-  if (sim.stage === 'berth' && sim.berthState().ok) out.unshift(k('L', 'make fast', true));
-  out.push(k('B', 'horn'), k('1–6', 'views'));
+  const k = (key, label, data, on = false) => `<span class="fk fk-btn${on ? ' on' : ''}" data-key="${data}"><kbd>${key}</kbd>${label}</span>`;
+  const out = [];
+  if (sim.stage === 'alongside') out.push(k('L', 'let go the lines', 'l', true));
+  if (sim.stage === 'berth' && sim.berthState().ok) out.push(k('L', 'make fast', 'l', true));
+  if (sim.over) out.push(k('R', 'sail again', 'r', true));
+  out.push(k('←', 'port', 'ArrowLeft', input.wheel < 0), k('→', 'starboard', 'ArrowRight', input.wheel > 0), k('↑', 'more ahead', 'ArrowUp'), k('↓', 'more astern', 'ArrowDown'));
+  out.push(k('Q', 'turn to port', 'q', input.turn < 0), k('E', 'turn to stbd', 'e', input.turn > 0), k('A', 'sideways port', 'a', input.slide < 0), k('D', 'sideways stbd', 'd', input.slide > 0));
+  out.push(k('B', 'horn', 'b'), k('V', 'next view', 'v'));
   return out.join('');
 }
 
-// --- The view strip and the gear menu ------------------------------------------------------------------------------------------
+// --- The view strip (Solo Air Defense's .helm-views: icons, the one in use opens into a pill with its name) and the gear menu ---
 const strip = document.createElement('div');
-strip.className = 'hb-views';
-const ICONS = {
-  bridge: '<circle cx="12" cy="12" r="6.2"/><circle cx="12" cy="12" r="1.7"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/>',
-  wing: '<path d="M4 20V9h9l6 4v7z"/><path d="M13 9V5h-4M4 14h15"/>',
-  behind: '<path d="M8 14h13l-2.5 4H10z"/><path d="M12 14v-3h5l1.5 3"/><path d="M2 12.5h3.5M1 15.5h4.5M3 18.5h3.5"/>',
-  above: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 6.5c2 2 2.6 4.5 2.6 7v3.5H9.4V13.5c0-2.5.6-5 2.6-7z"/>',
-  orbit: '<g transform="rotate(-25 12 12)"><ellipse cx="12" cy="12" rx="9.5" ry="4.6"/></g><path d="M9.7 12.6h4.6l-.9 1.5h-2.8z"/>',
-  tower: '<path d="M10 21l1-12h2l1 12z"/><path d="M9.5 9h5M10.5 6h3v3h-3z"/><path d="M6 6.5L3 5M18 6.5L21 5M6 8.5L3 10M18 8.5L21 10"/>',
+strip.className = 'helm-views';
+const MOTION = !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const ICONS = { // drawn for what each view is
+  bridge: '<g class="wheel"><circle cx="12" cy="12" r="6.2"/><circle cx="12" cy="12" r="1.7"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4M5.3 5.3l2.5 2.5M16.2 16.2l2.5 2.5M18.7 5.3l-2.5 2.5M7.8 16.2l-2.5 2.5"/></g>',
+  wing: '<path d="M3 20.5h18"/><path d="M5 20.5V10h8.5l5.5 4v6.5"/><path d="M13.5 10V6h-4v4M7.5 14h3M14 14h3"/><g class="lines"><path d="M20 9l2.5-1.5M20 12h3"/></g>',
+  behind: '<path d="M8 14h13l-2.5 4H10z"/><path d="M12 14v-3h5l1.5 3"/><g class="lines"><path d="M2 12.5h3.5M1 15.5h4.5M3 18.5h3.5"/></g>',
+  above: '<path d="M12 2.5c3.2 3 4.3 7 4.3 11v5.7L14 22h-4l-2.3-2.8v-5.7c0-4 1.1-8 4.3-11z"/><path d="M12 8v10M9.7 13h4.6"/>',
+  orbit: '<g transform="rotate(-25 12 12)"><ellipse cx="12" cy="12" rx="9.5" ry="4.6"/>' + (MOTION ? '<circle r="1.7" style="fill:currentColor"><animateMotion dur="3.2s" repeatCount="indefinite" path="M21.5 12a9.5 4.6 0 1 1 -19 0a9.5 4.6 0 1 1 19 0"/></circle>' : '<circle cx="21.5" cy="12" r="1.7" style="fill:currentColor"/>') + '</g><path d="M9.7 12.6h4.6l-.9 1.5h-2.8zM12 10.3v2.3"/>',
+  tower: '<path d="M9.2 21l1.1-8h3.4l1.1 8M7.5 13h9l1.3-4H6.2zM10 9V5.5h4V9M12 2.5v3"/><g class="sweep"><path class="beam" d="M12 4.2L21 1.5v5.4z"/></g>',
 };
-strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (${i + 1})" aria-label="${VIEW_NAMES[v]}"><svg viewBox="0 0 24 24">${ICONS[v]}</svg><span>${VIEW_NAMES[v]}</span></button>`).join('')
-  + '<button type="button" class="hb-keys-btn" title="Keys" aria-label="Show the keys" aria-pressed="false"><svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></button>';
+strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (${i + 1})" aria-label="${VIEW_NAMES[v]}"><svg viewBox="0 0 24 24">${ICONS[v]}</svg><span>${VIEW_NAMES[v]}</span></button>`).join('');
 document.body.appendChild(strip);
 const viewButtons = [...strip.querySelectorAll('button[data-view]')];
-viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
-const keysBtn = strip.querySelector('.hb-keys-btn');
-keysBtn.addEventListener('click', () => { const on = keysEl.classList.toggle('show'); keysBtn.classList.toggle('active', on); keysBtn.setAttribute('aria-pressed', String(on)); keysBtn.blur(); });
+viewButtons.forEach((b) => b.addEventListener('click', () => { setView(b.dataset.view); b.blur(); }));
+{ // the keys button: shows or hides the key tiles (hidden at the start)
+  const kb = document.createElement('button');
+  kb.type = 'button';
+  kb.className = 'helm-keys-btn';
+  kb.title = 'Keys';
+  kb.setAttribute('aria-label', 'Show the keys');
+  kb.setAttribute('aria-pressed', 'false');
+  kb.innerHTML = '<svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>';
+  strip.appendChild(kb);
+  kb.addEventListener('click', () => { const on = keysEl.classList.toggle('show'); kb.classList.toggle('active', on); kb.setAttribute('aria-pressed', String(on)); kb.blur(); });
+}
 
 const FOLD_KEY = 'intercept.uiHidden';
 const foldButton = document.querySelector('#btn-fold');
@@ -390,7 +501,7 @@ const hudButton = document.querySelector('#btn-hud');
 let hudOn = true;
 function setHud(on) {
   hudOn = on;
-  for (const el of [taskEl, connEl, dockEl]) el.hidden = !on;
+  for (const el of [taskEl, shipEl, dockEl]) el.hidden = !on;
   hudButton.classList.toggle('active', on);
   hudButton.setAttribute('aria-pressed', String(on));
 }
@@ -413,16 +524,26 @@ mapButton.addEventListener('click', () => setMap(!map.enabled));
   restartButton.addEventListener('click', () => restart());
   const fsButton = document.querySelector('#btn-fullscreen');
   fsButton.addEventListener('click', () => { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch { /* not allowed here */ } });
-  const item = (b, label, key) => { b.className = ''; b.setAttribute('role', 'menuitem'); b.innerHTML = `${label}${key ? `<kbd>${key}</kbd>` : ''}`; return b; };
+  const MI = { // a small drawing in front of each entry (helm.css .mi)
+    restart: '<path class="mi-a" d="M20 12a8 8 0 1 1-2.6-5.9M20 4v4.5h-4.5"/>',
+    menu: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+    readouts: '<rect x="3.5" y="4.5" width="17" height="12" rx="2"/><path d="M7 13l3-3.2 2.4 2 3.6-4.3M9 20h6M12 16.5V20"/>',
+    chart: '<path d="M3.5 6l5.5-2 6 2 5.5-2v14l-5.5 2-6-2-5.5 2z"/><path d="M9 4v14M15 6v14"/>',
+    sound: '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="mi-w1" d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path class="mi-w2" d="M18.2 6.8a7.5 7.5 0 0 1 0 10.4"/>',
+    full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    hide: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path class="mi-a" d="M4 4l16 16"/>',
+    keys: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7.5 14h9"/>',
+  };
+  const item = (b, label, key, ic) => { b.className = ''; b.setAttribute('role', 'menuitem'); b.innerHTML = `<span class="mi-l">${ic ? `<svg class="mi" viewBox="0 0 24 24" aria-hidden="true">${MI[ic]}</svg>` : ''}${label}</span>${key ? `<kbd>${key}</kbd>` : ''}`; return b; };
   const head = (t) => { const h = document.createElement('div'); h.className = 'menu-h'; h.textContent = t; return h; };
-  item(restartButton, 'Sail again', 'R');
-  item(document.querySelector('#btn-ship'), 'Main menu', '');
-  item(hudButton, 'Readouts', 'H');
-  item(mapButton, 'Chart', 'N');
-  item(soundButton, 'Sound', 'S');
-  item(fsButton, 'Fullscreen', '');
-  item(foldButton, 'Hide the interface', 'C');
-  item(document.querySelector('#btn-keys'), 'Keyboard shortcuts', '?');
+  item(restartButton, 'Sail again', 'R', 'restart');
+  item(document.querySelector('#btn-ship'), 'Main menu', '', 'menu');
+  item(hudButton, 'Readouts', 'H', 'readouts');
+  item(mapButton, 'Chart', 'N', 'chart');
+  item(soundButton, 'Sound', 'S', 'sound');
+  item(fsButton, 'Fullscreen', '', 'full');
+  item(foldButton, 'Hide the interface', 'C', 'hide');
+  item(document.querySelector('#btn-keys'), 'Keyboard shortcuts', '?', 'keys');
   menuEl.replaceChildren(head('Mission'), restartButton, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, foldButton, fsButton, head('Sound'), soundButton, head('Help'), document.querySelector('#btn-keys'));
   menuButton.addEventListener('click', () => {
     for (const [b, on] of [[hudButton, hudOn], [mapButton, map.enabled], [soundButton, audio.enabled]]) { b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }
@@ -519,7 +640,7 @@ function applyState() {
   harbour.ghost.visible = sim.stage === 'berth';
 }
 
-let lastTask = '', lastConn = '', lastDock = '', lastKeys = '', frames = 0, last = performance.now();
+let lastTask = '', lastDock = '', lastKeys = '', frames = 0, last = performance.now();
 let endShown = false;
 renderer.setAnimationLoop((now) => {
   const dt = Math.max(0, Math.min((now - last) / 1000, 0.1));
@@ -542,7 +663,7 @@ renderer.setAnimationLoop((now) => {
   map.update(sim);
   if (hudOn) {
     const tk = taskHtml(); if (tk !== lastTask) { taskEl.innerHTML = tk; lastTask = tk; }
-    const cn = connHtml(); if (cn !== lastConn) { connEl.innerHTML = cn; lastConn = cn; }
+    updateBottom(dt);
     const dk = dockHtml(); if (dk !== lastDock) { dockEl.innerHTML = dk; dockEl.classList.toggle('show', !!dk); lastDock = dk; }
   }
   const ky = keysHtml(); if (ky !== lastKeys) { keysEl.innerHTML = ky; lastKeys = ky; }

@@ -1,30 +1,41 @@
-/* "Harbour pilot": its own interface pieces (the top bar's gear and menu are the manual flight's, body.mission-fly in helm.css). */
-body.mission-harbour #hud, body.mission-harbour .fly-keys { display: none; }
-body:not(.mission-harbour) :is(.hb-task, .hb-conn, .hb-dock, .hb-end, .hb-map, .hb-views, .hb-keys) { display: none; }
-body.mission-harbour.ui-hidden :is(.hb-task, .hb-conn, .hb-dock, .hb-map, .hb-views, .hb-keys) { display: none; }
+/* "Harbour pilot": its own interface pieces. The steering strip, the view icons, the key tiles and the gear menu are Solo Air
+   Defense's (helm.css: .helm-ship, .helm-views, #fly-keys, body.mission-fly #menu); what is here is this mission's own. Its class
+   names start hb- (cards, chart, end card), hpb- (its badges) and hpc- (its commands): never reuse helm.css's hb-* names (hb-hull,
+   hb-ring, hb-chip ...), which every mission's CSS shares in one bundle. */
+body.mission-harbour #hud { display: none; }
+body:not(.mission-harbour) :is(.hb-task, .hb-dock, .hb-end, .hb-map) { display: none; }
+body.mission-harbour.ui-hidden :is(.hb-task, .hb-dock, .hb-map) { display: none; }
 body.mission-harbour .brand { display: none; }
-.hb-task, .hb-conn, .hb-dock, .hb-map, .hb-end, .hb-views, .hb-keys {
+.hb-task, .hb-dock, .hb-map, .hb-end {
   --hb-bg: rgba(8, 13, 20, 0.62); --hb-line: rgba(255, 255, 255, 0.12); --hb-ok: #3ddc84; --hb-warn: #ffc454; --hb-bad: #ff5d61;
   font-family: inherit; color: var(--text);
 }
-[hidden].hb-task, [hidden].hb-conn, [hidden].hb-dock, [hidden].hb-end, [hidden].hb-map { display: none; }
+[hidden].hb-task, [hidden].hb-dock, [hidden].hb-end, [hidden].hb-map { display: none; }
 body.mission-harbour .shot-caption.hb-say-good { color: #a6ffc9; border-color: rgba(61, 220, 132, 0.8); background: rgba(8, 36, 22, 0.75); }
 body.mission-harbour .shot-caption.hb-say-warn { color: #ffd98a; border-color: rgba(255, 196, 84, 0.8); background: rgba(40, 28, 6, 0.75); }
 
-/* The views: a strip of icons at the top centre, the one in use opens into a pill with its name. */
-.hb-views {
-  position: fixed; z-index: 11; top: calc(var(--gap) + var(--safe-t)); left: 50%; transform: translateX(-50%);
-  display: flex; gap: 3px; padding: 4px; border-radius: 999px; background: var(--hb-bg); border: 1px solid var(--hb-line);
-  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+/* The steering strip's badges and commands of this mission (the strip itself is helm.css's). */
+.hs-badge.hpb-speed { color: #3ddc84; } .hs-badge.hpb-speed.near { color: #ffc454; } .hs-badge.hpb-speed.sea { color: #8fd0ff; }
+.hs-badge.hpb-speed.over { color: #ff5d61; box-shadow: 0 0 0 2px rgba(255, 93, 97, 0.5), 0 0 14px rgba(255, 93, 97, 0.55); }
+.hs-badge.hpb-thr { color: #8fd0ff; } .hs-badge.hpb-thr.busy { color: #ffb347; } .hs-badge.hpb-thr.off { color: #6c7682; }
+.hs-badge.hpb-bump { color: #3ddc84; } .hs-badge.hpb-bump.warn { color: #ffc454; } .hs-badge.hpb-bump.bad { color: #ff5d61; }
+.hs-badge.hpb-speed .hb-chip { color: inherit; }
+.helm-act.hpc-horn { border-color: rgba(143, 208, 255, 0.5); } .helm-act.hpc-horn .sp-ico { color: #8fd0ff; }
+.helm-act.hpc-lines .sp-ico { color: #f2c94c; }
+.helm-act .sp-ico .hpc-waves path { opacity: 0.85; }
+@media (prefers-reduced-motion: no-preference) {
+  .hpb-speed .hpb-needle { transform-origin: 12px 17px; animation: hpb-swing 2.4s ease-in-out infinite alternate; }
+  .hpb-speed.over .hpb-needle { animation-duration: 0.35s; }
+  .hpb-thr.busy .hpb-push { animation: hpb-push 0.5s ease-in-out infinite alternate; }
+  .hpb-bump.warn .hpb-hit, .hpb-bump.bad .hpb-hit { animation: hb-blink 0.6s steps(2) infinite; }
+  .helm-act.hpc-horn:hover .hpc-waves path { animation: hpc-wave 0.8s ease-out infinite; }
+  .helm-act.hpc-horn:hover .hpc-waves .w2 { animation-delay: 0.25s; }
+  .helm-act.hpc-lines.go .hpc-rope { transform-origin: 12px 18px; animation: hpc-rope 1.4s ease-in-out infinite alternate; }
 }
-.hb-views button { display: inline-flex; align-items: center; gap: 6px; height: 32px; min-width: 32px; padding: 0 8px; border-radius: 999px; border: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 650; }
-.hb-views button:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
-.hb-views button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.hb-views button span { display: none; }
-.hb-views button.active { background: var(--accent); color: #1a0d02; padding: 0 12px 0 9px; }
-.hb-views button.active span { display: inline; }
-.hb-views .hb-keys-btn { margin-left: 4px; border-left: 1px solid var(--hb-line); border-radius: 0 999px 999px 0; }
-.hb-views .hb-keys-btn.active { background: rgba(255, 255, 255, 0.14); color: var(--text); }
+@keyframes hpb-swing { from { transform: rotate(-24deg); } to { transform: rotate(18deg); } }
+@keyframes hpb-push { from { transform: translateX(-1px); } to { transform: translateX(1.5px); } }
+@keyframes hpc-wave { from { opacity: 0.2; transform: translateX(-1px); } to { opacity: 1; transform: translateX(1.5px); } }
+@keyframes hpc-rope { from { transform: rotate(-6deg); } to { transform: rotate(5deg); } }
 
 /* The task card, top right: the five steps, the order, the next mark and the speed limit inside. */
 .hb-task {
@@ -43,51 +54,6 @@ body.mission-harbour .shot-caption.hb-say-warn { color: #ffd98a; border-color: r
 .hb-mark b { font-variant-numeric: tabular-nums; font-size: 14px; }
 .hb-limit { margin-top: 8px; padding: 5px 9px; border-radius: 8px; font-size: 11.5px; color: rgba(255, 255, 255, 0.8); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--hb-line); }
 .hb-limit.over { color: #1d0d00; background: var(--hb-warn); border-color: var(--hb-warn); font-weight: 700; animation: hb-now 0.6s ease-in-out infinite alternate; }
-
-/* The conning display, bottom middle. */
-.hb-conn {
-  position: fixed; z-index: 10; left: 50%; bottom: calc(var(--gap) + var(--safe-b)); transform: translateX(-50%);
-  display: flex; align-items: stretch; gap: 0; border-radius: 16px; background: var(--hb-bg); border: 1px solid var(--hb-line);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 10px 34px rgba(0, 0, 0, 0.35);
-}
-.hb-c { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 2px; padding: 8px 14px 9px; min-width: 86px; border-left: 1px solid var(--hb-line); }
-.hb-c:first-child { border-left: 0; }
-.hb-c > span { font-size: 9.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
-.hb-c b { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.hb-c b.big { font-size: 24px; line-height: 1.05; letter-spacing: -0.01em; }
-.hb-c b small { font-size: 11px; margin-left: 2px; color: var(--muted); font-weight: 600; }
-.hb-c > small { font-size: 10.5px; color: rgba(255, 255, 255, 0.72); white-space: nowrap; }
-.hb-rud { width: 92px; height: 50px; }
-.hb-rud .arc { fill: none; stroke-width: 5; stroke-linecap: round; }
-.hb-rud .arc.p { stroke: rgba(255, 93, 97, 0.75); }
-.hb-rud .arc.s { stroke: rgba(61, 220, 132, 0.75); }
-.hb-rud .tk path { stroke: rgba(255, 255, 255, 0.6); stroke-width: 1.4; }
-.hb-rud .ndl { stroke: #fff; stroke-width: 2.6; stroke-linecap: round; }
-.hb-rud .hub { fill: #fff; }
-.hb-tape { width: 120px; height: 26px; margin-top: 2px; }
-.hb-tape path { stroke: rgba(255, 255, 255, 0.6); stroke-width: 1; }
-.hb-tape text { fill: rgba(255, 255, 255, 0.75); font-size: 7px; text-anchor: middle; font-family: inherit; }
-.hb-tape .ptr { fill: var(--accent); stroke: none; }
-.hb-c-tel ul { list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 1px; font-size: 9.5px; line-height: 1.25; text-align: center; }
-.hb-c-tel li { padding: 0 8px; border-radius: 4px; color: rgba(255, 255, 255, 0.45); white-space: nowrap; }
-.hb-c-tel li.on { color: #1a0d02; font-weight: 800; background: #e9eef2; }
-.hb-c-tel li.on.ahd { background: var(--hb-ok); }
-.hb-c-tel li.on.ast { background: var(--hb-bad); color: #fff; }
-.hb-hull { display: flex; flex-direction: column; align-items: center; position: relative; height: 62px; width: 60px; }
-.hb-hull svg { width: 16px; height: 50px; margin-top: 6px; }
-.hb-hull svg path { fill: rgba(255, 255, 255, 0.2); stroke: rgba(255, 255, 255, 0.7); stroke-width: 1.2; }
-.hb-thr { position: absolute; left: 50%; width: 0; height: 0; }
-.hb-thr.bow { top: 14px; }
-.hb-thr.stern { top: 46px; }
-.hb-thr::before { content: ''; position: absolute; top: -5px; width: calc(6px + 16px * var(--a)); height: 10px; opacity: 0; background: var(--accent); clip-path: polygon(0 30%, 65% 30%, 65% 0, 100% 50%, 65% 100%, 65% 70%, 0 70%); }
-.hb-thr.r::before { left: 10px; opacity: 1; }
-.hb-thr.l::before { right: 10px; opacity: 1; transform: scaleX(-1); }
-.hb-c-thr.off { opacity: 0.45; }
-.hb-c-dmg .hb-bar { width: 64px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.14); overflow: hidden; margin: 3px 0 2px; }
-.hb-c-dmg .hb-bar i { display: block; height: 100%; background: var(--hb-ok); }
-.hb-c-dmg.warn .hb-bar i { background: var(--hb-warn); }
-.hb-c-dmg.bad .hb-bar i { background: var(--hb-bad); }
-.hb-c-dmg.bad b { color: var(--hb-bad); }
 
 /* The berthing display: down the left, near the berth. */
 .hb-dock {
@@ -113,27 +79,15 @@ body.mission-harbour .shot-caption.hb-say-warn { color: #ffd98a; border-color: r
 .hb-ready { margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--hb-ok); }
 .hb-ready i { display: block; height: 4px; margin-top: 5px; border-radius: 2px; background: linear-gradient(90deg, var(--hb-ok) calc(var(--p) * 100%), rgba(255, 255, 255, 0.14) 0); }
 
-/* The chart, bottom right. */
+/* The chart, bottom right, the size of the other missions' map so the steering strip stays clear of it. */
 .hb-map {
-  position: fixed; z-index: 9; right: calc(var(--gap) + var(--safe-r)); bottom: calc(var(--gap) + var(--safe-b)); width: 300px; height: 230px;
+  position: fixed; z-index: 9; right: calc(var(--gap) + var(--safe-r)); bottom: calc(var(--gap) + var(--safe-b)); width: var(--map-d, 150px); height: calc(var(--map-d, 150px) * 0.82);
   border-radius: 14px; overflow: hidden; border: 1px solid var(--hb-line); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); cursor: pointer;
 }
 .hb-map canvas { display: block; width: 100%; height: 100%; }
 .hb-map-scale { position: absolute; left: 10px; bottom: 16px; font-size: 10px; letter-spacing: 0.06em; color: rgba(255, 255, 255, 0.85); pointer-events: none; text-shadow: 0 1px 2px #000; }
 .hb-map-n { position: absolute; right: 9px; top: 7px; font-size: 11px; font-weight: 800; color: rgba(255, 255, 255, 0.85); pointer-events: none; }
 .hb-map-n::before { content: '▲'; display: block; text-align: center; font-size: 8px; line-height: 1; }
-
-/* The keys for this moment, above the conning display (the keys button in the view strip shows it). */
-.hb-keys {
-  position: fixed; z-index: 10; left: 50%; bottom: calc(var(--gap) + var(--safe-b) + 108px); transform: translateX(-50%);
-  display: none; flex-wrap: wrap; justify-content: center; gap: 4px 14px; padding: 7px 14px; border-radius: 12px; max-width: min(760px, calc(100vw - 2 * var(--gap)));
-  background: var(--hb-bg); border: 1px solid var(--hb-line); font-size: 12px; color: var(--muted); pointer-events: none;
-}
-.hb-keys.show { display: flex; }
-.hb-keys .fk { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.hb-keys kbd { min-width: 22px; text-align: center; font-size: 11px; }
-.hb-keys .fk.on { color: var(--text); font-weight: 650; }
-.hb-keys .fk.on kbd { background: var(--accent); border-color: var(--accent); color: #1a0d02; }
 
 /* The end card. */
 .hb-end {
@@ -154,22 +108,13 @@ body.mission-harbour .shot-caption.hb-say-warn { color: #ffd98a; border-color: r
 .hb-end-b button { padding: 9px 16px; border-radius: 999px; font-weight: 700; font-size: 13px; }
 .hb-end-b button[data-act='again'] { background: var(--accent); border-color: var(--accent); color: #1a0d02; }
 
-/* Narrow windows: the chart and the cards shrink, the conning display drops its least needed parts. */
-@media (max-width: 1100px) {
-  .hb-map { width: 220px; height: 170px; }
-  .hb-c { padding: 7px 10px 8px; min-width: 70px; }
-}
+/* Narrow windows: the cards shrink, the chart rides above the strip. */
 @media (max-width: 900px) {
-  .hb-c-thr, .hb-c-dmg { display: none; }
   .hb-task { width: 220px; padding: 9px 11px; }
   .hb-task p { font-size: 11.5px; }
-  .hb-views { left: calc(var(--gap) + var(--safe-l) + 54px); transform: none; }
-  .hb-keys { display: none !important; }
-  .hb-map { width: 160px; height: 130px; bottom: calc(var(--gap) + var(--safe-b) + 112px); }
-  .hb-dock { top: auto; bottom: calc(var(--gap) + var(--safe-b) + 112px); transform: none; width: 190px; }
+  .hb-map { bottom: calc(var(--gap) + var(--safe-b) + 150px); }
+  .hb-dock { top: auto; bottom: calc(var(--gap) + var(--safe-b) + 150px); transform: none; width: 190px; }
 }
 @media (max-width: 600px) {
-  .hb-c-tel { display: none; }
-  .hb-c b.big { font-size: 19px; }
-  .hb-task { left: calc(var(--gap) + var(--safe-l) + 52px); width: auto; }
+  .hb-task { left: calc(var(--gap) + var(--safe-l) + 52px); width: auto; top: calc(var(--gap) + var(--safe-t) + 46px); }
 }
