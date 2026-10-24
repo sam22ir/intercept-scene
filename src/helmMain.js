@@ -1433,7 +1433,7 @@ function badge(cls, icon, frac, title, sub, chip) {
 const BI = { // 24 x 24 drawings, animated by CSS (helm.css .hb-*)
   hull: '<path class="hb-fill" d="M12 2.8l7.2 2.8v5.4c0 5-3 8.6-7.2 10.2-4.2-1.6-7.2-5.2-7.2-10.2V5.6z"/><path class="hb-tick" d="M8.4 12.2l2.6 2.7 4.8-5.4"/>',
   kills: '<path d="M10.3 10.3L6.2 6.2M13.7 10.3l4.1-4.1M10.3 13.7l-4.1 4.1M13.7 13.7l4.1 4.1"/><rect x="10" y="10" width="4" height="4" rx="1" class="hb-fill"/><g class="hb-rot"><circle cx="5" cy="5" r="2.6"/><circle cx="19" cy="5" r="2.6"/><circle cx="5" cy="19" r="2.6"/><circle cx="19" cy="19" r="2.6"/></g>',
-  missile: '<rect x="3.5" y="4" width="17" height="16" rx="2.2"/><g class="hb-cells"><circle cx="8.5" cy="9" r="2"/><circle cx="15.5" cy="9" r="2"/><circle cx="8.5" cy="15" r="2"/><circle cx="15.5" cy="15" r="2"/></g>',
+  missile: '<path class="hb-fill" d="M5.5 2.5c1.7 1.7 2.1 4.2 2.1 6.8v7.2h-4.2V9.3c0-2.6.4-5.1 2.1-6.8z"/><path class="hb-flame" d="M4.2 17.2h2.6L5.5 21.6z"/><path class="hb-fill" d="M12 2.5c1.7 1.7 2.1 4.2 2.1 6.8v7.2h-4.2V9.3c0-2.6.4-5.1 2.1-6.8z"/><path class="hb-flame" d="M10.7 17.2h2.6L12 21.6z"/><path class="hb-fill" d="M18.5 2.5c1.7 1.7 2.1 4.2 2.1 6.8v7.2h-4.2V9.3c0-2.6.4-5.1 2.1-6.8z"/><path class="hb-flame" d="M17.2 17.2h2.6L18.5 21.6z"/>',
   guns: '<g class="hb-recoil"><path class="hb-fill" d="M3 15.5h5l2-3h8.5v5.5H10l-2-2.5H3z"/></g><path class="hb-muzzle" d="M20.5 13.2l2.3-1.6M21 15.2h2.6M20.5 17.2l2.3 1.6"/><path d="M6 19.5v2M13 19.5v2"/>',
 };
 function hullBadgeHtml() {

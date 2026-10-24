@@ -618,3 +618,6 @@ body.mission-helm .minimap { bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) 
   .hb-rot circle { animation: hb-blink 0.35s steps(2) infinite; } .hb-rot circle:nth-child(2n) { animation-delay: 0.17s; }
   .hr-opt .hr-shackle { animation: hb-lift 1.6s ease-in-out infinite; }
 }
+
+.hb-msl .hb-flame { transform-box: fill-box; transform-origin: 50% 0; }
+.hs-badge.hb-msl .hb-fill { fill-opacity: 0.35; }
