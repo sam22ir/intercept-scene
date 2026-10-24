@@ -790,3 +790,14 @@ body.mission-helm #fly-keys kbd, body.mission-fly #fly-keys kbd { flex: none; mi
 body.mission-helm #fly-keys .fk.on, body.mission-fly #fly-keys .fk.on { color: #fff; font-weight: 700; }
 body.mission-helm #fly-keys .fk.on kbd, body.mission-fly #fly-keys .fk.on kbd { background: var(--accent, #ff7a1a); border-color: var(--accent, #ff7a1a); color: #1a0d02; }
 body.mission-helm #fly-keys .fk-btn, body.mission-fly #fly-keys .fk-btn { padding: 1px 4px; margin: -1px -4px; border-radius: 9px; }
+/* Saturation raid (opt-in): the unknown / missile / decoy tags are told apart by a mark and a word as well as a colour. */
+body.mission-helm .tag.helm-missile { border-left-color: #ff9f43; color: #ffd9b0; }
+body.mission-helm .tag.helm-decoy { border-left-color: #6fb1ff; opacity: 0.8; }
+/* The grade card after a raid and at the end of a run. */
+.helm-grade { position: fixed; z-index: 9; left: 50%; top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 74px); transform: translateX(-50%); display: flex; gap: 16px; align-items: center; max-width: calc(100vw - 32px); padding: 12px 18px; border-radius: 16px; color: #e6ebf0; background: rgba(24, 30, 38, 0.82); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.14); pointer-events: none; }
+.helm-grade[hidden] { display: none; }
+.helm-grade .hg-l { font: 800 56px/1 ui-sans-serif, system-ui, sans-serif; color: #ffc454; min-width: 44px; text-align: center; }
+.helm-grade .hg-b { display: flex; flex-wrap: wrap; gap: 2px 14px; max-width: 360px; font-size: 13px; color: #aeb8c2; }
+.helm-grade .hg-b b { flex-basis: 100%; font-size: 15px; color: #fff; }
+.helm-grade .hg-b i { font-style: normal; color: #fff; font-weight: 700; }
+.helm-grade .hg-best { flex-basis: 100%; margin-top: 4px; color: #6fb1ff; font-weight: 600; }

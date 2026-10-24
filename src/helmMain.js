@@ -19,6 +19,7 @@ import { menuText } from './menu.js';
 import {
   HelmSim, SLEW_TIME, TELEGRAPH, RUDDER_MAX, CELLS, MISSILE_RANGE, MIN_RANGE, GUN_RANGE, GUN_BLOCK, RADAR_RANGE, ARC, BRIDGE_EYE, DIRECTOR_EYE, GUN_MOUNTS, GUN_ROUNDS, DRONE_HP, relName, kmText,
 } from './helm.js';
+import { raidRun, classicRun, saveBest, loadBest } from './helmScoring.js';
 import './helm.css';
 
 // Entry point of "Solo Air Defense", mission id `helm` (see helm.js for the model): you sail the frigate with the arrow keys and fight off
@@ -162,7 +163,13 @@ function updateGuns(dt) {
   hp.needsUpdate = true;
 }
 const audio = createHelmAudio();
-const sim = new HelmSim({ seed: (Date.now() % 100000) | 0 });
+// The saturation raid is opt-in: ?raid=1, or the gear menu's switch (kept in localStorage); the default mission is unchanged.
+const RAID_KEY = 'intercept.helm.raid';
+const RAID = (() => {
+  try { const q = new URLSearchParams(location.search).get('raid'); if (q !== null) return q !== '0'; } catch { /* no location */ }
+  try { return localStorage.getItem(RAID_KEY) === '1'; } catch { return false; }
+})();
+const sim = new HelmSim({ seed: (Date.now() % 100000) | 0, raid: RAID });
 sim.skyline = ridgeAngle;
 sim.gunsAuto = true; // the guns start on automatic (A switches it off)
 
@@ -263,7 +270,11 @@ function handleEvents() {
       case 'gunhit': fx.missileTrail(e.pos, sim.t); break; // a puff where the burst struck
       case 'splash': fx.splashAt(e.pos, sim.t, 1.6); break;
       case 'missile-lost': if (e.pos.y < 8) fx.splashAt(e.pos, sim.t, 1.2); break;
-      case 'over': if (cine) pendingOrbit = true; else setView('orbit', true); break; // the shot of the last hit plays out first
+      case 'raid-over': showGrade(raidRun(sim.raidLog), false); break;
+      case 'over':
+        showGrade(RAID ? raidRun(sim.raidLog, true) : classicRun({ kills: sim.kills, strikes: sim.strikes, cellsUsed: sim.cellsUsed, rounds: GUN_ROUNDS * GUN_MOUNTS.length - sim.gunRounds, out: true }), true);
+        if (cine) pendingOrbit = true; else setView('orbit', true);
+        break; // the shot of the last hit plays out first
       default: break;
     }
   }
@@ -308,7 +319,11 @@ function applyState(dt) {
       const r = sim.rangeTo(d.pos);
       v.tag.el.classList.toggle('dead', d.phase === 'attack' || d.phase === 'pass');
       v.tag.el.classList.toggle('helm-target', d.id === sim.targetId);
-      v.tag.title.textContent = `${d.name}${d.id === sim.targetId ? ' · TARGET' : ''}${d.phase === 'attack' ? ' · ATTACK' : ''}`;
+      // A raid contact is unknown until the radar classifies it; the word and a mark say which, not only the colour.
+      const kind = d.raid ? (d.class === 'real' ? ' · ▲ MISSILE' : d.class === 'decoy' ? ' · ○ DECOY' : ' · ? UNKNOWN') : '';
+      v.tag.el.classList.toggle('helm-missile', d.class === 'real');
+      v.tag.el.classList.toggle('helm-decoy', d.class === 'decoy');
+      v.tag.title.textContent = `${d.name}${kind}${d.id === sim.targetId ? ' · TARGET' : ''}${d.phase === 'attack' && !d.raid ? ' · ATTACK' : ''}`;
       const taken = Math.max(0, DRONE_HP - d.hp);
       v.tag.body.innerHTML = `${kmText(r)} · ${Math.round(d.pos.y)}<span> m up</span>${taken ? `<span class="tag-hits"> ${'●'.repeat(taken)}${'○'.repeat(DRONE_HP - taken)}</span>` : ''}`;
       // A drone the guns have hurt trails smoke, more the worse it is.
@@ -373,6 +388,31 @@ function flash(kind) {
   alarmEl.classList.remove('hit');
   void alarmEl.offsetWidth; // restart the animation
   alarmEl.classList.add(kind);
+}
+
+// --- The grade ---------------------------------------------------------------------------------------------------------
+// A card with the letter, what it was made of and the best run so far. After each raid it shows briefly; when the ship is put out of
+// action (a raid run or the plain mission) the run is saved if it beats the best, and the card stays until R.
+const gradeEl = document.createElement('div');
+gradeEl.className = 'helm-grade';
+gradeEl.hidden = true;
+gradeEl.setAttribute('role', 'status');
+document.body.appendChild(gradeEl);
+let gradeTimer = 0;
+function showGrade(run, final) {
+  let best = loadBest(run.mode);
+  let isNew = false;
+  if (final) ({ best, isNew } = saveBest(run));
+  const rows = run.mode === 'raid'
+    ? [['Raids', `${run.raids}`], ['Raid scores', run.scored.map((r) => r.grade).join(' ') || '-'], ['Points', `${run.points}`]]
+    : [['Kills', `${run.kills}`], ['Hits taken', `${Math.round(run.strikes * 10) / 10}`], ['Missiles fired', `${run.cellsUsed}`], ['Gun rounds', `${Math.round(run.rounds)}`]];
+  const last = run.mode === 'raid' ? run.scored[run.scored.length - 1] : null;
+  gradeEl.innerHTML = `<div class="hg-l">${last && !final ? last.grade : run.grade}</div><div class="hg-b"><b>${final ? (run.out ? 'Out of action' : 'Run over') : `Raid ${run.raids} over`}</b>`
+    + rows.map(([k, v]) => `<span>${k} <i>${v}</i></span>`).join('')
+    + `<span class="hg-best">${best ? `Best: ${best.grade} · ${best.points} pts${isNew ? ' · new best' : ''}` : ''}</span></div>`;
+  gradeEl.hidden = false;
+  clearTimeout(gradeTimer);
+  if (!final) gradeTimer = setTimeout(() => { gradeEl.hidden = true; }, 9000);
 }
 
 // --- Camera views -----------------------------------------------------------------------------------------------------
@@ -1560,8 +1600,9 @@ const BI = { // 24 x 24 drawings, animated by CSS (helm.css .hb-*)
 };
 function hullBadgeHtml() {
   const left = 3 - sim.strikes;
-  const tone = sim.out ? 'out' : sim.strikes === 0 ? 'ok' : sim.strikes === 1 ? 'hurt' : 'bad';
-  return badge(`hb-hull ${tone}`, `<svg viewBox="0 0 24 24">${BI.hull}</svg>`, sim.out ? 0 : left / 3, 'Hull', sim.out ? 'out of action' : sim.strikes ? `${sim.strikes} of 3 hits` : 'intact', '');
+  const tone = sim.out ? 'out' : sim.strikes === 0 ? 'ok' : sim.strikes < 2 ? 'hurt' : 'bad'; // a raid's hits can be halves
+  const hits = Math.round(sim.strikes * 10) / 10;
+  return badge(`hb-hull ${tone}`, `<svg viewBox="0 0 24 24">${BI.hull}</svg>`, sim.out ? 0 : left / 3, 'Hull', sim.out ? 'out of action' : sim.strikes ? `${hits} of 3 hits` : 'intact', '');
 }
 function killsBadgeHtml() {
   return badge('hb-kills', `<svg viewBox="0 0 24 24">${BI.kills}</svg>`, 1, 'Kills', `${sim.kills} drone${sim.kills === 1 ? '' : 's'} shot down`, String(sim.kills));
@@ -1891,6 +1932,19 @@ viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.v
   const item = (b, label, key, ic) => { b.className = ''; b.setAttribute('role', 'menuitem'); b.innerHTML = `<span class="mi-l">${ic ? `<svg class="mi" viewBox="0 0 24 24" aria-hidden="true">${MI[ic]}</svg>` : ''}${label}</span>${key ? `<kbd>${key}</kbd>` : ''}`; return b; };
   const head = (t) => { const h = document.createElement('div'); h.className = 'menu-h'; h.textContent = t; return h; };
   const weatherBtn = document.querySelector('#btn-weather'), seaRow = document.querySelector('#sea-row');
+  const raidBtn = document.createElement('button');
+  item(raidBtn, `Saturation raid: ${RAID ? 'On' : 'Off'}`, '', 'restart');
+  raidBtn.title = 'Many cheap decoys with a few real missiles among them (reloads the scene; the mission starts again)';
+  raidBtn.addEventListener('click', () => {
+    try {
+      localStorage.setItem(RAID_KEY, RAID ? '0' : '1');
+      sessionStorage.setItem('intercept.skip', '1'); // straight back into the scene
+      const url = new URL(location.href);
+      url.searchParams.delete('raid');
+      history.replaceState(null, '', url);
+      location.reload();
+    } catch { /* blocked storage */ }
+  });
   item(restartButton, 'Sail again', 'R', 'restart');
   item(document.querySelector('#btn-ship'), 'Main menu', '', 'menu');
   item(hudButton, 'Readouts', 'H', 'readouts');
@@ -1903,7 +1957,7 @@ viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.v
   item(fsButton, 'Fullscreen', '', 'full');
   item(foldButton, 'Hide the interface', 'C', 'hide');
   item(document.querySelector('#btn-keys'), 'Keyboard shortcuts', '?', 'keys');
-  menuEl.replaceChildren(head('Mission'), restartButton, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, secMissile, secGuns, tagsButton, cineButton, foldButton, fsButton,
+  menuEl.replaceChildren(head('Mission'), restartButton, raidBtn, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, secMissile, secGuns, tagsButton, cineButton, foldButton, fsButton,
     head('Sound'), soundButton, head('Sea'), ...[seaRow, weatherBtn].filter(Boolean), head('Help'), document.querySelector('#btn-keys'));
   [hudButton, mapButton, secMissile, secGuns, soundButton, tagsButton, cineButton].forEach((b) => b.setAttribute('aria-pressed', 'true'));
   secMissile.addEventListener('click', () => { map.setSector('missile', !map.sector('missile')); refreshGear(); });
@@ -1949,6 +2003,7 @@ function restart() {
   fx.clear();
   audio.reset();
   banner.hidden = true;
+  gradeEl.hidden = true;
   wake.clear();
   timeScale = timeTarget = 1;
   setView('behind', true);
