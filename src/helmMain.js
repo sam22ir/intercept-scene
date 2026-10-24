@@ -1051,17 +1051,42 @@ const radarKeys = { l: 0, r: 0, u: 0, d: 0 };
 const radarEl = document.createElement('div');
 radarEl.className = 'helm-radar';
 radarEl.hidden = true;
-radarEl.innerHTML = '<div class="hr-marks"></div><div class="hr-pad">'
-  + '<div class="hr-acts"><button type="button" data-act="auto">Release / auto<kbd>Space</kbd></button><button type="button" data-act="next">Next target<kbd>Tab</kbd></button><button type="button" data-act="pick" class="hr-pick">Lock nearest to<kbd></kbd></button></div>'
-  + '<div class="hr-mid"><div class="hr-read"><b class="hr-mode">AUTO</b><span class="hr-brg"></span></div>'
-  + '<div class="hr-dpad"><button type="button" data-dir="u" aria-label="Aim up">▲</button><button type="button" data-dir="l" aria-label="Aim left">◀</button>'
-  + '<button type="button" data-act="lock" class="hr-lock">LOCK</button><button type="button" data-dir="r" aria-label="Aim right">▶</button><button type="button" data-dir="d" aria-label="Aim down">▼</button></div></div>'
-  + '<div class="hr-acts"><button type="button" data-act="arm">Arm missile<kbd>M</kbd></button><button type="button" data-act="fire" class="hr-fire">Fire<kbd>F</kbd></button></div></div>';
+// The console: two spheres side by side at the foot of the screen, the aim stick (a drag on it turns the sight; a ring round it zooms the lens)
+// and FIRE, with the option buttons, round and animated, one cluster each side.
+const RICON = { // 32 x 32 drawings, animated by CSS in helm.css (.hr-sweep, .hr-brk, .hr-xh, .flame, .puff)
+  auto: '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="11"/><circle cx="16" cy="16" r="5.5"/><g class="hr-sweep"><path d="M16 16L25 8"/></g><circle cx="11" cy="12" r="1.2" style="fill:currentColor;stroke:none"/></svg>',
+  next: '<svg viewBox="0 0 32 32" aria-hidden="true"><g class="hr-brk"><path d="M5 11V5h6M21 5h6v6M27 21v6h-6M11 27H5v-6"/></g><circle cx="16" cy="16" r="3.2" class="fill"/><path d="M21 16h5M23.5 13.5L26 16l-2.5 2.5"/></svg>',
+  lock: '<svg viewBox="0 0 32 32" aria-hidden="true"><g class="hr-xh"><circle cx="16" cy="16" r="8"/><path d="M16 3v6M16 23v6M3 16h6M23 16h6"/></g><circle cx="16" cy="16" r="1.6" style="fill:currentColor;stroke:none"/></svg>',
+  arm: '<svg viewBox="0 0 32 32" aria-hidden="true"><g transform="rotate(-45 16 16)"><circle class="puff p1" cx="4" cy="16" r="1.6"/><circle class="puff p2" cx="4" cy="16" r="1.6"/><path class="flame" d="M9 14.2L1.5 16 9 17.8z"/><path class="fill" d="M9 13.2h11.5L27 16l-6.5 2.8H9z"/><path d="M9 13.2L5.8 9.8h5.6l1.9 3.4M9 18.8l-3.2 3.4h5.6l1.9-3.4M16 13.2v5.6"/></g></svg>',
+  pick: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 16s5-8 13-8 13 8 13 8-5 8-13 8S3 16 3 16z"/><circle cx="16" cy="16" r="3.6" class="fill"/></svg>',
+};
+const optHtml = (icon, title, sub, key) => `<i class="sp-ico">${icon}</i><span class="sp-txt"><b>${title}</b><small>${sub}</small></span><kbd>${key}</kbd>`;
+const optBtn = (cls, act, icon, title, sub, key) => `<button type="button" class="helm-act hr-opt ${cls}" data-act="${act}">${optHtml(icon, title, sub, key)}</button>`;
+const ZOOM_MIN = 0.3, ZOOM_MAX = 4, ZOOM_SPAN = Math.log(ZOOM_MAX / ZOOM_MIN);
+const RING_ARC = 2 * Math.PI * 70 * 0.75; // the zoom ring runs 270 degrees, from the lower left round to the lower right
+radarEl.innerHTML = '<div class="hr-marks"></div><div class="hr-console">'
+  + '<div class="hr-read"><b class="hr-mode">AUTO</b><span class="hr-brg"></span></div>'
+  + '<div class="hr-row"><div class="hr-opts">'
+  + optBtn('hr-auto', 'auto', RICON.auto, 'Release / auto', 'back to automatic tracking', 'Space')
+  + optBtn('hr-next', 'next', RICON.next, 'Next target', 'step through the drones', 'Tab')
+  + optBtn('hr-lock', 'lock', RICON.lock, 'Lock', 'catch the drone in the sight', 'Enter')
+  + '</div>'
+  + '<div class="hr-stickwrap"><svg class="hr-ring" viewBox="0 0 150 150" aria-label="Zoom"><circle class="hr-rtrack" r="70" cx="75" cy="75"/><circle class="hr-rfill" r="70" cx="75" cy="75"/><circle class="hr-hit" r="70" cx="75" cy="75"/><circle class="hr-rthumb" r="7"/></svg>'
+  + '<div class="hr-stick" title="Drag to aim the sight"><i class="hr-knob"></i></div></div>'
+  + '<button type="button" class="hr-fireball" data-act="fire" title="Launch the missile (F)"><span>FIRE</span><kbd>F</kbd></button>'
+  + '<div class="hr-opts">'
+  + optBtn('hr-arm', 'arm', RICON.arm, 'Arm missile', 'make one ready on the target', 'M')
+  + optBtn('hr-pick hr-opt-pick', 'pick', RICON.pick, 'Lock nearest to', 'the view or the ship', 'VIEW')
+  + '</div></div></div>';
 document.body.appendChild(radarEl);
 const radarMarks = radarEl.querySelector('.hr-marks');
 const radarMode = radarEl.querySelector('.hr-mode');
 const radarBrg = radarEl.querySelector('.hr-brg');
 const radarPickKbd = radarEl.querySelector('.hr-pick kbd');
+const fireBall = radarEl.querySelector('.hr-fireball');
+const stickEl = radarEl.querySelector('.hr-stick');
+const hitEl = radarEl.querySelector('.hr-hit'), thumbEl = radarEl.querySelector('.hr-rthumb'), fillEl = radarEl.querySelector('.hr-rfill');
+const pickSub = radarEl.querySelector('.hr-pick small');
 const pressKey = (key) => { window.dispatchEvent(new KeyboardEvent('keydown', { key })); window.dispatchEvent(new KeyboardEvent('keyup', { key })); };
 function lockOn(d) {
   sim.targetId = d.id;
@@ -1090,7 +1115,44 @@ function lockHover() {
   if (d) lockOn(d);
   else say('Nothing on the radar to lock', 'warn');
 }
+// Drag on a control until the pointer lets go.
+function dragOn(e, move) {
+  const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); move(null); };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
+  move(e);
+}
+const STICK_TRAVEL = 30; // px the knob can move from the middle
 radarEl.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('.hr-hit')) { // the zoom ring: drag round it (wide at the lower left, close at the lower right)
+    e.preventDefault();
+    dragOn(e, (ev) => {
+      if (!ev) return;
+      const r = hitEl.getBoundingClientRect();
+      let a = (Math.atan2(ev.clientY - (r.top + r.height / 2), ev.clientX - (r.left + r.width / 2)) * 180 / Math.PI - 135 + 720) % 360;
+      if (a > 270) a = a > 315 ? 0 : 270; // the gap at the bottom snaps to the nearer end
+      sightZoom = THREE.MathUtils.clamp(ZOOM_MIN * Math.exp((1 - a / 270) * ZOOM_SPAN), ZOOM_MIN, ZOOM_MAX);
+    });
+    return;
+  }
+  if (e.target.closest('.hr-stick')) { // the aim stick: how far it is pushed is how fast the sight turns; it springs back to the middle
+    e.preventDefault();
+    sight.locked = false; // taking the stick takes the sight back from a lock
+    const r = stickEl.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    dragOn(e, (ev) => {
+      if (!ev) { radarKeys.l = radarKeys.r = radarKeys.u = radarKeys.d = 0; stickEl.style.setProperty('--kx', '0px'); stickEl.style.setProperty('--ky', '0px'); return; }
+      let dx = ev.clientX - cx, dy = ev.clientY - cy;
+      const len = Math.hypot(dx, dy);
+      if (len > STICK_TRAVEL) { dx *= STICK_TRAVEL / len; dy *= STICK_TRAVEL / len; }
+      const x = dx / STICK_TRAVEL, y = dy / STICK_TRAVEL;
+      radarKeys.r = Math.max(0, x); radarKeys.l = Math.max(0, -x); radarKeys.d = Math.max(0, y); radarKeys.u = Math.max(0, -y);
+      sight.manual = true;
+      stickEl.style.setProperty('--kx', `${dx.toFixed(1)}px`); stickEl.style.setProperty('--ky', `${dy.toFixed(1)}px`);
+    });
+    return;
+  }
   const b = e.target.closest('button');
   if (!b) return;
   e.preventDefault();
@@ -1151,6 +1213,15 @@ function updateRadarUi() {
   radarMode.textContent = sight.locked ? (sight.phase === 'lock' ? 'LOCKED' : 'LOCKING') : sight.manual ? 'MANUAL' : sim.target ? 'AUTO' : 'SCAN';
   radarMode.classList.toggle('manual', manual);
   radarPickKbd.textContent = pickMode === 'ship' ? 'SHIP' : 'VIEW';
+  pickSub.textContent = pickMode === 'ship' ? 'the drone nearest the ship (click to change)' : 'the drone nearest the view (click to change)';
+  const canFire = sim.cellsLeft > 0 || !!sim.shot;
+  fireBall.classList.toggle('empty', !canFire);
+  fireBall.classList.toggle('ready', !!sim.shot?.hold);
+  fireBall.classList.toggle('lock', !!sim.shot?.locked);
+  const zf = 1 - Math.log(sightZoom / ZOOM_MIN) / ZOOM_SPAN, ang = (135 + 270 * zf) * Math.PI / 180;
+  thumbEl.setAttribute('cx', (75 + 70 * Math.cos(ang)).toFixed(1));
+  thumbEl.setAttribute('cy', (75 + 70 * Math.sin(ang)).toFixed(1));
+  fillEl.style.strokeDasharray = `${(RING_ARC * zf).toFixed(1)} 440`;
   radarEl.classList.toggle('locked', sight.locked);
   const rel = THREE.MathUtils.radToDeg(Math.atan2(Math.sin(Math.atan2(sight.aim.z, sight.aim.x) - sim.psi), Math.cos(Math.atan2(sight.aim.z, sight.aim.x) - sim.psi)));
   radarBrg.textContent = `${relName(THREE.MathUtils.degToRad(rel))} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${Math.round(fov)}°`;
