@@ -446,3 +446,53 @@ body.mission-helm #fly-keys:not(.show) .fk-btn { pointer-events: none; }
   body.mission-helm #menu #btn-sound[aria-pressed="true"] .mi-w2 { animation: hv-blink 0.9s ease-in-out 0.3s infinite alternate; }
   body.mission-helm #menu button:hover .mi { animation: hv-bob 0.9s ease-in-out infinite; }
 }
+
+/* The dome with a propeller and a throttle bar each side; the hull and weapons cards stand aside it. */
+.helm-ship .hs-host { display: contents; }
+.helm-ship .hs-centre { display: flex; flex: none; align-items: flex-end; gap: 6px; }
+.helm-ship .hs-prop { flex: none; align-self: flex-end; width: 50px; height: 50px; margin-bottom: 2px; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.7)); }
+.helm-ship .hs-prop svg { display: block; width: 100%; height: 100%; }
+.hs-prop .pp-blade { fill: url(#pp-brass); stroke: #6e5320; stroke-width: 0.7; stroke-linejoin: round; opacity: calc(1 - 0.35 * var(--blur, 0)); }
+.hs-prop .pp-edge { fill: none; stroke: rgba(255, 255, 255, 0.35); stroke-width: 0.6; }
+.hs-prop .pp-hubring { fill: #c9a24d; stroke: #6e5320; stroke-width: 0.7; }
+.hs-prop .pp-hub { fill: #4a2f14; }
+.hs-prop .pp-cap { fill: #e8d49a; }
+.helm-ship .hs-lvl { flex: none; align-self: flex-end; width: 14px; height: 48px; margin-bottom: 3px; display: flex; flex-direction: column; gap: 3px; }
+.hs-lvl i { flex: 1; border-radius: 3px; background: rgba(255, 255, 255, 0.14); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35); transition: background 0.15s; }
+.hs-lvl i.on { background: linear-gradient(180deg, #f3dc92, #c9a24d); } .hs-lvl i.top { background: linear-gradient(180deg, #ffb066, #ff7a1a); } .hs-lvl i.astern { background: #35c8ff; }
+
+/* The support buttons: round, in a row above the scope, a tip opens on hover. */
+.helm-actions { position: fixed; z-index: 8; right: calc(var(--gap, 14px) + var(--safe-r, 0px)); bottom: calc(var(--map-d, 150px) + var(--gap, 14px) * 2 + var(--safe-b, 0px)); display: flex; gap: 12px; align-items: center; }
+.helm-actions[hidden], body.ui-hidden .helm-actions, body:not(.mission-helm) .helm-actions { display: none; }
+.helm-act { position: relative; width: 46px; height: 46px; padding: 0; display: grid; place-items: center; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(9, 14, 21, 0.78); color: #fff; cursor: pointer; backdrop-filter: blur(5px); }
+.helm-act:disabled { cursor: default; opacity: 0.6; box-shadow: none; }
+.helm-act-heli { border-color: rgba(242, 201, 76, 0.55); } .helm-act-miss { border-color: rgba(255, 93, 97, 0.5); }
+.helm-act-heli:not(:disabled) { box-shadow: 0 0 0 2px rgba(242, 201, 76, 0.2), 0 6px 18px rgba(0, 0, 0, 0.35); }
+.helm-act-miss:not(:disabled) { box-shadow: 0 0 0 2px rgba(255, 93, 97, 0.22), 0 6px 18px rgba(0, 0, 0, 0.35); }
+.helm-act:hover:not(:disabled) { background: rgba(24, 38, 54, 0.92); }
+.helm-act .sp-ico { display: grid; place-items: center; width: 46px; height: 46px; font-style: normal; }
+.helm-act-heli .sp-ico { color: #f2c94c; } .helm-act-miss .sp-ico { color: #ff8a8d; }
+.helm-act .sp-ico svg { width: 30px; height: 30px; overflow: hidden; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.helm-act .sp-ico .fill { fill: currentColor; fill-opacity: 0.28; } .helm-act .sp-ico .win { fill: currentColor; fill-opacity: 0.7; stroke: none; }
+.helm-act .sp-ico .flame { fill: #ffb347; stroke: none; } .helm-act .sp-ico .puff { fill: currentColor; stroke: none; opacity: 0; }
+.helm-act .sp-ico .trot { stroke-width: 1.2; stroke-dasharray: 2.5 2.4; }
+.helm-act kbd { position: absolute; right: -3px; top: -4px; padding: 1px 5px; border-radius: 5px; font: 700 9px system-ui, sans-serif; color: var(--text); background: rgba(8, 13, 20, 0.92); border: 1px solid rgba(255, 255, 255, 0.18); }
+.helm-act .sp-txt { position: absolute; right: -4px; bottom: calc(100% + 10px); padding: 6px 10px; border-radius: 9px; background: rgba(8, 13, 20, 0.92); border: 1px solid rgba(255, 255, 255, 0.14); white-space: nowrap; text-align: right; opacity: 0; pointer-events: none; transition: opacity 0.15s; z-index: 2; }
+.helm-act:hover .sp-txt, .helm-act:focus-visible .sp-txt { opacity: 1; }
+.helm-act .sp-txt b { display: block; font: 800 12px system-ui, sans-serif; } .helm-act .sp-txt small { display: block; font: 500 10.5px system-ui, sans-serif; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) {
+  .helm-act .bob { animation: hv-bob 1.8s ease-in-out infinite; }
+  .helm-act .rotor { transform-origin: 16px 8.5px; animation: hv-rotor 0.28s linear infinite; }
+  .helm-act .trot { transform-origin: 30px 12.6px; animation: hv-spin 0.35s linear infinite; }
+  .helm-act .flame { transform-origin: 9px 16px; animation: hv-flame 0.14s ease-in-out infinite alternate; }
+  .helm-act .puff { animation: hv-puff 1.1s ease-out infinite; } .helm-act .p2 { animation-delay: 0.55s; }
+  .helm-act:disabled .sp-ico * { animation-play-state: paused; }
+}
+@keyframes hv-rotor { 0% { transform: scaleX(1); } 50% { transform: scaleX(0.18); } 100% { transform: scaleX(1); } }
+@keyframes hv-flame { from { transform: scaleX(0.55) scaleY(0.85); } to { transform: scaleX(1.25) scaleY(1.15); } }
+@keyframes hv-puff { 0% { transform: translateX(0) scale(0.4); opacity: 0.7; } 100% { transform: translateX(-9px) scale(1.5); opacity: 0; } }
+/* In a column at the right edge, halfway up: clear of the contact card above and the scope below, whatever the window. */
+.helm-actions { top: 50%; bottom: auto; transform: translateY(-50%); flex-direction: column; }
+.helm-act .sp-txt { right: calc(100% + 10px); bottom: auto; top: 50%; transform: translateY(-50%); }
+/* Windows narrower than this have no room beside the dome for the propellers and bars. */
+@media (max-width: 1279px) { .helm-ship .hs-prop, .helm-ship .hs-lvl { display: none; } }

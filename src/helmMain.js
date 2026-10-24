@@ -1219,8 +1219,69 @@ const head = (title, chip, tone) => `<div class="hud-head"><b>${title}</b><span 
 const shipEl = document.createElement('div');
 shipEl.id = 'helm-ship';
 shipEl.className = 'helm-ship';
+// The strip is three parts: the hull card, the dome with a propeller and a throttle bar each side (as in Surface battle), and the weapons card.
+// The two cards are rebuilt as text; the propellers and bars stay put so they can turn and light up every frame.
+const PROP_SVG = '<svg viewBox="-24 -24 48 48" aria-hidden="true"><defs><linearGradient id="pp-brass" x1="0" y1="-23" x2="9" y2="-6" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f6e4a2"/><stop offset="0.55" stop-color="#d9b45c"/><stop offset="1" stop-color="#9b7632"/></linearGradient></defs><g class="pp-rot">'
+  + [0, 90, 180, 270].map((a) => `<g transform="rotate(${a})"><path d="M-2 -6 C-8.5 -9.5 -9.5 -19 -4 -22.6 C1 -24.5 8.4 -22 9 -17.6 C7 -12 4 -8 2.2 -6 Z" class="pp-blade"/><path d="M-3.4 -9 C-6 -13 -5.8 -18 -3 -20.6" class="pp-edge"/></g>`).join('')
+  + '</g><circle r="5.4" class="pp-hubring"/><circle r="3" class="pp-hub"/><circle r="1" class="pp-cap"/></svg>';
+const statHost = document.createElement('div'), centre = document.createElement('div'), wpnHost = document.createElement('div'), domeHost = document.createElement('div');
+statHost.className = wpnHost.className = 'hs-host';
+centre.className = 'hs-centre';
+const propL = document.createElement('div'), propR = document.createElement('div'), barL = document.createElement('div'), barR = document.createElement('div');
+propL.className = propR.className = 'hs-prop';
+propL.innerHTML = propR.innerHTML = PROP_SVG;
+barL.className = barR.className = 'hs-lvl'; // one bar for each engine, five notches: dead slow, slow, half, full, flank (the throttle, not the speed)
+barL.innerHTML = barR.innerHTML = '<i></i><i></i><i></i><i></i><i></i>';
+centre.append(barL, propL, domeHost, propR, barR);
+shipEl.append(statHost, centre, wpnHost);
 document.body.appendChild(shipEl);
-let lastShip = '';
+const propRotL = propL.querySelector('.pp-rot'), propRotR = propR.querySelector('.pp-rot');
+let propAng = 0;
+function spinProps(dt) {
+  const kn = sim.knots;
+  propAng = (propAng + kn * 0.18 * dt) % (Math.PI * 2); // about one turn a second at 38 kn; backwards astern
+  const deg = (propAng * 180) / Math.PI;
+  propRotL.style.transform = `rotate(${-deg}deg)`; propRotR.style.transform = `rotate(${deg}deg)`;
+  const ord = sim.order;
+  for (const bar of [barL, barR]) { // the bar fills from the bottom with the throttle (slow astern lights the bottom notch in blue)
+    const n = bar.children.length;
+    for (let q = 0; q < n; q++) { const lit = ord === 0 ? q === n - 1 : (n - 1 - q) < ord - 1; bar.children[q].className = lit ? (ord === 0 ? 'astern' : q === 0 ? 'top' : 'on') : ''; }
+  }
+  const fast = Math.min(1, Math.abs(kn) / 20);
+  propL.style.setProperty('--blur', fast.toFixed(2)); propR.style.setProperty('--blur', fast.toFixed(2));
+}
+let lastStat = '', lastDome = '', lastWpn = '';
+
+// The support buttons, round, in a row above the scope: the helicopter (E) and a missile (M, then F to launch), each with its key and a tip on hover.
+const actions = document.createElement('div');
+actions.className = 'helm-actions';
+document.body.appendChild(actions);
+const ICON_HELI = '<svg viewBox="0 0 32 32" aria-hidden="true"><g class="bob"><g class="rotor"><path d="M2 8.5h28"/></g><path d="M16 8.5v3"/><path class="fill" d="M6.5 18c0-3.6 3-6.5 7.5-6.5h5c3.4 0 5.5 2 5.5 4.6v1.9c0 1.4-1.3 2.5-2.9 2.5H10.5C8.2 20.5 6.5 19.7 6.5 18z"/><path class="win" d="M9.5 15.3c.8-1.5 2.4-2.3 4.6-2.3h1.4v4.3H9.2z"/><path d="M24.5 15.3l5.5-2.6v3.4l-5 2"/><circle class="trot" cx="30" cy="12.6" r="2.3"/><path d="M8 24.5h15M11 20.5v4M20 20.5v4"/></g></svg>';
+const ICON_MISS = '<svg viewBox="0 0 32 32" aria-hidden="true"><g transform="rotate(-45 16 16)"><circle class="puff p1" cx="4" cy="16" r="1.6"/><circle class="puff p2" cx="4" cy="16" r="1.6"/><path class="flame" d="M9 14.2L1.5 16 9 17.8z"/><path class="fill" d="M9 13.2h11.5L27 16l-6.5 2.8H9z"/><path d="M9 13.2L5.8 9.8h5.6l1.9 3.4M9 18.8l-3.2 3.4h5.6l1.9-3.4M16 13.2v5.6"/></g></svg>';
+const supportHtml = (icon, title, sub, key) => `<i class="sp-ico">${icon}</i><span class="sp-txt"><b>${title}</b><small>${sub}</small></span><kbd>${key}</kbd>`;
+const heliBtn = document.createElement('button'), missBtn = document.createElement('button');
+heliBtn.type = missBtn.type = 'button';
+heliBtn.className = 'helm-act helm-act-heli';
+missBtn.className = 'helm-act helm-act-miss';
+actions.append(heliBtn, missBtn);
+heliBtn.addEventListener('click', () => { say(sim.heliRequest(), ''); heliBtn.blur(); });
+missBtn.addEventListener('click', () => { if (sim.shot?.hold) sim.launchReady(); else sim.arm(); missBtn.blur(); });
+let lastActs = '';
+function updateActions() {
+  const act = sim.heli.action;
+  const hTitle = act === 'land' ? 'Helicopter: land' : 'Helicopter: take off';
+  const hSub = act === 'takeoff' ? (sim.standDown ? 'stays: a drone is near' : 'take off') : act === 'land' ? 'bring her in' : 'landing';
+  const hOn = act !== null;
+  const mHold = !!sim.shot?.hold;
+  const mTitle = mHold ? 'Launch the missile' : 'Make a missile ready';
+  const mSub = sim.cellsLeft <= 0 && !sim.shot ? 'none left' : mHold ? (sim.shot.locked ? 'locked: press to launch' : 'acquiring the target') : `${sim.cellsLeft} left · on the target`;
+  const mOn = sim.cellsLeft > 0 || !!sim.shot;
+  const key = [hTitle, hSub, hOn, mTitle, mSub, mOn].join('|');
+  if (key === lastActs) return;
+  lastActs = key;
+  heliBtn.innerHTML = supportHtml(ICON_HELI, hTitle, hSub, 'E'); heliBtn.disabled = !hOn;
+  missBtn.innerHTML = supportHtml(ICON_MISS, mTitle, mSub, mHold ? 'F' : 'M'); missBtn.disabled = !mOn;
+}
 // The dome: its rim is a heading tape (the degrees slide round it, the heading itself fixed and bold at the top), inside it
 // a needle from the foot swings left and right with the rudder, and the speed is under the needle.
 const DOME_R = 94; // svg units, the rim
@@ -1279,14 +1340,10 @@ function weaponsHtml() {
     + `<div class="hw-row hw-gun${firing ? ' fire' : sim.gunsAuto ? ' auto' : ''}"><b>GUNS</b><div class="hw-bar"><i style="width:${gPct}%"></i><s>${sim.gunRounds}</s></div><em>${gState}</em></div>`
     + '</div>';
 }
-function shipHtml() {
-  const hits = Array.from({ length: 3 }, (_, i) => `<i class="${i < sim.strikes ? 'hit' : ''}"></i>`).join('');
-  const dmg = sim.out ? 'out of action' : sim.strikes ? `${sim.strikes} of 3 hits` : 'no damage';
+function statHtml() {
   const hull = Array.from({ length: 3 }, (_, i) => `<i class="${i < sim.strikes ? 'hit' : ''}"></i>`).join('');
   return `<div class="hs-stat${sim.strikes ? ' hurt' : ''}"><div class="st-hull"><div class="st-head"><span>HULL</span><em>${sim.out ? 'OUT OF ACTION' : sim.strikes ? `${sim.strikes} OF 3 HITS` : 'INTACT'}</em></div><div class="st-segs">${hull}</div></div>`
-    + `<div class="st-kills"><span>KILLS</span><b>${sim.kills}</b></div></div>`
-    + `<div class="hs-dome">${domeSvg()}</div>`
-    + weaponsHtml();
+    + `<div class="st-kills"><span>KILLS</span><b>${sim.kills}</b></div></div>`;
 }
 
 // The fire-zone gauges: for each weapon a range bar (0 to ZONE_SCALE) with the band it can engage in lit and a marker for the
@@ -1549,6 +1606,7 @@ function setHud(on) {
   hudOn = on;
   root.hidden = !on;
   shipEl.hidden = !on;
+  actions.hidden = !on;
   hudButton.classList.toggle('active', on);
   hudButton.setAttribute('aria-pressed', String(on));
 }
@@ -1770,8 +1828,14 @@ renderer.setAnimationLoop((now) => {
   if (hudOn) {
     const html = hudHtml();
     if (html !== lastHtml) { live.innerHTML = html; lastHtml = html; }
-    const sh = shipHtml();
-    if (sh !== lastShip) { shipEl.innerHTML = sh; lastShip = sh; }
+    const st = statHtml();
+    if (st !== lastStat) { statHost.innerHTML = st; lastStat = st; }
+    const dm = `<div class="hs-dome">${domeSvg()}</div>`;
+    if (dm !== lastDome) { domeHost.innerHTML = dm; lastDome = dm; }
+    const wp = weaponsHtml();
+    if (wp !== lastWpn) { wpnHost.innerHTML = wp; lastWpn = wp; }
+    spinProps(dt);
+    updateActions();
   }
   const keys = keysHtml();
   if (keys !== lastKeys) { keysEl.innerHTML = keys; lastKeys = keys; }
