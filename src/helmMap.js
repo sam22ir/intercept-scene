@@ -94,8 +94,8 @@ export function createHelmMap() {
   const toSlide = (m) => Math.round(1000 * Math.log(Math.min(SLIDE_MAX, Math.max(SLIDE_MIN, m)) / SLIDE_MIN) / Math.log(SLIDE_MAX / SLIDE_MIN));
   const fromSlide = (v) => SLIDE_MIN * (SLIDE_MAX / SLIDE_MIN) ** (v / 1000);
   slider.addEventListener('input', () => { custom = fromSlide(Number(slider.value)); });
-  for (const ev of ['click', 'pointerdown']) slider.addEventListener(ev, (e) => e.stopPropagation());
-  root.append(slider);
+  document.body.classList.add('has-map-zoom');
+  document.body.append(slider); // stands upright beside the disc (the disc clips what is inside it)
   root.addEventListener('click', () => { custom = null; zoom = (zoom + 1) % ZOOMS.length; });
   root.title = 'Radar, heading up: click to change the range, the slider zooms (M hides it)';
 
@@ -363,7 +363,7 @@ export function createHelmMap() {
 
   return {
     get enabled() { return enabled; },
-    setEnabled(on) { enabled = on; root.hidden = !on; },
+    setEnabled(on) { enabled = on; root.hidden = !on; slider.hidden = !on; },
     set sight(v) { sightView = v; },
     sector: (id) => show[id],
     setSector(id, on) {

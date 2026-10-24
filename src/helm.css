@@ -539,13 +539,16 @@ body.mission-helm .helm-act .sp-ico .hr-sweep { transform-box: view-box; }
 @keyframes hv-spin-dash { to { stroke-dashoffset: -17; } }
 @keyframes hv-tracer { 0% { transform: translateX(-3px); opacity: 0; } 50% { opacity: 1; } 100% { transform: translateX(4px); opacity: 0; } }
 @keyframes hv-sweepspin { to { transform: rotate(360deg); } }
-/* The radar map's thin zoom slider, along the foot of the disc. */
-body.mission-helm .minimap .mm-zoom { position: absolute; left: 22%; right: 22%; width: 56%; bottom: 7px; height: 12px; margin: 0; padding: 0; background: transparent; -webkit-appearance: none; appearance: none; cursor: pointer; opacity: 0.8; transition: opacity 0.15s; }
-body.mission-helm .minimap:hover .mm-zoom, body.mission-helm .minimap .mm-zoom:focus-visible { opacity: 1; }
-body.mission-helm .minimap .mm-zoom::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.8); }
-body.mission-helm .minimap .mm-zoom::-moz-range-track { height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.8); }
-body.mission-helm .minimap .mm-zoom::-webkit-slider-thumb { -webkit-appearance: none; width: 9px; height: 9px; margin-top: -3.5px; border-radius: 50%; background: #fff; border: 0; }
-body.mission-helm .minimap .mm-zoom::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50%; background: #fff; border: 0; }
+/* The radar map's thin zoom slider: upright at the left of the disc, as tall as it (up zooms out). */
+.mm-zoom { display: none; }
+body.mission-helm .mm-zoom { display: block; position: fixed; z-index: 9; left: calc(var(--gap, 14px) + var(--safe-l, 0px)); bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) + 32px); width: 16px; height: var(--map-d, 150px); margin: 0; padding: 0; background: transparent; -webkit-appearance: none; appearance: none; writing-mode: vertical-lr; direction: rtl; cursor: pointer; opacity: 0.8; transition: opacity 0.15s; }
+body.mission-helm .mm-zoom[hidden], body.mission-helm.ui-hidden .mm-zoom, body.mission-helm.editing .mm-zoom { display: none; }
+body.mission-helm .mm-zoom:hover, body.mission-helm .mm-zoom:focus-visible { opacity: 1; }
+body.has-map-zoom .minimap { left: calc(var(--gap, 14px) + var(--safe-l, 0px) + 22px); }
+body.mission-helm .mm-zoom::-webkit-slider-runnable-track { width: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.8); }
+body.mission-helm .mm-zoom::-moz-range-track { width: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.8); }
+body.mission-helm .mm-zoom::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-left: -4.5px; border-radius: 50%; background: #fff; border: 0; }
+body.mission-helm .mm-zoom::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 0; }
 body.mission-helm .helm-act-drone { border-color: rgba(255, 138, 42, 0.6); } body.mission-helm .helm-act-drone .sp-ico { color: #ff9a3c; }
 body.mission-helm .helm-act .sp-ico .prop { stroke-dasharray: 3 2.4; }
 body.mission-helm .helm-act-miss .act-tag { position: absolute; left: 50%; bottom: -6px; transform: translateX(-50%); padding: 1px 6px; border-radius: 6px; font: 900 9px system-ui, sans-serif; font-style: normal; letter-spacing: 0.1em; color: #fff; background: #d6303a; border: 1px solid rgba(255, 190, 190, 0.7); pointer-events: none; }
@@ -758,3 +761,4 @@ body.mission-fly .helm-ship .hs-cmds { display: flex; }
 
 body.mission-fly .topbar .brand, body.mission-fly .brand { display: none; }
 body.mission-drone .topbar .brand, body.mission-drone .brand { display: none; }
+.helm-act { pointer-events: auto; }
