@@ -113,7 +113,7 @@ body.mission-helm .topbar .brand, body.mission-helm .brand { display: none; }
 .dome-svg .dl { fill: #fff; font: 700 11.5px 'Segoe UI', system-ui, sans-serif; letter-spacing: 0.02em; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.75); stroke-width: 2.4px; stroke-linejoin: round; }
 .dome-svg .hd { fill: #fff; font: 800 17px 'Segoe UI', system-ui, sans-serif; letter-spacing: 0.03em; text-anchor: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.7); stroke-width: 2.6px; stroke-linejoin: round; }
 .dome-svg .lub { fill: var(--accent); }
-.dome-svg .rt { fill: none; stroke: rgba(255, 255, 255, 0.14); stroke-width: 4; stroke-linecap: round; }
+.dome-svg .rt { fill: none; stroke: rgba(255, 255, 255, 0.26); stroke-width: 4; stroke-linecap: round; }
 .dome-svg .rf { fill: none; stroke-width: 4; stroke-linecap: round; }
 .dome-svg .rf.stbd { stroke: #3ddc84; }
 .dome-svg .rf.port { stroke: #ff5d61; }
@@ -596,8 +596,7 @@ body.mission-helm .helm-act-miss.locked .act-tag { background: #1f9d5c; border-c
 /* Narrower windows: the badges stand two by two each side, the propellers shrink a little, so everything stays in the bottom row. */
 @media (max-width: 1279px) {
   .helm-ship { gap: 4px; max-width: none; }
-  .helm-ship .hs-badges { display: grid; grid-template-columns: repeat(2, 46px); gap: 6px; margin-bottom: 2px; }
-  .helm-ship .hs-cmds { display: flex; flex-direction: column; }
+  .helm-ship .hs-badges, .helm-ship .hs-cmds { display: flex; flex-direction: row; flex-wrap: nowrap; gap: 5px; margin-bottom: 2px; zoom: 0.82; } /* every icon in one row along the bottom, a little smaller */
   .helm-ship .hs-centre { gap: 4px; }
   .helm-ship .hs-prop { width: 40px; height: 40px; }
 }
@@ -758,7 +757,7 @@ body.mission-fly .helm-ship .hs-cmds { display: flex; }
   .hb-needle { animation: fu-gauge 1.6s ease-in-out infinite alternate; }
   .hb-lift { animation: fu-up 1.4s ease-in-out infinite; }
 }
-@media (max-width: 1279px) { body.mission-fly .helm-ship .hs-cmds { display: grid; grid-template-columns: repeat(2, 46px); } }
+@media (max-width: 1279px) { body.mission-fly .helm-ship .hs-cmds { display: flex; flex-direction: row; flex-wrap: nowrap; } }
 
 body.mission-fly .topbar .brand, body.mission-fly .brand { display: none; }
 body.mission-drone .topbar .brand, body.mission-drone .brand { display: none; }

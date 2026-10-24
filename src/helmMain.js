@@ -1363,15 +1363,13 @@ heliBtn.className = 'helm-act helm-act-heli';
 missBtn.className = 'helm-act helm-act-miss';
 actions.append(heliBtn, missBtn);
 const ICON_GUN = '<svg viewBox="0 0 32 32" aria-hidden="true"><path class="fill" d="M3 21h11v5H3z"/><circle class="fill" cx="12" cy="16" r="5"/><path class="fill" d="M16 13.5h10v5H16z"/><path d="M16 16h10M12 11v-3"/><path class="muzzle" d="M27 13l4 3-4 3"/><path class="trace t1" d="M22 8h4"/><path class="trace t2" d="M17 6h3"/></svg>';
-const ICON_AUTO = '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="9"/><path d="M16 3v6M16 23v6M3 16h6M23 16h6"/><g class="hr-sweep" style="transform-origin:16px 16px"><path d="M16 16l6-6"/></g><circle cx="16" cy="16" r="2" style="fill:currentColor;stroke:none"/></svg>';
 const ICON_DRONE = '<svg viewBox="0 0 32 32" aria-hidden="true"><g transform="rotate(-24 16 16)"><path d="M1 22h22"/><g class="launch"><circle class="puff p1" cx="6" cy="16" r="1.6"/><circle class="puff p2" cx="6" cy="16" r="1.6"/><path class="flame" d="M9 14.6L2 16l7 1.4z"/><path class="fill" d="M9 14.5h14l2 1.5-2 1.5H9z"/><path class="fill" d="M14 8h4v16h-4z"/><path class="fill" d="M9 12h3v8H9z"/><path class="prop" d="M26.5 11.5v9"/></g></g></svg>';
-const gunBtn = document.createElement('button'), autoBtn = document.createElement('button'), droneBtn = document.createElement('button');
-gunBtn.type = autoBtn.type = droneBtn.type = 'button';
-gunBtn.className = 'helm-act helm-act-gun'; autoBtn.className = 'helm-act helm-act-auto'; droneBtn.className = 'helm-act helm-act-drone';
+const gunBtn = document.createElement('button'), droneBtn = document.createElement('button');
+gunBtn.type = droneBtn.type = 'button';
+gunBtn.className = 'helm-act helm-act-gun'; droneBtn.className = 'helm-act helm-act-drone';
 gunBtn.innerHTML = supportHtml(ICON_GUN, 'Guns', 'hold to fire', 'G');
-autoBtn.innerHTML = supportHtml(ICON_AUTO, 'Auto guns', 'on', 'A');
 droneBtn.innerHTML = supportHtml(ICON_DRONE, 'Add a drone', 'send one in', 'D');
-actions.append(gunBtn, autoBtn, droneBtn);
+actions.append(gunBtn, droneBtn);
 // The guns fire while the button is held, like G; the other two do what their key does.
 gunBtn.addEventListener('pointerdown', (e) => {
   e.preventDefault();
@@ -1380,7 +1378,8 @@ gunBtn.addEventListener('pointerdown', (e) => {
   window.addEventListener('pointerup', up);
   window.addEventListener('pointercancel', up);
 });
-autoBtn.addEventListener('click', () => { sim.toggleAutoGuns(); autoBtn.blur(); });
+// The guns badge (left of the dome) is the auto-guns switch: a click does what A does.
+statHost.addEventListener('click', (e) => { if (e.target instanceof Element && e.target.closest('.hb-gun')) { sim.toggleAutoGuns(); lastStat = ''; } });
 droneBtn.addEventListener('click', () => { sim.summon(); droneBtn.blur(); });
 heliBtn.addEventListener('click', () => { say(sim.heliRequest(), ''); heliBtn.blur(); });
 missBtn.addEventListener('click', () => { if (sim.shot?.hold) sim.launchReady(); else sim.arm(); missBtn.blur(); });
@@ -1410,9 +1409,6 @@ function updateGunButtons() {
   if (k === lastGunState) return;
   lastGunState = k;
   gunBtn.classList.toggle('on', input.gun === 1);
-  autoBtn.classList.toggle('on', !!sim.gunsAuto);
-  autoBtn.querySelector('small').textContent = sim.gunsAuto ? 'on' : 'off';
-  autoBtn.setAttribute('aria-pressed', String(!!sim.gunsAuto));
 }
 // The dome: its rim is a heading tape (the degrees slide round it, the heading itself fixed and bold at the top), inside it
 // a needle from the foot swings left and right with the rudder, and the speed is under the needle.
@@ -1466,7 +1462,7 @@ function weaponsHtml() {
   const gMax = GUN_ROUNDS * sim.guns.length;
   const gCls = firing ? 'fire' : sim.gunRounds <= 0 ? 'out' : sim.gunsAuto ? 'auto' : 'ok';
   return badge(`hb-msl ${mCls}`, `<svg viewBox="0 0 24 24">${BI.missile}</svg>`, sim.cellsLeft / CELLS, 'Missiles', `${sim.cellsLeft} of ${CELLS} · ${mState}`, String(sim.cellsLeft))
-    + badge(`hb-gun ${gCls}`, `<svg viewBox="0 0 24 24">${BI.guns}</svg>`, sim.gunRounds / gMax, 'Guns', `${sim.gunRounds} rounds · ${gState}`, sim.gunsAuto ? 'A' : '');
+    + badge(`hb-gun ${gCls}`, `<svg viewBox="0 0 24 24">${BI.guns}</svg>`, sim.gunRounds / gMax, 'Guns', `${sim.gunRounds} rounds · ${gState} · click: auto on/off`, sim.gunsAuto ? 'A' : '');
 }
 // A round badge: an animated icon in a ring that shows how much is left, a chip for the number or state, and a tip that opens on hover.
 const RING_C = 2 * Math.PI * 20;
