@@ -10,6 +10,7 @@ import { menuText } from './menu.js';
 import { createHarbour } from './harbourScene.js';
 import { createHarbourMap } from './harbourMap.js';
 import { createHarbourAudio } from './harbourAudio.js';
+import { createHarbourCrew } from './harbourCrew.js';
 import {
   HarbourSim, TELEGRAPH, RUDDER_MAX, KT, STAGES, SPEED_LIMIT, TARGET_BERTH, START_BERTH, LIGHTS, FAIRWAY, HALF_BEAM, BERTH_TOL, compass, thrusterFactor,
 } from './harbour.js';
@@ -57,6 +58,7 @@ const wake = createWake(scene);
 const map = createHarbourMap();
 const audio = createHarbourAudio();
 const sim = new HarbourSim();
+const crew = createHarbourCrew({ scene, ship, bridge, landHeight: harbour.landHeight }); // the bridge team, the line handlers, the people ashore
 
 // --- The banner --------------------------------------------------------------------------------------------------------
 const banner = document.querySelector('#shot-caption');
@@ -71,7 +73,7 @@ function say(text, tone = '', ms = 3400) {
 // --- Views ---------------------------------------------------------------------------------------------------------------
 const VIEWS = ['bridge', 'wing', 'behind', 'above', 'orbit', 'tower'];
 const VIEW_NAMES = { bridge: 'Bridge', wing: 'Bridge wing', behind: 'Behind her', above: 'Chart view', orbit: 'Orbit', tower: 'Pier-head tower' };
-const BRIDGE_EYE = new THREE.Vector3(11.7, 11.0, 0);
+const BRIDGE_EYE = new THREE.Vector3(11.9, 11.0, 1.5); // a pace to starboard of the helmsman, who stands at the wheel on the centreline
 let view = 'behind';
 let lookYaw = 0, lookPitch = -0.04; // bridge: degrees off the bow (+ starboard), radians up
 let wingSide = 1; // +1 the starboard wing
@@ -156,7 +158,7 @@ function updateCamera(dt) {
     wantFov = 58;
   } else if (view === 'wing') {
     // Out on the wing, over her side, looking down at the water between her and the quay (drag looks round).
-    ship.group.localToWorld(camera.position.set(12.6, 11.8, wingSide * 9.4));
+    ship.group.localToWorld(camera.position.set(12.6, 11.8, wingSide * 7.6)); // at the end of the wing, over her side
     const yaw = THREE.MathUtils.degToRad(wingYaw) + wingSide * Math.PI * 0.62;
     const pitch = -0.32 + wingPitch;
     _a.set(Math.cos(yaw) * Math.cos(pitch), Math.sin(pitch), Math.sin(yaw) * Math.cos(pitch)).transformDirection(ship.group.matrixWorld);
@@ -512,7 +514,8 @@ function applyState() {
   ship.update(1000 + t, Infinity);
   env.ocean.material.uniforms.uTime.value = t;
   if (!sim.lines) wake.update({ t, x: sim.x, z: sim.z, psi: sim.psi, r: sim.r, u: sim.u });
-  harbour.update(t, { x: sim.x, z: sim.z, psi: sim.psi, lines: sim.lines, face: sim.stage === 'alongside' ? START_BERTH.face : TARGET_BERTH.face });
+  harbour.update(t);
+  crew.update(t, sim, { bridgeView: view === 'bridge' || view === 'wing' });
   harbour.ghost.visible = sim.stage === 'berth';
 }
 
@@ -525,6 +528,11 @@ renderer.setAnimationLoop((now) => {
   for (const e of sim.takeEvents()) {
     audio.event(e);
     if (e.type === 'say') say(e.text, e.tone, e.tone === 'danger' ? 4200 : 3600);
+    else if (e.type === 'telegraph') { // the officer of the watch rings it down and repeats the order
+      crew.telegraph(sim.t);
+      const o = TELEGRAPH[e.order];
+      say(`${o.kn > 0 ? `${o.name} ahead` : o.kn === 0 ? 'Stop engines' : o.name}, aye`, '', 1700);
+    }
   }
   applyState();
   updateCamera(dt);

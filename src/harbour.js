@@ -269,6 +269,7 @@ export class HarbourSim {
     this.thr = { yaw: 0, sway: 0 }; // what the thrusters are doing (-1 to 1), for the readouts
     this.track = [];
     this.tStart = null; // when the lines went
+    this.tFast = null; // when they went on again, at berth 7
     this.acc = 0;
   }
 
@@ -307,6 +308,7 @@ export class HarbourSim {
 
   makeFast() {
     this.lines = true;
+    this.tFast = this.t;
     this.stage = 'done';
     this.u = this.v = this.r = 0;
     const b = this.berthState();

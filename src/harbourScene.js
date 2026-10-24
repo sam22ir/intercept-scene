@@ -8,7 +8,8 @@ import { LAND, BREAKWATER, ROCKS, MOORED, FACES, TARGET_BERTH, BUOYS, LIGHTS, px
 // heightfield (its quays at 2.6 m, the town on a plain that rises to green hills inland, the beach, the rocky headland), the north
 // breakwater's deck and wave wall, vertical quay walls, rock armour on the seaward faces, the port's sheds (blue roofs, as in the
 // images), the town as instanced houses and flats with flat and tiled roofs, two minarets, trees on the hills, the pier-head lights,
-// the buoys, the ships and submarines alongside, the fishing boats, the bollards and fenders, and berth 7's green marks.
+// the buoys, the ships and submarines alongside, the fishing boats, the bollards and fenders, and berth 7's green marks (the
+// people and her mooring lines are harbourCrew.js's).
 // Procedural geometry only, no textures from outside. `update(t)` blinks the lights and bobs the buoys.
 
 const smooth = (a, b, x) => { const k = Math.min(Math.max((x - a) / (b - a), 0), 1); return k * k * (3 - 2 * k); };
@@ -16,7 +17,7 @@ const QUAY = 2.6; // m: the quays and yards
 const BW_DECK = 3.4; // m: the north breakwater's deck
 
 // The port's yards (no houses there): the land between the coast road and the water, read off the images.
-const PORT_ZONE = [[150, 15], [560, 60], [560, 160], [391, 240], [142, 330], [200, 450], [640, 410], [620, 700], [545, 760], [330, 790], [320, 1235], [290, 1235], [35, 800], [35, 200], [140, 170]]
+const PORT_ZONE = [[150, 15], [560, 60], [560, 160], [391, 240], [142, 330], [185, 440], [270, 404], [575, 350], [640, 405], [620, 700], [545, 760], [330, 790], [320, 1235], [290, 1235], [35, 800], [35, 200], [140, 170]]
   .map(([x, y]) => px(x, y));
 const portZone = { pts: PORT_ZONE, box: box(PORT_ZONE) };
 function box(pts) {
@@ -730,19 +731,13 @@ export function createHarbour(scene) {
     return { g, ph: i * 1.3 };
   });
 
-  // The mooring lines: from her fairleads to the quay's bollards (shown while she is fast).
-  const lineMat = new THREE.LineBasicMaterial({ color: 0xe6dcc0 });
-  const lines = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(4 * 2 * 3), 3)), lineMat);
-  lines.frustumCulled = false;
-  group.add(lines);
-
   return {
     group,
     berthMarks,
     ghost: berthMarks.getObjectByName('ghost'),
     landHeight,
-    // t: seconds (any clock); `ship`: { x, z, psi, lines, face } to draw her lines to the quay
-    update(t, ship = null) {
+    // t: seconds (any clock): the lamps blink, the buoys and the ships alongside bob (her mooring lines are harbourCrew.js's)
+    update(t) {
       for (const l of lamps) l.s.visible = ((t + l.ph) % l.period) < l.on;
       for (const b of buoys) {
         b.g.position.y = 0.18 * Math.sin(t * 1.1 + b.ph);
@@ -750,22 +745,6 @@ export function createHarbour(scene) {
         b.g.rotation.z = 0.05 * Math.cos(t * 0.8 + b.ph);
       }
       for (const v of vessels) v.obj.position.y = 0.06 * Math.sin(t * 0.5 + v.ph);
-      lines.visible = !!(ship && ship.lines && ship.face);
-      if (!lines.visible) return;
-      const f = ship.face, c = Math.cos(ship.psi), s = Math.sin(ship.psi);
-      const side = Math.sign((f.n.x * -s + f.n.z * c) * -1) || 1; // the side of her that faces the quay (+1 starboard)
-      const deck = f === FACES.north || f === FACES.arm ? BW_DECK : QUAY;
-      const arr = lines.geometry.attributes.position.array;
-      // bow line and forward spring, after spring and stern line: [her point ahead, the bollard ahead (+) or astern of it]
-      const sets = [[50, 28], [40, -14], [-40, 14], [-52, -28]];
-      sets.forEach(([ax, reach], i) => {
-        const fx = ship.x + c * ax - s * side * 4.6, fz = ship.z + s * ax + c * side * 4.6;
-        const bx = ship.x + c * (ax + reach), bz = ship.z + s * (ax + reach);
-        // the bollard: on the quay edge, abreast of that point
-        const d = (bx - f.a.x) * f.n.x + (bz - f.a.z) * f.n.z;
-        arr.set([fx, 6.2, fz, bx - f.n.x * (d + 1.2), deck + 0.8, bz - f.n.z * (d + 1.2)], i * 6);
-      });
-      lines.geometry.attributes.position.needsUpdate = true;
     },
   };
 }
