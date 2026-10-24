@@ -407,6 +407,7 @@ function setFov(f) {
 }
 
 const shipTarget = (out) => out.set(sim.x, 10, sim.z);
+const orbitTarget = (out) => out.set(sim.x, -40, sim.z); // a little under her, so she stands above the middle of the screen, clear of the instruments
 let viewBefore = 'behind'; // the view the target view was left from: the camera goes back to it once the drone has splashed
 let tgtWatch = null; // the drone the target view was last on
 function setView(v, quiet = false) {
@@ -424,7 +425,12 @@ function setView(v, quiet = false) {
   camera.up.set(0, 1, 0);
   if (v === 'orbit') {
     controls.enabled = true;
-    rig.focus('ship', shipTarget, 260, 40);
+    // It opens off her starboard beam, a little abaft it and above the water, looking down on her from 300 m (drag and wheel take it from there).
+    orbitTarget(controls.target);
+    const fx = Math.cos(sim.psi), fz = Math.sin(sim.psi), az = THREE.MathUtils.degToRad(25), el = THREE.MathUtils.degToRad(22);
+    const hx = -fz * Math.cos(az) - fx * Math.sin(az), hz = fx * Math.cos(az) - fz * Math.sin(az);
+    camera.position.set(controls.target.x + 300 * Math.cos(el) * hx, controls.target.y + 300 * Math.sin(el), controls.target.z + 300 * Math.cos(el) * hz);
+    rig.focus('ship', orbitTarget, 300, 40);
   } else {
     controls.enabled = false;
     rig.free();
@@ -1054,9 +1060,9 @@ radarEl.hidden = true;
 // The console: two spheres side by side at the foot of the screen, the aim stick (a drag on it turns the sight; a ring round it zooms the lens)
 // and FIRE, with the option buttons, round and animated, one cluster each side.
 const RICON = { // 32 x 32 drawings, animated by CSS in helm.css (.hr-sweep, .hr-brk, .hr-xh, .flame, .puff)
-  auto: '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="11"/><circle cx="16" cy="16" r="5.5"/><g class="hr-sweep"><path d="M16 16L25 8"/></g><circle cx="11" cy="12" r="1.2" style="fill:currentColor;stroke:none"/></svg>',
+  auto: '<svg viewBox="0 0 32 32" aria-hidden="true"><g class="hr-sweep"><path d="M26 16a10 10 0 1 1-3.2-7.4M26 6v6h-6"/></g><circle cx="16" cy="16" r="2" style="fill:currentColor;stroke:none"/></svg>',
   next: '<svg viewBox="0 0 32 32" aria-hidden="true"><g class="hr-brk"><path d="M5 11V5h6M21 5h6v6M27 21v6h-6M11 27H5v-6"/></g><circle cx="16" cy="16" r="3.2" class="fill"/><path d="M21 16h5M23.5 13.5L26 16l-2.5 2.5"/></svg>',
-  lock: '<svg viewBox="0 0 32 32" aria-hidden="true"><g class="hr-xh"><circle cx="16" cy="16" r="8"/><path d="M16 3v6M16 23v6M3 16h6M23 16h6"/></g><circle cx="16" cy="16" r="1.6" style="fill:currentColor;stroke:none"/></svg>',
+  lock: '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="7" y="14" width="18" height="13" rx="3" class="fill"/><g class="hr-shackle"><path d="M11 14v-4a5 5 0 0 1 10 0v4"/></g><circle cx="16" cy="20.5" r="1.8" style="fill:currentColor;stroke:none"/></svg>',
   arm: '<svg viewBox="0 0 32 32" aria-hidden="true"><g transform="rotate(-45 16 16)"><circle class="puff p1" cx="4" cy="16" r="1.6"/><circle class="puff p2" cx="4" cy="16" r="1.6"/><path class="flame" d="M9 14.2L1.5 16 9 17.8z"/><path class="fill" d="M9 13.2h11.5L27 16l-6.5 2.8H9z"/><path d="M9 13.2L5.8 9.8h5.6l1.9 3.4M9 18.8l-3.2 3.4h5.6l1.9-3.4M16 13.2v5.6"/></g></svg>',
   pick: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 16s5-8 13-8 13 8 13 8-5 8-13 8S3 16 3 16z"/><circle cx="16" cy="16" r="3.6" class="fill"/></svg>',
 };
@@ -1296,7 +1302,8 @@ const PROP_SVG = '<svg viewBox="-24 -24 48 48" aria-hidden="true"><defs><linearG
   + [0, 90, 180, 270].map((a) => `<g transform="rotate(${a})"><path d="M-2 -6 C-8.5 -9.5 -9.5 -19 -4 -22.6 C1 -24.5 8.4 -22 9 -17.6 C7 -12 4 -8 2.2 -6 Z" class="pp-blade"/><path d="M-3.4 -9 C-6 -13 -5.8 -18 -3 -20.6" class="pp-edge"/></g>`).join('')
   + '</g><circle r="5.4" class="pp-hubring"/><circle r="3" class="pp-hub"/><circle r="1" class="pp-cap"/></svg>';
 const statHost = document.createElement('div'), centre = document.createElement('div'), wpnHost = document.createElement('div'), domeHost = document.createElement('div');
-statHost.className = wpnHost.className = 'hs-badges'; // the hull and kills badges (left), the missiles and guns badges (right)
+statHost.className = 'hs-badges'; // the info badges (hull, kills, missiles, guns), left of the steering group
+wpnHost.className = 'hs-badges hs-cmds'; // the command buttons (helicopter, missile), right of it
 centre.className = 'hs-centre';
 const propL = document.createElement('div'), propR = document.createElement('div'), barL = document.createElement('div'), barR = document.createElement('div');
 propL.className = propR.className = 'hs-prop';
@@ -1321,7 +1328,7 @@ function spinProps(dt) {
   const fast = Math.min(1, Math.abs(kn) / 20);
   propL.style.setProperty('--blur', fast.toFixed(2)); propR.style.setProperty('--blur', fast.toFixed(2));
 }
-let lastStat = '', lastDome = '', lastWpn = '';
+let lastStat = '', lastDome = '';
 
 // Under the radar map: the range and bearing of the drone you are on.
 const rangeEl = document.createElement('div');
@@ -1335,9 +1342,7 @@ function updateRange() {
 }
 
 // The support buttons, round, in a row above the scope: the helicopter (E) and a missile (M, then F to launch), each with its key and a tip on hover.
-const actions = document.createElement('div');
-actions.className = 'helm-actions';
-document.body.appendChild(actions);
+const actions = wpnHost; // (the commands stand in the bottom row, right of the steering group)
 const ICON_HELI = '<svg viewBox="0 0 32 32" aria-hidden="true"><g class="bob"><g class="rotor"><path d="M2 8.5h28"/></g><path d="M16 8.5v3"/><path class="fill" d="M6.5 18c0-3.6 3-6.5 7.5-6.5h5c3.4 0 5.5 2 5.5 4.6v1.9c0 1.4-1.3 2.5-2.9 2.5H10.5C8.2 20.5 6.5 19.7 6.5 18z"/><path class="win" d="M9.5 15.3c.8-1.5 2.4-2.3 4.6-2.3h1.4v4.3H9.2z"/><path d="M24.5 15.3l5.5-2.6v3.4l-5 2"/><circle class="trot" cx="30" cy="12.6" r="2.3"/><path d="M8 24.5h15M11 20.5v4M20 20.5v4"/></g></svg>';
 const ICON_MISS = '<svg viewBox="0 0 32 32" aria-hidden="true"><g transform="rotate(-45 16 16)"><circle class="puff p1" cx="4" cy="16" r="1.6"/><circle class="puff p2" cx="4" cy="16" r="1.6"/><path class="flame" d="M9 14.2L1.5 16 9 17.8z"/><path class="fill" d="M9 13.2h11.5L27 16l-6.5 2.8H9z"/><path d="M9 13.2L5.8 9.8h5.6l1.9 3.4M9 18.8l-3.2 3.4h5.6l1.9-3.4M16 13.2v5.6"/></g></svg>';
 const supportHtml = (icon, title, sub, key) => `<i class="sp-ico">${icon}</i><span class="sp-txt"><b>${title}</b><small>${sub}</small></span><kbd>${key}</kbd>`;
@@ -1426,9 +1431,9 @@ function badge(cls, icon, frac, title, sub, chip) {
     + `<span class="hb-ico">${icon}</span>${chip === '' ? '' : `<i class="hb-chip">${chip}</i>`}<span class="hb-tip"><b>${title}</b><small>${sub}</small></span></div>`;
 }
 const BI = { // 24 x 24 drawings, animated by CSS (helm.css .hb-*)
-  hull: '<g class="hb-bob"><path d="M3 14h18l-2.5 4h-13z"/><path d="M8 14v-3.5h6l2 3.5"/><path d="M11 10.5V7.5h2"/></g><path class="hb-wave" d="M1 21q2-1.4 4 0t4 0 4 0 4 0 4 0 4 0"/>',
-  kills: '<g class="hb-spin"><circle cx="12" cy="12" r="7"/><path d="M12 2.5v5M12 16.5v5M2.5 12h5M16.5 12h5"/></g><circle cx="12" cy="12" r="1.6" style="fill:currentColor;stroke:none"/>',
-  missile: '<g transform="rotate(-45 12 12)"><path class="hb-flame" d="M6.5 10.8L1 12l5.5 1.2z"/><path class="hb-fill" d="M6.5 10.2h8.5l5 1.8-5 1.8H6.5z"/><path d="M6.5 10.2L4.2 7.6h4.2l1.4 2.6M6.5 13.8l-2.3 2.6h4.2l1.4-2.6M12 10.2v3.6"/></g>',
+  hull: '<path class="hb-fill" d="M12 2.8l7.2 2.8v5.4c0 5-3 8.6-7.2 10.2-4.2-1.6-7.2-5.2-7.2-10.2V5.6z"/><path class="hb-tick" d="M8.4 12.2l2.6 2.7 4.8-5.4"/>',
+  kills: '<path d="M10.3 10.3L6.2 6.2M13.7 10.3l4.1-4.1M10.3 13.7l-4.1 4.1M13.7 13.7l4.1 4.1"/><rect x="10" y="10" width="4" height="4" rx="1" class="hb-fill"/><g class="hb-rot"><circle cx="5" cy="5" r="2.6"/><circle cx="19" cy="5" r="2.6"/><circle cx="5" cy="19" r="2.6"/><circle cx="19" cy="19" r="2.6"/></g>',
+  missile: '<rect x="3.5" y="4" width="17" height="16" rx="2.2"/><g class="hb-cells"><circle cx="8.5" cy="9" r="2"/><circle cx="15.5" cy="9" r="2"/><circle cx="8.5" cy="15" r="2"/><circle cx="15.5" cy="15" r="2"/></g>',
   guns: '<g class="hb-recoil"><path class="hb-fill" d="M3 15.5h5l2-3h8.5v5.5H10l-2-2.5H3z"/></g><path class="hb-muzzle" d="M20.5 13.2l2.3-1.6M21 15.2h2.6M20.5 17.2l2.3 1.6"/><path d="M6 19.5v2M13 19.5v2"/>',
 };
 function hullBadgeHtml() {
@@ -1439,7 +1444,7 @@ function hullBadgeHtml() {
 function killsBadgeHtml() {
   return badge('hb-kills', `<svg viewBox="0 0 24 24">${BI.kills}</svg>`, 1, 'Kills', `${sim.kills} drone${sim.kills === 1 ? '' : 's'} shot down`, String(sim.kills));
 }
-function statHtml() { return hullBadgeHtml() + killsBadgeHtml(); }
+function statHtml() { return hullBadgeHtml() + killsBadgeHtml() + weaponsHtml(); }
 
 // The fire-zone gauges: for each weapon a range bar (0 to ZONE_SCALE) with the band it can engage in lit and a marker for the
 // target, plus one short word: READY, or what is still missing (km to close, degrees to turn, blocked).
@@ -1719,7 +1724,7 @@ const VIEW_ICONS = { // drawn for what each view is: the wheelhouse wheel, a cha
   bridge: '<g class="wheel"><circle cx="12" cy="12" r="6.2"/><circle cx="12" cy="12" r="1.7"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4M5.3 5.3l2.5 2.5M16.2 16.2l2.5 2.5M18.7 5.3l-2.5 2.5M7.8 16.2l-2.5 2.5"/></g>',
   behind: '<path d="M8 14h13l-2.5 4H10z"/><path d="M12 14v-3h5l1.5 3"/><g class="lines"><path d="M2 12.5h3.5M1 15.5h4.5M3 18.5h3.5"/></g>',
   above: '<path d="M12 2.5c3.2 3 4.3 7 4.3 11v5.7L14 22h-4l-2.3-2.8v-5.7c0-4 1.1-8 4.3-11z"/><path d="M12 8v10M9.7 13h4.6"/>',
-  missile: '<path d="M8 12c3.2-3.4 8.5-3.4 13 0-4.5 3.4-9.8 3.4-13 0z"/><path d="M10.5 9.8L8.3 7M10.5 14.2L8.3 17"/><g class="lines"><path d="M2 12h3.5M3.5 9.5h2M3.5 14.5h2"/></g>',
+  missile: '<path d="M3 19C7 6 15 3.5 20 8"/><path d="M16 4.8l4.4 3.4-4.8 2.4"/><circle cx="3.5" cy="18.5" r="1.4" style="fill:currentColor;stroke:none"/><g class="lines"><path d="M8 20.5h4M13 20.5h3"/></g>',
   sight: '<circle cx="12" cy="12" r="9.3"/><circle cx="12" cy="12" r="4.7"/><g class="sweep"><path d="M12 12L19 5.6"/><path class="beam" d="M12 12L19 5.6A9.3 9.3 0 0 1 21.3 12z"/></g><circle cx="8" cy="8.5" r="1" style="fill:currentColor"/>',
   target: '<circle cx="12" cy="12" r="6"/><path d="M12 2.5v5M12 16.5v5M2.5 12h5M16.5 12h5"/><circle cx="12" cy="12" r="1.1" style="fill:currentColor"/>',
   orbit: '<g transform="rotate(-25 12 12)"><ellipse cx="12" cy="12" rx="9.5" ry="4.6"/>' + (MOTION ? '<circle r="1.7" style="fill:currentColor"><animateMotion dur="3.2s" repeatCount="indefinite" path="M21.5 12a9.5 4.6 0 1 1 -19 0a9.5 4.6 0 1 1 19 0"/></circle>' : '<circle cx="21.5" cy="12" r="1.7" style="fill:currentColor"/>') + '</g><path d="M9.7 12.6h4.6l-.9 1.5h-2.8zM12 10.3v2.3"/>',
@@ -1928,8 +1933,6 @@ renderer.setAnimationLoop((now) => {
     if (st !== lastStat) { statHost.innerHTML = st; lastStat = st; }
     const dm = `<div class="hs-dome">${domeSvg()}</div>`;
     if (dm !== lastDome) { domeHost.innerHTML = dm; lastDome = dm; }
-    const wp = weaponsHtml();
-    if (wp !== lastWpn) { wpnHost.innerHTML = wp; lastWpn = wp; }
     spinProps(dt);
     updateActions();
     updateRange();
