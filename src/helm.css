@@ -555,3 +555,10 @@ body.helm-radarview .helm-actions { display: none; }
   .helm-radar .hr-row { gap: 8px; } .helm-radar .hr-opts { gap: 6px; }
 }
 body.helm-radarview .helm-sight .hs-txt { top: calc(50% + 12vmin); }
+
+/* The radar map as in Surface battle: no corner label, a chip with the target's range and bearing under it. */
+body.mission-helm .minimap .mm-scale { display: none; }
+body.mission-helm .minimap { bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) + 32px); }
+.helm-range { position: fixed; z-index: 9; left: calc(var(--gap, 14px) + var(--safe-l, 0px)); bottom: calc(var(--gap, 14px) + var(--safe-b, 0px)); width: var(--map-d, 150px); display: flex; justify-content: center; pointer-events: none; }
+.helm-range[hidden], body:not(.mission-helm) .helm-range, body.ui-hidden .helm-range { display: none; }
+.helm-range .pt-pill { padding: 4px 9px; border-radius: 999px; font: 700 10.5px system-ui, sans-serif; letter-spacing: 0.04em; color: #e8eef5; background: rgba(11, 17, 25, 0.78); border: 1px solid rgba(255, 255, 255, 0.12); }

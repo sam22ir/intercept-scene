@@ -1323,6 +1323,17 @@ function spinProps(dt) {
 }
 let lastStat = '', lastDome = '', lastWpn = '';
 
+// Under the radar map: the range and bearing of the drone you are on.
+const rangeEl = document.createElement('div');
+rangeEl.className = 'helm-range';
+document.body.appendChild(rangeEl);
+let lastRange = '';
+function updateRange() {
+  const t = sim.target;
+  const html = t ? `<div class="pt-pill" title="Range and bearing of the target">${kmText(sim.rangeTo(t.pos))} · ${relName(sim.relBearing(t.pos))}</div>` : '';
+  if (html !== lastRange) { rangeEl.innerHTML = html; lastRange = html; }
+}
+
 // The support buttons, round, in a row above the scope: the helicopter (E) and a missile (M, then F to launch), each with its key and a tip on hover.
 const actions = document.createElement('div');
 actions.className = 'helm-actions';
@@ -1678,6 +1689,7 @@ function setHud(on) {
   root.hidden = !on;
   shipEl.hidden = !on;
   actions.hidden = !on;
+  rangeEl.hidden = !on;
   hudButton.classList.toggle('active', on);
   hudButton.setAttribute('aria-pressed', String(on));
 }
@@ -1907,6 +1919,7 @@ renderer.setAnimationLoop((now) => {
     if (wp !== lastWpn) { wpnHost.innerHTML = wp; lastWpn = wp; }
     spinProps(dt);
     updateActions();
+    updateRange();
   }
   const keys = keysHtml();
   if (keys !== lastKeys) { keysEl.innerHTML = keys; lastKeys = keys; }

@@ -139,16 +139,16 @@ export function createHelmMap() {
     ctx.arc(R, R, rOut, aOf(-ARC), aOf(ARC));
     ctx.arc(R, R, rIn, aOf(ARC), aOf(-ARC), true);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(61, 220, 132, 0.05)';
+    ctx.fillStyle = 'rgba(255, 122, 26, 0.07)';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(61, 220, 132, 0.55)';
+    ctx.strokeStyle = 'rgba(255, 122, 26, 0.45)';
     ctx.lineWidth = 1;
     ctx.stroke();
     const rg = GUN_RANGE * k;
     const covered = (th) => !gunBlind(0, -th) || !gunBlind(1, -th);
     const STEP = Math.PI / 90;
-    ctx.fillStyle = 'rgba(255, 179, 64, 0.05)';
-    ctx.strokeStyle = 'rgba(255, 179, 64, 0.55)';
+    ctx.fillStyle = 'rgba(80, 200, 255, 0.07)';
+    ctx.strokeStyle = 'rgba(80, 200, 255, 0.45)';
     ctx.lineWidth = 1;
     for (let th = -Math.PI; th < Math.PI; th += STEP) {
       if (!covered(th + STEP / 2) || (covered(th - STEP / 2) && th > -Math.PI)) continue; // start of a covered run
@@ -178,25 +178,37 @@ export function createHelmMap() {
       ctx.stroke();
       ctx.setLineDash([]);
     }
-    // Where the radar view is looking: a thin line out to the rim, a pointer on the rim and the true bearing (no sector).
+    // Where the radar view is looking: a sector out to the rim as wide as the lens (it narrows as the radar zooms in), a centre line and the true bearing.
     if (sightView) {
       const a0 = sightView.yaw - sim.psi - Math.PI / 2;
       const col = sightView.locked ? '61, 220, 132' : '255, 196, 84';
       const ux = Math.cos(a0);
       const uy = Math.sin(a0);
-      ctx.strokeStyle = `rgba(${col}, 0.8)`;
-      ctx.lineWidth = 1;
+      const half = Math.max(0.018, Math.min(sightView.half ?? 0.1, Math.PI / 2.2)); // at least a thin wedge, so the tightest zoom still shows
+      const rim = R - 9;
+      const g = ctx.createRadialGradient(R, R, 4, R, R, rim);
+      g.addColorStop(0, `rgba(${col}, 0.05)`);
+      g.addColorStop(1, `rgba(${col}, 0.42)`);
+      ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.moveTo(R + ux * 8, R + uy * 8);
-      ctx.lineTo(R + ux * (R - 9), R + uy * (R - 9));
-      ctx.stroke();
-      ctx.fillStyle = `rgb(${col})`;
-      ctx.beginPath();
-      ctx.moveTo(R + ux * (R - 2), R + uy * (R - 2));
-      ctx.lineTo(R + ux * (R - 11) - uy * 4, R + uy * (R - 11) + ux * 4);
-      ctx.lineTo(R + ux * (R - 11) + uy * 4, R + uy * (R - 11) - ux * 4);
+      ctx.moveTo(R, R);
+      ctx.arc(R, R, rim, a0 - half, a0 + half);
       ctx.closePath();
       ctx.fill();
+      ctx.strokeStyle = `rgba(${col}, 0.9)`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(R, R);
+      ctx.lineTo(R + Math.cos(a0 - half) * rim, R + Math.sin(a0 - half) * rim);
+      ctx.arc(R, R, rim, a0 - half, a0 + half);
+      ctx.lineTo(R, R);
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(${col}, 0.35)`;
+      ctx.beginPath();
+      ctx.moveTo(R + ux * 8, R + uy * 8);
+      ctx.lineTo(R + ux * rim, R + uy * rim);
+      ctx.stroke();
+      ctx.fillStyle = `rgb(${col})`;
       const brg = ((Math.round((sightView.yaw * 180) / Math.PI) % 360) + 360) % 360;
       const txt = `${String(brg).padStart(3, '0')}°`;
       ctx.font = '700 9px system-ui, sans-serif';
@@ -208,16 +220,6 @@ export function createHelmMap() {
       ctx.fillText(txt, R + ux * (R - 23), R + uy * (R - 23));
       ctx.lineWidth = 1;
     }
-    // The scale: a bar of a round length stands low on the disc (no numbers on the rings or the bar; the corner label gives the range).
-    const nice = [200, 500, 1000, 2000, 5000, 10000].reduce((best, m) => (Math.abs(m * k - R * 0.5) < Math.abs(best * k - R * 0.5) ? m : best), 1000);
-    const bw = nice * k;
-    const by = R + R * 0.56;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(R - bw / 2, by - 3); ctx.lineTo(R - bw / 2, by); ctx.lineTo(R + bw / 2, by); ctx.lineTo(R + bw / 2, by - 3);
-    ctx.stroke();
-    ctx.lineWidth = 1;
     // The heading line.
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.beginPath();
@@ -288,8 +290,16 @@ export function createHelmMap() {
       ctx.closePath();
       ctx.fill();
       if (d.id === sim.targetId) {
-        ctx.strokeStyle = '#fff';
-        ctx.strokeRect(x - 7, y - 7, 14, 14);
+        ctx.strokeStyle = 'rgba(255, 138, 141, 0.9)';
+        ctx.beginPath();
+        ctx.arc(x, y, 11, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255, 138, 141, 0.9)';
+        ctx.font = '600 9px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const tx = x + 13, ty = y - 7;
+        if (Math.hypot(tx - R, ty - R) < R - 34) ctx.fillText(kmText(sim.rangeTo(d.pos)), tx, ty);
       }
     }
 
@@ -310,10 +320,14 @@ export function createHelmMap() {
 
     // The ship at the centre.
     ctx.fillStyle = GREEN;
+    ctx.strokeStyle = 'rgba(8,12,18,0.85)';
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.moveTo(R, R - 7); ctx.lineTo(R + 3.5, R + 5); ctx.lineTo(R - 3.5, R + 5);
+    ctx.moveTo(R, R - 9);
+    ctx.lineTo(R + 4, R - 3); ctx.lineTo(R + 3.5, R + 8); ctx.lineTo(R - 3.5, R + 8); ctx.lineTo(R - 4, R - 3);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
     ctx.restore();
 
     // The rim: north mark, turning as the ship turns.
