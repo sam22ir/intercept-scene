@@ -551,7 +551,7 @@ body.mission-helm .mm-zoom::-webkit-slider-thumb { -webkit-appearance: none; wid
 body.mission-helm .mm-zoom::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 0; }
 body.mission-helm .helm-act-drone { border-color: rgba(255, 138, 42, 0.6); } body.mission-helm .helm-act-drone .sp-ico { color: #ff9a3c; }
 body.mission-helm .helm-act .sp-ico .prop { stroke-dasharray: 3 2.4; }
-body.mission-helm .helm-act-miss .act-tag { position: absolute; left: 50%; bottom: -6px; transform: translateX(-50%); padding: 1px 6px; border-radius: 6px; font: 900 9px system-ui, sans-serif; font-style: normal; letter-spacing: 0.1em; color: #fff; background: #d6303a; border: 1px solid rgba(255, 190, 190, 0.7); pointer-events: none; }
+body.mission-helm .helm-act .act-tag { position: absolute; left: 50%; bottom: -6px; transform: translateX(-50%); padding: 1px 6px; border-radius: 6px; font: 900 9px system-ui, sans-serif; font-style: normal; letter-spacing: 0.1em; color: #fff; background: #d6303a; border: 1px solid rgba(255, 190, 190, 0.7); pointer-events: none; }
 body.mission-helm .helm-act-miss.armed { background: radial-gradient(circle at 38% 28%, #ff7b7e, #c4252d 70%); border-color: rgba(255, 190, 190, 0.8); box-shadow: 0 0 16px 3px rgba(255, 93, 97, 0.75), inset 0 -6px 12px rgba(0, 0, 0, 0.3); }
 body.mission-helm .helm-act-miss.armed .sp-ico { color: #fff; }
 body.mission-helm .helm-act-miss.armed:hover:not(:disabled) { background: radial-gradient(circle at 38% 28%, #ff9093, #d62d35 70%); }
@@ -768,3 +768,18 @@ body.mission-drone .topbar .brand, body.mission-drone .brand { display: none; }
 .helm-ship .hs-domewrap .hs-prop.pp-l { left: calc(21.7% - var(--ps) / 2); }
 .helm-ship .hs-domewrap .hs-prop.pp-r { right: calc(21.7% - var(--ps) / 2); }
 @media (max-width: 1279px) { .helm-ship .hs-domewrap { --ps: 34px; } }
+/* The helicopter button shows what the helicopter is doing: its ring, tag and rotor follow the state. */
+body.mission-helm .helm-act-heli .act-tag { background: #4a5663; border-color: rgba(255, 255, 255, 0.3); }
+body.mission-helm .helm-act-heli[data-state='parked'] .sp-ico { color: #9aa4af; }
+body.mission-helm .helm-act-heli[data-state='parked'] { border-color: rgba(154, 164, 175, 0.5); box-shadow: none; }
+body.mission-helm .helm-act-heli[data-state='start'] { border-color: rgba(242, 201, 76, 0.9); } body.mission-helm .helm-act-heli[data-state='start'] .act-tag { background: #b8860b; }
+body.mission-helm .helm-act-heli[data-state='air'] { border-color: rgba(61, 220, 132, 0.9); box-shadow: 0 0 0 2px rgba(61, 220, 132, 0.28), 0 6px 18px rgba(0, 0, 0, 0.35); } body.mission-helm .helm-act-heli[data-state='air'] .sp-ico { color: #3ddc84; } body.mission-helm .helm-act-heli[data-state='air'] .act-tag { background: #1f9d5c; }
+body.mission-helm .helm-act-heli[data-state='land'] { border-color: rgba(120, 200, 255, 0.9); box-shadow: 0 0 0 2px rgba(120, 200, 255, 0.28), 0 6px 18px rgba(0, 0, 0, 0.35); } body.mission-helm .helm-act-heli[data-state='land'] .sp-ico { color: #8fd0ff; } body.mission-helm .helm-act-heli[data-state='land'] .act-tag { background: #2b7fc0; }
+body.mission-helm .helm-act-heli[data-state='blocked'] { border-color: rgba(255, 93, 97, 0.9); } body.mission-helm .helm-act-heli[data-state='blocked'] .sp-ico { color: #ff7a7d; } body.mission-helm .helm-act-heli[data-state='blocked'] .act-tag { background: #d6303a; }
+@media (prefers-reduced-motion: no-preference) {
+  body.mission-helm .helm-act-heli[data-state='parked'] .rotor, body.mission-helm .helm-act-heli[data-state='blocked'] .rotor { animation: none; }
+  body.mission-helm .helm-act-heli[data-state='parked'] .bob, body.mission-helm .helm-act-heli[data-state='start'] .bob { animation: none; }
+  body.mission-helm .helm-act-heli[data-state='start'] { animation: hv-firepulse 1.2s ease-in-out infinite; }
+  body.mission-helm .helm-act-heli[data-state='land'] { animation: hv-firepulse 1.6s ease-in-out infinite; }
+}
+.hs-badge.hb-gun { cursor: pointer; }

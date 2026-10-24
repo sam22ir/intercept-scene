@@ -809,8 +809,59 @@ function wreckShot(dt) {
   return true;
 }
 
+// --- The opening shot ------------------------------------------------------------------------------------------------------
+// On entering: straight down over the ship (bow up), then the camera comes down and circles her once, and settles into the behind
+// view, each part eased into the next. Any key or click cuts it short: the camera glides from where it is to the behind view.
+const INTRO_TOP = 3, INTRO_ORBIT = 6, INTRO_SETTLE = 3; // seconds: the plan view, the descent and circle, the settle behind her
+let intro = new URLSearchParams(location.search).get('intro') === '0' ? null : { t: 0, from: null, skipT: 0 };
+const smooth = (x) => { const c = THREE.MathUtils.clamp(x, 0, 1); return c * c * (3 - 2 * c); };
+const _ip = new THREE.Vector3(), _il = new THREE.Vector3(), _bp = new THREE.Vector3(), _bl = new THREE.Vector3(), _iu = new THREE.Vector3();
+function skipIntro() { if (intro && !intro.from && intro.t > 0.6) intro.from = { pos: camera.position.clone(), look: _il.clone(), up: camera.up.clone(), skipT: 0 }; }
+window.addEventListener('keydown', skipIntro);
+window.addEventListener('pointerdown', skipIntro);
+function updateIntro(dt) {
+  intro.t += dt;
+  const fx = Math.cos(sim.psi), fz = Math.sin(sim.psi);
+  // The behind view's own pose (what the camera lands on).
+  _bp.set(sim.x - fx * BEHIND_DIST, BEHIND_DIST * 0.06 + 12, sim.z - fz * BEHIND_DIST);
+  _bl.set(sim.x + fx * 10, _bp.y + (BEHIND_DIST + 10) * 0.062, sim.z + fz * 10);
+  // The circling pose: spherical about the ship, azimuth 0 = straight astern, so the plan view and the finish line up.
+  const u = smooth((intro.t - INTRO_TOP) / INTRO_ORBIT);
+  const el = THREE.MathUtils.degToRad(THREE.MathUtils.lerp(88, 24, u));
+  const r = intro.t < INTRO_TOP ? THREE.MathUtils.lerp(470, 400, smooth(intro.t / INTRO_TOP)) : THREE.MathUtils.lerp(400, 240, u);
+  const az = u * Math.PI * 2;
+  const hx = -fx * Math.cos(az) + fz * Math.sin(az), hz = -fx * Math.sin(az) - fz * Math.cos(az);
+  _ip.set(sim.x + r * Math.cos(el) * hx, 10 + r * Math.sin(el), sim.z + r * Math.cos(el) * hz);
+  _il.set(sim.x, 10, sim.z);
+  const upBlend = smooth((THREE.MathUtils.radToDeg(el) - 50) / 28); // 1 while it looks straight down (bow up), 0 once it is low
+  _iu.set(fx * upBlend, 1 - upBlend, fz * upBlend).normalize();
+  let s = smooth((intro.t - INTRO_TOP - INTRO_ORBIT) / INTRO_SETTLE);
+  let done = intro.t >= INTRO_TOP + INTRO_ORBIT + INTRO_SETTLE;
+  if (intro.from) { // cut short: glide from where the camera was to the behind view
+    intro.from.skipT += dt;
+    s = smooth(intro.from.skipT / 0.9);
+    done = intro.from.skipT >= 0.9;
+    _ip.copy(intro.from.pos); _il.copy(intro.from.look); _iu.copy(intro.from.up);
+  }
+  camera.position.lerpVectors(_ip, _bp, s);
+  _il.lerp(_bl, s);
+  _iu.lerp(_up0, s).normalize();
+  camera.up.copy(_iu);
+  const wantNear = Math.min(Math.max(camera.position.y * 0.2, 0.3), 400);
+  if (camera.near !== wantNear) { camera.near = wantNear; camera.updateProjectionMatrix(); }
+  camera.lookAt(_il);
+  fov = 50;
+  setFov(fov);
+  if (done) { intro = null; camera.up.set(0, 1, 0); setView('behind', true); }
+}
+const _up0 = new THREE.Vector3(0, 1, 0);
+
 function updateCamera(dt) {
   bridge.group.visible = view === 'bridge';
+  if (intro) {
+    if (cine || view !== 'behind') intro = null; // a shot of the action, or a view the player chose, takes over
+    else { updateIntro(dt); updateRadarUi(); return; }
+  }
   // Looking straight down from high up nothing is near the camera, so the near plane moves out with the height: the depth buffer then
   // keeps its precision across the 10 km to the land (otherwise the shore flickers where the land dips under the sea).
   const wantNear = view === 'above' ? Math.min(Math.max(aboveH * 0.2, 0.3), 400) : 0.3;
@@ -1389,15 +1440,27 @@ function updateActions() {
   const hTitle = act === 'land' ? 'Helicopter: land' : 'Helicopter: take off';
   const hSub = act === 'takeoff' ? (sim.standDown ? 'stays: a drone is near' : 'take off') : act === 'land' ? 'bring her in' : 'landing';
   const hOn = act !== null;
+  // What the helicopter is doing, as a short tag and a state colour on the button.
+  const ph = sim.heli.phase;
+  const blocked = act === 'takeoff' && sim.standDown;
+  const H = blocked ? ['HOLD', 'blocked', 'on deck, a drone is near'] : {
+    parked: ['DECK', 'parked', 'parked on the deck'], spindown: ['STOP', 'parked', 'rotor winding down'],
+    spinup: ['START', 'start', 'rotor spinning up'], ready: ['READY', 'start', 'ready to lift'],
+    lift: ['LIFT', 'air', 'lifting off'], circuit: ['AIR', 'air', 'flying its circuit'],
+    hold: ['LAND', 'land', 'holding over the deck, waiting for a steady course'], descend: ['DOWN', 'land', 'coming down onto the deck'],
+    waveoff: ['WAVE', 'blocked', 'wave off: the ship turned'],
+  }[ph] ?? ['', 'parked', ''];
+  const hState = `${H[0]}|${H[1]}`;
   const mHold = !!sim.shot?.hold;
   const mTitle = mHold ? 'Launch the missile' : 'Make a missile ready';
   const mSub = sim.cellsLeft <= 0 && !sim.shot ? 'none left' : mHold ? (sim.shot.locked ? 'locked: press to launch' : 'acquiring the target') : `${sim.cellsLeft} left · on the target`;
   const mOn = sim.cellsLeft > 0 || !!sim.shot;
   const mLocked = !!sim.shot?.locked;
-  const key = [hTitle, hSub, hOn, mTitle, mSub, mOn, mHold, mLocked].join('|');
+  const key = [hTitle, hSub, hOn, hState, mTitle, mSub, mOn, mHold, mLocked].join('|');
   if (key === lastActs) return;
   lastActs = key;
-  heliBtn.innerHTML = supportHtml(ICON_HELI, hTitle, hSub, 'E'); heliBtn.disabled = !hOn;
+  heliBtn.innerHTML = supportHtml(ICON_HELI, hTitle, `${H[2]} · ${hSub}`, 'E') + (H[0] ? `<em class="act-tag">${H[0]}</em>` : ''); heliBtn.disabled = !hOn;
+  heliBtn.dataset.state = H[1];
   missBtn.innerHTML = supportHtml(ICON_MISS, mTitle, mSub, mHold ? 'F' : 'M') + (mHold ? '<em class="act-tag">FIRE</em>' : ''); missBtn.disabled = !mOn;
   // First press readies the missile; then the same button is the FIRE button (red and pulsing, green once the lock is made).
   missBtn.classList.toggle('armed', mHold); missBtn.classList.toggle('locked', mHold && mLocked);
