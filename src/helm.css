@@ -494,8 +494,12 @@ body.mission-helm #fly-keys:not(.show) .fk-btn { pointer-events: none; }
 /* In a column at the right edge, halfway up: clear of the contact card above and the scope below, whatever the window. */
 .helm-actions { top: 50%; bottom: auto; transform: translateY(-50%); flex-direction: column; }
 .helm-act .sp-txt { right: calc(100% + 10px); bottom: auto; top: 50%; transform: translateY(-50%); }
-/* Windows narrower than this have no room beside the dome for the propellers and bars. */
-@media (max-width: 1279px) { .helm-ship .hs-prop, .helm-ship .hs-lvl { display: none; } }
+/* Narrower windows: the dome with its propellers and bars keeps the bottom row, the hull and weapons cards stand in a row above it. */
+@media (max-width: 1279px) {
+  .helm-ship { flex-wrap: wrap; justify-content: center; align-items: flex-end; row-gap: 4px; }
+  .helm-ship .hs-centre { order: 2; flex: 0 0 100%; justify-content: center; }
+  .helm-ship .hs-stat, .helm-ship .hs-wpn { order: 1; border-radius: 14px; }
+}
 
 /* The radar view's console: the aim stick (a zoom ring round it) and FIRE as two spheres side by side at the foot, the options beside them. */
 body.helm-radarview .helm-actions { display: none; }
