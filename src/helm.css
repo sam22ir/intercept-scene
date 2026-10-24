@@ -621,3 +621,14 @@ body.mission-helm .minimap { bottom: calc(var(--gap, 14px) + var(--safe-b, 0px) 
 
 .hb-msl .hb-flame { transform-box: fill-box; transform-origin: 50% 0; }
 .hs-badge.hb-msl .hb-fill { fill-opacity: 0.35; }
+
+.hb-prop { stroke-width: 1.8; transform-box: fill-box; transform-origin: 50% 50%; }
+@media (prefers-reduced-motion: no-preference) { .hb-prop { animation: hb-prop 0.12s linear infinite alternate; } }
+@keyframes hb-prop { from { transform: scaleX(1); } to { transform: scaleX(0.35); } }
+.hs-badge.hb-kills .hb-ico svg { stroke-width: 1.5; }
+
+/* The key bar as in Surface battle: one line, small, centred in the top row. Only where the screen is wide enough to leave the view strip and the contact card clear; narrower windows keep it under the strip. */
+@media (min-width: 1700px) {
+  body.mission-helm .fly-keys { top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 6px); left: 50%; transform: translateX(-50%); max-width: calc(100vw - 920px); overflow: hidden; padding: 4px 12px; gap: 4px 12px; font-size: 10.5px; }
+  body.mission-helm .shot-caption { top: calc(var(--gap, 14px) + var(--safe-t, 0px) + 56px); }
+}
