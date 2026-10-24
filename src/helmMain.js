@@ -48,7 +48,7 @@ controls.maxPolarAngle = Math.PI * 0.495;
 controls.enabled = false;
 const rig = new CameraRig(camera, controls);
 
-const env = createEnvironment(renderer, scene, { calm: true, tallMountains: true });
+const env = createEnvironment(renderer, scene, { calm: true, tallMountains: true, landTurn: Math.PI - 1.55 }); // the range stands to the south
 env.setShadowSize(1024);
 env.ocean.material.uniforms.uShipX.value = 1e7; // the shader's straight-line wake: this ship turns, she has her own
 const ship = createShip({ catapult: false, helicopter: true });
@@ -94,8 +94,27 @@ scene.add(tracerHeads);
 let tracerNext = 0;
 const gunClock = [0, 0];
 const smokeClock = [0, 0];
+const heliClock = { v: 0 };
+const _hp = new THREE.Vector3(), _hd = new THREE.Vector3();
 function updateGuns(dt) {
   const t = sim.t;
+  // The helicopter's burst: tracers from the helicopter toward its target while the burst lasts.
+  const hg = sim.heliGun;
+  const hTarget = hg && t < hg.tEnd ? sim.drones.find((x) => x.id === hg.targetId) : null;
+  if (hTarget) {
+    heliClock.v += dt;
+    sim.heliWorld(_hp);
+    _hd.subVectors(hTarget.pos, _hp).normalize();
+    while (heliClock.v >= 0.05) {
+      heliClock.v -= 0.05;
+      const tr = tracers[tracerNext++ % TRACERS];
+      tr.p.copy(_hp).addScaledVector(_hd, 3);
+      tr.v.copy(_hd).multiplyScalar(900).add(sim.shipVel(_hp.clone()));
+      tr.v.x += (Math.random() - 0.5) * 12; tr.v.y += (Math.random() - 0.5) * 12; tr.v.z += (Math.random() - 0.5) * 12;
+      tr.t0 = t - Math.random() * 0.016;
+      tr.on = true;
+    }
+  } else heliClock.v = 0;
   for (let i = 0; i < gatlings.length; i++) {
     const g = sim.guns[i];
     gatlings[i].pose(g.yaw, g.pitch, g.spin, g.firing, t);
@@ -218,7 +237,7 @@ function handleEvents() {
           cine.tLaunch = sim.t;
         } else startCine(e.id);
         break;
-      case 'heli-fire': fx.launchBillow(e.pos, e.dir, sim.t); break; // the helicopter's round: no cut to the launcher
+      case 'heli-fire': break; // the helicopter's burst: its tracers are drawn from the sim's burst state (updateGuns)
       case 'heli-hit': for (let i = 0; i < 4; i++) fx.missileTrail(e.pos, sim.t); break; // a puff of smoke: it is damaged, not destroyed
       case 'explosion': {
         fx.explosion(e.pos, sim.t);
@@ -308,7 +327,6 @@ function applyState(dt) {
     let v = mvis.get(m.id);
     if (!v) {
       const model = createMissile();
-      if (m.heli) model.group.scale.setScalar(0.6); // a light air-launched round
       scene.add(model.group);
       v = { model, trailLast: m.pos.clone() };
       mvis.set(m.id, v);

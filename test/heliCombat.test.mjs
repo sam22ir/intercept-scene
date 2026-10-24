@@ -96,7 +96,7 @@ describe('the helicopter spots', () => {
 });
 
 describe('the helicopter\'s missile', () => {
-  it('fires ahead at a far drone, takes only some hit points, and leaves the ship\'s launcher free', () => {
+  it('fires a burst ahead at a far drone, takes only some hit points, and leaves the ship\'s launcher free', () => {
     const sim = quiet();
     flyUp(sim);
     // wait until it is in the circuit, then put a drone ahead of its nose
@@ -110,7 +110,8 @@ describe('the helicopter\'s missile', () => {
     d.pos.set(hp.x + Math.cos(a) * 3300, 150, hp.z + Math.sin(a) * 3300);
     for (let i = 0; i < 40; i++) { sim.advance(0.1, {}); events.push(...sim.takeEvents()); }
     const fired = events.filter((e) => e.type === 'heli-fire');
-    assert.equal(fired.length, 1, 'one round');
+    assert.equal(fired.length, 1, 'one burst');
+    assert.ok(!sim.missiles.length, 'no missile in the air');
     assert.ok(!events.some((e) => e.type === 'fire'), 'no ship launch event');
     assert.equal(sim.heliAmmo, HELI_ROUNDS - 1);
     assert.equal(sim.shipMissiles.length, 0, 'the ship has none in the air');
