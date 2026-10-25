@@ -801,3 +801,19 @@ body.mission-helm .tag.helm-decoy { border-left-color: #6fb1ff; opacity: 0.8; }
 .helm-grade .hg-b b { flex-basis: 100%; font-size: 15px; color: #fff; }
 .helm-grade .hg-b i { font-style: normal; color: #fff; font-weight: 700; }
 .helm-grade .hg-best { flex-basis: 100%; margin-top: 4px; color: #6fb1ff; font-weight: 600; }
+
+/* The kill-cam replay (opt-in): a bar on top while it plays, a round button once there is a kill to watch. */
+.helm-act-replay[hidden] { display: none; }
+body.mission-helm .helm-act-replay { border-color: rgba(120, 220, 255, 0.55); } body.mission-helm .helm-act-replay .sp-ico { color: #8fe0ff; }
+.helm-replay { position: fixed; z-index: 12; left: 50%; top: 84px; white-space: nowrap; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 14px; border-radius: 999px;
+  background: rgba(8, 13, 20, 0.88); border: 1px solid rgba(143, 224, 255, 0.5); color: #fff; font: 600 12px system-ui, sans-serif; backdrop-filter: blur(6px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); }
+.helm-replay[hidden] { display: none; }
+.helm-replay .hr-tag { font: 800 11px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.24em; color: #8fe0ff; }
+.helm-replay .hr-tag::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: #ff5d61; animation: hr-rec 1s steps(2) infinite; }
+.helm-replay .hr-speed { font: 700 11px ui-monospace, Consolas, monospace; color: #ffc454; min-width: 3.4em; text-align: right; }
+.helm-replay .hr-exit { border: 0; border-radius: 999px; padding: 7px 12px; background: #8fe0ff; color: #06202b; font: 800 12px system-ui, sans-serif; cursor: pointer; }
+.helm-replay .hr-exit kbd { margin-left: 6px; opacity: 0.7; }
+body.helm-replay-on::after { content: ''; position: fixed; inset: 0; z-index: 4; pointer-events: none; box-shadow: inset 0 0 120px rgba(0, 0, 0, 0.55); }
+body.helm-replay-on .helm-actions { opacity: 0.45; pointer-events: none; }
+@keyframes hr-rec { to { opacity: 0.2; } }
+#menu button[hidden] { display: none; }

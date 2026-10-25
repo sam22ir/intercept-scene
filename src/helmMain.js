@@ -20,6 +20,7 @@ import {
   HelmSim, SLEW_TIME, TELEGRAPH, RUDDER_MAX, CELLS, MISSILE_RANGE, MIN_RANGE, GUN_RANGE, GUN_BLOCK, RADAR_RANGE, ARC, BRIDGE_EYE, DIRECTOR_EYE, GUN_MOUNTS, GUN_ROUNDS, DRONE_HP, relName, kmText,
 } from './helm.js';
 import { raidRun, classicRun, saveBest, loadBest } from './helmScoring.js';
+import { Recorder, replayRate } from './helmReplay.js';
 import './helm.css';
 
 // Entry point of "Solo Air Defense", mission id `helm` (see helm.js for the model): you sail the frigate with the arrow keys and fight off
@@ -180,6 +181,7 @@ const RAID = (() => {
 const sim = new HelmSim({ seed: (Date.now() % 100000) | 0, raid: RAID, mood: MOOD });
 sim.skyline = ridgeAngle;
 sim.gunsAuto = true; // the guns start on automatic (A switches it off)
+const rec = new Recorder(); // the poses of the last 30 s and the kills, for the replay button
 
 // Tags (drones, missiles): an HTML layer like the other missions'.
 const labels = new CSS2DRenderer();
@@ -234,6 +236,7 @@ function dropVis(id) {
 
 function handleEvents() {
   for (const e of sim.takeEvents()) {
+    rec.note(e, sim);
     audio.event(e);
     switch (e.type) {
       case 'say': say(e.text, e.tone); break;
@@ -1499,6 +1502,16 @@ gunBtn.addEventListener('pointerdown', (e) => {
 statHost.addEventListener('click', (e) => { if (e.target instanceof Element && e.target.closest('.hb-gun')) { sim.toggleAutoGuns(); lastStat = ''; } });
 droneBtn.addEventListener('click', () => { sim.summon(); droneBtn.blur(); });
 heliBtn.addEventListener('click', () => { say(sim.heliRequest(), ''); heliBtn.blur(); });
+// The kill-cam's button: it appears once there is a kill or a hit to watch, and plays it only when pressed.
+const ICON_REPLAY = '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8.5 10.5a10 10 0 1 1-2.6 7.2"/><path d="M7.5 4.5v6.5H14"/><path class="fill" d="M13 12.5l8 3.5-8 3.5z"/></svg>';
+let replayItem = null; // the gear menu's entry for it, made with the menu
+const replayBtn = document.createElement('button');
+replayBtn.type = 'button';
+replayBtn.className = 'helm-act helm-act-replay';
+replayBtn.hidden = true;
+replayBtn.innerHTML = supportHtml(ICON_REPLAY, 'Replay', 'the last kill, slow motion', 'P');
+replayBtn.addEventListener('click', () => { startReplay(); replayBtn.blur(); });
+actions.append(replayBtn);
 missBtn.addEventListener('click', () => { if (sim.shot?.hold) sim.launchReady(); else sim.arm(); missBtn.blur(); });
 let lastActs = '';
 function updateActions() {
@@ -1792,7 +1805,7 @@ function keysHtml() {
   const t = sim.target;
   const ready = t && !sim.engageable(t) && !sim.shot && sim.cellsLeft > 0;
   return `${radarKeysHtml}${sim.shot?.hold ? `${k('M', 'stand down')}${k('F', 'launch', sim.shot.locked)}` : k('M', 'ready missile', ready)}${k('G', 'guns (hold)', input.gun === 1)}${k('A', 'auto guns', sim.gunsAuto)}`
-    + `${k('E', sim.heli.action === 'takeoff' ? (sim.standDown ? 'heli stays: drone near' : 'heli take off') : sim.heli.action === 'land' ? 'heli land' : 'heli landing', sim.heli.action === null || (sim.standDown && sim.heli.action === 'takeoff'))}${k('D', 'add drone')}${k('Tab', 'target', sim.detected.length > 1)}${k('1–7', 'views')}${k('V', 'next view')}`;
+    + `${k('E', sim.heli.action === 'takeoff' ? (sim.standDown ? 'heli stays: drone near' : 'heli take off') : sim.heli.action === 'land' ? 'heli land' : 'heli landing', sim.heli.action === null || (sim.standDown && sim.heli.action === 'takeoff'))}${k('D', 'add drone')}${k('Tab', 'target', sim.detected.length > 1)}${k('1–7', 'views')}${k('V', 'next view')}${rec.last() ? k('P', 'replay kill') : ''}`;
 }
 
 // --- Interface: the top bar, menu, keys sheet, sound, map ---------------------------------------------------------------
@@ -1966,6 +1979,10 @@ viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.v
       location.reload();
     } catch { /* blocked storage */ }
   });
+  replayItem = document.createElement('button');
+  item(replayItem, 'Replay the last kill', 'P', 'restart');
+  replayItem.hidden = true;
+  replayItem.addEventListener('click', () => { setMenu(false); startReplay(); });
   item(restartButton, 'Sail again', 'R', 'restart');
   item(document.querySelector('#btn-ship'), 'Main menu', '', 'menu');
   item(hudButton, 'Readouts', 'H', 'readouts');
@@ -1978,7 +1995,7 @@ viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.v
   item(fsButton, 'Fullscreen', '', 'full');
   item(foldButton, 'Hide the interface', 'C', 'hide');
   item(document.querySelector('#btn-keys'), 'Keyboard shortcuts', '?', 'keys');
-  menuEl.replaceChildren(head('Mission'), restartButton, raidBtn, moodBtn, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, secMissile, secGuns, tagsButton, cineButton, foldButton, fsButton,
+  menuEl.replaceChildren(head('Mission'), restartButton, raidBtn, moodBtn, replayItem, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, secMissile, secGuns, tagsButton, cineButton, foldButton, fsButton,
     head('Sound'), soundButton, head('Sea'), ...[seaRow, weatherBtn].filter(Boolean), head('Help'), document.querySelector('#btn-keys'));
   [hudButton, mapButton, secMissile, secGuns, soundButton, tagsButton, cineButton].forEach((b) => b.setAttribute('aria-pressed', 'true'));
   secMissile.addEventListener('click', () => { map.setSector('missile', !map.sector('missile')); refreshGear(); });
@@ -2014,6 +2031,7 @@ keysSheet.querySelector('.keys-note').textContent = 'A drone you leave alone mak
 // --- Keys ------------------------------------------------------------------------------------------------------------
 const input = { left: 0, right: 0, gun: 0 }; // gun: G held
 function restart() {
+  stopReplay();
   sim.seed = (Date.now() % 100000) | 0;
   sim.reset();
   sim.gunsAuto = true;
@@ -2034,6 +2052,10 @@ function restart() {
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select')) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (replay) { // the mission waits: only the replay's own keys work
+    if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') { stopReplay(); e.preventDefault(); }
+    return;
+  }
   if (view === 'sight') { // in the radar view the arrows aim the radar, not the ship
     const dir = { ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd' }[e.key];
     if (dir) { if (!sight.locked) { radarKeys[dir] = 1; sight.manual = true; } e.preventDefault(); return; }
@@ -2059,6 +2081,7 @@ window.addEventListener('keydown', (e) => {
     case 'd': sim.summon(); break; // send in a drone
     case 'e': say(sim.heliRequest(), ''); break; // the helicopter: take off, or land
     case 'r': restart(); break;
+    case 'p': startReplay(); break; // the kill-cam: the last kill or hit, in slow motion
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
     case '1': case '2': case '3': case '4': case '5': case '6': case '7': setView(VIEWS[Number(key) - 1]); break;
     case 'h': setHud(!hudOn); break;
@@ -2088,6 +2111,183 @@ window.addEventListener('keyup', (e) => {
 });
 window.addEventListener('blur', () => { radarKeys.l = radarKeys.r = radarKeys.u = radarKeys.d = 0; input.left = 0; input.right = 0; input.gun = 0; });
 
+// --- The kill-cam replay (opt-in: the Replay button, or P) ------------------------------------------------------------------
+// The last kill, or hit on the ship, played back in slow motion from the recorded poses (helmReplay.js): a chase camera on the
+// missile, then a side view of the burst, slowest through the impact. The sim is paused while it plays and picks up where it
+// was; the smoke and fire come from the live effects' own history (their births are against the sim clock, so they replay).
+let replay = null; // { clip, rt, prevView, rate }
+const rmvis = new Map(); // missile id -> { model }: models made only for the replay (the live one is gone)
+const replayBar = document.createElement('div');
+replayBar.className = 'helm-replay';
+replayBar.hidden = true;
+replayBar.innerHTML = '<span class="hr-tag">REPLAY</span><span class="hr-what"></span><span class="hr-speed"></span><button type="button" class="hr-exit">Back to the mission <kbd>P</kbd></button>';
+document.body.appendChild(replayBar);
+const replayWhat = replayBar.querySelector('.hr-what');
+const replaySpeed = replayBar.querySelector('.hr-speed');
+const replayCam = { pos: new THREE.Vector3(), look: new THREE.Vector3(), fresh: true };
+
+function startReplay() {
+  if (replay) return;
+  const ev = rec.last();
+  if (!ev) { say('Nothing to replay yet: the last kill or hit is kept', '', 2400); return; }
+  closePopovers();
+  endCine();
+  timeScale = timeTarget = 1;
+  replay = { clip: rec.clip(ev), rt: 0, prevView: view, rate: 1 };
+  replay.rt = replay.clip.t0;
+  replayCam.fresh = true;
+  const name = `D${ev.id}`;
+  replayWhat.textContent = ev.type === 'struck' ? `${name} hits the ship` : ev.wreck?.by === 'gun' ? `${name}, shot down by the guns` : `${name}, missile kill`;
+  replayBar.hidden = false;
+  document.body.classList.add('helm-replay-on');
+  sightEl.hidden = true;
+  document.body.classList.remove('helm-sighting');
+  banner.hidden = true;
+}
+
+function stopReplay() {
+  if (!replay) return;
+  const { prevView } = replay;
+  replay = null;
+  replayBar.hidden = true;
+  document.body.classList.remove('helm-replay-on');
+  for (const v of rmvis.values()) scene.remove(v.model.group);
+  rmvis.clear();
+  for (const v of mvis.values()) v.model.group.visible = true;
+  for (const [id, v] of vis) {
+    v.plane.group.visible = true;
+    const d = sim.drones.find((x) => x.id === id);
+    if (d && d.phase === 'struck') v.plane.group.visible = false; // it hit the ship: it is gone
+  }
+  camera.up.set(0, 1, 0);
+  fov = 50;
+  setFov(50);
+  setView(prevView, true);
+  snap = true;
+  timeScale = timeTarget = 1;
+}
+
+// Poses the scene from a recorded state: the ship, the drones, the missiles. Nothing here emits an effect.
+function poseReplay(f, r) {
+  const rt = f.t;
+  const ev = r.clip.ev;
+  const s = f.ship;
+  ship.group.position.set(s.x, 0.12 * Math.sin(rt * 0.61), s.z);
+  ship.group.rotation.set(s.heel + 0.018 * Math.sin(rt * 0.52) + 0.006 * Math.sin(rt * 1.3 + 1), -s.psi, 0.006 * Math.sin(rt * 0.37 + 0.4));
+  ship.group.updateMatrixWorld(true);
+  ship.update(rt, Infinity, Infinity, { aim: { yaw: s.yaw, pitch: s.pitch }, cradleT: 0, heli: sim.heli.state });
+  env.ocean.material.uniforms.uTime.value = rt;
+  const seen = new Set();
+  for (const fd of f.drones) {
+    seen.add(fd.id);
+    const v = droneVis({ id: fd.id });
+    const g = v.plane.group;
+    v.tag.obj.visible = false;
+    if (fd.id === ev.id && rt >= ev.t) {
+      if (ev.type === 'explosion' && ev.wreck) {
+        v.rdebris ??= v.debris ?? createDebris(v.plane, ev.id, ev.wreck);
+        g.visible = true;
+        v.rdebris.apply(rt - ev.wreck.t);
+      } else g.visible = false; // it hit the ship
+    } else if (fd.alive || fd.id === ev.id) {
+      if (fd.id === ev.id) v.plane.restoreParts();
+      g.visible = true;
+      g.position.set(fd.p[0], fd.p[1], fd.p[2]);
+      g.quaternion.set(fd.q[0], fd.q[1], fd.q[2], fd.q[3]);
+      v.plane.setProp(rt * PROP_OMEGA + fd.id, 1);
+      v.plane.setLights(rt + fd.id * 0.3, true);
+    } else g.visible = false;
+  }
+  for (const [id, v] of vis) if (!seen.has(id)) { v.plane.group.visible = false; v.tag.obj.visible = false; }
+  const mseen = new Set();
+  for (const fm of f.missiles) {
+    mseen.add(fm.id);
+    let v = mvis.get(fm.id) ?? rmvis.get(fm.id);
+    if (!v) {
+      const model = createMissile();
+      scene.add(model.group);
+      v = { model };
+      rmvis.set(fm.id, v);
+    }
+    v.model.group.visible = true;
+    v.model.group.position.set(fm.p[0], fm.p[1], fm.p[2]);
+    v.model.group.quaternion.copy(_q.setFromUnitVectors(ZAXIS, _a.set(fm.d[0], fm.d[1], fm.d[2])));
+    v.model.setExhaust(rt);
+  }
+  for (const [id, v] of mvis) if (!mseen.has(id)) v.model.group.visible = false;
+  for (const [id, v] of rmvis) if (!mseen.has(id)) v.model.group.visible = false;
+}
+
+// The kill-cam: a chase camera behind the missile until just before the burst, then a side view of the burst that drifts slowly round.
+const T_CUT = 0.7; // s before the impact that the camera cuts from the chase to the burst
+function frameReplay(f, r, dt) {
+  const ev = r.clip.ev;
+  const rt = f.t;
+  const fd = f.drones.find((d) => d.id === ev.id);
+  const P = _c.set(ev.pos[0], ev.pos[1], ev.pos[2]);
+  if (fd && rt < ev.t) P.set(fd.p[0], fd.p[1], fd.p[2]);
+  else if (ev.type === 'explosion') { const v = vis.get(ev.id); if (v?.rdebris) v.rdebris.fuselagePos(rt - ev.wreck.t, P); }
+  const chase = rt < ev.t - T_CUT;
+  const want = _d;
+  const look = _e;
+  let lens = 50;
+  if (chase) {
+    const m = f.missiles.reduce((best, x) => { const dd = Math.hypot(x.p[0] - P.x, x.p[1] - P.y, x.p[2] - P.z); return dd < best.d ? { m: x, d: dd } : best; }, { m: null, d: 3000 }).m;
+    if (m) {
+      _a.set(m.d[0], m.d[1], m.d[2]);
+      want.set(m.p[0], m.p[1], m.p[2]).addScaledVector(_a, -30);
+      want.y += 6;
+      want.x += -_a.z * 5; want.z += _a.x * 5; // a little to one side, so the missile reads against the sea
+      look.set(m.p[0], m.p[1], m.p[2]).addScaledVector(_a, 60).lerp(P, 0.6);
+      lens = 52;
+    } else { // no missile (the guns, or a drone's own run): behind the drone, along its flight
+      const g = rec.sample(rt + 0.25)?.drones.find((d) => d.id === ev.id);
+      _a.set(g ? g.p[0] - P.x : 1, 0, g ? g.p[2] - P.z : 0);
+      if (_a.lengthSq() < 1e-6) _a.set(1, 0, 0);
+      _a.normalize();
+      want.copy(P).addScaledVector(_a, -55);
+      want.y += 10;
+      look.copy(P);
+    }
+  } else {
+    const sx = f.ship.x, sz = f.ship.z;
+    _a.set(P.x - sx, 0, P.z - sz);
+    if (_a.lengthSq() < 1) _a.set(1, 0, 0);
+    _a.normalize();
+    const a = 0.35 * (rt - (ev.t - T_CUT));
+    const dist = ev.type === 'struck' ? 75 : 55;
+    want.set(P.x, P.y, P.z).addScaledVector(_a, Math.sin(a) * dist);
+    want.x += -_a.z * Math.cos(a) * dist; want.z += _a.x * Math.cos(a) * dist;
+    want.y += 14;
+    look.copy(P);
+    lens = 38;
+  }
+  if (want.y < 2) want.y = 2;
+  const pull = replayCam.fresh ? 1 : 1 - Math.exp(-dt / (chase ? 0.1 : 0.4));
+  replayCam.fresh = false;
+  replayCam.pos.lerp(want, pull);
+  replayCam.look.lerp(look, pull);
+  camera.up.set(0, 1, 0);
+  camera.position.copy(replayCam.pos);
+  camera.lookAt(replayCam.look);
+  fov += (lens - fov) * (1 - Math.exp(-dt / 0.3));
+  setFov(fov);
+}
+
+function updateReplay(dt) {
+  const r = replay;
+  r.rate = replayRate(r.rt, r.clip.ev.t);
+  r.rt += dt * r.rate;
+  if (r.rt >= r.clip.t1) { stopReplay(); return; }
+  const f = rec.sample(r.rt);
+  if (!f) { stopReplay(); return; }
+  poseReplay(f, r);
+  frameReplay(f, r, dt);
+  fx.update(r.rt);
+  replaySpeed.textContent = `${r.rate} ×`;
+}
+replayBar.querySelector('.hr-exit').addEventListener('click', stopReplay);
+
 // --- Loop ---------------------------------------------------------------------------------------------------------------
 function resize() {
   const w = window.innerWidth;
@@ -2110,16 +2310,22 @@ renderer.setAnimationLoop((now) => {
   timeScale += (timeTarget - timeScale) * (1 - Math.exp(-dt / 0.2));
   if (Math.abs(timeTarget - timeScale) < 0.005) timeScale = timeTarget;
   document.body.classList.toggle('helm-slowmo', timeScale < 0.85);
-  sim.advance(dt * timeScale, input);
-  handleEvents();
-  applyState(dt);
-  updateCamera(dt);
-  updateGuns(dt * timeScale);
-  updatePip(dt);
-  audio.update(sim, camera, dt);
+  if (replay) updateReplay(dt); // the sim waits while a replay plays
+  else {
+    sim.advance(dt * timeScale, input);
+    rec.record(sim);
+    handleEvents();
+    applyState(dt);
+    updateCamera(dt);
+    updateGuns(dt * timeScale);
+    updatePip(dt);
+    audio.update(sim, camera, dt);
+  }
   env.follow(camera.position);
   env.setShadowFocus(_b.set(sim.x, 0, sim.z), 90);
-  fx.update(sim.t);
+  if (!replay) fx.update(sim.t);
+  const replayReady = !replay && rec.last() !== null;
+  if (replayBtn.hidden === replayReady) { replayBtn.hidden = !replayReady; if (replayItem) replayItem.hidden = !replayReady; }
   map.sight = view === 'sight' ? { yaw: Math.atan2(sight.aim.z, sight.aim.x), half: Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect), locked: sight.locked } : null;
   map.update(sim);
   const threat = sim.threat;
