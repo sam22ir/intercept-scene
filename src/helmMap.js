@@ -187,10 +187,11 @@ export function createHelmMap() {
       ctx.arc(R, R, (R - 6) * (i / 4), 0, Math.PI * 2);
       ctx.stroke();
     }
-    if (RADAR_RANGE < scale) {
+    const reach = sim.radarRange ?? RADAR_RANGE;
+    if (reach < scale) {
       ctx.setLineDash([3, 4]);
       ctx.beginPath();
-      ctx.arc(R, R, RADAR_RANGE * k, 0, Math.PI * 2);
+      ctx.arc(R, R, reach * k, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
     }

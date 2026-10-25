@@ -69,6 +69,12 @@ const CLOSE_CALL = 2000; // m: "drone closing"
 const PASSES_BEFORE_ATTACK = 1; // the first approach is a pass; the second one is the attack
 const STRIKES_TO_LOSE = 3;
 
+// --- Night and storm (opt-in: `new HelmSim({ mood: 'night' | 'storm' })`) ---------------------------------------------------------
+// Night leaves the radar as it is (the eye sees nothing, the scope is all there is); a storm shortens it by `k` and buries a low
+// drone in the sea clutter until it is inside `clutter` metres.
+const MOOD_RADAR = { night: { k: 1, clutter: 0 }, storm: { k: 0.72, clutter: 2600 } };
+const CLUTTER_ALT = 30; // m
+
 // --- The saturation raid (opt-in: `new HelmSim({ raid: true })`) ----------------------------------------------------
 // Instead of one drone at a time, a salvo arrives from one sector: many cheap decoys with a few real missiles among them. All
 // look the same on the radar until they are inside ID_RANGE, then each is classified. A real one dashes at DASH_SPEED from
@@ -158,9 +164,14 @@ function mulberry32(seed) {
 }
 
 export class HelmSim {
-  constructor({ seed = 7, raid = false } = {}) {
+  constructor({ seed = 7, raid = false, mood = null } = {}) {
     this.seed = seed;
     this.raidMode = raid;
+    this.mood = MOOD_RADAR[mood] ? mood : null; // 'night' or 'storm' (opt-in); null is the plain mission
+    const m = MOOD_RADAR[this.mood] ?? { k: 1, clutter: 0 };
+    this.radarRange = RADAR_RANGE * m.k; // m: what the radar reaches in this weather
+    this.idRange = ID_RANGE * m.k;
+    this.clutter = m.clutter; // m: a drone below CLUTTER_ALT is lost in the sea clutter until it is this close
     this.skyline = null; // (dx, dz, eyeY) -> angle of the ridge line in that direction; set by the scene
     this.reset();
   }
@@ -561,7 +572,8 @@ export class HelmSim {
     d.hidden = !!this.skyline && range > MASK_RANGE && angle < this.skyline(dx, dz, SKY_EYE)
       && !(up && angle >= this.skyline(dx, dz, SKY_EYE) - HELI_RIDGE_DROP);
     // Radar contact, and the calls.
-    if (!d.detected && !d.hidden && (range < RADAR_RANGE || (up && range < HELI_RADAR))) {
+    const buried = this.clutter > 0 && d.pos.y < CLUTTER_ALT && range > this.clutter; // lost in the sea clutter
+    if (!d.detected && !d.hidden && !buried && (range < this.radarRange || (up && range < HELI_RADAR))) {
       d.detected = true;
       if (this.targetId === null || !this.target) this.targetId = d.id;
       if (d.raid) { // one call for the whole salvo
@@ -572,10 +584,10 @@ export class HelmSim {
         }
       } else {
         this.events.push({ type: 'alarm', level: 1, id: d.id });
-        this.say(`${range < RADAR_RANGE ? 'Radar' : 'Helicopter'}: drone ${d.name} detected, ${relName(this.relBearing(d.pos))}, ${kmText(range)}`, 'warn');
+        this.say(`${range < this.radarRange ? 'Radar' : 'Helicopter'}: drone ${d.name} detected, ${relName(this.relBearing(d.pos))}, ${kmText(range)}`, 'warn');
       }
     }
-    if (d.raid && d.detected && !d.class && range < ID_RANGE) { // inside ID_RANGE the radar tells a missile from a decoy
+    if (d.raid && d.detected && !d.class && range < this.idRange) { // inside ID_RANGE the radar tells a missile from a decoy
       d.class = d.kind;
       this.events.push({ type: 'classified', id: d.id, kind: d.kind });
       if (d.kind === 'real') this.say(`${d.name} is a MISSILE: ${relName(this.relBearing(d.pos))}, ${kmText(range)}`, 'bad');

@@ -16,6 +16,17 @@ const ZENITH = new THREE.Color(0.2, 0.38, 0.66);
 const CALM_HORIZON = new THREE.Color(0.06, 0.56, 3.0);
 const CALM_ZENITH = new THREE.Color(0, 0.16, 1.4);
 
+// Night and storm (`mood`): sky = brightness of the calm sky, grey = how far it is pulled to a flat grey, fog = [near, far] m,
+// sun / hemi / env = the light levels, cloud / land / sea = brightness of the cloud sprites, the mountains and the water's own colour, disc = the sun's disc.
+export const MOODS = {
+  night: { sky: 0.022, grey: 0.15, fog: [900, 7000], sun: 0.05, hemi: 0.16, env: 0.1, cloud: 0.03, land: 0.09, sea: 0.1, disc: 0 },
+  storm: { sky: 0.3, grey: 0.85, fog: [700, 4800], sun: 0.3, hemi: 0.55, env: 0.4, cloud: 0.42, land: 0.4, sea: 0.5, disc: 0 },
+};
+function moodSky(c, m) {
+  const l = 0.3 * c.r + 0.59 * c.g + 0.11 * c.b;
+  return new THREE.Color(c.r + (l - c.r) * m.grey, c.g + (l - c.g) * m.grey, c.b + (l - c.b) * m.grey).multiplyScalar(m.sky);
+}
+
 const rgbHex = (c) => (Math.round(c[0]) << 16) | (Math.round(c[1]) << 8) | Math.round(c[2]);
 
 // The weather override, read once: ?weather=clear|haze|squalls|overcast, else localStorage['intercept.weather'].
@@ -36,10 +47,13 @@ function readWeather() {
 // `look` (a name from looks.js, e.g. 'intercept') gives a mission its own time of day, sky, sea state, scenery and weather;
 // the weather can be overridden with ?weather= or localStorage['intercept.weather'] (read once). Without `look` the original
 // default or `calm` look is used, unchanged.
-export function createEnvironment(renderer, scene, { calm = false, tallMountains = false, landTurn = 0, look: lookName = null, realSea = false } = {}) {
+export function createEnvironment(renderer, scene, { calm = false, tallMountains = false, landTurn = 0, look: lookName = null, realSea = false, mood: moodName = null } = {}) {
   const look = !calm && lookName ? resolveLook(lookName, readWeather()) : null;
-  const horizon = look ? new THREE.Color(...fromDisplay(look.horizon)) : calm ? CALM_HORIZON : HORIZON;
-  const zenith = look ? new THREE.Color(...fromDisplay(look.zenith)) : calm ? CALM_ZENITH : ZENITH;
+  // `mood` (the calm look only, opt-in: Solo Air Defense's night and storm): the sky, fog, lights, clouds and mountains are dimmed
+  // from the calm values; without it nothing here changes.
+  const mood = calm && !look ? MOODS[moodName] ?? null : null;
+  const horizon = look ? new THREE.Color(...fromDisplay(look.horizon)) : calm ? (mood ? moodSky(CALM_HORIZON, mood) : CALM_HORIZON) : HORIZON;
+  const zenith = look ? new THREE.Color(...fromDisplay(look.zenith)) : calm ? (mood ? moodSky(CALM_ZENITH, mood) : CALM_ZENITH) : ZENITH;
   const sunDir = new THREE.Vector3().setFromSphericalCoords(
     1, THREE.MathUtils.degToRad(90 - (look ? look.elev : SUN_ELEVATION)), THREE.MathUtils.degToRad(look ? look.az : SUN_AZIMUTH),
   );
@@ -74,11 +88,12 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
           uGlowAmt: { value: look ? 1 - look.overcast : 1 }, // the sun's disc and glow, fading as the deck thickens
           uCover: { value: look ? look.cover : 0 }, // the painted cloud deck
           uLook: { value: look ? 1 : 0 },
+          uDisc: { value: mood ? mood.disc : 1 }, // the calm sky's sun glow and disc
         },
         vertexShader: 'varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
         fragmentShader: `
           uniform vec3 uHorizon, uZenith, uSun, uGlow;
-          uniform float uGlowAmt, uCover, uLook;
+          uniform float uGlowAmt, uCover, uLook, uDisc;
           varying vec3 vDir;
           float h21(vec2 p) { p = 50.0 * fract(p * 0.3183099 + vec2(0.71, 0.113)); return fract(p.x * p.y * (p.x + p.y)); }
           float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
@@ -87,7 +102,7 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
             vec3 col = mix(uHorizon, uZenith, pow(h, 0.45));
             float s = max(dot(normalize(vDir), uSun), 0.0);
             if (uLook < 0.5) {
-              col += vec3(1.0, 0.85, 0.55) * (pow(s, 40.0) * 0.5 + pow(s, 900.0) * 6.0);
+              col += vec3(1.0, 0.85, 0.55) * (pow(s, 40.0) * 0.5 + pow(s, 900.0) * 6.0) * uDisc;
             } else {
               // Aerial haze: a thin brighter band just above the horizon (zero at the horizon itself, so the sea's
               // fog colour meets the sky with no seam), and a glow low in the sky on the sun's side.
@@ -122,18 +137,18 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
   skyClone.scale.setScalar(1000);
   skyScene.add(skyClone);
   scene.environment = pmrem.fromScene(skyScene).texture;
-  scene.environmentIntensity = look ? look.env : 0.7;
+  scene.environmentIntensity = look ? look.env : 0.7 * (mood ? mood.env : 1);
   pmrem.dispose();
 
-  scene.fog = look ? new THREE.Fog(horizon, look.fog[0], look.fog[1]) : new THREE.Fog(horizon, 3000, 16000);
+  scene.fog = look ? new THREE.Fog(horizon, look.fog[0], look.fog[1]) : mood ? new THREE.Fog(horizon, mood.fog[0], mood.fog[1]) : new THREE.Fog(horizon, 3000, 16000);
 
-  const sun = new THREE.DirectionalLight(look ? rgbHex(look.sunColor) : 0xfff1dc, look ? look.sunI : 2.7);
+  const sun = new THREE.DirectionalLight(look ? rgbHex(look.sunColor) : 0xfff1dc, look ? look.sunI : 2.7 * (mood ? mood.sun : 1));
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.4;
   scene.add(sun, sun.target);
-  scene.add(look ? new THREE.HemisphereLight(rgbHex(look.hemi), 0x203040, look.hemiI) : new THREE.HemisphereLight(0xcfe0ff, 0x203040, 0.6));
+  scene.add(look ? new THREE.HemisphereLight(rgbHex(look.hemi), 0x203040, look.hemiI) : new THREE.HemisphereLight(0xcfe0ff, 0x203040, 0.6 * (mood ? mood.hemi : 1)));
 
   // `realSea` (a mission look only): real waves, displaced geometry and shading from the same table the ships ride (realOcean.js).
   const real = !!(realSea && look);
@@ -144,6 +159,14 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
   const mountains = calm ? (tallMountains ? createTallMountains() : createMountains()) : null;
   if (mountains) { scene.add(mountains); if (tallMountains) setLandTurn(landTurn, mountains); }
   scene.add(clouds);
+  if (mood) { // the sprites and the ridges are drawn unlit: dim them directly, and bring the water's fog in with the scene's
+    for (const c of clouds.children) c.material.color.multiplyScalar(mood.cloud);
+    mountains?.traverse((o) => { if (o.material?.color) o.material.color.setScalar(mood.land); });
+    ocean.material.uniforms.uDeep.value.multiplyScalar(mood.sea);
+    ocean.material.uniforms.uScatter.value.multiplyScalar(mood.sea);
+    ocean.material.uniforms.uFogNear.value = mood.fog[0];
+    ocean.material.uniforms.uFogFar.value = mood.fog[1];
+  }
   // Scenery that stands still in the world (so it is a yardstick for speed and height), and weather on the horizon.
   // Everything here repeats every WORLD_PERIOD metres around a far-flying camera; the period is at least twice the fog
   // distance, so an object only jumps while it is fogged out.

@@ -49,8 +49,16 @@ controls.maxPolarAngle = Math.PI * 0.495;
 controls.enabled = false;
 const rig = new CameraRig(camera, controls);
 
-const env = createEnvironment(renderer, scene, { calm: true, tallMountains: true, landTurn: Math.PI - 1.55 }); // the range stands to the south
+// Night and storm are opt-in: ?mood=night|storm|day, or the value kept in localStorage; the default mission is the day.
+const MOOD_KEY = 'intercept.helm.mood';
+const MOOD = (() => {
+  const ok = (m) => (m === 'night' || m === 'storm' ? m : null);
+  try { const q = new URLSearchParams(location.search).get('mood'); if (q !== null) return ok(q); } catch { /* no location */ }
+  try { return ok(localStorage.getItem(MOOD_KEY)); } catch { return null; }
+})();
+const env = createEnvironment(renderer, scene, { calm: true, tallMountains: true, landTurn: Math.PI - 1.55, mood: MOOD }); // the range stands to the south
 env.setShadowSize(1024);
+if (MOOD === 'storm') env.setSea(1.8, 1.0); // a heavy sea with whitecaps
 env.ocean.material.uniforms.uShipX.value = 1e7; // the shader's straight-line wake: this ship turns, she has her own
 const ship = createShip({ catapult: false, helicopter: true });
 ship.group.rotation.order = 'YXZ'; // heading, then heel, then trim
@@ -169,7 +177,7 @@ const RAID = (() => {
   try { const q = new URLSearchParams(location.search).get('raid'); if (q !== null) return q !== '0'; } catch { /* no location */ }
   try { return localStorage.getItem(RAID_KEY) === '1'; } catch { return false; }
 })();
-const sim = new HelmSim({ seed: (Date.now() % 100000) | 0, raid: RAID });
+const sim = new HelmSim({ seed: (Date.now() % 100000) | 0, raid: RAID, mood: MOOD });
 sim.skyline = ridgeAngle;
 sim.gunsAuto = true; // the guns start on automatic (A switches it off)
 
@@ -1736,7 +1744,7 @@ function hudHtml() {
       + `${zoneHtml(t)}</div>`);
   } else {
     out.push(`<div class="hud-sec tg tg-none"><div class="tk-top"><span class="tk-id">TRK<b>—</b></span><em>scanning</em><span class="tk-eta">Tab selects</span></div>`
-      + `<div class="tk-main">${dialSvg(null)}<div class="tk-read"><strong class="tg-range tg-idle">NO<small>CONTACT</small></strong><span class="tk-true">RADAR ${kmText(RADAR_RANGE)}</span></div></div></div>`);
+      + `<div class="tk-main">${dialSvg(null)}<div class="tk-read"><strong class="tg-range tg-idle">NO<small>CONTACT</small></strong><span class="tk-true">RADAR ${kmText(sim.radarRange)}</span></div></div></div>`);
   }
 
   // The radar picture: every contact on one line, each with its own little bearing dial.
@@ -1945,6 +1953,19 @@ viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.v
       location.reload();
     } catch { /* blocked storage */ }
   });
+  const moodBtn = document.createElement('button');
+  item(moodBtn, `Conditions: ${MOOD === 'night' ? 'Night' : MOOD === 'storm' ? 'Storm' : 'Day'}`, '', 'restart');
+  moodBtn.title = 'Day, night (the radar is all you have) or storm (heavy sea, a shorter radar, low drones lost in the clutter); reloads the scene';
+  moodBtn.addEventListener('click', () => {
+    try {
+      localStorage.setItem(MOOD_KEY, MOOD === null ? 'night' : MOOD === 'night' ? 'storm' : 'day');
+      sessionStorage.setItem('intercept.skip', '1');
+      const url = new URL(location.href);
+      url.searchParams.delete('mood');
+      history.replaceState(null, '', url);
+      location.reload();
+    } catch { /* blocked storage */ }
+  });
   item(restartButton, 'Sail again', 'R', 'restart');
   item(document.querySelector('#btn-ship'), 'Main menu', '', 'menu');
   item(hudButton, 'Readouts', 'H', 'readouts');
@@ -1957,7 +1978,7 @@ viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.v
   item(fsButton, 'Fullscreen', '', 'full');
   item(foldButton, 'Hide the interface', 'C', 'hide');
   item(document.querySelector('#btn-keys'), 'Keyboard shortcuts', '?', 'keys');
-  menuEl.replaceChildren(head('Mission'), restartButton, raidBtn, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, secMissile, secGuns, tagsButton, cineButton, foldButton, fsButton,
+  menuEl.replaceChildren(head('Mission'), restartButton, raidBtn, moodBtn, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, secMissile, secGuns, tagsButton, cineButton, foldButton, fsButton,
     head('Sound'), soundButton, head('Sea'), ...[seaRow, weatherBtn].filter(Boolean), head('Help'), document.querySelector('#btn-keys'));
   [hudButton, mapButton, secMissile, secGuns, soundButton, tagsButton, cineButton].forEach((b) => b.setAttribute('aria-pressed', 'true'));
   secMissile.addEventListener('click', () => { map.setSector('missile', !map.sector('missile')); refreshGear(); });
