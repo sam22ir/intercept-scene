@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { deckHeight } from './scenario.js';
-import { START_BERTH, TARGET_BERTH, LAND, BREAKWATER, MOORED, TELEGRAPH, KT, px, compass, clearance } from './harbour.js';
+import { LAND, BREAKWATERS, MOLES, FACES, RAMP, KT, px, compass, boxCorners, alongside, FENDER } from './harbour.js';
 import { drawChart } from './harbourMap.js';
 
 // The harbour mission's working details, all driven by the simulation's state (sim.t, the stage, when the lines went and when
@@ -8,13 +8,14 @@ import { drawChart } from './harbourMap.js';
 //   - the bridge's instruments (only drawn in the bridge views), drawn live into canvas textures: the radar (the port's echoes, a
 //     turning sweep with its afterglow), the chart screen (heading up), the conning display, the overhead rudder / rate-of-turn
 //     panel, the clock; a paper chart on a chart table at the back, a lamp, radios, a binocular box and a mug.
-//   - the mooring lines as real ropes with sag: alongside berth 3 they are fast; on L each eye lifts off its bollard, drops
-//     between the quay and her side and is heaved in, stern line first; at berth 7 each line flies across, drops over its
-//     bollard and is heaved taut, bow and stern lines first.
+//   - the mooring lines as real ropes with sag, the six of the check-list (two head and stern lines, two breast lines, two springs):
+//     alongside at the start (F) they are fast and, on L, each eye lifts off its bollard, drops between the quay and her side and is
+//     heaved in, stern line first; at her berth each line flies across, drops over its bollard and is heaved taut, head and stern
+//     lines first.
 //   - gulls wheeling over the port.
 // Ship frame: bow +x, starboard +z, y up (scenario.js).
 
-const QUAY = 2.6, BW_DECK = 3.4;
+const QUAY = 2.6;
 const Y0 = 9.25; // the wheelhouse floor (models/bridge.js)
 const ease = (x) => { const c = Math.min(Math.max(x, 0), 1); return c * c * (3 - 2 * c); };
 const lerp = (a, b, k) => a + (b - a) * k;
@@ -41,7 +42,8 @@ function screenMesh(s, w, h, pos, { tilt = 0, yaw = -Math.PI / 2 } = {}) {
 }
 const pad3 = (d) => String(Math.round(d) % 360).padStart(3, '0');
 
-export function createHarbourDetails({ scene, ship, bridge }) {
+// `ship` is her model (`group`), `bridge` the wheelhouse interior, `sim` the model (her size, the manoeuvre's berths).
+export function createHarbourDetails({ scene, ship, bridge, sim: sim0 }) {
   const _v = new THREE.Vector3();
   const toWorld = (x, y, z) => _v.set(x, y, z).applyMatrix4(ship.group.matrixWorld).clone();
 
@@ -82,17 +84,15 @@ export function createHarbourDetails({ scene, ship, bridge }) {
   const binoBox = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.3), matOf(0x3b2a1a, 0.6)); binoBox.position.set(14.4, Y0 + 1.16, -3.1); inst.add(binoBox);
   // the paper chart: printed once, with the pilot's pencilled route out and back
   {
-    const fake = { x: -60, z: -150, psi: 0, track: [], u: 0, v: 0, r: 0, stage: 'alongside', mark: null };
-    const k = drawChart(chart.g, chart.c.width, chart.c.height, fake, { half: 560, paper: true });
-    const P = (x, z) => [chart.c.width / 2 + (z - fake.z) * k, chart.c.height / 2 - (x - fake.x) * k];
-    const route = [START_BERTH, px(720, 300), px(960, 400), px(1030, 470), px(1300, 520), px(1720, 560), px(1300, 470), px(1030, 470), px(900, 330), TARGET_BERTH];
+    const c0 = px(575, 520);
+    const fake = { ...sim0, x: c0.x, z: c0.z, psi: 0, route: sim0.route, moored: sim0.moored };
+    drawChart(chart.g, chart.c.width, chart.c.height, fake, { half: 760, paper: true }); // the manoeuvre's route is printed on it
     const g = chart.g;
-    g.strokeStyle = 'rgba(40,40,40,0.75)'; g.lineWidth = 1.6; g.setLineDash([]);
-    g.beginPath(); route.forEach((p, i) => { const [a, b] = P(p.x, p.z); i ? g.lineTo(a, b) : g.moveTo(a, b); }); g.stroke();
-    g.fillStyle = 'rgba(30,30,30,0.85)'; g.font = 'italic 15px serif';
-    g.fillText('JIJEL', 40, 300); g.fillText('Port de Jijel', 60, 60);
-    const [ta, tb] = P(TARGET_BERTH.x, TARGET_BERTH.z); g.fillText('7', ta + 6, tb - 6);
-    const [sa, sb] = P(START_BERTH.x, START_BERTH.z); g.fillText('3', sa - 4, sb + 18);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.fillStyle = 'rgba(30,30,30,0.85)'; g.font = 'bold 22px serif';
+    g.fillText('PORT DE ZABANA', 26, 40);
+    g.font = 'italic 13px serif';
+    g.fillText(sim0.route ? `Manœuvre ${sim0.route.id} · ${sim0.route.title}` : 'Baie de Zabana', 26, 60);
     g.strokeStyle = 'rgba(120,60,40,0.8)'; g.strokeRect(6, 6, chart.c.width - 12, chart.c.height - 12);
     chart.tex.needsUpdate = true;
   }
@@ -105,7 +105,9 @@ export function createHarbourDetails({ scene, ship, bridge }) {
     const k = R / RANGE, cs = Math.cos(-sim.psi), sn = Math.sin(-sim.psi);
     const P = (x, z) => { const dx = (z - sim.z) * k, dy = -(x - sim.x) * k; return [dx * cs - dy * sn, dx * sn + dy * cs]; }; // heading up
     g.fillStyle = 'rgba(80,255,140,0.85)';
-    for (const poly of [LAND, BREAKWATER, ...MOORED]) {
+    const echoes = [LAND, ...BREAKWATERS, ...MOLES, ...(sim.moored ?? [])];
+    if (sim.traffic) for (const v of sim.traffic.vessels) if (sim.traffic.visible(v)) echoes.push({ pts: boxCorners({ x: v.x, z: v.z, psi: v.psi, len: Math.max(v.L, 20), beam: Math.max(v.B, 8) }) });
+    for (const poly of echoes) {
       g.beginPath();
       poly.pts.forEach((p, i) => { const [a, b] = P(p.x, p.z); i ? g.lineTo(a, b) : g.moveTo(a, b); });
       g.closePath(); g.fill();
@@ -125,7 +127,7 @@ export function createHarbourDetails({ scene, ship, bridge }) {
     g.fillStyle = '#ffd166'; g.fillRect(-2, -2, 4, 4);
     g.restore();
     g.fillStyle = 'rgba(160,255,190,0.9)'; g.font = 'bold 15px monospace';
-    g.fillText('RANGE 0.75 NM', 10, 20); g.fillText(`HDG ${pad3(compass(sim.psi))}`, W - 92, 20); g.fillText('H UP', 10, W - 10);
+    g.fillText(sim.fr ? 'ÉCHELLE 0,8 M' : 'RANGE 0.8 NM', 10, 20); g.fillText(`HDG ${pad3(compass(sim.psi))}`, W - 92, 20); g.fillText('H UP', 10, W - 10);
     radar.tex.needsUpdate = true;
   }
   function drawEcdis(sim) {
@@ -146,13 +148,13 @@ export function createHarbourDetails({ scene, ship, bridge }) {
       g.fillStyle = '#7f95a8'; g.font = '16px sans-serif'; g.fillText(unit, x + 10 + g.measureText(value).width + 30, y + 66);
     };
     const rud = (sim.rudder * 180) / Math.PI;
-    const depth = 3.8 + Math.min(clearance(sim.x, sim.z), 300) * 0.055; // under the keel, shoaling toward the quays
+    const depth = sim.route ? sim.ukc : sim.depthUnder() - sim.ship.T; // under the keel, with the tide
     cell(10, 10, 'HEADING', `${pad3(compass(sim.psi))}.${Math.floor((compass(sim.psi) % 1) * 10)}`, '°');
     cell(262, 10, 'SPEED (LOG)', (sim.u / KT).toFixed(1), 'kn');
     cell(10, 102, 'RUDDER', `${Math.abs(rud).toFixed(0)} ${rud > 0.5 ? 'S' : rud < -0.5 ? 'P' : ''}`, '°', rud > 0.5 ? '#3ddc84' : rud < -0.5 ? '#ff5d61' : '#e8f4ff');
     cell(262, 102, 'RATE OF TURN', `${((sim.r * 180) / Math.PI * 60).toFixed(0)}`, '°/min');
-    cell(10, 194, 'ENGINE ORDER', TELEGRAPH[sim.order].name.toUpperCase(), '', sim.ordered > 0 ? '#3ddc84' : sim.ordered < 0 ? '#ff5d61' : '#e8f4ff');
-    cell(262, 194, 'DEPTH UNDER KEEL', depth.toFixed(1), 'm', depth < 5 ? '#ffc454' : '#e8f4ff');
+    cell(10, 194, sim.fr ? 'MACHINE' : 'ENGINE ORDER', sim.tel[sim.order].name.toUpperCase(), '', sim.ordered > 0 ? '#3ddc84' : sim.ordered < 0 ? '#ff5d61' : '#e8f4ff');
+    cell(262, 194, sim.fr ? 'EAU SOUS QUILLE' : 'DEPTH UNDER KEEL', depth.toFixed(1), 'm', depth < 1.5 ? '#ff5d61' : depth < 3 ? '#ffc454' : '#e8f4ff');
     conn.tex.needsUpdate = true;
   }
   function drawOver(sim) {
@@ -188,15 +190,20 @@ export function createHarbourDetails({ scene, ship, bridge }) {
   }
 
   // ---- The mooring lines: four ropes, each a chain of short cylinders through a sagging curve ----
-  const SEG = 18;
-  const ropes = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.065, 0.065, 1, 6, 1, true), new THREE.MeshStandardMaterial({ color: 0xa8956a, roughness: 0.9 }), 4 * SEG);
+  const SEG = 18, NL = 6;
+  const ropes = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.065, 0.065, 1, 6, 1, true), new THREE.MeshStandardMaterial({ color: 0xa8956a, roughness: 0.9 }), NL * SEG);
   ropes.frustumCulled = false;
   ropes.castShadow = true;
   scene.add(ropes);
-  // each line: her fairlead (ship frame x), where it leads along the quay (+ ahead)
-  const LINES = [{ ax: 50, reach: 24 }, { ax: 36, reach: -18 }, { ax: -36, reach: 18 }, { ax: -52, reach: -24 }]; // bow line, forward spring, after spring, stern line
-  const LET_GO_ORDER = [3, 2, 1, 0]; // the stern line first, the bow line last
-  const FAST_ORDER = [0, 3, 1, 2]; // the bow and stern lines first, then the springs
+  // each line: her fairlead (ship frame x), where it leads along the quay (+ ahead): head line, forward breast, forward spring,
+  // after spring, after breast, stern line (2 pointes, 2 traversiers, 2 gardes)
+  const L0 = sim0.ship.L;
+  const LINES = [[0.44, 0.2], [0.32, 0.02], [0.24, -0.15], [-0.24, 0.15], [-0.32, -0.02], [-0.45, -0.2]].map(([a, r]) => ({ ax: a * L0, reach: r * L0 }));
+  const LET_GO_ORDER = [5, 4, 3, 2, 1, 0]; // the stern line first, the head line last
+  const FAST_ORDER = [0, 5, 1, 4, 2, 3]; // the head and stern lines first, then the breasts, then the springs
+  const frig = sim0.ship.id === 'frigate';
+  const deckY = (ax) => (frig ? deckHeight(ax) : sim0.ship.id === 'trawler' ? 2.2 : sim0.ship.id === 'ferry' ? 0.06 * L0 : 0.05 * L0 + 2);
+  const halfB = sim0.ship.B / 2 - 0.6;
   const STEP = 1.8; // s between lines
   const sideOf = (f, psi) => (f.n.x * Math.sin(psi) - f.n.z * Math.cos(psi) > 0 ? 1 : -1); // the side of her that lies to the quay
   // A berth's bollards (fixed in the world), from her pose alongside it.
@@ -208,9 +215,14 @@ export function createHarbourDetails({ scene, ship, bridge }) {
       return new THREE.Vector3(qx - f.n.x * (d + 1.1), deck + 0.75, qz - f.n.z * (d + 1.1));
     });
   }
-  const berth3 = { f: START_BERTH.face, side: sideOf(START_BERTH.face, START_BERTH.psi), bol: bollards(START_BERTH.face, START_BERTH.x, START_BERTH.z, START_BERTH.psi, QUAY) };
+  // where she starts alongside (F), and the face she lies at when she makes fast (the ramp counts as one)
+  const R = sim0.route;
+  const startFace = R?.start?.berth ? FACES[R.start.berth] : null;
+  let berth3 = null;
+  if (startFace) { const c = alongside(startFace, R.start.t, sim0.ship.B / 2 + FENDER), psi = (R.start.hdg * Math.PI) / 180; berth3 = { f: startFace, side: sideOf(startFace, psi), bol: bollards(startFace, c.x, c.z, psi, QUAY) }; }
+  const rampFace = { a: { x: RAMP.x, z: RAMP.z }, n: RAMP.n };
   let berth7 = null; // fixed when she makes fast, from where she lies
-  const fair = (L, side) => toWorld(L.ax, deckHeight(L.ax) + 0.9, side * 4.3);
+  const fair = (L, side) => toWorld(L.ax, deckY(L.ax) + 0.9, side * halfB);
   const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _m = new THREE.Matrix4(), UP = new THREE.Vector3(0, 1, 0);
   const HIDE = new THREE.Matrix4().makeScale(0, 0, 0);
   function drawRope(li, S, E, sag, float) {
@@ -278,7 +290,7 @@ export function createHarbourDetails({ scene, ship, bridge }) {
   const gulls = new THREE.InstancedMesh(gullGeo, new THREE.MeshStandardMaterial({ color: 0xf4f4f0, side: THREE.DoubleSide, roughness: 0.8 }), NG);
   gulls.frustumCulled = false;
   scene.add(gulls);
-  const gullData = Array.from({ length: NG }, (_, i) => ({ c: px(500 + hash(i) * 600, 150 + hash(i + 50) * 500), r: 40 + hash(i + 9) * 120, h: 18 + hash(i + 3) * 40, w: (0.12 + hash(i + 7) * 0.12) * (hash(i + 11) < 0.5 ? 1 : -1), ph: hash(i + 13) * 6.3, s: 1.6 + hash(i + 17) * 0.6 }));
+  const gullData = Array.from({ length: NG }, (_, i) => ({ c: px(470 + hash(i) * 280, 230 + hash(i + 50) * 260), r: 40 + hash(i + 9) * 120, h: 18 + hash(i + 3) * 40, w: (0.12 + hash(i + 7) * 0.12) * (hash(i + 11) < 0.5 ? 1 : -1), ph: hash(i + 13) * 6.3, s: 1.6 + hash(i + 17) * 0.6 }));
 
   // ---- Each frame ----
   let lastScreens = 0, lastClock = -1;
@@ -297,15 +309,15 @@ export function createHarbourDetails({ scene, ship, bridge }) {
 
       // -- the mooring lines --
       const stage = sim.stage, letGoT = sim.tStart;
-      if (stage === 'done' && sim.tFast !== null && !berth7) {
-        const f = TARGET_BERTH.face;
-        berth7 = { f, side: sideOf(f, sim.psi), bol: bollards(f, sim.x, sim.z, sim.psi, BW_DECK) };
+      if (stage === 'done' && sim.tFast !== null && !berth7 && sim.target) {
+        const f = sim.target.ramp ? rampFace : sim.target.face;
+        berth7 = { f, side: sim.target.ramp ? 1 : sideOf(f, sim.psi), bol: bollards(f, sim.x, sim.z, sim.psi, QUAY) };
       }
       if (stage !== 'done') berth7 = null;
-      const atStart = stage === 'alongside' || (letGoT !== null && t - letGoT < 30 && stage !== 'done');
-      for (let i = 0; i < 4; i++) {
+      const atStart = berth3 && (stage === 'alongside' || (letGoT !== null && t - letGoT < 30 && stage !== 'done'));
+      for (let i = 0; i < NL; i++) {
         let res = null, berth = berth3;
-        if (stage === 'alongside') res = { E: berth3.bol[i], sag: 0.35 };
+        if (atStart && stage === 'alongside') res = { E: berth3.bol[i], sag: 0.35 };
         else if (atStart && letGoT !== null) res = letGo(t - letGoT - LET_GO_ORDER.indexOf(i) * STEP, fair(LINES[i], berth3.side), berth3.bol[i], berth3.f);
         else if (berth7) { berth = berth7; res = makeFast(t - sim.tFast - FAST_ORDER.indexOf(i) * STEP, fair(LINES[i], berth7.side), berth7.bol[i], berth7.f); }
         if (res) drawRope(i, fair(LINES[i], berth.side), res.E, res.sag, res.float);

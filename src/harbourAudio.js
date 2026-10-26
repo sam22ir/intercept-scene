@@ -103,6 +103,23 @@ export function createHarbourAudio() {
     o.start(t0); o.stop(t0 + 3.2);
   }
 
+  // A VHF transmission: a short burst of squelch noise and the roger beep.
+  function radioChirp() {
+    if (!ctx || !enabled) return;
+    const t0 = ctx.currentTime, n = Math.floor(ctx.sampleRate * 0.18);
+    const b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const src = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), g = ctx.createGain();
+    src.buffer = b; bp.type = 'bandpass'; bp.frequency.value = 1800; bp.Q.value = 0.8; g.gain.value = 0.08;
+    src.connect(bp).connect(g).connect(master);
+    src.start(t0);
+    const o = ctx.createOscillator(), og = ctx.createGain();
+    o.frequency.value = 1250;
+    og.gain.setValueAtTime(0.0001, t0 + 0.2); og.gain.exponentialRampToValueAtTime(0.06, t0 + 0.22); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.34);
+    o.connect(og).connect(master);
+    o.start(t0 + 0.2); o.stop(t0 + 0.36);
+  }
+
   return {
     get supported() { return !failed; },
     get enabled() { return enabled; },
@@ -126,6 +143,7 @@ export function createHarbourAudio() {
       else if (e.type === 'alarm') { generalAlarm(); this.horn(3.2); }
       else if (e.type === 'contact') shot('clunk', Math.min(0.25 + e.hit * 0.9, 1.2), 0.6);
       else if (e.type === 'say' && e.sound === 'lines') { shot('splash', 0.35, 1.6); setTimeout(() => shot('splash', 0.25, 1.8), 900); }
+      else if (e.type === 'vhf') radioChirp();
     },
     horn(len = 2.4) {
       if (!ctx || !buf.horn || !enabled) return;

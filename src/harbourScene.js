@@ -1,30 +1,37 @@
 import * as THREE from 'three';
 import { Kit } from './models/kit.js';
-import { createShip } from './models/ship.js';
 import { mulberry32 } from './rng.js';
-import { LAND, BREAKWATER, ROCKS, MOORED, FACES, TARGET_BERTH, BUOYS, LIGHTS, px, inPoly, HALF_LENGTH, HULL_OUTLINE } from './harbour.js';
+import { createVessel } from './harbourShips.js';
+import {
+  LAND, BREAKWATERS, MOLES, BOAT_ROWS, FACES, RAMP, LIGHTS, BUOYS, ROCKS, BERTH_LABELS, ENTRY_SIGNAL, LOCK_SIGNAL, TURN_CIRCLE, CABLE,
+  px, toChart, inPoly, lightOn, mooredFor, compass,
+} from './harbour.js';
 
-// The port of Jijel in 3D, built from the outlines in harbour.js (which were traced on the Google Earth images): the land as one
-// heightfield (its quays at 2.6 m, the town on a plain that rises to green hills inland, the beach, the rocky headland), the north
-// breakwater's deck and wave wall, vertical quay walls, rock armour on the seaward faces, the port's sheds (blue roofs, as in the
-// images), the town as instanced houses and flats with flat and tiled roofs, two minarets, trees on the hills, the pier-head lights,
-// the buoys, the ships and submarines alongside, the fishing boats, the bollards and fenders, and berth 7's green marks (the
-// people and her mooring lines are harbourCrew.js's).
-// Procedural geometry only, no textures from outside. `update(t)` blinks the lights and bobs the buoys.
+// The port of Zabana in 3D, built from the outlines in harbour.js (drawn on the chart port-zabana.svg): the land as one heightfield
+// (the quays at 2.6 m, the town of 14 500 on a low plain, Mont Breiz (62 m) to the west, the Plage de Kerlann, the rocky coast and,
+// beyond the chart, green hills inland), the two breakwaters (deck, wave wall, rock armour outside), the piers, the oil jetty on
+// piles, the lock with its mitre gates and swing bridge (they move with the sim), the bassin à flot, the marina's pontoons and
+// boats, the fishing basin's boats, the warehouses, the industrial zone and the oil depot, the harbour office, the cranes of the
+// Môle Commercial, the shipyard and its slipway, the roads, the lighthouses and the buoys (each light flashes its own character,
+// the Cap de l'Ouest red over Les Corbeaux), the entrance and lock signals, the ships alongside, the berth numbers.
+// Procedural geometry only, no textures from outside. `update(t, sim, camPos)` blinks the lights, bobs the buoys and moves the lock.
 
 const smooth = (a, b, x) => { const k = Math.min(Math.max((x - a) / (b - a), 0), 1); return k * k * (3 - 2 * k); };
 const QUAY = 2.6; // m: the quays and yards
-const BW_DECK = 3.4; // m: the north breakwater's deck
-
-// The port's yards (no houses there): the land between the coast road and the water, read off the images.
-const PORT_ZONE = [[150, 15], [560, 60], [560, 160], [391, 240], [142, 330], [185, 440], [270, 404], [575, 350], [640, 405], [620, 700], [545, 760], [330, 790], [320, 1235], [290, 1235], [35, 800], [35, 200], [140, 170]]
-  .map(([x, y]) => px(x, y));
-const portZone = { pts: PORT_ZONE, box: box(PORT_ZONE) };
+const BW_DECK = 4.0; // m: the breakwaters' deck
+const P = (X, Y) => px(X, Y);
+const polyPx = (list) => { const pts = list.map(([X, Y]) => P(X, Y)); return { pts, box: box(pts) }; };
 function box(pts) {
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
   for (const p of pts) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
   return { x0, x1, z0, z1 };
 }
+
+// The port's yards (no houses there) and the town's built-up area, as the chart hatches it.
+const PORT_ZONE = polyPx([[455, 214], [745, 214], [745, 140], [770, 140], [880, 140], [1060, 140], [1060, 372], [890, 330], [760, 384], [470, 384], [440, 350], [350, 345], [330, 258], [440, 250]]);
+const BAF_ZONE = polyPx([[520, 56], [730, 56], [730, 214], [520, 214]]);
+const TOWN = polyPx([[330, 120], [470, 110], [740, 110], [870, 195], [870, 318], [745, 362], [745, 236], [465, 236], [465, 362], [350, 330]]);
+const inPort = (x, z) => inPoly(PORT_ZONE, x, z) || inPoly(BAF_ZONE, x, z);
 
 // Smooth value noise (0 to 1), for the hills and the colours.
 const hash = (ix, iz) => { let h = Math.imul(ix, 374761393) + Math.imul(iz, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
@@ -50,23 +57,25 @@ function coastNear(poly, x, z) {
   }
   return { d: best, kind };
 }
-// The land's height: the coast's own profile (a quay, rock armour rising to the yard, the beach, a low cliff), then, outside the
-// port's yards, a slow rise across the town and the hills inland, 2 to 5 km out.
+// The land's height: the coast's own profile (a quay, rock armour rising to the yard, the beach, a low cliff), then a low plain under
+// the town, Mont Breiz (62 m, its contour ellipses on the chart round 200,165), and outside the chart the hills of the hinterland.
 function coastH(kind, d, deck = QUAY) {
   if (kind === 'q') return deck;
   if (kind === 'r') return Math.min(0.3 + 0.45 * d, deck);
-  if (kind === 'b') return Math.min(0.35 + 0.035 * d, QUAY);
-  return 0.6 + 0.5 * Math.min(d, 26); // a rocky coast, rising to a low cliff
+  if (kind === 'b') return Math.min(0.35 + 0.03 * d, 4);
+  return 0.6 + 0.45 * Math.min(d, 28); // a rocky coast, rising to a low cliff
 }
 function landHeight(x, z) {
   const { d, kind } = coastNear(LAND, x, z);
   let h = coastH(kind, d);
-  if (inPoly(portZone, x, z)) return h;
-  const r0 = Math.hypot(x + 150, z + 500); // from the town's middle
-  h += Math.max(0, d - 90) * 0.022;
-  h += 380 * smooth(1300, 4800, r0) * (0.45 + 0.55 * fbm(x / 1100, z / 1100));
-  h += 1000 * smooth(5500, 11000, r0) * (0.35 + 0.65 * fbm(x / 2600 + 11, z / 2600 + 4)); // the mountains of the Petite Kabylie behind
-  h += 18 * smooth(300, 900, d) * fbm(x / 260 + 3, z / 260);
+  if (inPort(x, z)) return h;
+  const [X, Y] = toChart(x, z);
+  h += Math.min(Math.max(0, d - 60) * 0.03, 9); // the plain rises gently from the shore
+  const e = ((X - 200) / 120) ** 2 + ((Y - 165) / 70) ** 2;
+  h += 62 * Math.exp(-e * 1.55); // Mont Breiz
+  const r0 = Math.hypot(X - 560, Y - 200) * 3; // metres from the port
+  h += 140 * smooth(2400, 6000, r0) * (0.4 + 0.6 * fbm(x / 1500, z / 1500));
+  h += 8 * smooth(200, 700, d) * fbm(x / 240 + 3, z / 240);
   return h;
 }
 
@@ -84,8 +93,6 @@ function refine(poly, maxLen) {
   const len = (a, b) => Math.hypot(V[b].x - V[a].x, V[b].z - V[a].z);
   const longest = (t) => { const l0 = len(t[0], t[1]), l1 = len(t[1], t[2]), l2 = len(t[2], t[0]); return l0 >= l1 && l0 >= l2 ? 0 : l1 >= l2 ? 1 : 2; };
   for (let pass = 0; pass < 40; pass++) {
-    // mark each triangle's longest edge where it is too long; then, so no triangle is left with a split edge that is not its
-    // longest, mark the longest edge of every triangle that has any marked edge (longest-edge bisection keeps them well shaped)
     const marked = new Set();
     for (const t of tris) {
       const i = longest(t), a = t[i], b = t[(i + 1) % 3];
@@ -123,7 +130,7 @@ function refine(poly, maxLen) {
   return { V, tris };
 }
 
-function meshOf({ V, tris }, heightOf, colorOf, flip) {
+function meshOf({ V, tris }, heightOf, colorOf) {
   const pos = new Float32Array(V.length * 3), col = new Float32Array(V.length * 3);
   const c = [0, 0, 0];
   for (let i = 0; i < V.length; i++) {
@@ -135,7 +142,7 @@ function meshOf({ V, tris }, heightOf, colorOf, flip) {
     col.set(c, i * 3);
   }
   const idx = [];
-  for (const [a, b, cc] of tris) flip ? idx.push(a, cc, b) : idx.push(a, b, cc);
+  for (const [a, b, cc] of tris) idx.push(a, b, cc);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -144,7 +151,7 @@ function meshOf({ V, tris }, heightOf, colorOf, flip) {
   return g;
 }
 // Earcut keeps the outline's winding; the mesh must face up.
-function upFacing(g) { // flip the winding if the first triangle faces down
+function upFacing(g) {
   const p = g.attributes.position.array, ix = g.index.array;
   const a = new THREE.Vector3(p[ix[0] * 3], p[ix[0] * 3 + 1], p[ix[0] * 3 + 2]);
   const b = new THREE.Vector3(p[ix[1] * 3], p[ix[1] * 3 + 1], p[ix[1] * 3 + 2]);
@@ -154,8 +161,6 @@ function upFacing(g) { // flip the winding if the first triangle faces down
 }
 
 // --- The coast's faces: quay walls, and the slopes into the water ----------------------------------------------------------
-// Each outline edge gets a face from its top down below the sea: a vertical wall for a quay, a slope out and down for the rest
-// (steep for rock armour and the cliffs, long and shallow for the beach). The outward direction is mitred at each vertex.
 function coastSkirt(poly, topOf) {
   const p = poly.pts, n = p.length;
   const outN = [];
@@ -169,18 +174,16 @@ function coastSkirt(poly, topOf) {
   }
   const pos = [], col = [];
   const SK = { q: [0, -6], r: [6, -5], c: [10, -9], b: [42, -2.6] };
-  const COL = { q: [0.42, 0.41, 0.38], r: [0.42, 0.4, 0.37], c: [0.34, 0.3, 0.25], b: [0.62, 0.55, 0.43] };
-  const STAIN = [0.16, 0.19, 0.15];
+  const COL = { q: [0.44, 0.43, 0.41], r: [0.45, 0.44, 0.42], c: [0.34, 0.33, 0.31], b: [0.66, 0.6, 0.48] };
+  const STAIN = [0.15, 0.18, 0.15];
   for (let i = 0; i < n; i++) {
     const kind = poly.kinds[i];
     if (kind === 'x') continue;
     const a = p[i], b = p[(i + 1) % n];
     const [out, depth] = SK[kind];
-    // the mitred outward direction at each end
     const ma = mitre(outN[(i - 1 + n) % n], outN[i]), mb = mitre(outN[i], outN[(i + 1) % n]);
     const ta = topOf(a, kind), tb = topOf(b, kind);
     const A0 = [a.x, ta, a.z], B0 = [b.x, tb, b.z];
-    // a quay wall has a dark weed line just above the water; the slopes go in two steps (the tide line, then down)
     const Aw = [a.x + ma[0] * out * 0.05, 0.35, a.z + ma[1] * out * 0.05], Bw = [b.x + mb[0] * out * 0.05, 0.35, b.z + mb[1] * out * 0.05];
     const A1 = [a.x + ma[0] * out, depth, a.z + ma[1] * out], B1 = [b.x + mb[0] * out, depth, b.z + mb[1] * out];
     quad(pos, col, A0, B0, Bw, Aw, lin(COL[kind]), lin(COL[kind]));
@@ -206,98 +209,41 @@ function quad(pos, col, a, b, c, d, ca, cb) {
   col.push(...ca, ...ca, ...cb, ...ca, ...cb, ...cb);
 }
 
-// --- Small craft and the ships alongside ------------------------------------------------------------------------------------
 const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.75, metalness: 0.1, ...o });
-// A hull seen from above (bow +x), extruded up `h` and laid so y is up: a straight side and a pointed bow over the last `bow` of it.
-function hullGeo(len, beam, h, bow = 0.25, y0 = 0) {
-  const s = new THREE.Shape();
-  const L = len / 2, B = beam / 2, xb = L - len * bow;
-  s.moveTo(-L, -B * 0.92);
-  s.lineTo(xb, -B);
-  s.quadraticCurveTo(L * 0.96, -B * 0.7, L, 0);
-  s.quadraticCurveTo(L * 0.96, B * 0.7, xb, B);
-  s.lineTo(-L, B * 0.92);
-  s.quadraticCurveTo(-L - B * 0.25, 0, -L, -B * 0.92);
-  const g = new THREE.ExtrudeGeometry(s, { depth: h, bevelEnabled: false, curveSegments: 6 });
-  g.rotateX(-Math.PI / 2);
-  g.translate(0, y0, 0);
-  return g;
-}
 const boxAt = (k, m, w, h, d, x, y, z, ry = 0) => k.add(new THREE.BoxGeometry(w, h, d), m, { pos: [x, y + h / 2, z], rot: [0, ry, 0] });
 
-function makeFerry() {
+// --- Lights, buoys and signs ---------------------------------------------------------------------------------------------------
+// A light tower `h` metres to the lantern: white with bands in its colour (red, green, or the lighthouses' red top).
+function lightTower(h, band, r = 1.6) {
   const k = new Kit();
-  const navy = std(0x1d3a5c), white = std(0xeef0ee, { roughness: 0.6 }), dark = std(0x18222c, { metalness: 0.5, roughness: 0.3 }), red = std(0xb42a22);
-  k.add(hullGeo(120, 20, 6, 0.22, -4), navy);
-  k.add(hullGeo(118, 19.6, 4.5, 0.22, 2), white);
-  for (const [x0, x1, y, w] of [[-52, 30, 6.5, 18.5], [-44, 22, 9.5, 17.5], [-30, 14, 12.5, 15]]) {
-    boxAt(k, white, x1 - x0, 3, w, (x0 + x1) / 2, y, 0);
-    boxAt(k, dark, x1 - x0 + 0.2, 1.1, w + 0.2, (x0 + x1) / 2, y + 1.2, 0); // the window band
-  }
-  boxAt(k, white, 9, 4, 13, 18, 15.5, 0); // the bridge
-  boxAt(k, dark, 9.2, 1.4, 13.2, 18, 17.3, 0);
-  k.add(new THREE.CylinderGeometry(2.6, 3.2, 8, 12), white, { pos: [-30, 19.5, 0] });
-  k.add(new THREE.CylinderGeometry(2.62, 2.62, 1.6, 12), red, { pos: [-30, 22.6, 0] });
-  return k.build({ name: 'ferry' });
-}
-function makeSubmarine() {
-  const k = new Kit();
-  const black = std(0x15181b, { roughness: 0.55, metalness: 0.2 });
-  const hull = new THREE.CapsuleGeometry(4.6, 58, 6, 16);
-  hull.rotateZ(Math.PI / 2);
-  hull.scale(1, 0.85, 1);
-  k.add(hull, black, { pos: [0, -2.6, 0] });
-  k.add(new THREE.BoxGeometry(11, 6, 2.6), black, { pos: [10, 3, 0] }); // the sail
-  k.add(new THREE.BoxGeometry(5, 0.4, 7.5), black, { pos: [10, 4.2, 0] }); // the planes on the sail
-  k.add(new THREE.BoxGeometry(4, 4.5, 0.5), black, { pos: [-32, 0.5, 0] }); // the rudder
-  boxAt(k, std(0x2b2f33), 40, 0.15, 3.2, -2, 0.85, 0); // the casing
-  return k.build({ name: 'submarine' });
-}
-function makeTug() {
-  const k = new Kit();
-  const red = std(0xa8281e), black = std(0x1a1c1e), white = std(0xe8e8e2), tyre = std(0x111111, { roughness: 0.9 });
-  k.add(hullGeo(30, 9, 3.4, 0.35, -2), black);
-  k.add(hullGeo(29.6, 8.8, 1.6, 0.35, 1.4), red);
-  boxAt(k, white, 9, 3, 6.5, 3, 3, 0);
-  boxAt(k, white, 5.5, 2.4, 6.8, 4, 6, 0);
-  boxAt(k, std(0x1b2a36, { metalness: 0.6, roughness: 0.2 }), 5.6, 0.9, 6.9, 4, 7.1, 0);
-  k.rod([4, 8.4, 0], [4, 12.5, 0], 0.15, white);
-  k.add(new THREE.TorusGeometry(4.4, 0.45, 6, 18, Math.PI), tyre, { pos: [13.5, 1.6, 0], rot: [Math.PI / 2, 0, Math.PI / 2] });
-  return k.build({ name: 'tug' });
-}
-function makeBarge() {
-  const k = new Kit();
-  k.add(hullGeo(60, 13, 4, 0.08, -2.5), std(0x2a2d30));
-  k.add(new THREE.BoxGeometry(58, 0.4, 12.4), std(0xa8452e), { pos: [0, 1.7, 0] });
-  boxAt(k, std(0xe3e1d8), 7, 4, 10, -24, 1.9, 0);
-  return k.build({ name: 'barge' });
-}
-
-// --- The pier-head light towers and the buoys -------------------------------------------------------------------------------
-function lightTower(color) {
-  const k = new Kit();
-  const white = std(0xf0f0ea), band = std(color === 'red' ? 0xc02a22 : 0x1f8a4a), metal = std(0x3a3f44, { metalness: 0.6 });
-  k.add(new THREE.CylinderGeometry(1.5, 2.1, 10, 14), white, { pos: [0, 5, 0] });
-  for (const y of [3.2, 6.6]) k.add(new THREE.CylinderGeometry(1.72, 1.86, 1.6, 14), band, { pos: [0, y, 0] });
-  k.add(new THREE.CylinderGeometry(2.3, 2.3, 0.3, 14), metal, { pos: [0, 10.15, 0] });
-  k.add(new THREE.CylinderGeometry(0.9, 0.9, 1.6, 10), std(0x223038, { metalness: 0.8, roughness: 0.15 }), { pos: [0, 11.1, 0] });
-  k.add(new THREE.ConeGeometry(1.1, 0.9, 10), band, { pos: [0, 12.35, 0] });
+  const white = std(0xf0f0ea), b = std(band), metal = std(0x3a3f44, { metalness: 0.6 });
+  k.add(new THREE.CylinderGeometry(r * 0.75, r * 1.25, h, 16), white, { pos: [0, h / 2, 0] });
+  for (const f of [0.3, 0.62]) k.add(new THREE.CylinderGeometry(r * 0.93, r * 1.0, h * 0.12, 16), b, { pos: [0, h * f, 0] });
+  k.add(new THREE.CylinderGeometry(r * 1.2, r * 1.2, 0.3, 16), metal, { pos: [0, h + 0.15, 0] });
+  k.add(new THREE.CylinderGeometry(r * 0.6, r * 0.6, 1.8, 12), std(0x223038, { metalness: 0.8, roughness: 0.15 }), { pos: [0, h + 1.2, 0] });
+  k.add(new THREE.ConeGeometry(r * 0.75, 1.1, 12), b, { pos: [0, h + 2.65, 0] });
   return k.build({ name: 'light' });
 }
 function buoyModel(kind) {
   const k = new Kit();
-  const red = std(0xc4271d), green = std(0x1d8a43), white = std(0xf2f2ee), dark = std(0x23272b);
-  k.add(new THREE.CylinderGeometry(1.4, 1.6, 1.4, 14), kind === 'stbd' ? green : red, { pos: [0, 0.3, 0] });
-  if (kind === 'fairway') {
-    for (let i = 0; i < 4; i++) k.add(new THREE.CylinderGeometry(0.55, 0.62, 3.6, 12, 1, false, (i * Math.PI) / 2, Math.PI / 4), i % 2 ? white : red, { pos: [0, 2.8, 0] });
-    for (let i = 0; i < 4; i++) k.add(new THREE.CylinderGeometry(0.55, 0.62, 3.6, 12, 1, false, (i * Math.PI) / 2 + Math.PI / 4, Math.PI / 4), i % 2 ? red : white, { pos: [0, 2.8, 0] });
+  const red = std(0xc4271d), green = std(0x1d8a43), white = std(0xf2f2ee), dark = std(0x23272b), black = std(0x16181a), yellow = std(0xe8b81c);
+  const body = { port: red, stbd: green, north: black, south: yellow, safe: red }[kind];
+  k.add(new THREE.CylinderGeometry(1.4, 1.6, 1.4, 14), body, { pos: [0, 0.3, 0] });
+  if (kind === 'safe') {
+    for (let i = 0; i < 8; i++) k.add(new THREE.CylinderGeometry(0.55, 0.62, 3.6, 12, 1, false, (i * Math.PI) / 4, Math.PI / 4), i % 2 ? white : red, { pos: [0, 2.8, 0] });
     k.add(new THREE.SphereGeometry(0.55, 12, 8), red, { pos: [0, 5.3, 0] });
   } else if (kind === 'port') {
     k.add(new THREE.CylinderGeometry(0.75, 0.75, 2.6, 12), red, { pos: [0, 2.3, 0] });
     k.add(new THREE.BoxGeometry(0.9, 0.9, 0.9), red, { pos: [0, 4.4, 0] });
-  } else {
+  } else if (kind === 'stbd') {
     k.add(new THREE.CylinderGeometry(0.3, 0.8, 2.6, 12), green, { pos: [0, 2.3, 0] });
     k.add(new THREE.ConeGeometry(0.6, 1.0, 12), green, { pos: [0, 4.3, 0] });
+  } else { // the cardinals: black over yellow (north) or yellow over black (south), two cones pointing up or down
+    const [top, bot] = kind === 'north' ? [black, yellow] : [yellow, black];
+    k.add(new THREE.CylinderGeometry(0.7, 0.75, 1.3, 12), top, { pos: [0, 2.9, 0] });
+    k.add(new THREE.CylinderGeometry(0.75, 0.8, 1.3, 12), bot, { pos: [0, 1.6, 0] });
+    const up = kind === 'north';
+    for (const y of [4.3, 5.3]) k.add(new THREE.ConeGeometry(0.5, 0.8, 12), black, { pos: [0, y, 0], rot: [up ? 0 : Math.PI, 0, 0] });
   }
   k.rod([0, 0.9, 0], [0, 5, 0], 0.06, dark);
   return k.build({ name: `buoy-${kind}` });
@@ -322,48 +268,46 @@ function lamp(color, size = 6) {
   s.scale.setScalar(size);
   return s;
 }
-// A sign with a number on it (berth 3 and berth 7), drawn into a canvas.
+// A sign with text on it (the berth numbers), drawn into a canvas.
 function sign(text, bg, fg = '#fff') {
   const c = document.createElement('canvas');
   c.width = 128; c.height = 128;
   const g = c.getContext('2d');
   g.fillStyle = bg; g.fillRect(0, 0, 128, 128);
   g.strokeStyle = fg; g.lineWidth = 8; g.strokeRect(6, 6, 116, 116);
-  g.fillStyle = fg; g.font = 'bold 86px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = fg; g.font = `bold ${text.length > 2 ? 54 : 80}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillText(text, 64, 70);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return new THREE.MeshBasicMaterial({ map: t, side: THREE.DoubleSide });
 }
+const COLORS = { white: 0xfff4d6, red: 0xff3b30, green: 0x3dff7a };
 
 // --- Everything ------------------------------------------------------------------------------------------------------------
-export function createHarbour(scene) {
+// `sim` gives the manoeuvre (which ships lie alongside, her berth and her outline for the ghost on the water).
+export function createHarbour(scene, sim) {
   const group = new THREE.Group();
   group.name = 'harbour';
   scene.add(group);
-  const rng = mulberry32(7);
+  const rng = mulberry32(11);
   const ground = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
-
-  // The land: fine near the port, coarser out on the hills.
-  const land = refine(LAND, (x, z) => { const r = Math.hypot(x + 200, z + 300); return r < 1600 ? 24 : Math.min(24 + (r - 1600) * 0.06, 420); });
   const tmp = new THREE.Color();
   tmp.setSRGB = function (r, g, b) { return this.setRGB(r, g, b, THREE.SRGBColorSpace); };
-  const DIM = 0.74; // the ground's albedo: concrete and dry earth reflect far less than they seem to, and the sun here is strong
+  const DIM = 0.78;
+
+  // The land: fine near the port, coarser out in the hills.
+  const land = refine(LAND, (x, z) => { const r = Math.hypot(x - 250, z - 0); return r < 1800 ? 22 : Math.min(22 + (r - 1800) * 0.06, 420); });
   const landGeo = meshOf(land, (v) => (v.edge >= 0 ? coastH(LAND.kinds[v.edge], 0) : landHeight(v.x, v.z)), (v, c) => {
     const n = fbm(v.x / 60, v.z / 60);
-    const port = inPoly(portZone, v.x, v.z);
     const near = coastNear(LAND, v.x, v.z);
-    if (port) tmp.setSRGB(0.55 + 0.08 * n, 0.54 + 0.07 * n, 0.5 + 0.06 * n); // concrete and asphalt
-    else if (near.kind === 'b' && near.d < 75) tmp.setSRGB(0.8, 0.71, 0.55); // sand
-    else if (near.kind === 'c' && near.d < 30) tmp.setSRGB(0.42, 0.38, 0.31); // the rocks of the headland
-    else {
-      const town = 1 - smooth(1500, 2600, Math.hypot(v.x + 150, v.z + 500));
-      const hill = smooth(40, 160, v.y);
-      // town ground (streets, yards) toward the green of the scrub and pine on the hills, bare rock on the highest tops
-      const g0 = [0.47 + 0.08 * n, 0.44 + 0.06 * n, 0.38 + 0.05 * n], g1 = [0.2 + 0.12 * n, 0.3 + 0.1 * n, 0.14 + 0.05 * n], g2 = [0.48, 0.45, 0.4];
-      const k = Math.max(1 - town, hill);
-      const r = smooth(300, 420, v.y);
-      tmp.setSRGB(g0[0] + (g1[0] - g0[0]) * k, g0[1] + (g1[1] - g0[1]) * k, g0[2] + (g1[2] - g0[2]) * k).lerp(new THREE.Color().setRGB(...g2, THREE.SRGBColorSpace), r * 0.6);
+    if (inPort(v.x, v.z)) tmp.setSRGB(0.52 + 0.07 * n, 0.52 + 0.06 * n, 0.5 + 0.05 * n); // concrete and asphalt
+    else if (near.kind === 'b' && near.d < 70) tmp.setSRGB(0.84, 0.76, 0.58); // the sand of Kerlann
+    else if (near.kind === 'c' && near.d < 26) tmp.setSRGB(0.4, 0.38, 0.34); // granite rocks
+    else if (inPoly(TOWN, v.x, v.z)) tmp.setSRGB(0.5 + 0.06 * n, 0.5 + 0.05 * n, 0.46 + 0.05 * n); // the town's streets and gardens
+    else { // the bocage: fields of different greens, darker woods on the hill
+      const f = hash(Math.floor(v.x / 140), Math.floor(v.z / 110));
+      const wood = smooth(28, 45, v.y);
+      tmp.setSRGB(0.26 + 0.12 * f + 0.05 * n - 0.08 * wood, 0.38 + 0.1 * f + 0.05 * n - 0.06 * wood, 0.17 + 0.06 * f - 0.03 * wood);
     }
     c[0] = tmp.r * DIM; c[1] = tmp.g * DIM; c[2] = tmp.b * DIM;
   });
@@ -373,55 +317,83 @@ export function createHarbour(scene) {
   landMesh.name = 'land';
   group.add(landMesh);
 
-  // The north breakwater: its deck, and the slope of the armour up to it from the seaward side.
-  const bw = refine(BREAKWATER, () => 18);
-  const bwGeo = meshOf(bw, (v) => {
-    if (v.edge >= 0) return BREAKWATER.kinds[v.edge] === 'r' ? 0.3 : BW_DECK;
-    const { d, kind } = coastNear(BREAKWATER, v.x, v.z);
-    return coastH(kind, d, BW_DECK);
-  }, (v, c) => { const n = fbm(v.x / 30, v.z / 30); [c[0], c[1], c[2]] = lin([0.5 + 0.06 * n, 0.49 + 0.06 * n, 0.46 + 0.05 * n]); });
-  upFacing(bwGeo);
-  const bwMesh = new THREE.Mesh(bwGeo, ground);
-  bwMesh.receiveShadow = true;
-  group.add(bwMesh);
-
-  // Quay walls and the slopes into the water.
+  // The breakwaters: deck, armour slope from the seaward side, wave wall.
   const skirtMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
+  const bwSk = [];
+  for (const B of BREAKWATERS) {
+    const bw = refine(B, () => 12);
+    const g = meshOf(bw, (v) => {
+      if (v.edge >= 0) return B.kinds[v.edge] === 'r' ? 0.3 : BW_DECK;
+      const { d, kind } = coastNear(B, v.x, v.z);
+      return coastH(kind, d, BW_DECK);
+    }, (v, c) => { const n = fbm(v.x / 30, v.z / 30); [c[0], c[1], c[2]] = lin([0.52 + 0.06 * n, 0.51 + 0.06 * n, 0.48 + 0.05 * n]); });
+    upFacing(g);
+    const m = new THREE.Mesh(g, ground);
+    m.receiveShadow = true;
+    group.add(m);
+    const sk = coastSkirt(B, (p, kind) => (kind === 'r' ? 0.3 : BW_DECK));
+    bwSk.push(sk);
+    const sm = new THREE.Mesh(sk.geo, skirtMat); sm.receiveShadow = true; group.add(sm);
+  }
   const landSk = coastSkirt(LAND, (p, kind) => coastH(kind, 0));
-  const bwSk = coastSkirt(BREAKWATER, (p, kind) => (kind === 'r' ? 0.3 : BW_DECK));
-  for (const s of [landSk, bwSk]) { const m = new THREE.Mesh(s.geo, skirtMat); m.receiveShadow = true; group.add(m); }
-
-  // The wave wall along the breakwater's seaward side, a few metres in from the armour's foot.
+  { const m = new THREE.Mesh(landSk.geo, skirtMat); m.receiveShadow = true; group.add(m); }
   {
     const k = new Kit();
     const conc = std(0xa7a49b, { roughness: 0.95 });
-    const p = BREAKWATER.pts, n = p.length;
-    for (let i = 0; i < n; i++) {
-      if (BREAKWATER.kinds[i] !== 'r') continue;
-      const a = p[i], b = p[(i + 1) % n], [nx, nz] = bwSk.outN[i];
-      const inA = { x: a.x - nx * 9, z: a.z - nz * 9 }, inB = { x: b.x - nx * 9, z: b.z - nz * 9 };
-      const len = Math.hypot(inB.x - inA.x, inB.z - inA.z);
-      if (len < 4) continue;
-      const ang = Math.atan2(inB.z - inA.z, inB.x - inA.x);
-      k.add(new THREE.BoxGeometry(len + 2.5, 2.6, 2.4), conc, { pos: [(inA.x + inB.x) / 2, BW_DECK + 1.3, (inA.z + inB.z) / 2], rot: [0, -ang, 0] });
-    }
+    BREAKWATERS.forEach((B, bi) => {
+      const p = B.pts, n = p.length;
+      for (let i = 0; i < n; i++) {
+        if (B.kinds[i] !== 'r') continue;
+        const a = p[i], b = p[(i + 1) % n], [nx, nz] = bwSk[bi].outN[i];
+        const inA = { x: a.x - nx * 8, z: a.z - nz * 8 }, inB = { x: b.x - nx * 8, z: b.z - nz * 8 };
+        const len = Math.hypot(inB.x - inA.x, inB.z - inA.z);
+        if (len < 4) continue;
+        k.add(new THREE.BoxGeometry(len + 2.5, 2.6, 2.4), conc, { pos: [(inA.x + inB.x) / 2, BW_DECK + 1.3, (inA.z + inB.z) / 2], rot: [0, -Math.atan2(inB.z - inA.z, inB.x - inA.x), 0] });
+      }
+    });
     group.add(k.build({ name: 'wave-wall' }));
   }
 
-  // Rock armour: concrete blocks and boulders along every rock face, from below the water up the slope.
+  // The piers: solid quays from the sea bed up to the yard; the oil jetty is a deck on piles.
+  {
+    const k = new Kit();
+    const conc = std(0x8e8b84, { roughness: 0.92 }), deck = std(0x77756f, { roughness: 0.95 }), pile = std(0x55524c);
+    MOLES.forEach((M, i) => {
+      if (i === 3) { // the oil jetty
+        const s = new THREE.Shape(M.pts.map((p) => new THREE.Vector2(p.x, -p.z)));
+        const g = new THREE.ExtrudeGeometry(s, { depth: 1.2, bevelEnabled: false });
+        g.rotateX(-Math.PI / 2); g.translate(0, QUAY - 0.6, 0);
+        k.add(g, deck);
+        for (const p of M.pts) k.rod([p.x, -6, p.z], [p.x, QUAY - 0.5, p.z], 0.5, pile);
+        return;
+      }
+      const s = new THREE.Shape(M.pts.map((p) => new THREE.Vector2(p.x, -p.z)));
+      const g = new THREE.ExtrudeGeometry(s, { depth: QUAY + 6, bevelEnabled: false });
+      g.rotateX(-Math.PI / 2); g.translate(0, -6, 0);
+      k.add(g, conc);
+    });
+    // the Ro-Ro ramp (berth 8): a linkspan sloping down to the water at the pier head
+    const r0 = P(653, 300), r1 = P(669, 313);
+    k.add(new THREE.BoxGeometry(Math.abs(r1.x - r0.x), 0.5, Math.abs(r1.z - r0.z)), std(0x6f7a80, { metalness: 0.4 }), { pos: [(r0.x + r1.x) / 2, 1.4, (r0.z + r1.z) / 2], rot: [0, 0, -0.04] });
+    // the shipyard's slipway into the fishing basin
+    const s0 = P(361, 287), s1 = P(375, 309);
+    k.add(new THREE.BoxGeometry(Math.abs(s1.x - s0.x), 0.4, Math.abs(s1.z - s0.z) + 10), std(0x6b5a3a), { pos: [(s0.x + s1.x) / 2, 0.6, (s0.z + s1.z) / 2 + 5], rot: [0.08, 0, 0] });
+    group.add(k.build({ name: 'piers' }));
+  }
+
+  // Rock armour: blocks along every rock face, and the rocky shore near the port; Les Corbeaux, barely awash.
   {
     const rocks = [];
-    const NEAR = 2600; // m from the port: natural rocks further out are never seen up close
-    const place = (poly, outN, deck, palette, size, rows, step, inward) => {
+    const place = (poly, outN, deck, palette, size, rows, step, armour) => {
       const p = poly.pts, n = p.length;
       for (let i = 0; i < n; i++) {
-        if (poly.kinds[i] !== (inward ? 'r' : 'c')) continue;
+        if (poly.kinds[i] !== (armour ? 'r' : 'c')) continue;
         const a = p[i], b = p[(i + 1) % n], [nx, nz] = outN[i];
         const len = Math.hypot(b.x - a.x, b.z - a.z);
-        if (!inward && Math.hypot((a.x + b.x) / 2, (a.z + b.z) / 2 + 300) > NEAR) continue;
+        if (!armour && Math.hypot((a.x + b.x) / 2, (a.z + b.z) / 2) > 3000) continue;
         for (let s = 0; s < len; s += step) {
           for (let r = 0; r < rows; r++) {
-            const off = (r / (rows - 1 || 1)) * (inward ? 11 : 9) - 3 + rng() * 1.5; // metres inland of the waterline (+) or out (-)
+            const off = (r / (rows - 1 || 1)) * (armour ? 10 : 9) - 3 + rng() * 1.5;
             const f = (s + rng() * step) / len;
             const x = a.x + (b.x - a.x) * f - nx * off, z = a.z + (b.z - a.z) * f - nz * off;
             const y = off < 0 ? off * 0.9 : Math.min(0.3 + 0.45 * off, deck) - 0.4;
@@ -431,18 +403,15 @@ export function createHarbour(scene) {
       }
     };
     const armour = [[0.72, 0.71, 0.67], [0.66, 0.65, 0.61], [0.78, 0.77, 0.73], [0.6, 0.59, 0.56]];
-    const natural = [[0.44, 0.39, 0.33], [0.36, 0.32, 0.27], [0.5, 0.45, 0.38]];
-    place(BREAKWATER, bwSk.outN, BW_DECK, armour, 2.3, 4, 2.8, true);
+    const granite = [[0.46, 0.44, 0.41], [0.38, 0.37, 0.35], [0.52, 0.5, 0.46]];
+    BREAKWATERS.forEach((B, i) => place(B, bwSk[i].outN, BW_DECK, armour, 2.3, 4, 2.6, true));
     place(LAND, landSk.outN, QUAY, armour, 2.0, 3, 2.8, true);
-    place(LAND, landSk.outN, 14, natural, 2.8, 3, 5, false);
-    for (const R of ROCKS) { // the rocks awash: a heap each
-      for (let i = 0; i < 26; i++) {
-        const a = rng() * Math.PI * 2, d = Math.sqrt(rng()) * R.r;
-        rocks.push({ x: R.c.x + Math.cos(a) * d, y: 1.8 * (1 - d / R.r) - 1.2 + rng(), z: R.c.z + Math.sin(a) * d, s: 2.5 + rng() * 3, c: natural[i % 3] });
-      }
+    place(LAND, landSk.outN, 14, granite, 2.8, 3, 5, false);
+    for (const R of ROCKS) for (let i = 0; i < 24; i++) {
+      const a = rng() * Math.PI * 2, d = Math.sqrt(rng()) * R.r;
+      rocks.push({ x: R.x + Math.cos(a) * d, y: 0.6 * (1 - d / R.r) - 1.4 + rng() * 0.8, z: R.z + Math.sin(a) * d, s: 2 + rng() * 2.5, c: granite[i % 3] });
     }
-    const geo = new THREE.IcosahedronGeometry(1, 0);
-    const mesh = new THREE.InstancedMesh(geo, std(0xffffff, { roughness: 0.95, flatShading: true }), rocks.length);
+    const mesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), std(0xffffff, { roughness: 0.95, flatShading: true }), rocks.length);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3();
     rocks.forEach((r, i) => {
       q.setFromEuler(e.set(rng() * 3, rng() * 3, rng() * 3));
@@ -454,297 +423,368 @@ export function createHarbour(scene) {
     group.add(mesh);
   }
 
-  // The port's sheds and offices (blue roofs where the images show them), and a few stacks of containers.
+  // The roads of the chart (the coast road, the quay road, the D 786, the roads to the station and the industrial zone).
   {
-    const k = new Kit();
-    const wall = std(0xd9d6cc), wall2 = std(0xbfbab0), blue = std(0x2f5fb8, { roughness: 0.55, metalness: 0.3 }), white = std(0xe8e8e4), glass = std(0x24323c, { metalness: 0.6, roughness: 0.3 });
-    const shed = (x, y, len, wid, h, rot, roof = blue, walls = wall) => {
-      const c = px(x, y), a = (rot * Math.PI) / 180;
-      k.add(new THREE.BoxGeometry(len, h, wid), walls, { pos: [c.x, QUAY + h / 2, c.z], rot: [0, -a, 0] });
-      const ridge = new THREE.CylinderGeometry(wid * 0.56, wid * 0.56, len, 3, 1);
-      ridge.rotateZ(Math.PI / 2);
-      ridge.scale(1, 0.22, 1);
-      k.add(ridge, roof, { pos: [c.x, QUAY + h + wid * 0.04, c.z], rot: [0, -a, 0] });
-      k.add(new THREE.BoxGeometry(len * 0.92, 1.2, wid + 0.1), glass, { pos: [c.x, QUAY + h * 0.62, c.z], rot: [0, -a, 0] });
-    };
-    // rot: the long side's bearing from north, in degrees (the images are north-up)
-    shed(420, 140, 105, 62, 12, 115);
-    shed(245, 98, 72, 38, 11, 100);
-    shed(345, 84, 42, 24, 9, 100);
-    shed(190, 82, 36, 30, 9, 100);
-    shed(475, 105, 30, 20, 8, 100);
-    shed(92, 306, 92, 40, 10, 90, white, wall2);
-    shed(118, 548, 42, 32, 10, 80);
-    shed(80, 420, 60, 30, 14, 160, std(0x9aa3a8), wall);
-    shed(160, 620, 50, 24, 9, 120, std(0x8f989c), wall2);
-    // offices at the breakwater's root
-    boxAt(k, wall, 30, 14, 16, px(520, 52).x, QUAY, px(520, 52).z, -0.17);
-    boxAt(k, glass, 30.2, 1.2, 16.2, px(520, 52).x, QUAY + 9, px(520, 52).z, -0.17);
-    // container stacks (instanced below)
-    group.add(k.build({ name: 'sheds' }));
-    const boxes = [];
-    const stack = (x, y, rows, cols, rot) => {
-      const c = px(x, y), a = (rot * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
-      for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
-        const h = 1 + Math.floor(rng() * 3);
-        for (let l = 0; l < h; l++) boxes.push({ x: c.x + ca * j * 6.4 - sa * i * 2.7, z: c.z + sa * j * 6.4 + ca * i * 2.7, y: QUAY + l * 2.6, a });
+    const roads = [
+      'M60,298 C150,290 250,262 340,250 L455,222', 'M455,222 L745,222', 'M505,222 L505,60', 'M330,250 L330,125', 'M745,222 L745,60', 'M745,222 L880,222 L888,318', 'M880,222 L1060,190',
+    ];
+    const pos = [], col = [], c0 = lin([0.2, 0.21, 0.22]);
+    for (const d of roads) {
+      const tok = d.match(/[MLC]|-?\d+(\.\d+)?/g); // sample the path at 4 px
+      const pts = [];
+      let cur = null, i = 0, cmd = 'M';
+      const num = () => Number(tok[i++]);
+      while (i < tok.length) {
+        if (/[MLC]/.test(tok[i])) cmd = tok[i++];
+        if (cmd === 'C') {
+          const b = [num(), num()], c = [num(), num()], e = [num(), num()];
+          for (let s = 1; s <= 12; s++) { const t = s / 12, u = 1 - t; pts.push([u * u * u * cur[0] + 3 * u * u * t * b[0] + 3 * u * t * t * c[0] + t * t * t * e[0], u * u * u * cur[1] + 3 * u * u * t * b[1] + 3 * u * t * t * c[1] + t * t * t * e[1]]); }
+          cur = e;
+        } else {
+          const e = [num(), num()];
+          if (cur && cmd === 'L') { const n = Math.ceil(Math.hypot(e[0] - cur[0], e[1] - cur[1]) / 4); for (let s = 1; s <= n; s++) pts.push([cur[0] + ((e[0] - cur[0]) * s) / n, cur[1] + ((e[1] - cur[1]) * s) / n]); } else pts.push(e);
+          cur = e;
+        }
       }
-    };
-    stack(455, 92, 5, 3, 100);
-    stack(470, 680, 6, 5, 60);
-    stack(530, 640, 4, 4, 60);
-    stack(1000, 120, 3, 2, 98);
-    const cols = [0xb03a2e, 0x2e6db0, 0xd9a72a, 0x2e8b57, 0x8a8f94, 0xd8d8d0, 0x7a3a8a];
-    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(6.1, 2.55, 2.45), std(0xffffff, { roughness: 0.7, metalness: 0.3 }), boxes.length);
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion();
-    boxes.forEach((b, i) => {
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -b.a);
-      m.compose(new THREE.Vector3(b.x, b.y + 1.28, b.z), q, new THREE.Vector3(1, 1, 1));
-      im.setMatrixAt(i, m);
-      im.setColorAt(i, tmp.setHex(cols[Math.floor(rng() * cols.length)]));
-    });
-    im.castShadow = im.receiveShadow = true;
-    group.add(im);
-  }
-
-  // The town: houses and blocks of flats on a street grid, white and cream with flat roofs, some with red tiles; denser by the
-  // port, thinning out up the hills. Two mosques with their minarets.
-  {
-    const spots = [];
-    const ang = (12 * Math.PI) / 180, ca = Math.cos(ang), sa = Math.sin(ang);
-    const STEP = 27;
-    for (let i = -110; i <= 110; i++) {
-      for (let j = -110; j <= 110; j++) {
-        if (i % 5 === 0 || j % 4 === 0) continue; // the streets
-        const gx = i * STEP, gz = j * STEP;
-        const x = gx * ca - gz * sa - 300 + (rng() - 0.5) * 6, z = gx * sa + gz * ca - 700 + (rng() - 0.5) * 6;
-        const r0 = Math.hypot(x + 150, z + 500);
-        if (r0 > 3000) continue;
-        if (!inPoly(LAND, x, z) || inPoly(portZone, x, z)) continue;
-        const near = coastNear(LAND, x, z);
-        if (near.d < (near.kind === 'b' ? 95 : 32)) continue;
-        const h = landHeight(x, z);
-        const p = (1 - smooth(900, 3000, r0)) * (1 - smooth(60, 220, h));
-        if (rng() > p * 0.95) continue;
-        spots.push({ x, z, y: h, r0 });
+      for (let j = 1; j < pts.length; j++) {
+        const a = P(...pts[j - 1]), b = P(...pts[j]);
+        const l = Math.hypot(b.x - a.x, b.z - a.z) || 1, nx = -(b.z - a.z) / l * 4, nz = (b.x - a.x) / l * 4;
+        const ya = landHeight(a.x, a.z) + 0.25, yb = landHeight(b.x, b.z) + 0.25;
+        quad(pos, col, [a.x + nx, ya, a.z + nz], [b.x + nx, yb, b.z + nz], [b.x - nx, yb, b.z - nz], [a.x - nx, ya, a.z - nz], c0, c0);
       }
     }
-    const walls = ['#ece6d6', '#f3efe6', '#e2d6bb', '#e8dcc2', '#d8d1c3', '#efe6d1', '#e6e0d2', '#d6c7a6'];
-    const tiles = ['#b4532f', '#a6482a', '#bf6640', '#9c4126'];
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }));
+    m.receiveShadow = true;
+    group.add(m);
+  }
+
+  // The port's buildings: warehouses, the industrial zone, the oil depot and its pipeline, the harbour office, the fish market, the
+  // ferry terminal, the cranes of the Môle Commercial, the shipyard, the station.
+  {
+    const k = new Kit();
+    const wall = std(0xd6d2c6), wall2 = std(0xbab4a8), roof = std(0x5a6168, { roughness: 0.6, metalness: 0.3 }), glass = std(0x24323c, { metalness: 0.6, roughness: 0.3 });
+    const white = std(0xeeeeea), yellow = std(0xd9a72a, { metalness: 0.3 }), tankC = std(0xe6e6e0, { roughness: 0.5, metalness: 0.3 });
+    const bld = (x0, y0, x1, y1, h, walls = wall, r = roof) => {
+      const a = P(x0, y0), b = P(x1, y1), cx = (a.x + b.x) / 2, cz = (a.z + b.z) / 2, w = Math.abs(b.x - a.x), d = Math.abs(b.z - a.z);
+      const y = landHeight(cx, cz);
+      k.add(new THREE.BoxGeometry(w, h, d), walls, { pos: [cx, y + h / 2, cz] });
+      k.add(new THREE.BoxGeometry(w + 0.6, 0.6, d + 0.6), r, { pos: [cx, y + h + 0.3, cz] });
+      k.add(new THREE.BoxGeometry(w + 0.1, 1.0, d + 0.1), glass, { pos: [cx, y + h * 0.6, cz] });
+    };
+    bld(612, 64, 642, 79, 11); bld(648, 64, 684, 79, 12); bld(690, 64, 720, 79, 11); // Entrepôts
+    bld(770, 150, 810, 172, 13, wall2); bld(820, 150, 870, 172, 14); bld(770, 180, 798, 206, 10); bld(808, 180, 846, 198, 10, wall2); bld(850, 178, 872, 196, 9); // zone industrielle
+    bld(523, 238, 539, 250, 7, white); // la criée (pier 1-2)
+    bld(588, 236, 602, 246, 8); // the Môle Commercial's office
+    bld(653, 236, 669, 244, 9, white); // the ferry terminal
+    bld(334, 268, 356, 294, 14, wall2); // the shipyard's shed
+    bld(326, 114, 344, 128, 8, std(0xd8cbb0)); // la gare
+    { // the harbour office (capitainerie) and its control tower
+      const c = P(488, 213), y = landHeight(c.x, c.z);
+      k.add(new THREE.BoxGeometry(42, 10, 48), white, { pos: [c.x, y + 5, c.z] });
+      k.add(new THREE.CylinderGeometry(4, 4.5, 22, 12), white, { pos: [c.x - 10, y + 11, c.z + 12] });
+      k.add(new THREE.CylinderGeometry(6, 5, 4, 12), glass, { pos: [c.x - 10, y + 24, c.z + 12] });
+      k.add(new THREE.CylinderGeometry(6.4, 6.4, 0.6, 12), std(0x2a5d8a), { pos: [c.x - 10, y + 26.3, c.z + 12] });
+    }
+    // the oil depot: four tanks and the pipeline to the oil jetty
+    for (const [X, Y] of [[905, 232], [935, 232], [905, 262], [935, 262]]) {
+      const c = P(X, Y), y = landHeight(c.x, c.z);
+      k.add(new THREE.CylinderGeometry(31, 31, 16, 32), tankC, { pos: [c.x, y + 8, c.z] });
+      k.add(new THREE.CylinderGeometry(31.5, 31.5, 0.6, 32), std(0x9aa0a4, { metalness: 0.5 }), { pos: [c.x, y + 16.2, c.z] });
+      k.add(new THREE.CylinderGeometry(34, 34, 1.4, 32, 1, true), std(0x8e8b84), { pos: [c.x, y + 0.7, c.z] }); // the bund
+    }
+    const pipe = [[895, 244], [760, 238], [740, 258], [713, 258]].map(([X, Y]) => P(X, Y));
+    for (let i = 1; i < pipe.length; i++) k.rod([pipe[i - 1].x, QUAY + 1.2, pipe[i - 1].z], [pipe[i].x, QUAY + 1.2, pipe[i].z], 0.45, std(0x8a8f94, { metalness: 0.5 }));
+    // the cranes of the Môle Commercial (berths 3-5): portal cranes on the east face, jibs over the Bassin
+    for (const Y of [270, 300, 328]) {
+      const c = P(604, Y), y = QUAY;
+      for (const dx of [-4, 4]) for (const dz of [-4, 4]) k.rod([c.x + dx, y, c.z + dz], [c.x + dx * 0.5, y + 14, c.z + dz * 0.5], 0.35, yellow);
+      boxAt(k, yellow, 5, 5, 5, c.x, y + 14, c.z);
+      boxAt(k, std(0x2a2c2e), 3.4, 3, 3.4, c.x, y + 19, c.z + 1.5);
+      k.rod([c.x, y + 20, c.z], [c.x - 2, y + 36, c.z + 22], 0.45, yellow);
+      k.rod([c.x, y + 22, c.z], [c.x, y + 30, c.z - 6], 0.3, yellow);
+    }
+    group.add(k.build({ name: 'port-buildings' }));
+  }
+
+  // The town: houses on a street grid, white walls and grey slate roofs, granite here and there; the church spire.
+  {
+    const spots = [];
+    const ang = (6 * Math.PI) / 180, ca = Math.cos(ang), sa = Math.sin(ang);
+    const STEP = 24;
+    for (let i = -70; i <= 70; i++) {
+      for (let j = -70; j <= 70; j++) {
+        if (i % 5 === 0 || j % 4 === 0) continue; // the streets
+        const gx = i * STEP, gz = j * STEP;
+        const x = gx * ca - gz * sa + 560 + (rng() - 0.5) * 5, z = gx * sa + gz * ca - 200 + (rng() - 0.5) * 5;
+        if (!inPoly(TOWN, x, z) || inPort(x, z) || !inPoly(LAND, x, z)) continue;
+        const near = coastNear(LAND, x, z);
+        if (near.d < 22) continue;
+        if (rng() > 0.85) continue;
+        spots.push({ x, z, y: landHeight(x, z) });
+      }
+    }
+    // farms and hamlets out in the bocage
+    for (let i = 0; i < 260; i++) {
+      const x = 400 + (rng() - 0.5) * 3600, z = -400 + (rng() - 0.5) * 5000;
+      if (!inPoly(LAND, x, z) || inPort(x, z) || inPoly(TOWN, x, z) || coastNear(LAND, x, z).d < 60) continue;
+      spots.push({ x, z, y: landHeight(x, z), farm: true });
+    }
+    const walls = ['#f2efe6', '#ece6d6', '#e6e0d2', '#f6f4ee', '#b9b3a6', '#a9a397', '#ded6c4'];
+    const slates = ['#4a5058', '#3f454d', '#555c64', '#5b5550'];
     const n = spots.length;
     const bodies = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), std(0xffffff, { roughness: 0.85 }), n);
-    const roofG = new THREE.ConeGeometry(0.75, 1, 4, 1).rotateY(Math.PI / 4).translate(0, 0.5, 0);
-    const roofs = new THREE.InstancedMesh(roofG, std(0xffffff, { roughness: 0.8 }), n);
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -ang), s = new THREE.Vector3();
-    let nr = 0;
+    const roofG = new THREE.CylinderGeometry(0.62, 0.62, 1, 3, 1).rotateZ(Math.PI / 2).rotateY(Math.PI / 2).translate(0, 0.25, 0);
+    const roofs = new THREE.InstancedMesh(roofG, std(0xffffff, { roughness: 0.7 }), n);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3();
     spots.forEach((sp, i) => {
-      const w = 9 + rng() * 11, d = 9 + rng() * 11;
-      const tall = sp.r0 < 1600 && rng() < 0.22;
-      const floors = tall ? 5 + Math.floor(rng() * 6) : 1 + Math.floor(rng() * 4);
-      const h = floors * 3.1;
-      m.compose(new THREE.Vector3(sp.x, sp.y - 1.5, sp.z), q, s.set(tall ? w * 1.5 : w, h + 1.5, d));
+      const w = 8 + rng() * 6, d = 10 + rng() * 10, floors = sp.farm ? 1 + Math.floor(rng() * 2) : 2 + Math.floor(rng() * 2);
+      const h = floors * 3;
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -ang + (sp.farm ? rng() * 3 : 0));
+      m.compose(new THREE.Vector3(sp.x, sp.y - 1, sp.z), q, s.set(w, h + 1, d));
       bodies.setMatrixAt(i, m);
       bodies.setColorAt(i, tmp.set(walls[Math.floor(rng() * walls.length)]));
-      if (!tall && rng() < 0.45) {
-        m.compose(new THREE.Vector3(sp.x, sp.y + h, sp.z), q, s.set(w * 1.05, 2.6 + rng(), d * 1.05));
-        roofs.setMatrixAt(nr, m);
-        roofs.setColorAt(nr++, tmp.set(tiles[Math.floor(rng() * tiles.length)]));
-      }
+      m.compose(new THREE.Vector3(sp.x, sp.y + h, sp.z), q, s.set(w * 1.08, w * 0.42, d * 1.04));
+      roofs.setMatrixAt(i, m);
+      roofs.setColorAt(i, tmp.set(slates[Math.floor(rng() * slates.length)]));
     });
-    roofs.count = nr;
     bodies.castShadow = roofs.castShadow = true;
     bodies.receiveShadow = roofs.receiveShadow = true;
     group.add(bodies, roofs);
-
     const k = new Kit();
-    const white = std(0xf4f2ea), green = std(0x2f7a55, { roughness: 0.5 });
-    for (const [x, y] of [[-180, 520], [-520, 980]]) {
-      const c = px(x, y), h0 = landHeight(c.x, c.z);
-      k.add(new THREE.BoxGeometry(26, 9, 26), white, { pos: [c.x, h0 + 4.5, c.z] });
-      k.add(new THREE.SphereGeometry(8, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), green, { pos: [c.x, h0 + 9, c.z] });
-      k.add(new THREE.BoxGeometry(4.4, 34, 4.4), white, { pos: [c.x + 15, h0 + 17, c.z + 15] });
-      k.add(new THREE.BoxGeometry(5.4, 1.2, 5.4), white, { pos: [c.x + 15, h0 + 28, c.z + 15] });
-      k.add(new THREE.BoxGeometry(3.6, 4, 3.6), green, { pos: [c.x + 15, h0 + 36, c.z + 15] });
-      k.add(new THREE.ConeGeometry(2.4, 3, 4), green, { pos: [c.x + 15, h0 + 39.5, c.z + 15], rot: [0, Math.PI / 4, 0] });
-    }
-    group.add(k.build({ name: 'mosques' }));
+    const granite = std(0x9a958c), slate = std(0x3f454d);
+    const c = P(420, 175), h0 = landHeight(c.x, c.z);
+    k.add(new THREE.BoxGeometry(40, 14, 16), granite, { pos: [c.x, h0 + 7, c.z] });
+    k.add(new THREE.BoxGeometry(8, 24, 8), granite, { pos: [c.x + 22, h0 + 12, c.z] });
+    k.add(new THREE.ConeGeometry(5.5, 18, 4), slate, { pos: [c.x + 22, h0 + 33, c.z], rot: [0, Math.PI / 4, 0] });
+    group.add(k.build({ name: 'church' }));
   }
 
-  // Trees: pine and scrub on the hills, palms along the corniche.
+  // Trees: woods on Mont Breiz, hedgerow trees across the bocage.
   {
     const pts = [];
-    for (let i = 0; i < 9000 && pts.length < 4200; i++) {
-      const a = rng() * Math.PI * 2, r = 400 + rng() * 5200;
-      const x = -150 + Math.cos(a) * r, z = -500 + Math.sin(a) * r;
-      if (!inPoly(LAND, x, z) || inPoly(portZone, x, z)) continue;
+    for (let i = 0; i < 12000 && pts.length < 3800; i++) {
+      const x = 300 + (rng() - 0.5) * 5000, z = -300 + (rng() - 0.5) * 6000;
+      if (!inPoly(LAND, x, z) || inPort(x, z) || inPoly(TOWN, x, z)) continue;
+      const near = coastNear(LAND, x, z);
+      if (near.d < 30) continue;
       const h = landHeight(x, z);
-      const dens = smooth(25, 120, h) * (0.4 + fbm(x / 300, z / 300));
-      if (rng() > dens) continue;
-      pts.push({ x, z, y: h, s: 4 + rng() * 5 });
+      const [X, Y] = toChart(x, z);
+      const hill = Math.exp(-(((X - 200) / 120) ** 2 + ((Y - 165) / 70) ** 2) * 1.2);
+      const hedge = Math.abs(((x / 140) % 1 + 1) % 1 - 0.5) < 0.05 || Math.abs(((z / 110) % 1 + 1) % 1 - 0.5) < 0.05 ? 0.8 : 0.06;
+      if (rng() > Math.max(hill * 0.9, hedge)) continue;
+      pts.push({ x, z, y: h, s: 4 + rng() * 4 });
     }
     const im = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0).translate(0, 0.8, 0), std(0xffffff, { roughness: 0.95, flatShading: true }), pts.length);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3();
     pts.forEach((p, i) => {
-      m.compose(new THREE.Vector3(p.x, p.y - 0.5, p.z), q, s.set(p.s, p.s * 1.25, p.s));
+      m.compose(new THREE.Vector3(p.x, p.y - 0.5, p.z), q, s.set(p.s, p.s * 1.2, p.s));
       im.setMatrixAt(i, m);
-      im.setColorAt(i, tmp.setSRGB(0.12 + rng() * 0.08, 0.22 + rng() * 0.1, 0.1 + rng() * 0.04));
+      im.setColorAt(i, tmp.setSRGB(0.13 + rng() * 0.07, 0.25 + rng() * 0.1, 0.11 + rng() * 0.04));
     });
     im.castShadow = true;
     group.add(im);
   }
 
-  // Bollards and fenders along the faces where ships lie, and berth 7's green marks.
+  // Bollards along the faces where ships lie, the berth numbers on boards.
   {
-    const bol = [], fen = [];
-    for (const f of Object.values(FACES)) {
-      for (let s = 6; s < f.len - 4; s += 16) {
-        const deck = f === FACES.north || f === FACES.arm ? BW_DECK : QUAY;
-        bol.push({ x: f.a.x + f.dir.x * s - f.n.x * 1.2, z: f.a.z + f.dir.z * s - f.n.z * 1.2, y: deck });
-        fen.push({ x: f.a.x + f.dir.x * (s + 8) + f.n.x * 0.35, z: f.a.z + f.dir.z * (s + 8) + f.n.z * 0.35, y: deck - 1.8, a: f.psi });
-      }
-    }
+    const bol = [];
+    for (const f of Object.values(FACES)) for (let s = 6; s < f.len - 4; s += 16) bol.push({ x: f.a.x + f.dir.x * s - f.n.x * 1.2, z: f.a.z + f.dir.z * s - f.n.z * 1.2 });
     const bm = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.32, 0.4, 0.9, 8).translate(0, 0.45, 0), std(0x2a2c2e, { metalness: 0.5 }), bol.length);
-    const fm = new THREE.InstancedMesh(new THREE.BoxGeometry(2.2, 2.2, 0.7), std(0x121212, { roughness: 0.9 }), fen.length);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1);
-    bol.forEach((b, i) => { m.compose(new THREE.Vector3(b.x, b.y, b.z), q.identity(), one); bm.setMatrixAt(i, m); });
-    fen.forEach((b, i) => { q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -b.a); m.compose(new THREE.Vector3(b.x, b.y, b.z), q, one); fm.setMatrixAt(i, m); });
-    group.add(bm, fm);
-  }
-  const berthMarks = new THREE.Group();
-  {
-    const B = TARGET_BERTH, f = B.face, mat = new THREE.MeshBasicMaterial({ color: 0x3ddc84, toneMapped: false });
-    const c = { x: f.a.x + f.dir.x * f.len * B.t, z: f.a.z + f.dir.z * f.len * B.t };
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(B.len, 0.08, 0.9), mat);
-    stripe.position.set(c.x - f.n.x * 0.6, BW_DECK + 0.05, c.z - f.n.z * 0.6);
-    stripe.rotation.y = -f.psi;
-    berthMarks.add(stripe);
-    for (const e of [-1, 1]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.4, 4, 0.4), mat);
-      const ex = c.x + f.dir.x * e * B.len / 2 - f.n.x * 1.5, ez = c.z + f.dir.z * e * B.len / 2 - f.n.z * 1.5;
-      post.position.set(ex, BW_DECK + 2, ez);
-      const board = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), sign('7', '#1f8a4a'));
-      board.position.set(ex, BW_DECK + 5.2, ez);
-      board.rotation.y = -f.psi - Math.PI / 2;
-      berthMarks.add(post, board);
+    bol.forEach((b, i) => { m.compose(new THREE.Vector3(b.x, QUAY, b.z), q, one); bm.setMatrixAt(i, m); });
+    group.add(bm);
+    for (const L of BERTH_LABELS) {
+      const y = landHeight(L.x, L.z);
+      const board = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), sign(L.no, '#1d3a5c'));
+      board.position.set(L.x, Math.max(y, QUAY) + 5, L.z);
+      board.rotation.y = Math.PI / 2;
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.35, 5, 0.35), std(0x1d3a5c));
+      post.position.set(L.x, Math.max(y, QUAY) + 2.5, L.z);
+      group.add(board, post);
     }
-    // the berth's outline on the water, where she is to lie
-    const line = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(HULL_OUTLINE.map(([a, b]) => new THREE.Vector3(B.x + a * Math.cos(B.psi) - b * Math.sin(B.psi), 0.25, B.z + a * Math.sin(B.psi) + b * Math.cos(B.psi)))),
-      new THREE.LineDashedMaterial({ color: 0x3ddc84, dashSize: 3, gapSize: 2, toneMapped: false, transparent: true, opacity: 0.9 }));
-    line.computeLineDistances();
-    line.name = 'ghost';
-    berthMarks.add(line);
-    const s3 = FACES.pier, c3 = { x: s3.a.x + s3.dir.x * s3.len * 0.36, z: s3.a.z + s3.dir.z * s3.len * 0.36 };
-    const b3 = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), sign('3', '#2a4a7a'));
-    b3.position.set(c3.x - s3.n.x * 1.5 + s3.dir.x * (HALF_LENGTH + 8), QUAY + 3.2, c3.z - s3.n.z * 1.5 + s3.dir.z * (HALF_LENGTH + 8));
-    b3.rotation.y = -s3.psi - Math.PI / 2;
-    const p3 = new THREE.Mesh(new THREE.BoxGeometry(0.35, 3, 0.35), std(0x2a4a7a));
-    p3.position.set(b3.position.x, QUAY + 1.5, b3.position.z);
-    group.add(b3, p3);
   }
-  group.add(berthMarks);
+
+  // The ghost of her berth on the water (shown during the berthing), and the turning circle (during an évitage).
+  let ghost = null;
+  if (sim.target) {
+    const T = sim.target, c = Math.cos(T.psi), s = Math.sin(T.psi);
+    ghost = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(sim.ship.outline.map(([a, b]) => new THREE.Vector3(T.x + a * c - b * s, 0.25, T.z + a * s + b * c))),
+      new THREE.LineDashedMaterial({ color: 0x3ddc84, dashSize: 4, gapSize: 3, toneMapped: false, transparent: true, opacity: 0.9 }));
+    ghost.computeLineDistances();
+    group.add(ghost);
+  }
+  const circle = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(Array.from({ length: 96 }, (_, i) => new THREE.Vector3(TURN_CIRCLE.x + Math.cos((i / 96) * Math.PI * 2) * TURN_CIRCLE.r, 0.25, TURN_CIRCLE.z + Math.sin((i / 96) * Math.PI * 2) * TURN_CIRCLE.r))),
+    new THREE.LineDashedMaterial({ color: 0xd04aa0, dashSize: 8, gapSize: 6, toneMapped: false, transparent: true, opacity: 0.8 }));
+  circle.computeLineDistances();
+  circle.visible = false;
+  group.add(circle);
 
   // The ships alongside.
   const vessels = [];
-  for (const v of MOORED) {
-    let obj;
-    if (v.type === 'frigate' || v.type === 'corvette') {
-      const s = createShip({ crew: false, catapult: false, ensign: v.type === 'corvette' ? 'red' : 'navy' });
-      s.update(1000, Infinity);
-      obj = s.group;
-      obj.scale.setScalar(v.len / 116);
-    } else obj = { ferry: makeFerry, submarine: makeSubmarine, tug: makeTug, barge: makeBarge }[v.type]();
+  for (const v of sim.moored ?? mooredFor('A')) {
+    const obj = createVessel(v.type, { L: v.len, B: v.beam });
     obj.position.set(v.x, 0, v.z);
     obj.rotation.y = -v.psi;
     group.add(obj);
-    vessels.push({ obj, v, ph: rng() * 6 });
+    vessels.push({ obj, ph: rng() * 6 });
   }
 
-  // Fishing boats: rafted along the old quays at the west end and filling the fishing harbour.
+  // The fishing basin's boats on their pontoons, and the marina's (≈ 80 berths).
   {
     const boats = [];
-    const quayRow = (x0, y0, x1, y1, nb, side) => {
-      const a = px(x0, y0), b = px(x1, y1), dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);
-      for (let i = 0; i < nb; i++) {
-        const f = (i + 0.5) / nb;
-        boats.push({ x: a.x + dx * f + (-dz / L) * side * 4, z: a.z + dz * f + (dx / L) * side * 4, psi: Math.atan2(-dx * side, dz * side) + (rng() - 0.5) * 0.2, len: 9 + rng() * 8 });
-      }
-    };
-    quayRow(60, 205, 215, 178, 9, 1);
-    quayRow(150, 340, 185, 430, 6, 1);
-    // the fishing harbour: rows of boats moored bow-on to pontoons
-    const pont = [];
-    for (let r = 0; r < 5; r++) {
-      const a = px(345 + r * 4, 840 + r * 70), b = px(520 + r * 30, 860 + r * 70);
-      pont.push([a, b]);
-      const dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);
-      for (let i = 0; i < L / 6.5; i++) {
-        const f = (i + 0.5) / (L / 6.5);
-        for (const side of [-1, 1]) {
-          if (rng() < 0.2) continue;
-          const nx = -dz / L * side, nz = dx / L * side, l = 9 + rng() * 9;
-          boats.push({ x: a.x + dx * f + nx * (l / 2 + 1.5), z: a.z + dz * f + nz * (l / 2 + 1.5), psi: Math.atan2(-nz, -nx), len: l });
-        }
-      }
+    for (const R of BOAT_ROWS) { // bow-on to the north and south quays
+      const b = R.box, south = R.name.includes('Sud');
+      for (let z = b.z0 + 4; z < b.z1 - 3; z += 6.5) boats.push({ x: south ? b.x0 + 9 : b.x1 - 9, z, psi: south ? 0 : Math.PI, len: 13 + rng() * 6, fish: true });
     }
     const k = new Kit();
     const deck = std(0x6b5b45);
-    for (const [a, b] of pont) {
-      const L = Math.hypot(b.x - a.x, b.z - a.z);
+    const pont = [[[774, 262], [774, 316]], [[774, 266], [836, 266]], [[774, 312], [836, 312]], [[790, 270], [790, 308]], [[812, 270], [812, 308]]];
+    for (const [a0, b0] of pont) {
+      const a = P(...a0), b = P(...b0), L = Math.hypot(b.x - a.x, b.z - a.z);
       k.add(new THREE.BoxGeometry(L, 0.5, 2.2), deck, { pos: [(a.x + b.x) / 2, 0.35, (a.z + b.z) / 2], rot: [0, -Math.atan2(b.z - a.z, b.x - a.x), 0] });
+      if (a0[0] === b0[0] && a0[0] !== 774) continue;
+      const n = Math.floor(L / 4.5);
+      for (let i = 0; i < n; i++) {
+        if (rng() < 0.15) continue;
+        const f = (i + 0.5) / n, x = a.x + (b.x - a.x) * f, z = a.z + (b.z - a.z) * f;
+        for (const sd of [-1, 1]) if (rng() < 0.8) boats.push({ x: x + (a0[1] === b0[1] ? sd * 7 : 0), z: z + (a0[0] === b0[0] ? sd * 7 : 0), psi: a0[1] === b0[1] ? (sd > 0 ? 0 : Math.PI) : (sd > 0 ? Math.PI / 2 : -Math.PI / 2), len: 8 + rng() * 5 });
+      }
     }
     group.add(k.build({ name: 'pontoons' }));
-    const hulls = new THREE.InstancedMesh(hullGeo(1, 0.34, 0.14, 0.35, -0.05), std(0xffffff, { roughness: 0.6 }), boats.length);
-    const cabs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.22, 0.12, 0.22).translate(-0.05, 0.15, 0), std(0xf2f2ee), boats.length);
+    const hullG = new THREE.CylinderGeometry(0.17, 0.12, 1, 6, 1).rotateZ(Math.PI / 2).scale(1, 0.55, 1);
+    const hulls = new THREE.InstancedMesh(hullG, std(0xffffff, { roughness: 0.55 }), boats.length);
+    const masts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.008, 0.008, 1.3, 4).translate(0, 0.7, 0), std(0xc8ccd0, { metalness: 0.6 }), boats.length);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3();
-    const hc = ['#f4f4f0', '#2d6db5', '#f4f4f0', '#3a8fd0', '#c94b30', '#f4f4f0', '#2f9e8a'];
+    const hc = ['#f4f4f0', '#2d6db5', '#f4f4f0', '#c94b30', '#f4f4f0', '#2f9e8a', '#1d3a5c'];
+    let nm = 0;
     boats.forEach((b, i) => {
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -b.psi);
-      m.compose(new THREE.Vector3(b.x, 0, b.z), q, s.set(b.len, b.len, b.len));
+      m.compose(new THREE.Vector3(b.x, 0.3, b.z), q, s.set(b.len, b.len, b.len));
       hulls.setMatrixAt(i, m);
-      hulls.setColorAt(i, tmp.set(hc[Math.floor(rng() * hc.length)]));
-      cabs.setMatrixAt(i, m);
+      hulls.setColorAt(i, tmp.set(b.fish ? hc[1 + Math.floor(rng() * 3)] : hc[Math.floor(rng() * hc.length)]));
+      if (!b.fish) { masts.setMatrixAt(nm++, m); }
     });
+    masts.count = nm;
     hulls.castShadow = true;
-    group.add(hulls, cabs);
+    group.add(hulls, masts);
   }
 
-  // The pier-head lights (red on the south mole, green on the east arm) and the buoys, with their lamps.
+  // The lock: two pairs of mitre gates (they swing into the walls as they open) and the swing bridge over the sea end.
+  const lockParts = {};
+  {
+    const wood = std(0x4a3a2a), steel = std(0x5d666c, { metalness: 0.5 });
+    const leaves = (Y) => [-1, 1].map((sd) => {
+      const pivot = new THREE.Group();
+      const hinge = P(sd < 0 ? 568 : 582, Y);
+      pivot.position.set(hinge.x, 0, hinge.z);
+      const leaf = new THREE.Mesh(new THREE.BoxGeometry(1.4, 8, 22.5), wood);
+      leaf.position.set(0, QUAY - 3.5, -sd * 11.2);
+      pivot.add(leaf);
+      group.add(pivot);
+      return { pivot, sd };
+    });
+    lockParts.south = leaves(232);
+    lockParts.north = leaves(172);
+    const pv = P(588, 222);
+    const bridge = new THREE.Group();
+    bridge.position.set(pv.x, 0, pv.z);
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(7, 1.0, 64), steel);
+    deck.position.set(0, QUAY + 0.9, -26);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.1, 64), std(0xc23b2b));
+    rail.position.set(3.4, QUAY + 1.9, -26);
+    bridge.add(deck, rail);
+    group.add(bridge);
+    lockParts.bridge = bridge;
+  }
+
+  // The lights (their towers and lanterns), the buoys, the entrance signals (feux de passe) and the lock's signal.
   const lamps = [];
-  LIGHTS.forEach((L, i) => {
-    const t = lightTower(L.color);
-    const y0 = L.color === 'red' ? QUAY : BW_DECK;
+  for (const L of LIGHTS) {
+    const h = L.height;
+    const onLand = h > 12;
+    const y0 = onLand ? landHeight(L.x, L.z) : BW_DECK;
+    const band = L.color === 'red' ? 0xc02a22 : L.color === 'green' ? 0x1f8a4a : L.id.startsWith('align') ? 0xe0782a : 0xc02a22;
+    const th = onLand ? Math.max(6, h - y0) : h; // the chart gives the light's height above the sea
+    const t = lightTower(th, band, h > 30 ? 3 : h > 12 ? 2 : 1.6);
     t.position.set(L.x, y0, L.z);
     group.add(t);
-    const s = lamp(L.color === 'red' ? 0xff3b30 : 0x3dff7a, 9);
-    s.position.set(L.x, y0 + 11.2, L.z);
+    const s = lamp(COLORS[L.color], h > 30 ? 16 : 9);
+    s.position.set(L.x, y0 + th + 1.2, L.z);
     group.add(s);
-    lamps.push({ s, period: 4, on: 0.6, ph: i * 2 });
-  });
+    lamps.push({ s, char: L.char, L });
+  }
   const buoys = BUOYS.map((b, i) => {
     const g = buoyModel(b.kind);
     g.position.set(b.x, 0, b.z);
     group.add(g);
-    const s = lamp(b.kind === 'stbd' ? 0x3dff7a : b.kind === 'port' ? 0xff3b30 : 0xffffff, 5);
+    const s = lamp(b.kind === 'stbd' ? COLORS.green : b.kind === 'port' ? COLORS.red : COLORS.white, 5);
     s.position.set(0, 6, 0);
     g.add(s);
-    lamps.push({ s, period: b.kind === 'fairway' ? 8 : 3, on: b.kind === 'fairway' ? 2 : 0.5, ph: i * 0.7 });
+    lamps.push({ s, char: b.char });
     return { g, ph: i * 1.3 };
   });
+  const signal = (at, deck) => { // a mast with a red and a green lamp, one lit at a time
+    const k = new Kit();
+    k.rod([0, 0, 0], [0, 9, 0], 0.25, std(0x2a2c2e));
+    boxAt(k, std(0x1a1c1e), 1.4, 3.4, 1.4, 0, 7, 0);
+    const g = k.build({ name: 'signal' });
+    g.position.set(at.x, deck, at.z);
+    group.add(g);
+    const red = lamp(COLORS.red, 5), green = lamp(COLORS.green, 5);
+    red.position.set(at.x, deck + 9.6, at.z); green.position.set(at.x, deck + 7.8, at.z);
+    group.add(red, green);
+    return { red, green };
+  };
+  const entrySig = signal(ENTRY_SIGNAL, BW_DECK);
+  const lockSig = signal(LOCK_SIGNAL, QUAY);
+  // a yellow board where the submarine cable comes ashore (no anchoring)
+  {
+    const c = CABLE[0], y = landHeight(c.x, c.z);
+    const b = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), sign('⚓✕', '#e8b81c', '#1a1a1a'));
+    b.position.set(c.x, y + 4, c.z); b.rotation.set(0, Math.PI / 2, Math.PI / 4);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4, 0.3), std(0x2a2c2e)); post.position.set(c.x, y + 2, c.z);
+    group.add(b, post);
+  }
 
+  const capOuest = lamps.find((l) => l.L?.id === 'capOuest');
   return {
     group,
-    berthMarks,
-    ghost: berthMarks.getObjectByName('ghost'),
+    ghost,
     landHeight,
-    // t: seconds (any clock): the lamps blink, the buoys and the ships alongside bob (her mooring lines are harbourCrew.js's)
-    update(t) {
-      for (const l of lamps) l.s.visible = ((t + l.ph) % l.period) < l.on;
+    // t: seconds of game time (the lights' rhythms run on it); sim: the lock's gates and the signals; camPos: the Cap de l'Ouest's sector
+    update(t, sim, camPos) {
+      for (const l of lamps) l.s.visible = lightOn(l.char, t + (l.L ? 0 : 0.37 * lamps.indexOf(l)));
+      if (capOuest && camPos) { // red over Les Corbeaux (bearing from the light 200° to 240°), white elsewhere
+        const b = compass(Math.atan2(camPos.z - capOuest.L.z, camPos.x - capOuest.L.x));
+        capOuest.s.material.color.setHex(b > capOuest.L.red[0] && b < capOuest.L.red[1] ? COLORS.red : COLORS.white);
+      }
       for (const b of buoys) {
         b.g.position.y = 0.18 * Math.sin(t * 1.1 + b.ph);
         b.g.rotation.x = 0.05 * Math.sin(t * 0.9 + b.ph);
         b.g.rotation.z = 0.05 * Math.cos(t * 0.8 + b.ph);
       }
       for (const v of vessels) v.obj.position.y = 0.06 * Math.sin(t * 0.5 + v.ph);
+      if (sim && sim.lock) {
+        for (const [key, open] of [['south', sim.lock.south], ['north', sim.lock.north]]) for (const L of lockParts[key]) L.pivot.rotation.y = L.sd * (key === 'south' ? 1 : -1) * open * 1.3;
+        lockParts.bridge.rotation.y = -sim.lock.bridge * Math.PI / 2;
+      }
+      if (sim && sim.route) {
+        const red = sim.entryLight === 'red';
+        entrySig.red.visible = red; entrySig.green.visible = !red;
+        const lr = sim.lockLight === 'red';
+        lockSig.red.visible = lr; lockSig.green.visible = !lr;
+        if (ghost) ghost.visible = sim.stage === 'berth';
+        circle.visible = sim.stage === 'evitage';
+      } else {
+        entrySig.red.visible = lockSig.red.visible = true; entrySig.green.visible = lockSig.green.visible = false;
+        if (ghost) ghost.visible = false;
+      }
     },
   };
 }
+
+void RAMP;
