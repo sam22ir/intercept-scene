@@ -545,7 +545,12 @@ const QUALITY = {
 const forcedQuality = (() => {
   try {
     const q = new URLSearchParams(location.search).get('quality');
-    return q in QUALITY ? q : null;
+    if (q in QUALITY) return q;
+  } catch { /* no location */ }
+  // The main menu's Settings: Graphics quality (absent = Auto).
+  try {
+    const s = localStorage.getItem('intercept.quality');
+    return s in QUALITY ? s : null;
   } catch { return null; }
 })();
 let quality = 'high';

@@ -1482,5 +1482,3 @@ function segmentBox(a, b) {
 }
 export { segmentBox, segSeg };
 
-// For SquadronSim (squadron.js): the ship factory and the seeded generator, so it builds its own squadron without copying them.
-export { makeShip, mulberry32 };
