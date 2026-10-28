@@ -6,7 +6,7 @@
 //
 // A mission with `ship: true` lets the player pick the launcher; the others fix it (`fixed` says what is
 // fixed, for the summary line). The missions are sorted into four categories by what they are for
-// (`GROUPS`): Replays (scripted engagements to scrub), Combat (you fly or fight), Seamanship (you handle
+// (`GROUPS`): Watch (scripted engagements to scrub), Combat (you fly or fight), Seamanship (you handle
 // the ship) and Fleet drills (the naval exercises). A category lists its entries (`entriesOf`): each mission
 // is one, except the three drills, which are one entry (`FAMILIES`) whose variants are chosen by the number of
 // ships (`ships`, `tile`, `tileSub`). A mission with `level: true` (the surface battle) lets the player pick
@@ -16,7 +16,7 @@ import { readLang } from './i18n.js';
 import { FR } from './menuFr.js';
 
 export const GROUPS = [
-  { id: 'watch', name: 'Replays', hint: 'Scripted engagements you can scrub both ways' },
+  { id: 'watch', name: 'Watch', hint: 'Scripted engagements you watch and scrub both ways' },
   { id: 'combat', name: 'Combat', hint: 'You fly the drone or fight the ship' },
   { id: 'sea', name: 'Seamanship', hint: 'You handle the ship: harbour and rescue' },
   { id: 'drill', name: 'Fleet drills', hint: 'Frigates manoeuvre together on signals' },

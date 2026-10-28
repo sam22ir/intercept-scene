@@ -4,7 +4,7 @@
 
 export const FR = {
   groups: {
-    watch: { name: 'Rediffusions', hint: 'Engagements scénarisés à faire défiler dans les deux sens' },
+    watch: { name: 'Regarder', hint: 'Engagements scénarisés à regarder et faire défiler dans les deux sens' },
     combat: { name: 'Combat', hint: 'Vous pilotez le drone ou combattez avec le navire' },
     sea: { name: 'Manœuvre', hint: 'Vous menez le navire : port et sauvetage' },
     drill: { name: 'Exercices de flotte', hint: 'Des frégates manœuvrent ensemble sur signaux' },

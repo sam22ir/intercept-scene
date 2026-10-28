@@ -87,6 +87,10 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
   const motion = () => !reducedMotion && settingValue(SETTINGS.find((s) => s.id === 'motion')) !== '0';
 
   // --- Rendering ---------------------------------------------------------------------------------------
+  // The layout: the brand and the Help / Settings / language buttons; the categories as tabs; then the
+  // category's missions as cards, each with its own live preview, beside a panel for the selected one
+  // (briefing, set-up steps, controls, Start).
+  let artSeq = 0;
   function shell() {
     const u = t();
     root.innerHTML = `
@@ -107,36 +111,28 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
           ${GROUPS.map((g0) => {
             const g = groupIn(g0, lang);
             const n = MISSIONS.filter((m) => m.group === g.id).length;
-            return `<button type="button" class="mm-cat" role="radio" data-tab="${g.id}" aria-checked="false">${icon(ICON[g.id])}<span class="mm-cat-txt"><b>${esc(g.name)}</b><small>${esc(g.hint)}</small></span><em class="mm-n">${n}</em></button>`;
+            return `<button type="button" class="mm-cat" role="radio" data-tab="${g.id}" aria-checked="false">${icon(ICON[g.id])}<b>${esc(g.name)}</b><em class="mm-n">${n}</em></button>`;
           }).join('')}
         </nav>
-        <section class="mm-list" aria-label="${esc(u.missions)}"><div class="mm-missions" role="radiogroup" aria-label="${esc(u.missions)}"></div></section>
-        <main class="mm-main">
-          <figure class="mm-monitor" aria-hidden="true">
-            <div class="mm-stage" id="ch-stage"></div>
-            <figcaption><span class="mm-live"><i></i>${esc(u.preview)}</span><span class="mm-kind" id="ch-kind"></span></figcaption>
-            <span class="mm-scan"></span>
-          </figure>
-          <div class="mm-brief" aria-live="polite">
-            <div class="mm-brief-a">
-              <h1 id="ch-title"></h1>
-              <ul class="mm-facts" id="ch-facts"></ul>
-              <div class="mm-story"><p id="ch-tag"></p><button type="button" class="mm-more" id="ch-more" aria-expanded="false" hidden></button></div>
-            </div>
-            <div class="mm-brief-b">
-              <div class="mm-step" data-step="ship" hidden><h2>${esc(u.launcher)}</h2><div class="mm-cards" role="radiogroup" aria-label="${esc(u.launcher)}"></div></div>
-              <div class="mm-step" data-step="drill" hidden><h2>${esc(u.ships)}</h2><div class="mm-picks" role="radiogroup" aria-label="${esc(u.ships)}"></div></div>
-              <div class="mm-step" data-step="level" hidden><h2>${esc(u.enemy)}</h2><div class="mm-picks" role="radiogroup" aria-label="${esc(u.enemy)}"></div></div>
-              <div class="mm-keys"><h2>${esc(u.controls)}</h2><ul id="ch-keys"></ul><p id="ch-keys-more"></p></div>
-            </div>
+        <p class="mm-hint" id="ch-tabhint"></p>
+        <section class="mm-grid" aria-label="${esc(u.missions)}"><div class="mm-missions" role="radiogroup" aria-label="${esc(u.missions)}"></div></section>
+        <aside class="mm-panel" aria-live="polite">
+          <div class="mm-panel-in" id="ch-panel">
+            <p class="mm-kind" id="ch-kind"></p>
+            <h1 id="ch-title"></h1>
+            <ul class="mm-facts" id="ch-facts"></ul>
+            <div class="mm-story"><p id="ch-tag"></p><button type="button" class="mm-more" id="ch-more" aria-expanded="false" hidden></button></div>
+            <div class="mm-step" data-step="ship" hidden><h2>${esc(u.launcher)}</h2><div class="mm-cards" role="radiogroup" aria-label="${esc(u.launcher)}"></div></div>
+            <div class="mm-step" data-step="drill" hidden><h2>${esc(u.ships)}</h2><div class="mm-picks" role="radiogroup" aria-label="${esc(u.ships)}"></div></div>
+            <div class="mm-step" data-step="level" hidden><h2>${esc(u.enemy)}</h2><div class="mm-picks" role="radiogroup" aria-label="${esc(u.enemy)}"></div></div>
+            <div class="mm-keys"><h2>${esc(u.controls)}</h2><ul id="ch-keys"></ul><p id="ch-keys-more"></p></div>
           </div>
-        </main>
-        <footer class="mm-go">
-          <button type="button" class="mm-continue" id="ch-continue" hidden></button>
-          <p class="mm-sum"><span id="ch-summary"></span><small id="chooser-sub"></small></p>
-          <em class="mm-last" id="ch-last" hidden>${esc(u.lastPlayed)}</em>
-          <button type="button" id="ch-start" class="mm-start"><span></span>${icon(ICON.play, 'ic', 24)}</button>
-        </footer>
+          <footer class="mm-go">
+            <p class="mm-sum"><span id="ch-summary"></span><small id="chooser-sub"></small></p>
+            <button type="button" id="ch-start" class="mm-start"><span></span>${icon(ICON.play, 'ic', 24)}</button>
+            <div class="mm-go-row"><em class="mm-last" id="ch-last" hidden>${esc(u.lastPlayed)}</em><button type="button" class="mm-continue" id="ch-continue" hidden></button></div>
+          </footer>
+        </aside>
         <p class="mm-foot"><span>${esc(u.stats(MISSIONS.length, GROUPS.length))}</span><span class="mm-keyhint">${esc(u.menuKeys)}</span><a id="dl-offline-menu" href="/intercept-offline" download="intercept-offline.html" title="${esc(u.offlineHint)}">${esc(u.offline)}</a></p>
       </div>
       <div class="mm-overlay" id="mm-overlay" hidden><div class="mm-dialog" role="dialog" aria-modal="true" tabindex="-1"></div></div>`;
@@ -145,33 +141,60 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     paint(true);
   }
 
-  // The list for the selected category, the variant pickers and the briefing.
+  // A card's preview: its own mission (the drill card shows the number of ships picked), with its own ids.
+  const cardArt = (e) => {
+    const id = e.family ? lastIn.drill : e.id;
+    return previewArt(id, shipFor[id] ?? FIXED_SHIP, motion(), lang, `m${++artSeq}`);
+  };
+
+  // The cards for the selected category, the panel for the selected mission.
   function paint(fresh = false) {
     const u = t();
     const group = groupOf(mode);
     const ship = shipNow();
     const text = menuText(mode, ship, lang);
     root.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.tab === group)));
+    $(root, '#ch-tabhint').textContent = groupIn(GROUPS.find((g) => g.id === group), lang).hint;
     const list = $(root, '.mm-missions');
     const entries = entriesOf(group, lang);
-    const listKey = `${group}:${lang}`;
+    const listKey = `${group}:${lang}:${motion()}`;
     if (fresh || list.dataset.key !== listKey) {
       list.dataset.key = listKey;
+      list.dataset.count = String(entries.length);
       list.innerHTML = entries.map((e) => {
         const attr = e.family ? `data-family="${e.family}"` : `data-mode="${e.id}"`;
-        return `<button type="button" class="mm-mission" role="radio" ${attr} aria-checked="false">${icon(ICON[e.family ? lastIn.drill : e.id])}<span class="mm-m-txt"><b>${esc(e.name)}</b><small>${esc(e.blurb)}</small></span><em class="mm-m-kind">${esc(e.kind)}</em></button>`;
+        return `<button type="button" class="mm-mission" role="radio" ${attr} aria-checked="false">`
+          + `<span class="mm-prev" data-art="${e.family ? '' : e.id}">${cardArt(e)}</span>`
+          + `<span class="mm-cardfoot">${icon(ICON[e.family ? lastIn.drill : e.id])}<span class="mm-m-txt"><b>${esc(e.name)}</b><small>${esc(e.blurb)}</small></span><em class="mm-m-kind">${esc(e.kind)}</em></span>`
+          + '<i class="mm-sel" aria-hidden="true"></i></button>';
       }).join('');
       list.querySelectorAll('.mm-mission').forEach((b) => {
         b.addEventListener('click', () => pickRow(b));
         b.addEventListener('dblclick', go);
       });
     }
-    list.querySelectorAll('.mm-mission').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.family ? groupOf(mode) === 'drill' : b.dataset.mode === mode)));
+    list.querySelectorAll('.mm-mission').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.family ? group === 'drill' : b.dataset.mode === mode)));
+    // A card follows its mission's launcher or number of ships: redraw it when that changes.
+    list.querySelectorAll('.mm-mission').forEach((b) => {
+      const id = b.dataset.family ? lastIn.drill : b.dataset.mode;
+      const key = `${id}:${shipFor[id] ?? ''}`;
+      const prev = b.querySelector('.mm-prev');
+      if (prev.dataset.key !== key) {
+        if (prev.dataset.key) prev.innerHTML = previewArt(id, shipFor[id] ?? FIXED_SHIP, motion(), lang, `m${++artSeq}`);
+        prev.dataset.key = key;
+        if (b.dataset.family) b.querySelector('.mm-cardfoot .ic').outerHTML = icon(ICON[id]);
+      }
+    });
 
-    const stage = $(root, '#ch-stage');
-    const artKey = `${text.hasShip ? `${mode}:${ship}` : mode}:${motion()}:${lang}`;
-    if (stage.dataset.key !== artKey) { stage.dataset.key = artKey; stage.innerHTML = previewArt(mode, ship, motion(), lang); }
-    $(root, '#ch-kind').textContent = text.kind;
+    // The panel slides in again when the mission changes.
+    const panel = $(root, '#ch-panel');
+    if (panel.dataset.mode !== mode) {
+      panel.dataset.mode = mode;
+      panel.classList.remove('in');
+      void panel.offsetWidth;
+      panel.classList.add('in');
+    }
+    $(root, '#ch-kind').textContent = `${groupIn(GROUPS.find((g) => g.id === group), lang).name} · ${text.kind}`;
     $(root, '#ch-title').textContent = text.title;
     const tag = $(root, '#ch-tag');
     if (tag.textContent !== text.tagline) { tag.textContent = text.tagline; storyOpen = false; }
@@ -224,9 +247,10 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     const cont = $(root, '#ch-continue');
     cont.hidden = !lastPlayed || lastPlayed === mode;
     if (lastPlayed) {
-      cont.innerHTML = `<small>${esc(u.continue)}</small><b>${esc(missionIn(missionById(lastPlayed), lang).name)}</b>`;
+      cont.innerHTML = `<small>${esc(u.continue)}</small> <b>${esc(missionIn(missionById(lastPlayed), lang).name)}</b>`;
       cont.title = u.continueHint;
     }
+    $(root, '.mm-go-row').hidden = $(root, '#ch-last').hidden && cont.hidden;
     document.title = text.tabTitle;
   }
 

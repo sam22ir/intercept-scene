@@ -56,7 +56,7 @@ export const UI = {
     tabMenu: 'This menu',
     aboutLead: 'A naval simulator in the browser: a stealth frigate, target drones, missiles and guns, the sea, harbours and fleet exercises, all drawn in real-time 3D.',
     aboutPoints: [
-      'Replays are worked out in advance as pure functions of time: you can scrub them forwards and backwards, slow them down and follow any object.',
+      'The Watch missions are worked out in advance as pure functions of time: you can scrub them forwards and backwards, slow them down and follow any object.',
       'Combat and seamanship missions run live: you steer, fly or fight, and nothing is scripted.',
       'Fleet drills follow real NATO tactical signals (MTP 1(D)): wheels, turns together, formations and screens.',
       'Everything is generated in the page: ships, drones, sea and sky are procedural; sounds were made with an AI sound generator and are embedded.',
@@ -81,7 +81,7 @@ export const UI = {
       ['C', 'hide or show the whole interface'],
       ['?', 'the keyboard shortcuts of the mission'],
     ],
-    sceneTimeline: 'Replays have a timeline: Space plays and pauses, R plays backwards, ← → step through time, , . jump between events, [ ] change the speed.',
+    sceneTimeline: 'The Watch missions have a timeline: Space plays and pauses, R plays backwards, ← → step through time, , . jump between events, [ ] change the speed.',
     menuLead: 'Pick a category on the left, a mission, then its options, and press Start.',
     menuKeyList: [
       ['↑ ↓', 'move through the list you are in'],
@@ -94,7 +94,7 @@ export const UI = {
     ],
     menuTips: [
       'Each mission remembers its own launcher, and the drills their number of ships.',
-      'Replays: in a mission, press E to draw your own drone path and drag the red dot to choose where the missile is launched.',
+      'Watch missions: press E to draw your own drone path and drag the red dot to choose where the missile is launched.',
       'Settings apply to every mission; a mission reads them when it starts.',
     ],
     // Settings
@@ -107,9 +107,9 @@ export const UI = {
     sTrails: 'Trails',
     sMap: 'Mini map',
     sWeather: 'Weather',
-    sWeatherNote: 'Replays, Fly the drone and Surface battle.',
+    sWeatherNote: 'Watch missions, Fly the drone and Surface battle.',
     sQuality: 'Graphics quality',
-    sQualityNote: 'Replays. Auto lowers it by itself on a slow computer.',
+    sQualityNote: 'Watch missions. Auto lowers it by itself on a slow computer.',
     sMotion: 'Menu animations',
     sReset: 'Reset settings',
     sResetDone: 'Settings reset',
@@ -158,7 +158,7 @@ export const UI = {
     tabMenu: 'Ce menu',
     aboutLead: 'Un simulateur naval dans le navigateur : une frégate furtive, des drones cibles, des missiles et des canons, la mer, des ports et des exercices de flotte, le tout en 3D temps réel.',
     aboutPoints: [
-      'Les rediffusions sont calculées à l’avance en fonction du temps : on les fait défiler en avant et en arrière, on les ralentit et on suit n’importe quel objet.',
+      'Les missions à regarder sont calculées à l’avance en fonction du temps : on les fait défiler en avant et en arrière, on les ralentit et on suit n’importe quel objet.',
       'Les missions de combat et de manœuvre se jouent en direct : vous barrez, pilotez ou combattez, rien n’est scripté.',
       'Les exercices de flotte suivent les vrais signaux tactiques OTAN (MTP 1(D)) : changements de route en ligne de file, abattées simultanées, formations et écrans.',
       'Tout est généré dans la page : navires, drones, mer et ciel sont procéduraux ; les sons ont été créés par un générateur de sons IA et sont intégrés.',
@@ -183,7 +183,7 @@ export const UI = {
       ['C', 'masquer ou afficher toute l’interface'],
       ['?', 'les raccourcis clavier de la mission'],
     ],
-    sceneTimeline: 'Les rediffusions ont une ligne de temps : Espace lance et met en pause, R joue à l’envers, ← → avancent pas à pas, , . sautent d’un événement à l’autre, [ ] changent la vitesse.',
+    sceneTimeline: 'Les missions à regarder ont une ligne de temps : Espace lance et met en pause, R joue à l’envers, ← → avancent pas à pas, , . sautent d’un événement à l’autre, [ ] changent la vitesse.',
     menuLead: 'Choisissez une catégorie à gauche, une mission, puis ses options, et appuyez sur Lancer.',
     menuKeyList: [
       ['↑ ↓', 'se déplacer dans la liste'],
@@ -196,7 +196,7 @@ export const UI = {
     ],
     menuTips: [
       'Chaque mission retient son lanceur, et les exercices leur nombre de bâtiments.',
-      'Rediffusions : en mission, E ouvre l’éditeur de trajectoire ; faites glisser le point rouge pour choisir où le missile est tiré.',
+      'Missions à regarder : E ouvre l’éditeur de trajectoire ; faites glisser le point rouge pour choisir où le missile est tiré.',
       'Les réglages valent pour toutes les missions ; une mission les lit à son lancement.',
     ],
     settingsTitle: 'Réglages',
@@ -208,9 +208,9 @@ export const UI = {
     sTrails: 'Trajectoires',
     sMap: 'Mini-carte',
     sWeather: 'Météo',
-    sWeatherNote: 'Rediffusions, Pilotez le drone et Combat de surface.',
+    sWeatherNote: 'Missions à regarder, Pilotez le drone et Combat de surface.',
     sQuality: 'Qualité graphique',
-    sQualityNote: 'Rediffusions. Auto la baisse d’elle-même sur un ordinateur lent.',
+    sQualityNote: 'Missions à regarder. Auto la baisse d’elle-même sur un ordinateur lent.',
     sMotion: 'Animations du menu',
     sReset: 'Réinitialiser les réglages',
     sResetDone: 'Réglages réinitialisés',

@@ -57,7 +57,7 @@ describe('the menu data', () => {
 
   it('has four categories by what each mission is for, each with real missions', () => {
     assert.deepEqual(GROUPS.map((g) => g.id), ['watch', 'combat', 'sea', 'drill']);
-    assert.deepEqual(GROUPS.map((g) => g.name), ['Replays', 'Combat', 'Seamanship', 'Fleet drills']);
+    assert.deepEqual(GROUPS.map((g) => g.name), ['Watch', 'Combat', 'Seamanship', 'Fleet drills']);
     assert.deepEqual(MISSIONS.filter((m) => m.group === 'watch').map((m) => m.id), ['intercept', 'chute']);
     assert.deepEqual(MISSIONS.filter((m) => m.group === 'combat').map((m) => m.id), ['fly', 'helm', 'duel']);
     assert.deepEqual(MISSIONS.filter((m) => m.group === 'sea').map((m) => m.id), ['harbour', 'mob']);

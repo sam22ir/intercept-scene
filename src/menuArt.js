@@ -439,10 +439,12 @@ const SCENES = {
 };
 
 // The preview for a mission (and launcher, where the mission has one), its captions in `language` (en or fr).
-// `animate` false gives a still frame.
-export function previewArt(mission, ship = 'fwd', animate = true, language = 'en') {
+// `animate` false gives a still frame. Several previews can share a page (the menu's cards): `idPrefix`
+// renames this one's gradient and filter ids so they never collide.
+export function previewArt(mission, ship = 'fwd', animate = true, language = 'en', idPrefix = null) {
   const scene = SCENES[mission];
   if (!scene) return '';
   lang = language;
-  return `<svg class="art" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" role="img" aria-hidden="true" focusable="false">${DEFS}${scene(ship, animate)}</svg>`;
+  const svg = `<svg class="art" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" role="img" aria-hidden="true" focusable="false">${DEFS}${scene(ship, animate)}</svg>`;
+  return idPrefix ? svg.replace(/(id="|url\(#)ma-/g, `$1${idPrefix}-`) : svg;
 }
