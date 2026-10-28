@@ -37,7 +37,9 @@ function showFatal(err) {
 
 import { MISSION_IDS, ENEMY_LEVELS, DEFAULT_LEVEL, groupOf, menuText } from './menu.js';
 import { createMainMenu } from './mainMenu.js';
-import { ui } from './i18n.js';
+import { ui, readLang } from './i18n.js';
+import { installFrench } from './frenchDom.js';
+import { MISSION_FR } from './missionFr.js';
 
 const MODES = MISSION_IDS;
 let mode = 'intercept';
@@ -76,6 +78,8 @@ async function launch(id) {
   $('#chooser').hidden = true;
   document.body.classList.add('playing');
   $('#loading-text').textContent = ui().loading;
+  // French: the missions write English, and frenchDom.js translates what they show (the harbour pilot is French already).
+  if (readLang() === 'fr' && mode !== 'harbour') globalThis.__french = installFrench(MISSION_FR);
   $('#loading').hidden = false;
   window.addEventListener('error', (e) => showFatal(e.error ?? e.message));
   window.addEventListener('unhandledrejection', (e) => showFatal(e.reason));
