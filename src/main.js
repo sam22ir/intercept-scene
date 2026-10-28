@@ -482,6 +482,7 @@ createShare({
     focus: rig.id,
     director: directing,
     path: scenario.customPath ? scenario.activePath : null,
+    launch: scenario.launchU,
     extra: env.look ? { weather: env.look.weather } : undefined, // the same sky and sea for whoever opens the link
   }),
 });

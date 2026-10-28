@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {
-  ACTIVE_PATH, DEFAULT_PATH, CUSTOM_PATH, SHARED_PATH, PATH_FIXED, PATH_STORAGE_KEY, MIN_ALT, CHUTE_MODE,
-  buildPathCurve, validatePath, shipPos, flightTimeForLength,
+  ACTIVE_PATH, ACTIVE_LAUNCH_U, DEFAULT_PATH, CUSTOM_PATH, SHARED_PATH, PATH_FIXED, PATH_STORAGE_KEY, MIN_ALT, CHUTE_MODE,
+  ENGAGE_STORAGE_KEY, buildPathCurve, validatePath, shipPos, flightTimeForLength, timeForLength, autoLaunchU, inboundU,
 } from './scenario.js';
 import { stripShareParams } from './share.js';
 
@@ -17,6 +17,8 @@ import { stripShareParams } from './share.js';
 const CYAN = 0x35e0ff;
 const AMBER = 0xffb347;
 const ORANGE = 0xff7a1a;
+const RED = 0xff3b30;
+const LAUNCH_SAMPLES = 240; // along the inbound run, for dragging the red launch point
 const MAX_SAMPLES = 1400;
 const MAX_POINTS = 80;
 const MAX_ALT = 600;
@@ -121,6 +123,7 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
     clear: $('#ed-clear'), reset: $('#ed-reset'), fold: $('#ed-fold'),
     apply: $('#ed-apply'), cancel: $('#ed-cancel'),
     copy: $('#ed-copy'), paste: $('#ed-import'), restore: $('#ed-restore'), hint: $('#ed-hint'),
+    launch: $('#ed-launch'), launchTitle: $('#ed-launch-title'), launchTxt: $('#ed-launch-txt'), launchAuto: $('#ed-launch-auto'),
   };
 
   let active = false;
@@ -137,6 +140,18 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
   const undoStack = [];
   const redoStack = [];
   let lastNear = Infinity; // closest approach to the ship, from the last rebuild
+  // The red launch point (lock-on in a recovery): a fraction of the path's length, or null for
+  // the automatic 650 m trigger. It can only sit on the inbound run (`inbound`, [u0, u1]),
+  // where the drone flies toward the ship.
+  let launchU = ACTIVE_LAUNCH_U;
+  let inbound = null;
+  let autoU = null;
+  const launchName = CHUTE_MODE ? 'Lock-on' : 'Missile launch';
+  const shownLaunchU = () => {
+    if (!inbound) return null;
+    const u = launchU ?? autoU ?? inbound[1];
+    return THREE.MathUtils.clamp(u, inbound[0], inbound[1]);
+  };
 
   // --- Scene objects (all in the ship frame, so the group rides with the ship)
   const root = new THREE.Group();
@@ -213,6 +228,31 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
   const chevPos = [];
   const chevQuat = [];
 
+  // The red launch point, its tag, and the inbound run it slides along (a faint red line).
+  const inboundPos = new Float32Array((LAUNCH_SAMPLES + 1) * 3);
+  const inboundLine = mkLine(inboundPos, THREE.Line, lineMat(RED, 0.55));
+  const launchMark = new THREE.Mesh(sphere, new THREE.MeshBasicMaterial({ color: RED, depthTest: false }));
+  launchMark.renderOrder = 14;
+  root.add(launchMark);
+  const launchRing = new THREE.Mesh(new THREE.RingGeometry(1.5, 1.9, 32), new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.9, side: THREE.DoubleSide }));
+  launchRing.renderOrder = 14;
+  root.add(launchRing);
+  const launchTag = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: textTexture(CHUTE_MODE ? 'LOCK-ON' : 'MISSILE LAUNCH', { pill: true, bg: '#ff5b52' }), depthTest: false, transparent: true,
+  }));
+  launchTag.renderOrder = 14;
+  root.add(launchTag);
+  const inboundSamples = []; // ship-frame points along the inbound run, with their u
+  const launchAt = new THREE.Vector3();
+
+  function updateLaunch() {
+    const u = shownLaunchU();
+    const on = u !== null;
+    launchMark.visible = launchRing.visible = launchTag.visible = on;
+    if (on) curve.getPointAt(u, launchAt);
+    refreshLaunchUI(u);
+  }
+
   const _col = new THREE.Color();
   const _c1 = new THREE.Color(CYAN);
   const _c2 = new THREE.Color(AMBER);
@@ -269,8 +309,40 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
     }
     chevrons.count = count;
 
+    inbound = pts.length ? inboundU(pts) : null;
+    autoU = pts.length ? autoLaunchU(pts) : null;
+    inboundSamples.length = 0;
+    if (inbound) {
+      for (let i = 0; i <= LAUNCH_SAMPLES; i++) {
+        const u = inbound[0] + ((inbound[1] - inbound[0]) * i) / LAUNCH_SAMPLES;
+        const p = curve.getPointAt(u, new THREE.Vector3());
+        inboundSamples.push({ u, p });
+        inboundPos.set([p.x, p.y, p.z], i * 3);
+      }
+    }
+    inboundLine.geometry.setDrawRange(0, inbound ? LAUNCH_SAMPLES + 1 : 0);
+    inboundLine.geometry.attributes.position.needsUpdate = true;
+
     lastNear = near;
     refreshUI(len, near);
+    updateLaunch();
+  }
+
+  function refreshLaunchUI(u = shownLaunchU()) {
+    ui.launchTitle.textContent = launchName;
+    ui.launchAuto.disabled = launchU === null;
+    ui.launch.classList.toggle('warn', u === null);
+    if (u === null) {
+      ui.launchTxt.textContent = CHUTE_MODE
+        ? '· the path never flies back toward the ship, so the launcher never locks on'
+        : '· the path never flies back toward the ship: the missile only leaves on the inbound run';
+      return;
+    }
+    const len = curve.getLength();
+    const p = curve.getPointAt(u, tmp);
+    const range = Math.hypot(p.x, p.y - SHIP_CENTER_Y, p.z);
+    const how = launchU === null ? 'auto, 650 m' : 'red point';
+    ui.launchTxt.textContent = `· ${how} · ${fmtTime(timeForLength(u * len))} · ${Math.round(range)} m out · ${Math.round(p.y)} m up`;
   }
 
   // --- UI -------------------------------------------------------------------------
@@ -315,6 +387,9 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
       ui.hint.textContent = COARSE
         ? 'Tap a dot to select it, drag to move it. Fields and Alt arrows change it exactly. Drag empty sea to orbit.'
         : 'Drag a dot to move it, Shift-drag to change its altitude. Double-click the line to add a point. [ and ] step through points; Ctrl+Z undoes.';
+      ui.hint.textContent += CHUTE_MODE
+        ? ' Drag the red dot along the red stretch (the inbound run) to choose where the launcher locks on.'
+        : ' Drag the red dot along the red stretch (the inbound run) to choose where the missile launches.';
     }
     if (CHUTE_MODE) ui.hint.textContent += ' The parachute opens at the last point.';
     if (pts.length < 1) ui.hint.textContent = 'Draw at least one point.';
@@ -332,7 +407,7 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
   }
 
   // --- History ----------------------------------------------------------------------
-  const snapshot = () => JSON.stringify({ pts, selected });
+  const snapshot = () => JSON.stringify({ pts, selected, launchU });
   function commit() {
     undoStack.push(snapshot());
     if (undoStack.length > HISTORY_MAX) undoStack.shift();
@@ -341,6 +416,7 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
   function restoreSnapshot(str) {
     const o = JSON.parse(str);
     pts = o.pts;
+    launchU = o.launchU ?? null;
     selected = Math.min(o.selected, pts.length - 1);
     rebuild();
   }
@@ -388,6 +464,11 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
     return tmp.z > 1 ? Infinity : Math.hypot(((tmp.x + 1) / 2) * r.width + r.left - e.clientX, ((1 - tmp.y) / 2) * r.height + r.top - e.clientY);
   };
   const world = (p) => new THREE.Vector3(p[0], p[1], p[2]).add(root.position);
+
+  function pickLaunch(e) {
+    if (!launchMark.visible) return false;
+    return toPx(launchMark.position.clone().add(root.position), e) < (e.pointerType === 'touch' ? PICK_TOUCH_PX : PICK_PX) * 1.3;
+  }
 
   function pickHandle(e) {
     let best = -1;
@@ -441,6 +522,13 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
     strokeCommitted = false;
     if (tool === 'move') {
       const i = pickHandle(e);
+      if (i < 0 && pickLaunch(e)) {
+        commit();
+        drag = { mode: 'launch', moved: false };
+        controls.enabled = false;
+        e.stopPropagation();
+        return;
+      }
       if (i >= 0) {
         selected = i;
         commit();
@@ -473,7 +561,16 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
   function onPointerMove(e) {
     if (!active) return;
     if (drag) {
-      if (drag.mode === 'alt') {
+      if (drag.mode === 'launch') {
+        // Slide along the inbound run: the sample nearest the pointer on screen.
+        let best = null;
+        let bestD = Infinity;
+        for (const s of inboundSamples) {
+          const d = toPx(s.p.clone().add(root.position), e);
+          if (d < bestD) { bestD = d; best = s.u; }
+        }
+        if (best !== null && best !== launchU) { launchU = best; drag.moved = true; updateLaunch(); }
+      } else if (drag.mode === 'alt') {
         const alt = clampAlt(drag.alt0 + (drag.y0 - e.clientY) * drag.perPx);
         if (alt !== pts[drag.index][1]) { pts[drag.index][1] = alt; drag.moved = true; rebuild(); }
       } else {
@@ -615,8 +712,15 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
     const clean = validatePath(pts);
     if (!clean) { toast('This path is not valid.'); return; }
     try {
-      if (JSON.stringify(clean) === JSON.stringify(DEFAULT_PATH)) localStorage.removeItem(PATH_STORAGE_KEY);
-      else localStorage.setItem(PATH_STORAGE_KEY, JSON.stringify({ points: clean }));
+      if (JSON.stringify(clean) === JSON.stringify(DEFAULT_PATH) && launchU === null) localStorage.removeItem(PATH_STORAGE_KEY);
+      else localStorage.setItem(PATH_STORAGE_KEY, JSON.stringify(launchU === null ? { points: clean } : { points: clean, launch: launchU }));
+      // The red point is the launch moment: an engagement setting that picks its own time would
+      // override it, so it goes back to automatic timing (burst distance and side are kept).
+      if (launchU !== null && !CHUTE_MODE) {
+        const raw = localStorage.getItem(ENGAGE_STORAGE_KEY);
+        const o = raw ? JSON.parse(raw) : null;
+        if (o && o.timing && o.timing !== 'auto') localStorage.setItem(ENGAGE_STORAGE_KEY, JSON.stringify({ ...o, timing: 'auto' }));
+      }
     } catch {
       toast('Could not save the path (browser storage is blocked).');
       return;
@@ -678,8 +782,9 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
     ui.fold.textContent = folded ? 'Show controls' : 'Hide controls';
     ui.fold.setAttribute('aria-expanded', String(!folded));
   });
-  ui.clear.addEventListener('click', () => { commit(); pts = []; selected = -1; setTool('draw'); rebuild(); });
-  ui.reset.addEventListener('click', () => { commit(); pts = DEFAULT_PATH.map((p) => [...p]); selected = -1; rebuild(); });
+  ui.clear.addEventListener('click', () => { commit(); pts = []; launchU = null; selected = -1; setTool('draw'); rebuild(); });
+  ui.reset.addEventListener('click', () => { commit(); pts = DEFAULT_PATH.map((p) => [...p]); launchU = null; selected = -1; rebuild(); });
+  ui.launchAuto.addEventListener('click', () => { if (launchU === null) return; commit(); launchU = null; updateLaunch(); refreshUI(); });
   ui.apply.addEventListener('click', apply);
   ui.cancel.addEventListener('click', () => api.exit());
   ui.restore.addEventListener('click', restoreDefault);
@@ -693,7 +798,7 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
     try {
       const clean = validatePath(JSON.parse(text));
       if (!clean) throw new Error('invalid');
-      commit(); pts = clean; selected = -1; rebuild();
+      commit(); pts = clean; launchU = null; selected = -1; rebuild();
     } catch { toast('That is not a valid path.'); }
   });
 
@@ -720,6 +825,7 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
       clock.seek(0);
       onEnter?.();
       pts = ACTIVE_PATH.map((p) => [...p]);
+      launchU = ACTIVE_LAUNCH_U;
       selected = -1;
       undoStack.length = redoStack.length = 0;
       root.visible = true;
@@ -765,6 +871,16 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
           b.scale.setScalar(s * 2.1);
         }
       });
+      if (launchMark.visible) {
+        launchMark.position.copy(launchAt);
+        const ls = Math.max(2.4, cam.distanceTo(world(launchAt.toArray())) * k * 1.45);
+        launchMark.scale.setScalar(ls);
+        launchRing.position.copy(launchAt);
+        launchRing.scale.setScalar(ls);
+        launchRing.quaternion.copy(camera.quaternion);
+        launchTag.position.set(launchAt.x, launchAt.y + ls * 3.2, launchAt.z);
+        launchTag.scale.set(ls * 10, ls * 2, 1);
+      }
       fixedMarks.forEach((m) => m.scale.setScalar(Math.max(1.2, cam.distanceTo(m.getWorldPosition(tmp)) * k * 0.6)));
       // Chevrons keep a constant look at any zoom.
       const center = tmp.set(0, 0, 0).add(root.position);

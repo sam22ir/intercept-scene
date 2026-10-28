@@ -4,7 +4,7 @@
 const b64url = (str) => btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
 // state: { ship, mode, t, focus, director, path }  ->  absolute URL string
-export function buildShareUrl({ ship, mode, t, focus, director, path, extra }, base = globalThis.location?.href ?? '') {
+export function buildShareUrl({ ship, mode, t, focus, director, path, launch, extra }, base = globalThis.location?.href ?? '') {
   const u = new URL(base);
   u.search = '';
   u.hash = '';
@@ -18,7 +18,8 @@ export function buildShareUrl({ ship, mode, t, focus, director, path, extra }, b
   for (const [k, v] of Object.entries(extra ?? {})) u.searchParams.set(k, v);
   if (path) {
     const points = path.map((p) => p.map((v) => Math.round(v * 10) / 10));
-    u.hash = `path=${b64url(JSON.stringify({ points }))}`;
+    // `launch`: the editor's red launch point, a fraction of the path (omitted when automatic).
+    u.hash = `path=${b64url(JSON.stringify(launch == null ? { points } : { points, launch }))}`;
   }
   return u.toString();
 }

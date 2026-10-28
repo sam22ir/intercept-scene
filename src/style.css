@@ -984,6 +984,11 @@ input[type='range'] { accent-color: var(--accent); }
   color: var(--text); font: 600 13px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums;
 }
 .ed-fields input:disabled { cursor: default; }
+.ed-launch { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: rgba(255, 59, 48, 0.12); border: 1px solid rgba(255, 59, 48, 0.35); font-size: 12px; }
+.ed-launch > span { flex: 1; min-width: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ed-launch b { color: #ff6b61; font-weight: 600; }
+.ed-launch-dot { flex: none; width: 11px; height: 11px; border-radius: 50%; background: #ff3b30; box-shadow: 0 0 0 2px rgba(8, 12, 18, 0.85); }
+.ed-launch.warn > span { color: #ffb347; }
 .ed-snap { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
 .ed-snap .chips { flex: 1; }
 .ed-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
