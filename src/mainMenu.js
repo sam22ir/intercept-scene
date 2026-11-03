@@ -17,6 +17,8 @@ import { LANG, LANGS, UI, saveLang } from './i18n.js';
 const $ = (root, s) => root.querySelector(s);
 const read = (key) => { try { return globalThis.localStorage.getItem(key); } catch { return null; } };
 const write = (key, v) => { try { if (v === null) globalThis.localStorage.removeItem(key); else globalThis.localStorage.setItem(key, v); } catch { /* storage unavailable */ } };
+// The offline file (opened from disk) has nothing to download: it is the download.
+const ONLINE = (() => { try { return location.protocol !== 'file:'; } catch { return true; } })();
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // The preferences on the Settings page, with the storage key each mission already reads.
@@ -133,7 +135,7 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
             <div class="mm-go-row"><em class="mm-last" id="ch-last" hidden>${esc(u.lastPlayed)}</em><button type="button" class="mm-continue" id="ch-continue" hidden></button></div>
           </footer>
         </aside>
-        <p class="mm-foot"><span>${esc(u.stats(MISSIONS.length, GROUPS.length))}</span><span class="mm-keyhint">${esc(u.menuKeys)}</span><a id="dl-offline-menu" href="/intercept-offline" download="intercept-offline.html" title="${esc(u.offlineHint)}">${esc(u.offline)}</a></p>
+        <p class="mm-foot"><span>${esc(u.stats(MISSIONS.length, GROUPS.length))}</span><span class="mm-keyhint">${esc(u.menuKeys)}</span>${ONLINE ? `<a id="dl-offline-menu" href="/intercept-offline" download="intercept-offline.html" title="${esc(u.offlineHint)}">${esc(u.offline)}</a>` : ''}</p>
       </div>
       <div class="mm-overlay" id="mm-overlay" hidden><div class="mm-dialog" role="dialog" aria-modal="true" tabindex="-1"></div></div>`;
     document.documentElement.lang = lang;
@@ -282,7 +284,7 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
           const g = groupIn(g0, lang);
           return `<div>${icon(ICON[g.id])}<b>${esc(g.name)}</b><small>${esc(g.hint)}</small><span>${MISSIONS.filter((m) => m.group === g.id).map((m) => esc(missionIn(m, lang).name)).join(' · ')}</span></div>`;
         }).join('')}</div>`
-        + `<p class="mm-note">${esc(u.aboutTech)} <a href="/intercept-offline" download="intercept-offline.html">${esc(u.offline)}</a></p>`;
+        + `<p class="mm-note">${esc(u.aboutTech)}${ONLINE ? ` <a href="/intercept-offline" download="intercept-offline.html">${esc(u.offline)}</a>` : ''}</p>`;
     } else if (helpTab === 'missions') {
       body = GROUPS.map((g0) => {
         const g = groupIn(g0, lang);
