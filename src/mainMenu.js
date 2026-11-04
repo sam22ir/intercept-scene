@@ -121,7 +121,6 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
         <section class="mm-grid" aria-label="${esc(u.missions)}"><div class="mm-missions" role="radiogroup" aria-label="${esc(u.missions)}"></div></section>
         <aside class="mm-panel" aria-live="polite">
           <div class="mm-panel-in" id="ch-panel">
-            <p class="mm-kind" id="ch-kind"></p>
             <h1 id="ch-title"></h1>
             <div class="mm-story"><p id="ch-tag"></p><button type="button" class="mm-more" id="ch-more" aria-expanded="false" hidden></button></div>
             <div class="mm-step" data-step="ship" hidden><h2>${esc(u.launcher)}</h2><div class="mm-cards" role="radiogroup" aria-label="${esc(u.launcher)}"></div></div>
@@ -193,7 +192,6 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
       void panel.offsetWidth;
       panel.classList.add('in');
     }
-    $(root, '#ch-kind').textContent = `${groupIn(GROUPS.find((g) => g.id === group), lang).name} · ${text.kind}`;
     $(root, '#ch-title').textContent = text.title;
     const tag = $(root, '#ch-tag');
     if (tag.textContent !== text.tagline) { tag.textContent = text.tagline; storyOpen = false; }

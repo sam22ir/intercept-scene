@@ -127,8 +127,7 @@
 .mm-panel-in { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 18px 20px 10px; display: grid; gap: 12px; align-content: start; }
 .mm-panel-in.in { animation: mm-slide 0.32s cubic-bezier(.2, .8, .2, 1); }
 @keyframes mm-slide { from { opacity: 0; transform: translateX(24px); } }
-.mm-kind { margin: 0; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: #ffb37a; font-weight: 700; }
-.mm-panel h1 { margin: -6px 0 0; font-size: 26px; line-height: 1.12; }
+.mm-panel h1 { margin: 0; font-size: 26px; line-height: 1.12; }
 .mm-panel h2 { margin: 0 0 7px; font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
 .mm-story p { margin: 0; font-size: 13px; line-height: 1.5; color: #c9d2db; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .mm-story.open p { display: block; }
@@ -304,7 +303,7 @@
 .art .a-canopygrp { transform-box: fill-box; }
 
 /* --- Fitted to the window: nothing scrolls but the panel's own text; the cards share the column's height ------- */
-@media (min-width: 761px) and (min-height: 560px) {
+@media (min-width: 761px) and (min-height: 420px) {
   .mm2 { height: 100%; min-height: 0; }
   .mm-grid, .mm-missions { height: 100%; min-height: 0; }
   .mm-mission { flex: 1 1 0; min-height: 0; max-height: calc(var(--mm-side) * 0.47 + 96px); }
@@ -317,6 +316,21 @@
   .mm-story p { font-size: 15px; }
   .mm-go { grid-template-columns: minmax(0, 1fr) minmax(240px, 340px); align-items: center; }
   .mm-go-row { grid-column: 1 / -1; }
+}
+/* A short window (a laptop at 175 %): tighter, so the previews keep some height and Start stays on screen. */
+@media (min-width: 761px) and (max-height: 640px) {
+  .mm2 { row-gap: 8px; padding-top: calc(8px + var(--safe-t)); padding-bottom: calc(6px + var(--safe-b)); }
+  .mm-missions { gap: 8px; }
+  .mm-cat { padding: 6px 12px; }
+  .mm-m-txt small { display: none; }
+  .mm-cardfoot { padding: 6px 12px; }
+  .mm-cardfoot .ic { width: 24px; height: 24px; }
+  .mm-m-txt b { font-size: 14px; }
+  .mm-panel h1 { font-size: 24px; }
+  .mm-story p { font-size: 13px; }
+  .mm-panel-in { padding-top: 12px; gap: 8px; }
+  .mm-go { padding: 8px 20px; }
+  .mm-start { padding: 10px 22px; }
 }
 
 /* --- Smaller windows ----------------------------------------------------------------------------------------- */
