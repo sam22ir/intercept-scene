@@ -5,6 +5,8 @@ import {
 } from './menu.js';
 import { previewArt } from './menuArt.js';
 import { LANG, LANGS, UI, saveLang } from './i18n.js';
+import { PLAN_MODES } from './missionPlan.js';
+import { briefHtml, wireBrief } from './missionBrief.js';
 
 // The main menu, built from the data in menu.js / menuFr.js (no mission words live in index.html): a control room.
 // The top bar (brand, language, Help, Controls, Settings); under it a wall of every mission as a thumbnail, by category;
@@ -20,6 +22,8 @@ const read = (key) => { try { return globalThis.localStorage.getItem(key); } cat
 const write = (key, v) => { try { if (v === null) globalThis.localStorage.removeItem(key); else globalThis.localStorage.setItem(key, v); } catch { /* storage unavailable */ } };
 // The offline file (opened from disk) has nothing to download: it is the download.
 const ONLINE = (() => { try { return location.protocol !== 'file:'; } catch { return true; } })();
+// A link copied from inside a mission (a moment, a path) opens exactly as it was shared.
+const SHARED_MOMENT = () => { try { return new URLSearchParams(location.search).has('t') || /(?:^#|&)path=/.test(location.hash); } catch { return false; } };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // The preferences on the Settings page, with the storage key each mission already reads.
@@ -73,7 +77,7 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
   let lang = LANG;
   let mode = MISSION_IDS.includes(initialMode) ? initialMode : 'intercept';
   let level = ENEMY_LEVELS.some((l) => l.id === preLevel) ? preLevel : DEFAULT_LEVEL;
-  let overlay = null; // 'help' | 'controls' | 'settings' | null
+  let overlay = null; // 'help' | 'controls' | 'settings' | 'plan' | null
   let helpTab = 'about';
   let storyOpen = false;
   let gone = false;
@@ -280,13 +284,15 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     box.hidden = !overlay;
     if (!overlay) return;
     const dlg = box.querySelector('.mm-dialog');
-    dlg.innerHTML = overlay === 'help' ? helpHtml() : overlay === 'controls' ? controlsHtml() : settingsHtml();
+    dlg.innerHTML = overlay === 'help' ? helpHtml() : overlay === 'controls' ? controlsHtml() : overlay === 'plan' ? briefHtml(briefOptions()) : settingsHtml();
+    if (overlay === 'plan') wireBrief(dlg, briefOptions());
     dlg.querySelector('[data-close]').addEventListener('click', closeOverlay);
     dlg.querySelectorAll('[data-help]').forEach((b) => b.addEventListener('click', () => { helpTab = b.dataset.help; renderOverlay(); }));
     dlg.querySelectorAll('[data-set]').forEach((b) => b.addEventListener('click', () => applySetting(b.dataset.set, b.dataset.val)));
     dlg.querySelector('[data-reset]')?.addEventListener('click', resetSettings);
     dlg.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => { closeOverlay(); setMode(b.dataset.goto); }));
     dlg.classList.toggle('mm-dialog-sm', overlay === 'controls');
+    dlg.classList.toggle('mm-dialog-brief', overlay === 'plan');
     dlg.focus({ preventScroll: true });
   }
   const openOverlay = (which) => { overlay = which; renderOverlay(); };
@@ -373,17 +379,34 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
   const setLevel = (id) => { level = id; paint(); };
   const setTab = (g) => setMode(lastIn[g]);
   const pickRow = (row) => setMode(row.dataset.family ? lastIn.drill : row.dataset.mode);
-  function go() {
+  function launch(plan = null) {
     if (gone) return;
     gone = true;
     window.removeEventListener('keydown', onKey);
-    onLaunch({ mode, ship: menuText(mode, shipNow(), lang).hasShip ? shipNow() : FIXED_SHIP, level });
+    onLaunch({ mode, ship: menuText(mode, shipNow(), lang).hasShip ? shipNow() : FIXED_SHIP, level, plan });
+  }
+  // The Watch missions first open the mission settings; a shared link's moment goes straight in, as it was shared.
+  function go() {
+    if (gone) return;
+    if (PLAN_MODES.includes(mode) && !SHARED_MOMENT()) openOverlay('plan');
+    else launch();
   }
   function goContinue() {
     if (!lastPlayed) return;
-    mode = lastPlayed;
+    setMode(lastPlayed);
     go();
   }
+  const briefOptions = () => ({
+    mode,
+    ship: shipNow(),
+    title: menuText(mode, shipNow(), lang).title,
+    button: menuText(mode, shipNow(), lang).button,
+    ships: SHIPS.map((s0) => { const s = shipIn(s0, lang); return [s.id, s.name]; }),
+    u: t(),
+    onShip: setShip,
+    onCancel: closeOverlay,
+    onStart: (plan) => launch(plan),
+  });
 
   const arrows = (list, i, e, pick) => {
     const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1;
@@ -395,6 +418,7 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (overlay) {
       if (e.key === 'Escape') { e.preventDefault(); closeOverlay(); }
+      if (overlay === 'plan' && e.key === 'Enter' && !e.target.closest?.('button')) { e.preventDefault(); root.querySelector('#br-start')?.click(); }
       return;
     }
     const group = groupOf(mode);

@@ -47,8 +47,8 @@ function readWeather() {
 // `look` (a name from looks.js, e.g. 'intercept') gives a mission its own time of day, sky, sea state, scenery and weather;
 // the weather can be overridden with ?weather= or localStorage['intercept.weather'] (read once). Without `look` the original
 // default or `calm` look is used, unchanged.
-export function createEnvironment(renderer, scene, { calm = false, tallMountains = false, landTurn = 0, look: lookName = null, realSea = false, mood: moodName = null } = {}) {
-  const look = !calm && lookName ? resolveLook(lookName, readWeather()) : null;
+export function createEnvironment(renderer, scene, { calm = false, tallMountains = false, landTurn = 0, look: lookName = null, realSea = false, mood: moodName = null, sky: skyOver = null } = {}) {
+  const look = !calm && lookName ? resolveLook(lookName, readWeather(), skyOver) : null;
   // `mood` (the calm look only, opt-in: Solo Air Defense's night and storm): the sky, fog, lights, clouds and mountains are dimmed
   // from the calm values; without it nothing here changes.
   const mood = calm && !look ? MOODS[moodName] ?? null : null;

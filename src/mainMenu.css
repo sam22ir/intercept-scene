@@ -285,6 +285,43 @@
 .art .a-label.red { fill: #ff8a8d; }
 .art .a-canopygrp { transform-box: fill-box; }
 
+/* --- The mission settings (missionBrief.js) ------------------------------------------------------------------ */
+.mm-dialog-brief { width: min(1000px, 100%); max-height: min(94vh, 900px); }
+.mm-dialog-brief .mm-dh { padding: 12px 20px 6px; }
+.mm-dialog-brief .mm-dh h2 { font-size: 18px; }
+.br-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; padding: 4px 20px 10px; }
+.br-form h3 { margin: 10px 0 4px; }
+.br-form.br-drawn input[data-key='alt'], .br-form.br-drawn input[data-key='runAlt'], .br-form.br-drawn input[data-key='turnBack'], .br-form.br-drawn input[data-key='engage'] { opacity: 0.35; }
+.br-row { display: grid; grid-template-columns: 136px minmax(0, 1fr) 72px; align-items: center; gap: 8px; min-height: 28px; color: var(--text); font-size: 12.5px; }
+.br-row.seg { grid-template-columns: 136px minmax(0, 1fr); min-height: 34px; }
+.br-row input { width: 100%; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.br-row output { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.br-row .mm-seg { justify-content: flex-start; }
+.br-row .mm-seg button { padding: 4px 8px; font-size: 11.5px; }
+.br-view { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.br-view.br-drawn .br-draw { opacity: 0.3; }
+.br-draw svg { display: block; width: 100%; height: auto; border-radius: 10px; background: #071a2a; fill: none; stroke: none; stroke-width: 1; }
+.br-draw .br-side { margin-top: 6px; }
+.br-draw .br-path { fill: none; stroke: #ffb347; stroke-width: 2; stroke-linejoin: round; }
+.br-draw .br-ring { fill: rgba(255, 93, 97, 0.05); stroke: rgba(255, 93, 97, 0.55); stroke-dasharray: 4 4; }
+.br-draw .br-ship { fill: var(--ok); stroke: #0b2e1b; }
+.br-draw .br-turn { fill: #071a2a; stroke: #ffb347; stroke-width: 2; }
+.br-draw .br-fire { fill: #ff5d61; stroke: #fff; }
+.br-draw .br-sea { stroke: rgba(143, 198, 234, 0.45); }
+.br-draw text { fill: #c9d2db; stroke: none; font: 600 11px/1 system-ui, sans-serif; }
+.br-draw text.fire { fill: #ff8a8d; }
+.br-draw .br-north circle { fill: rgba(0, 0, 0, 0.3); stroke: rgba(255, 255, 255, 0.3); }
+.br-draw .br-north path { stroke: var(--ok); stroke-width: 2; }
+.br-draw .br-north text { fill: var(--ok); font-size: 10px; }
+.br-stats { margin: 0; font-size: 12px; line-height: 1.4; color: var(--text); }
+.br-notes { margin: 0; padding: 0; list-style: none; font-size: 12px; line-height: 1.35; color: #ffc27a; }
+.br-notes:empty { display: none; }
+.br-foot { flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 20px 14px; border-top: 1px solid var(--mm-line); }
+.br-foot > span { flex: 1; }
+.br-cancel { padding: 9px 16px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.18); background: none; cursor: pointer; font-weight: 600; }
+.br-cancel:hover { background: rgba(255, 255, 255, 0.06); }
+.mm-start.br-start { flex: 0 0 auto; min-width: 220px; padding: 10px 22px; }
+
 /* --- A short window (a laptop at 175 %): tighter, so the picture keeps its room and Start stays on screen ------ */
 @media (min-width: 761px) and (max-height: 640px) {
   .mm-top { padding-top: calc(8px + var(--safe-t)); padding-bottom: 4px; }
@@ -325,6 +362,11 @@
   .mm-card small, .mm-pick small { display: block; font-size: 11px; line-height: 1.3; color: var(--muted); }
   .mm-go { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; padding: 10px calc(12px + var(--safe-r)) calc(10px + var(--safe-b)) calc(12px + var(--safe-l)); background: rgba(8, 14, 22, 0.96); border-top: 1px solid var(--mm-line); }
   .mm-continue { display: none; }
+  .br-body { grid-template-columns: minmax(0, 1fr); }
+  .br-view { order: -1; }
+  .br-row { grid-template-columns: 110px minmax(0, 1fr) 62px; }
+  .br-row.seg { grid-template-columns: minmax(0, 1fr); }
+  .mm-start.br-start { min-width: 0; flex: 1; }
 }
 @media (pointer: coarse) { .mm-card kbd, .mm-pick kbd { display: none; } }
 @media (prefers-reduced-motion: reduce) {

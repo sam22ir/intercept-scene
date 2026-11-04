@@ -152,9 +152,11 @@ export const WEATHER = {
 };
 
 // The look with a weather applied. Pure: the same inputs always give the same world.
-export function resolveLook(name, weather) {
-  const base = LOOKS[name];
-  if (!base) return null;
+// `sky` (the mission plan's time of day and heading, missionPlan.js) moves the sun: { elev, az } or { azAdd }.
+export function resolveLook(name, weather, sky = null) {
+  if (!LOOKS[name]) return null;
+  const base = { ...LOOKS[name], ...(sky?.elev === undefined ? null : { elev: sky.elev, az: sky.az }) };
+  if (sky?.azAdd) base.az += sky.azAdd;
   // Each look's numbers already describe its own default weather, so a weather only changes them by how far it differs
   // from that default (the default itself changes nothing, and `clear` on the duel really does clear the sky).
   const w = WEATHER[WEATHERS.includes(weather) ? weather : base.weather] ?? WEATHER.clear;

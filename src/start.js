@@ -40,6 +40,7 @@ import { createMainMenu } from './mainMenu.js';
 import { ui, readLang } from './i18n.js';
 import { installFrench } from './frenchDom.js';
 import { MISSION_FR } from './missionFr.js';
+import { PLAN_MODES, loadPlan, planEngage, savePlan, validatePlan } from './missionPlan.js';
 
 const MODES = MISSION_IDS;
 let mode = 'intercept';
@@ -50,11 +51,30 @@ const isDrill = (m) => m === 'maneuvers' || m === 'maneuvers2';
 let level = DEFAULT_LEVEL;
 const validLevel = (id) => (ENEMY_LEVELS.some((l) => l.id === id) ? id : null);
 
+// The Watch missions' plan (missionPlan.js): the one just set in the start window, the one a shared link carries, or, on the
+// app's own reloads, the stored one. Anything else (a scripted ?start=1, a plain shared link) flies the mission's own path.
+function planFor(chosen) {
+  if (!PLAN_MODES.includes(mode)) return null;
+  if (chosen) {
+    savePlan(chosen);
+    try { if (chosen.weather === 'auto') localStorage.removeItem('intercept.weather'); else localStorage.setItem('intercept.weather', chosen.weather); } catch { /* storage unavailable */ }
+    // The plan's engagement goes where the engagement panel keeps it, unless the drawn path's red point decides.
+    if (mode === 'intercept' && !chosen.drawn) write('localStorage', 'intercept.engage.v1', JSON.stringify(planEngage(chosen)));
+    return chosen;
+  }
+  try {
+    const shared = new URLSearchParams(location.search).get('plan');
+    if (shared) return validatePlan(JSON.parse(shared));
+  } catch { /* a bad link: no plan */ }
+  return skipChooser ? loadPlan() : null;
+}
+
 let launched = false;
-async function launch(id) {
+async function launch(id, chosenPlan = null) {
   if (launched) return; // Enter on a focused button fires both keydown and click
   launched = true;
   globalThis.__SHIP_VARIANT = id;
+  globalThis.__PLAN = planFor(chosenPlan);
   // The maneuvers and fly missions have their own scenes; scenario.js (which the ship model imports) just sees
   // an intercept for the first and a recovery (no scripted missile to simulate) for the second.
   globalThis.__SCENARIO = isDrill(mode) || mode === 'formations' ? 'intercept' : mode === 'fly' || mode === 'helm' || mode === 'harbour' || mode === 'mob' || mode === 'duel' ? 'chute' : mode;
@@ -101,7 +121,7 @@ function showChooser(preselect, preselectLevel = null) {
     level: validLevel(preselectLevel) ?? validLevel(read('localStorage', 'intercept.level.duel')) ?? DEFAULT_LEVEL,
     lastPlayed: MISSION_IDS.includes(rememberedMode) ? rememberedMode : null,
     reducedMotion: (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } })(),
-    onLaunch: (choice) => { mode = choice.mode; level = choice.level; launch(choice.ship); },
+    onLaunch: (choice) => { mode = choice.mode; level = choice.level; launch(choice.ship, choice.plan); },
   });
 }
 

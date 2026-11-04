@@ -10,6 +10,7 @@ import { createParachute } from './models/parachute.js';
 import { createPathEditor, toast } from './pathEditor.js';
 import { createEnvironment } from './environment.js';
 import { lookFor } from './looks.js';
+import { planSky } from './missionPlan.js';
 import { createShipFx } from './fx/shipFx.js';
 import { wireWeather } from './weatherButton.js';
 import { createShip } from './models/ship.js';
@@ -67,7 +68,7 @@ for (const type of ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown
 }
 canvas.addEventListener('webglcontextrestored', invalidate);
 
-const env = createEnvironment(renderer, scene, { look: lookFor(scenario.mode) });
+const env = createEnvironment(renderer, scene, { look: lookFor(scenario.mode), sky: planSky(scenario.plan) });
 
 const ship = createShip();
 scene.add(ship.group);
@@ -481,9 +482,10 @@ createShare({
     t: clock.t,
     focus: rig.id,
     director: directing,
-    path: scenario.customPath ? scenario.activePath : null,
+    path: scenario.customPath || scenario.plan ? scenario.activePath : null,
     launch: scenario.launchU,
-    extra: env.look ? { weather: env.look.weather } : undefined, // the same sky and sea for whoever opens the link
+    // The same sky and sea for whoever opens the link, and the same mission plan.
+    extra: { ...(env.look ? { weather: env.look.weather } : null), ...(scenario.plan ? { plan: JSON.stringify(scenario.plan) } : null) },
   }),
 });
 

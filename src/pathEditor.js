@@ -3,6 +3,7 @@ import {
   ACTIVE_PATH, ACTIVE_LAUNCH_U, DEFAULT_PATH, CUSTOM_PATH, SHARED_PATH, PATH_FIXED, PATH_STORAGE_KEY, MIN_ALT, CHUTE_MODE,
   ENGAGE_STORAGE_KEY, buildPathCurve, validatePath, shipPos, flightTimeForLength, timeForLength, autoLaunchU, inboundU,
 } from './scenario.js';
+import { setPlanDrawn } from './missionPlan.js';
 import { stripShareParams } from './share.js';
 
 // Path editor: draw or adjust the drone's flight path in the ship frame.
@@ -712,8 +713,10 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
     const clean = validatePath(pts);
     if (!clean) { toast('This path is not valid.'); return; }
     try {
-      if (JSON.stringify(clean) === JSON.stringify(DEFAULT_PATH) && launchU === null) localStorage.removeItem(PATH_STORAGE_KEY);
+      const untouched = JSON.stringify(clean) === JSON.stringify(DEFAULT_PATH) && launchU === null;
+      if (untouched) localStorage.removeItem(PATH_STORAGE_KEY);
       else localStorage.setItem(PATH_STORAGE_KEY, JSON.stringify(launchU === null ? { points: clean } : { points: clean, launch: launchU }));
+      setPlanDrawn(!untouched); // a mission plan now flies this path, not the one it generates
       // The red point is the launch moment: an engagement setting that picks its own time would
       // override it, so it goes back to automatic timing (burst distance and side are kept).
       if (launchU !== null && !CHUTE_MODE) {
@@ -731,7 +734,7 @@ export function createPathEditor({ scene, camera, controls, canvas, clock, onEnt
 
   function restoreDefault() {
     // Viewing a shared path: "restore" only leaves the link; the viewer's own saved path stays.
-    if (!SHARED_PATH) { try { localStorage.removeItem(PATH_STORAGE_KEY); } catch { /* storage unavailable */ } }
+    if (!SHARED_PATH) { try { localStorage.removeItem(PATH_STORAGE_KEY); } catch { /* storage unavailable */ } setPlanDrawn(false); }
     dropSharedHash();
     reloadIntoScene();
   }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { generatePath, relSpeed, shipSpeedOf, speedAtSlope, validatePlan } from './missionPlan.js';
 
 // The whole story is a pure function of time t (seconds). Nothing here keeps
 // per-frame state, which is what lets the timeline scrub in both directions.
@@ -47,7 +48,10 @@ export const MODE = (() => {
   }
 })();
 export const CHUTE_MODE = MODE === 'chute';
-export const SHIP_SPEED = 7; // m/s (~14 kn)
+// The mission plan (missionPlan.js, the window that opens on Start), read once: it generates the path and sets the speeds.
+// start.js only sets it for this file's two missions; without one everything below is the original story.
+export const PLAN = MODES.includes(globalThis.__SCENARIO) || !globalThis.__SCENARIO ? validatePlan(globalThis.__PLAN) : null;
+export const SHIP_SPEED = PLAN ? shipSpeedOf(PLAN) : 7; // m/s (~14 kn)
 
 export function shipPos(t, out) {
   return out.set(SHIP_SPEED * t, 0, 0);
@@ -161,7 +165,8 @@ const RECOVERY_PATH_AFT = [
   [-645, 146, -128], [-537, 125, -149], [-428, 107, -170], [-320, 94, -191], RECOVERY_POINT,
 ];
 const CHUTE_PATH = SHIP_VARIANT === 'aft' ? RECOVERY_PATH_AFT : RECOVERY_PATH_FWD;
-export const DEFAULT_PATH = (CHUTE_MODE ? CHUTE_PATH : INTERCEPT_PATH).map((p) => [...p]);
+export const PLAN_PATH = PLAN ? generatePath(PLAN, { variant: SHIP_VARIANT, mode: MODE }) : null;
+export const DEFAULT_PATH = (PLAN_PATH ? PLAN_PATH.points : CHUTE_MODE ? CHUTE_PATH : INTERCEPT_PATH).map((p) => [...p]);
 
 // A custom path drawn in the editor is stored per browser and applied on load.
 // The aft ship flies a different default path, so its drawn paths are stored apart.
@@ -217,7 +222,8 @@ function loadSharedPath() {
 }
 
 const SHARED = loadSharedPath();
-const CUSTOM = SHARED ?? loadCustomPath();
+// A plan generates the path unless it says to fly the one drawn in the editor.
+const CUSTOM = SHARED ?? (PLAN && !PLAN.drawn ? null : loadCustomPath());
 export const SHARED_PATH = SHARED !== null;
 export const CUSTOM_PATH = CUSTOM !== null;
 export const ACTIVE_PATH = CUSTOM?.points ?? DEFAULT_PATH.map((p) => [...p]);
@@ -278,7 +284,9 @@ function loadEngage() {
   }
 }
 const LOADED_ENGAGE = loadEngage();
-export const CUSTOM_ENGAGE = LOADED_ENGAGE !== null && JSON.stringify(LOADED_ENGAGE) !== JSON.stringify(ENGAGE_DEFAULTS);
+// The engagement a plan stores for itself is not a custom one.
+const PLAN_ENGAGE = PLAN && LOADED_ENGAGE?.timing === 'range' && LOADED_ENGAGE.range === PLAN.engage && LOADED_ENGAGE.dist === PLAN.burst;
+export const CUSTOM_ENGAGE = LOADED_ENGAGE !== null && !PLAN_ENGAGE && JSON.stringify(LOADED_ENGAGE) !== JSON.stringify(ENGAGE_DEFAULTS);
 export const ENGAGE = LOADED_ENGAGE ?? { ...ENGAGE_DEFAULTS };
 
 
@@ -301,14 +309,17 @@ function makeFlight(editablePts, shift) {
   const curve = buildPathCurve(editablePts);
   const length = curve.getLength();
   // Arc length flown since release, tabulated once (trapezoid rule).
-  const arcTable = [0];
-  for (let tau = 0; arcTable[arcTable.length - 1] < length; tau += ARC_DT) {
-    const s = arcTable[arcTable.length - 1];
-    arcTable.push(s + 0.5 * (speedAt(tau) + speedAt(tau + ARC_DT)) * ARC_DT);
+  const arcTable = PLAN ? planArcTable(curve, length) : [0];
+  if (!PLAN) {
+    for (let tau = 0; arcTable[arcTable.length - 1] < length; tau += ARC_DT) {
+      const s = arcTable[arcTable.length - 1];
+      arcTable.push(s + 0.5 * (speedAt(tau) + speedAt(tau + ARC_DT)) * ARC_DT);
+    }
   }
   const tauMax = (arcTable.length - 1) * ARC_DT;
   return {
     shift, curve, length, arcTable, tauMax,
+    vEnd: PLAN ? (arcTable[arcTable.length - 1] - arcTable[arcTable.length - 2]) / ARC_DT : null,
     end: curve.getPointAt(1),
     endDir: curve.getTangentAt(1),
     tRelease: T_RELEASE + shift,
@@ -316,7 +327,35 @@ function makeFlight(editablePts, shift) {
   };
 }
 
+// With a plan: the booster takes the drone from the rail's speed up to the speed for the slope it is on, which it then
+// follows with a two-second lag (less going up, more coming down, missionPlan.js), all of it over the sea, so along the
+// path it depends on the way the ship is going too. Baked once, like the rest, so it stays a pure function of time.
+function planArcTable(curve, length) {
+  const STEP = 5;
+  const n = Math.ceil(length / STEP);
+  const slope = new Float32Array(n + 1);
+  const dirX = new Float32Array(n + 1);
+  const dir = new THREE.Vector3();
+  for (let i = 0; i <= n; i++) {
+    curve.getTangentAt(Math.min(1, (i * STEP) / length), dir);
+    slope[i] = dir.y;
+    dirX[i] = dir.x;
+  }
+  const table = [0];
+  let s = 0;
+  let lag = slope[0];
+  for (let tau = 0; s < length; tau += ARC_DT) {
+    const i = Math.min(n, Math.floor(s / STEP));
+    lag += ((slope[i] - lag) * ARC_DT) / 2;
+    const cruise = relSpeed(speedAtSlope(PLAN.droneSpeed, lag), SHIP_SPEED, dirX[i]);
+    s += (tau < 1.3 ? V_RELEASE + ((cruise - V_RELEASE) * tau) / 1.3 : cruise) * ARC_DT;
+    table.push(s);
+  }
+  return table;
+}
+
 function speedAt(tau) {
+  if (PLAN) return PLAN.droneSpeed;
   if (tau <= SPEED_KEYS[0][0]) return SPEED_KEYS[0][1];
   for (let i = 1; i < SPEED_KEYS.length; i++) {
     const [t1, v1] = SPEED_KEYS[i];
@@ -385,7 +424,7 @@ const T_CHUTE = CHUTE_MODE ? T_RELEASE + ARC_TAU_MAX : Infinity;
 function arcAt(tau, f) {
   const { arcTable, tauMax } = f;
   if (tau <= 0) return 0;
-  if (tau >= tauMax) return arcTable[arcTable.length - 1] + speedAt(tau) * (tau - tauMax);
+  if (tau >= tauMax) return arcTable[arcTable.length - 1] + (f.vEnd ?? speedAt(tau)) * (tau - tauMax);
   const x = tau / ARC_DT;
   const i = Math.floor(x);
   return arcTable[i] + (arcTable[i + 1] - arcTable[i]) * (x - i);
@@ -602,7 +641,7 @@ const rangeAt = (t, k = 0) => planeRelPos(t, tmp, k).distanceTo(SHIP_CENTER);
 // Fire once the drone, having been out of range, closes back inside this range
 // of the ship. If a drawn path never leaves the range, fire at the first
 // closing moment after a short delay; if it never closes, fire near the end.
-const LAUNCH_RANGE = 650;
+const LAUNCH_RANGE = PLAN_PATH ? PLAN_PATH.engage : 650;
 // Firing arc: the forward box only engages a drone ahead of or abeam its pivot,
 // the aft box one astern of or abeam its pivot, so a missile never has to cross
 // the ship. (Same pivot x as LAUNCHER_PIVOT below.)
@@ -1031,6 +1070,7 @@ export const scenario = {
   tLock: T_LOCK, // recovery: the launcher has locked on the drone (Infinity in an intercept)
   inbound: INBOUND, // [t0, t1]: the inbound run, the only stretch a launch (or lock-on) may fall in
   launchU: ACTIVE_LAUNCH_U, // the editor's red launch point (fraction of the path), or null
+  plan: PLAN, // the mission plan these came from (missionPlan.js), or null
   // One entry per engagement: none in a recovery, one in an intercept.
   // tLaunch/tHit above are always the first engagement.
   engagements: CHUTE_MODE ? [] : ENGS.map((e) => ({

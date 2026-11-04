@@ -168,6 +168,7 @@ const SHARED = {
   Hull: 'Coque',
   Engine: 'Moteur',
   Speed: 'Vitesse',
+  "The ship's heading and speed": 'Le cap et la vitesse du navire',
   Range: 'Distance',
   Bearing: 'Gisement',
   Altitude: 'Altitude',
