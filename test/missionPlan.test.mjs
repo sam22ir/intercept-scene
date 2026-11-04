@@ -74,7 +74,7 @@ describe('the generated path', () => {
           assert.ok(path.points.length >= 8 && path.points.length <= 80, `${path.points.length} points fit the editor`);
           for (const q of path.points) {
             assert.ok(q.every(Number.isFinite));
-            assert.ok(Math.abs(q[0]) <= 6000 && Math.abs(q[2]) <= 6000 && q[1] >= 8 && q[1] <= p.alt + 1, `in bounds: ${q}`);
+            assert.ok(Math.abs(q[0]) <= 6000 && Math.abs(q[2]) <= 6000 && q[1] >= 8 && q[1] <= p.alt, `in bounds: ${q}`);
           }
           // After the launch it goes the launcher's way: its far point is on that side, past the turn-back distance.
           const out = path.points.reduce((m, q) => Math.max(m, q[0] * ahead), -Infinity);
@@ -84,7 +84,7 @@ describe('the generated path', () => {
           const all = [RAIL_END, ...path.points];
           for (let i = 1; i < all.length; i++) {
             const d = Math.hypot(all[i][0] - all[i - 1][0], all[i][2] - all[i - 1][2]);
-            if (d > 20) assert.ok(Math.abs(all[i][1] - all[i - 1][1]) / d < Math.tan(19 * Math.PI / 180), `leg ${i} is steep: ${all[i - 1]} to ${all[i]}`);
+            if (d > 60) assert.ok(Math.abs(all[i][1] - all[i - 1][1]) / d < Math.tan(30 * Math.PI / 180), `leg ${i} is steep: ${all[i - 1]} to ${all[i]}`);
           }
           if (mode === 'chute') assert.deepEqual(path.points.at(-1), [RECOVERY_AT[0], Math.min(RECOVERY_AT[1], p.alt), RECOVERY_AT[2]], 'ends at the recovery point');
           else assert.ok(Math.abs(path.points.at(-1)[2]) < 3, 'ends on the centre line');
@@ -107,11 +107,33 @@ describe('the generated path', () => {
     }
   });
 
-  it('a faster drone needs a wider turn, and says so when the distance asked is too short', () => {
-    assert.ok(turnRadius(plan({ droneSpeed: 100 })) > turnRadius(plan({ droneSpeed: 75 })) * 1.4);
+  it('turns at 45 degrees of bank: the radius follows from the speed', () => {
+    assert.equal(Math.round(turnRadius(plan())), 573, '573 m at 75 m/s, the owner\'s figure');
+    assert.equal(Math.round(turnRadius(plan({ droneSpeed: 54 }))), 297);
+    assert.equal(Math.round(turnRadius(plan({ droneSpeed: 100 }))), 1019);
+    // The path really flies that radius: the turn's port-most point is two radii from the centre line.
+    const path = generatePath(plan({ turnBack: 3000 }));
+    assert.ok(Math.abs(Math.max(...path.points.map((q) => -q[2])) - 2 * 573) < 20, 'port-most point');
+    assert.equal(path.radius, turnRadius(plan()));
+  });
+
+  it('a fast drone needs room, and says so when the distance asked is too short', () => {
     const path = generatePath(plan({ droneSpeed: 100, shipKn: 30, turnBack: 800 }));
     assert.ok(path.turnBack > 800);
     assert.equal(path.notes.find((n) => n.key === 'turnBack').value, Math.round(path.turnBack));
+  });
+
+  it('climbs and descends at a steady slope, in the ship\'s frame the one that makes 20 degrees over the sea', () => {
+    for (const variant of VARIANTS) {
+      const path = generatePath(plan({ alt: 600, runAlt: 100, turnBack: 4000, engage: 500 }), { variant });
+      const all = [RAIL_END, ...path.points];
+      const slopes = all.slice(1).map((q, i) => (q[1] - all[i][1]) / Math.hypot(q[0] - all[i][0], q[2] - all[i][2]));
+      const deg = (m) => (Math.atan(m) * 180) / Math.PI;
+      const near = (d, lo, hi, what) => assert.ok(d > lo && d < hi, `${variant} ${what} ${d}`);
+      if (variant === 'fwd') { near(deg(Math.max(...slopes)), 21, 25, 'climb'); near(-deg(Math.min(...slopes)), 17, 20, 'descent'); }
+      else { near(deg(Math.max(...slopes)), 16, 23, 'climb'); // steeper in the ship's frame while it swings round toward the bow
+        near(-deg(Math.min(...slopes)), 20, 23, 'descent'); }
+    }
   });
 
   it('holds the top height until the run in comes down to its own', () => {
@@ -180,13 +202,18 @@ describe('the scenario flown from a plan', () => {
       const nose = new THREE.Vector3();
       const wing = new THREE.Vector3();
       const D = 180 / Math.PI;
-      let level = 0, up = 0, down = 0;
+      let level = 0, up = 0, down = 0, steady = 0, topUp = 0, topDown = 0;
       let bank = 0, pitch = 0;
       for (let t = sc.tRelease + 2; t < sc.tLaunch; t += 0.25) {
         S.planeVel(t, vel);
         const speed = vel.length();
         const sin = vel.y / speed;
-        if (Math.abs(sin) < 0.003) level = Math.max(level, Math.abs(speed - p.droneSpeed));
+        // Level for four seconds: the speed has settled from the slope before.
+        steady = Math.abs(sin) < 0.003 ? steady + 1 : 0;
+        if (steady > 16) level = Math.max(level, Math.abs(speed - p.droneSpeed));
+        const angle = (Math.asin(sin) * 180) / Math.PI;
+        topUp = Math.max(topUp, angle);
+        topDown = Math.min(topDown, angle);
         if (sin > 0.1) { up += 1; assert.ok(speed < p.droneSpeed, `climbing at ${speed}`); }
         if (sin < -0.08) { down += 1; assert.ok(speed > p.droneSpeed, `descending at ${speed}`); }
         S.planePose(t, pos, q);
@@ -196,9 +223,12 @@ describe('the scenario flown from a plan', () => {
         pitch = Math.max(pitch, Math.abs(Math.asin(nose.y) * D));
       }
       assert.ok(up > 10 && down > 10, `climbed ${up}, descended ${down}`);
-      assert.ok(level < 8, `level flight is near the cruise speed: off by ${level}`);
-      assert.ok(bank <= 50 + 1e-6, `bank ${bank}`);
-      assert.ok(pitch <= 20, `pitch ${pitch}`);
+      assert.ok(level < 1.5, `level flight is the cruise speed: off by ${level}`);
+      assert.ok(Math.abs(topUp - 20) < 2, `climbs at 20 degrees over the sea: ${topUp}`);
+      assert.ok(Math.abs(topDown + 20) < 2, `descends at 20 degrees over the sea: ${topDown}`);
+      // 45 degrees in the turn; the ship's own speed moves it a few degrees either way.
+      assert.ok(bank > 40 && bank <= 50 + 1e-6, `bank ${bank}`);
+      assert.ok(pitch > 18 && pitch <= 21.5, `pitch ${pitch}`);
     });
 
     it(`${variant}: recovery flies the plan and ends under the parachute`, async () => {

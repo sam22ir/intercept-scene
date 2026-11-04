@@ -11,8 +11,9 @@
 const G = 9.81;
 const DEG = Math.PI / 180;
 const KN = 0.514444; // m/s
-const CLIMB_SLOPE = Math.tan(13 * DEG); // steepest climb
-const DESCENT_LENGTH = 7; // metres flown per metre of height lost: a smoothstep at this length peaks at 12 degrees
+const SLOPE = Math.tan(20 * DEG); // climbs and descents over the sea, the owner's figure
+const EASE = 150; // metres over which the drone eases into and out of that slope
+const TURN_BANK = 45; // degrees, the owner's figure: the radius follows from the speed
 
 // The release point of the catapult (the second of scenario.js's PATH_FIXED; a test keeps them equal) and the rail's yaw.
 export const RAIL_END = [-37.75, 15.07, -18.19];
@@ -85,9 +86,9 @@ export function speedAtSlope(cruise, sinSlope) {
 export function relSpeed(v, ship, dx) {
   return -ship * dx + Math.sqrt(Math.max(1, v * v - ship * ship * (1 - dx * dx)));
 }
-// The turn: 45 degrees of bank at the fastest the path is flown relative to the ship (the limit is 50).
+// The radius of the turns: 45 degrees of bank at the cruise speed, so v^2 / (g tan 45): 573 m at 75 m/s.
 export function turnRadius(plan) {
-  return (plan.droneSpeed * 1.05 + shipSpeedOf(plan)) ** 2 / G;
+  return plan.droneSpeed ** 2 / (G * Math.tan(TURN_BANK * DEG));
 }
 
 // The sun for a heading and a time of day: elev and az in the terms of looks.js. The bow is the scene's +X, so a sun at
@@ -129,7 +130,7 @@ function outline(a, R, aft) {
 function solveOutline(target, R, aft) {
   let best = null;
   let shortest = Infinity;
-  for (let a = 1; a <= 85; a += 0.25) {
+  for (let a = 1; a <= 85; a += a < 12 ? 0.02 : 0.25) { // a long outbound leg is very sensitive to it
     const o = outline(a, R, aft);
     if (!o) continue;
     shortest = Math.min(shortest, o.turnBack);
@@ -188,35 +189,76 @@ export function generatePath(plan, { variant = 'fwd', mode = 'intercept' } = {})
   }
   const sEnd = s;
 
-  // The height along it: the climb eases off as it reaches the top, and any descent is over before the engagement.
+  // The height along it: a steady 20 degrees up from the rail to the top, level, then 20 degrees down to the run in's own
+  // height (over before the engagement), and in Recovery down to the parachute.
+  // The path is in the ship's frame, where her own speed changes the angle: she follows a drone flying her way and leaves
+  // one flying the other way behind. So each slope here is the one that makes 20 degrees over the sea on that heading.
+  const ship = shipSpeedOf(plan);
+  const STEP = 2;
+  const overSea = (factor, along) => { const h = plan.droneSpeed * factor * Math.cos(20 * DEG); return (SLOPE * h) / (h - ship * along); };
+  const along = [];
+  for (let i = 0, d = 0; d <= s + STEP; d += STEP) {
+    while (i < track.length - 1 && track[i].s < d) i++;
+    const a = i ? track[i - 1] : { x: RAIL_END[0], s: 0 };
+    along.push((track[i].x - a.x) / Math.max(1, track[i].s - a.s));
+  }
   const y0 = RAIL_END[1];
+  // The climb, flown leg by leg, slowing its rate into the top over EASE metres; returns where it got to the top.
+  const easeUp = overSea(0.7, 0);
+  const climbRate = (d, rem) => overSea(0.7, along[Math.min(along.length - 1, Math.floor(d / STEP))]) * Math.min(1, Math.sqrt((2 * rem) / (easeUp * EASE)));
+  const climbTo = (top) => {
+    let h = y0;
+    let d = 0;
+    while (top - h > 0.05 && d < s) { h += climbRate(d, top - h) * STEP; d += STEP; }
+    return d;
+  };
+  const down = overSea(1.3, aft ? 1 : -1); // the run in is straight, so this holds all the way down it
+  const changeLen = (dh, m) => { const run = Math.abs(dh) / m; return run + Math.min(EASE, run); };
   const sEngage = sExit + Math.max(0, exitRange - engage - 150);
   const chuteAt = Math.min(RECOVERY_AT[1], plan.alt);
+  const fits = (top) => climbTo(top) <= sEngage && (!chute || climbTo(top) + changeLen(top - chuteAt, down) <= sEnd);
   let alt = plan.alt;
-  // Recovery has to fit the way down as well as the way up: 2 / slope metres flown per metre climbed, then DESCENT_LENGTH per metre down.
-  const room = chute ? Math.floor((sEnd + (2 * y0) / CLIMB_SLOPE + DESCENT_LENGTH * chuteAt) / (2 / CLIMB_SLOPE + DESCENT_LENGTH)) : Infinity;
-  const reach = Math.floor(y0 + (sEngage * CLIMB_SLOPE) / 2);
-  if (alt > Math.min(room, reach)) {
-    alt = Math.min(room, reach);
+  if (!fits(alt)) {
+    let lo = Math.max(chuteAt, y0);
+    let hi = alt;
+    while (hi - lo > 1) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
+    alt = Math.floor(lo);
     notes.push({ key: 'alt', value: alt });
   }
-  const climb = Math.min(sEngage, Math.max(sTurn, (2 * (alt - y0)) / CLIMB_SLOPE));
+  const climb = climbTo(alt);
   let runAlt = Math.min(runAltWanted, alt);
-  let dropFrom = sEngage - DESCENT_LENGTH * (alt - runAlt);
-  if (dropFrom < climb) {
-    dropFrom = climb;
-    runAlt = Math.ceil(alt - (sEngage - climb) / DESCENT_LENGTH);
-  }
-  if (runAlt > runAltWanted && runAltWanted < alt) notes.push({ key: 'runAlt', value: runAlt });
-  const sDown = Math.max(climb, Math.min(sLeave, sEnd - DESCENT_LENGTH * (alt - chuteAt)));
-  const heightAt = (d) => {
-    if (d <= climb) { const u = d / climb; return y0 + (alt - y0) * (1 - (1 - u) * (1 - u)); }
-    let h = alt;
-    if (runAlt < alt && d > dropFrom) h = alt + (runAlt - alt) * smooth((d - dropFrom) / Math.max(1, sEngage - dropFrom));
-    if (chute && d > sDown) h += (chuteAt - h) * smooth((d - sDown) / (sEnd - sDown));
-    return h;
+  if (sEngage - climb < changeLen(alt - runAlt, down)) runAlt = Math.ceil(alt - Math.max(0, sEngage - climb - EASE) * down);
+  if (runAlt > runAltWanted) notes.push({ key: 'runAlt', value: runAlt });
+  const dropLen = changeLen(alt - runAlt, down);
+  const dropFrom = sEngage - dropLen;
+  const lastSlope = chuteAt > runAlt ? easeUp : down;
+  const lastLen = chute ? changeLen(chuteAt - runAlt, lastSlope) : 0;
+  const lastFrom = sEnd - lastLen;
+  const ramp = (d, from, len, ease) => (d <= from || d >= from + len ? 0 : Math.min(1, (d - from) / ease, (from + len - d) / ease));
+  const slopeAt = (d, h) => {
+    if (d < climb) return climbRate(d, Math.max(0, alt - h));
+    let m = runAlt < alt ? -down * ramp(d, dropFrom, dropLen, Math.min(EASE, (alt - runAlt) / down)) : 0;
+    if (chute && chuteAt !== runAlt) m += Math.sign(chuteAt - runAlt) * lastSlope * ramp(d, lastFrom, lastLen, Math.min(EASE, Math.abs(chuteAt - runAlt) / lastSlope));
+    return m;
   };
-  const points = track.map((p) => [Math.round(p.x), Math.round(Math.max(8, heightAt(p.s))), Math.round(p.z)]);
+  const heights = [y0];
+  for (let d = 0; d < sEnd + STEP; d += STEP) heights.push(heights[heights.length - 1] + slopeAt(d, heights[heights.length - 1]) * STEP);
+  const heightAt = (d) => {
+    const u = Math.max(0, d) / STEP;
+    const i = Math.min(heights.length - 2, Math.floor(u));
+    return heights[i] + (heights[i + 1] - heights[i]) * (u - i);
+  };
+  // A point at each change of slope, so the spline keeps to these slopes between the legs.
+  for (const at of [climb - EASE, climb, dropFrom, dropFrom + EASE, sEngage - EASE, sEngage, lastFrom, lastFrom + EASE]) {
+    if (!(at > 0 && at < sEnd) || track.some((p) => Math.abs(p.s - at) < 40)) continue;
+    const i = track.findIndex((p) => p.s > at);
+    const a = i > 0 ? track[i - 1] : { x: RAIL_END[0], z: RAIL_END[2], s: 0 };
+    const b = track[i];
+    const k = (at - a.s) / (b.s - a.s);
+    track.splice(i, 0, { x: a.x + (b.x - a.x) * k, z: a.z + (b.z - a.z) * k, s: at });
+  }
+  const points = track.map((p) => [Math.round(p.x), Math.round(Math.min(alt, Math.max(8, heightAt(p.s)))), Math.round(p.z)]);
+  if (chute) points[points.length - 1][1] = chuteAt;
 
   return {
     points, radius: R, turnBack: o.turnBack, shortestTurnBack: shortest, exitRange, far: o.far, engage, alt, runAlt, notes,

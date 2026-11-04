@@ -486,6 +486,8 @@ const _rel = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 const _zAxis = new THREE.Vector3(0, 0, 1);
 const _qRoll = new THREE.Quaternion();
+const _w = new THREE.Vector3();
+const _c2 = new THREE.Vector3();
 
 // World position + attitude. Nose is local +Z, left wing local +X. Attitude
 // follows the ship-relative path (continuous off the rail); bank comes from
@@ -507,14 +509,24 @@ function pathPose(t, pos, quat, f = FLIGHTS[0]) {
     fwd.subVectors(_b, _a);
     speed = fwd.length() / (2 * h);
     fwd.normalize();
+    // With a plan the nose lies along the flight path over the sea, easing from the rail's own line just after release.
+    if (PLAN) {
+      const k = THREE.MathUtils.smoothstep(tf, T_RELEASE, T_RELEASE + 1);
+      _w.copy(fwd).multiplyScalar(speed);
+      _w.x += SHIP_SPEED;
+      fwd.lerp(_c2.copy(_w).normalize(), k).normalize();
+    }
+    // With a plan the bank comes from the turn over the sea, at the speed over the sea.
+    const sea = PLAN ? SHIP_SPEED * 2 * h : 0;
     pathRelPos(t - 2 * h, _d, f);
-    const v1x = _rel.x - _d.x, v1z = _rel.z - _d.z;
+    const v1x = _rel.x - _d.x + sea, v1z = _rel.z - _d.z;
     pathRelPos(t + 2 * h, _d, f);
-    const v2x = _d.x - _rel.x, v2z = _d.z - _rel.z;
+    const v2x = _d.x - _rel.x + sea, v2z = _d.z - _rel.z;
     const turn = Math.atan2(v1z * v2x - v1x * v2z, v1x * v2x + v1z * v2z) / (2 * h);
+    const v = PLAN ? _w.length() || speed : speed;
     // Ease bank in over the first second so it doesn't snap at release.
     const ease = THREE.MathUtils.smoothstep(tf, T_RELEASE, T_RELEASE + 1);
-    bank = ease * THREE.MathUtils.clamp(Math.atan((speed * turn) / G), -MAX_BANK, MAX_BANK);
+    bank = ease * THREE.MathUtils.clamp(Math.atan((v * turn) / G), -MAX_BANK, MAX_BANK);
   }
   _x.crossVectors(_up, fwd).normalize();
   _y.crossVectors(fwd, _x);

@@ -120,7 +120,7 @@ export const UI = {
     bMapTurn: 'Turn',
     bMapFire: 'Missile',
     bMapLock: 'Lock-on',
-    bStats: (radius, slow, cruise, fast, time) => `Speed ${slow} climbing, ${cruise} level${fast ? `, ${fast} descending` : ''} (m/s) · turn radius ${radius} m · reaches the engagement in ${time}`,
+    bStats: (radius, slow, cruise, fast, time) => `Turns at 45° of bank: ${radius} m radius · speed ${slow} climbing at 20°, ${cruise} level${fast ? `, ${fast} descending at 20°` : ''} (m/s) · reaches the engagement in ${time}`,
     bNote: {
       turnBack: (v) => `At this speed the drone turns back at ${v} m: that is as near as it can.`,
       engage: (v) => `The engagement is held to ${v} m, inside where the run in begins.`,
@@ -253,7 +253,7 @@ export const UI = {
     bMapTurn: 'Demi-tour',
     bMapFire: 'Missile',
     bMapLock: 'Accrochage',
-    bStats: (radius, slow, cruise, fast, time) => `Vitesse ${slow} en montée, ${cruise} en palier${fast ? `, ${fast} en descente` : ''} (m/s) · rayon de virage ${radius} m · atteint l’engagement en ${time}`,
+    bStats: (radius, slow, cruise, fast, time) => `Virages à 45° d’inclinaison : rayon ${radius} m · vitesse ${slow} en montée à 20°, ${cruise} en palier${fast ? `, ${fast} en descente à 20°` : ''} (m/s) · atteint l’engagement en ${time}`,
     bNote: {
       turnBack: (v) => `À cette vitesse, le drone fait demi-tour à ${v} m : il ne peut pas plus près.`,
       engage: (v) => `L’engagement est ramené à ${v} m, en deçà du début de l’approche.`,
