@@ -1,7 +1,7 @@
-/* The main menu (mainMenu.js): the brand and the language, Help and Settings buttons along the top; the four
-   categories as tabs; then the category's missions as cards, each with its own live preview (menuArt.js), and a
-   panel for the selected mission (briefing, set-up steps, controls, Start) that slides in beside them. Help and
-   Settings are overlays. Everything moving here is CSS (stopped by prefers-reduced-motion) or the previews' SMIL
+/* The main menu (mainMenu.js): the brand and the language, Help, Controls and Settings buttons along the top; the
+   four categories as tabs; under them a panel for the selected mission (briefing, set-up steps, Start) that slides
+   in; and down the right the category's missions as a column of cards, each with its own live preview (menuArt.js),
+   fitted to the window's height. Help, Controls and Settings are overlays. Everything moving here is CSS (stopped by prefers-reduced-motion) or the previews' SMIL
    (the menu draws still frames instead). Class names start with mm- so they never meet the missions' own CSS,
    and nothing here uses .panel (hidden before body.playing). */
 
@@ -34,9 +34,10 @@
 .mm2 {
   position: relative; min-height: 100%; display: grid; column-gap: 20px; row-gap: 12px;
   padding: calc(16px + var(--safe-t)) calc(22px + var(--safe-r)) calc(14px + var(--safe-b)) calc(22px + var(--safe-l));
-  grid-template-columns: minmax(0, 1fr) clamp(320px, 30vw, 420px);
-  grid-template-rows: auto auto auto 1fr auto;
-  grid-template-areas: 'top top' 'cats panel' 'hint panel' 'grid panel' 'foot foot';
+  --mm-side: clamp(320px, 30vw, 460px);
+  grid-template-columns: minmax(0, 1fr) var(--mm-side);
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-areas: 'top top' 'cats grid' 'hint grid' 'panel grid' 'foot foot';
   max-width: 1600px; margin: 0 auto; align-content: start;
 }
 
@@ -86,8 +87,7 @@
 
 /* --- Mission cards ------------------------------------------------------------------------------------- */
 .mm-grid { grid-area: grid; min-width: 0; }
-.mm-missions { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 16px; align-content: start; }
-.mm-missions[data-count='1'] { grid-template-columns: minmax(0, 720px); }
+.mm-missions { display: flex; flex-direction: column; gap: 12px; }
 .mm-mission {
   position: relative; display: flex; flex-direction: column; padding: 0; border-radius: 18px; overflow: hidden; text-align: left; cursor: pointer;
   border: 1px solid var(--mm-line); background: var(--mm-card);
@@ -307,20 +307,37 @@
 .art .a-label.red { fill: #ff8a8d; }
 .art .a-canopygrp { transform-box: fill-box; }
 
+/* --- Fitted to the window: nothing scrolls but the panel's own text; the cards share the column's height ------- */
+@media (min-width: 761px) and (min-height: 560px) {
+  .mm2 { height: 100%; min-height: 0; }
+  .mm-grid, .mm-missions { height: 100%; min-height: 0; }
+  .mm-mission { flex: 1 1 0; min-height: 0; max-height: calc(var(--mm-side) * 0.47 + 96px); }
+  .mm-prev { flex: 1 1 0; min-height: 0; aspect-ratio: auto; }
+  .mm-cardfoot { flex: none; }
+  .mm-panel { position: static; align-self: stretch; min-height: 0; max-height: none; }
+}
+@media (min-width: 900px) {
+  .mm-panel h1 { font-size: 32px; }
+  .mm-story p { font-size: 15px; }
+  .mm-go { grid-template-columns: minmax(0, 1fr) minmax(240px, 340px); align-items: center; }
+  .mm-go-row { grid-column: 1 / -1; }
+}
+
 /* --- Smaller windows ----------------------------------------------------------------------------------------- */
 @media (max-width: 980px) {
-  .mm2 { grid-template-columns: minmax(0, 1fr) minmax(290px, 340px); }
-  .mm-missions { grid-template-columns: minmax(0, 1fr); }
+  .mm2 { --mm-side: clamp(290px, 38vw, 340px); }
 }
 @media (max-width: 760px) {
-  .mm2 { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'top' 'cats' 'hint' 'grid' 'panel' 'foot'; gap: 10px; padding-left: calc(12px + var(--safe-l)); padding-right: calc(12px + var(--safe-r)); padding-bottom: calc(96px + var(--safe-b)); }
+  .mm2 { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: 'top' 'cats' 'hint' 'grid' 'panel' 'foot'; gap: 10px; padding-left: calc(12px + var(--safe-l)); padding-right: calc(12px + var(--safe-r)); padding-bottom: calc(96px + var(--safe-b)); }
+  .mm-top { flex-wrap: wrap; gap: 8px; }
+  .mm-actions { margin-left: auto; }
   .mm-brand b { font-size: 17px; }
   .mm-brand span, .mm-btn span, .mm-keyhint { display: none; }
   .mm-btn { padding: 7px; }
   .mm-cats { flex-wrap: nowrap; overflow-x: auto; }
   .mm-cat { flex: 0 0 auto; padding: 8px 12px; }
   .mm-cat .ic { width: 20px; height: 20px; }
-  .mm-missions { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 6px; }
+  .mm-missions { flex-direction: row; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 6px; }
   .mm-mission { flex: 0 0 84%; scroll-snap-align: start; }
   .mm-mission:hover { transform: none; }
   .mm-panel { position: static; max-height: none; }

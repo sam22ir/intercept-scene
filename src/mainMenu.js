@@ -7,9 +7,9 @@ import { previewArt } from './menuArt.js';
 import { LANG, LANGS, UI, saveLang } from './i18n.js';
 
 // The main menu, built from the data in menu.js / menuFr.js (no mission words live in index.html): a top bar
-// (brand, language, Help, Controls, Settings), the four categories down the left, the category's missions, the
-// selected mission's animated preview (menuArt.js) with its briefing, the set-up steps it has (launcher, number of
-// ships, enemy level), and Start. Help (about, missions, the in-mission buttons, this menu), Controls (the keys of
+// (brand, language, Help, Controls, Settings), the four categories, the selected mission's briefing with the set-up
+// steps it has (launcher, number of ships, enemy level) and Start, and down the right the category's missions, each
+// with its animated preview (menuArt.js). Help (about, missions, the in-mission buttons, this menu), Controls (the keys of
 // the selected mission) and Settings (language and the preferences every mission reads from storage) are overlays. The language
 // re-renders the menu at once; the missions read it when they load. Selection changes only on a click or a
 // key, never on hover, and Start, Enter or a double click launches (once: `onLaunch` is start.js's launch()).
@@ -90,9 +90,9 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
   const motion = () => !reducedMotion && settingValue(SETTINGS.find((s) => s.id === 'motion')) !== '0';
 
   // --- Rendering ---------------------------------------------------------------------------------------
-  // The layout: the brand and the Help / Controls / Settings / language buttons; the categories as tabs; then
-  // the category's missions as cards, each with its own live preview, beside a panel for the selected one
-  // (briefing, set-up steps, Start).
+  // The layout: the brand and the Help / Controls / Settings / language buttons; the categories as tabs; under
+  // them a panel for the selected mission (briefing, set-up steps, Start); down the right the category's missions
+  // as cards, each with its own live preview. On a phone the cards come first and swipe sideways.
   let artSeq = 0;
   function shell() {
     const u = t();
@@ -163,7 +163,6 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     const listKey = `${group}:${lang}:${motion()}`;
     if (fresh || list.dataset.key !== listKey) {
       list.dataset.key = listKey;
-      list.dataset.count = String(entries.length);
       list.innerHTML = entries.map((e) => {
         const attr = e.family ? `data-family="${e.family}"` : `data-mode="${e.id}"`;
         return `<button type="button" class="mm-mission" role="radio" ${attr} aria-checked="false">`
