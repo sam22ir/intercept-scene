@@ -118,7 +118,6 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
             return `<button type="button" class="mm-cat" role="radio" data-tab="${g.id}" aria-checked="false">${icon(ICON[g.id])}<b>${esc(g.name)}</b><em class="mm-n">${n}</em></button>`;
           }).join('')}
         </nav>
-        <p class="mm-hint" id="ch-tabhint"></p>
         <section class="mm-grid" aria-label="${esc(u.missions)}"><div class="mm-missions" role="radiogroup" aria-label="${esc(u.missions)}"></div></section>
         <aside class="mm-panel" aria-live="polite">
           <div class="mm-panel-in" id="ch-panel">
@@ -130,7 +129,7 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
             <div class="mm-step" data-step="level" hidden><h2>${esc(u.enemy)}</h2><div class="mm-picks" role="radiogroup" aria-label="${esc(u.enemy)}"></div></div>
           </div>
           <footer class="mm-go">
-            <p class="mm-sum"><span id="ch-summary"></span><small id="chooser-sub"></small></p>
+            <p class="mm-sum"><span id="ch-summary"></span></p>
             <button type="button" id="ch-start" class="mm-start"><span></span>${icon(ICON.play, 'ic', 24)}</button>
             <div class="mm-go-row"><em class="mm-last" id="ch-last" hidden>${esc(u.lastPlayed)}</em><button type="button" class="mm-continue" id="ch-continue" hidden></button></div>
           </footer>
@@ -156,7 +155,6 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     const ship = shipNow();
     const text = menuText(mode, ship, lang);
     root.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.tab === group)));
-    $(root, '#ch-tabhint').textContent = groupIn(GROUPS.find((g) => g.id === group), lang).hint;
     const list = $(root, '.mm-missions');
     const entries = entriesOf(group, lang);
     const listKey = `${group}:${lang}:${motion()}`;
@@ -238,7 +236,6 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     // The way in, and a quick way back into the last mission played.
     $(root, '#ch-start span').textContent = text.button;
     $(root, '#ch-summary').textContent = text.summary;
-    $(root, '#chooser-sub').textContent = text.note;
     $(root, '#ch-last').hidden = lastPlayed !== mode;
     const cont = $(root, '#ch-continue');
     cont.hidden = !lastPlayed || lastPlayed === mode;

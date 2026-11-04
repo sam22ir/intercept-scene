@@ -49,7 +49,7 @@ describe('the menu data', () => {
       for (const f of ['name', 'kind', 'blurb', 'tagline', 'brand', 'button']) assert.ok(typeof m[f] === 'string' && m[f].length >= 3, `${m.id}.${f}`);
       assert.ok(m.keys.length >= 4 && m.keys.every(([k, l]) => k && l), `${m.id} lists its controls`);
       assert.ok(m.brand.length <= 16, `${m.id}'s top-bar title fits`);
-      if (!m.ship) assert.ok(m.fixed && m.fixedNote && m.sub, `${m.id} says what is fixed`);
+      if (!m.ship) assert.ok(m.fixed && m.sub, `${m.id} says what is fixed`);
     }
     assert.deepEqual(MISSIONS.filter((m) => !m.ship).map((m) => m.id), ['fly', 'maneuvers2', 'maneuvers', 'formations', 'helm', 'harbour', 'mob', 'duel']);
   });
@@ -108,14 +108,12 @@ describe('the title follows the options', () => {
           assert.equal(t.ship, s.name);
           assert.ok(t.summary.endsWith(s.name), 'the summary names the launcher chosen');
           assert.ok(t.tabTitle.includes(s.name));
-          assert.equal(t.note, s.desc, 'the note describes the launcher chosen');
           assert.ok(t.sub.startsWith(`${s.short} launcher`) && t.sub.endsWith(m.name), 'the top bar names launcher and mission');
         } else {
           assert.equal(t.hasShip, false);
           assert.equal(t.ship, null);
           assert.ok(!t.summary.includes('launcher') && !t.tabTitle.includes('launcher'), 'a fixed ship is not offered as a choice');
           assert.equal(t.summary, t.summary.replace(/\s+$/, ''));
-          assert.equal(t.note, m.fixedNote);
           assert.equal(t.sub, m.sub);
         }
       });
@@ -125,7 +123,6 @@ describe('the title follows the options', () => {
   it('the missions without a choice always use the forward launcher', () => {
     assert.equal(FIXED_SHIP, 'fwd');
     assert.equal(menuText('fly', 'aft').ship, null);
-    assert.match(missionById('fly').fixedNote, /forward/i);
   });
 });
 

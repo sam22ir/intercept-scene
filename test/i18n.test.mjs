@@ -31,7 +31,7 @@ describe('the missions in French', () => {
         if (m[f] === undefined) continue;
         assert.ok(fr[f] ?? (f === 'blurb' || f === 'tagline' ? null : m[f]), `${m.id}.${f}`);
       }
-      for (const f of ['fixed', 'fixedNote', 'sub', 'tile']) if (m[f]) assert.ok(fr[f], `${m.id}.${f}`);
+      for (const f of ['fixed', 'sub', 'tile']) if (m[f]) assert.ok(fr[f], `${m.id}.${f}`);
       assert.deepEqual(fr.keys.map(([k]) => k), m.keys.map(([k]) => k), 'the same keys, only the labels translated');
       const t = menuText(m.id, 'fwd', 'fr');
       assert.equal(t.title, fr.name);
