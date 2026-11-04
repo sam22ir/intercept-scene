@@ -6,13 +6,14 @@ import {
 import { previewArt } from './menuArt.js';
 import { LANG, LANGS, UI, saveLang } from './i18n.js';
 
-// The main menu, built from the data in menu.js / menuFr.js (no mission words live in index.html): a top bar
-// (brand, language, Help, Controls, Settings), the four categories, the selected mission's briefing with the set-up
-// steps it has (launcher, number of ships, enemy level) and Start, and down the right the category's missions, each
-// with its animated preview (menuArt.js). Help (about, missions, the in-mission buttons, this menu), Controls (the keys of
-// the selected mission) and Settings (language and the preferences every mission reads from storage) are overlays. The language
-// re-renders the menu at once; the missions read it when they load. Selection changes only on a click or a
-// key, never on hover, and Start, Enter or a double click launches (once: `onLaunch` is start.js's launch()).
+// The main menu, built from the data in menu.js / menuFr.js (no mission words live in index.html): a control room.
+// The top bar (brand, language, Help, Controls, Settings); under it a wall of every mission as a thumbnail, by category;
+// below that a big screen with the selected mission's animated preview (menuArt.js), its title, story, set-up steps
+// (launcher, number of ships, enemy level) and Start. Help (about, missions, the in-mission buttons, this menu), Controls
+// (the keys of the selected mission) and Settings (language and the preferences every mission reads from storage) are
+// overlays. The language re-renders the menu at once; the missions read it when they load. Selection changes only on a
+// click or a key, never on hover (a thumbnail only plays under the pointer), and Start, Enter or a double click launches
+// (once: `onLaunch` is start.js's launch()).
 
 const $ = (root, s) => root.querySelector(s);
 const read = (key) => { try { return globalThis.localStorage.getItem(key); } catch { return null; } };
@@ -55,6 +56,7 @@ const ICON = {
   formations: '<path class="ship" d="M17 4 L20 10 L23 4Z M8 15 L11 21 L14 15Z M26 15 L29 21 L32 15Z M17 26 L20 32 L23 26Z"/><path d="M20 12 L11 15 M20 12 L29 15 M11 23 L20 26 M29 23 L20 26"/>',
   help: '<circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.3-2.7 4"/><circle class="dot" cx="12" cy="17.6" r="0.9"/>',
   keys: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h1.5M10 10h1.5M14 10h1.5M17 10h1M8 14.5h8"/>',
+  down: '<path d="M12 4v11M7.5 11 12 15.5 16.5 11M5 20h14"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
   play: '<path d="M7 4.5l13 7.5-13 7.5z"/>',
   levelBars: (n) => [[8, 24], [17, 18], [26, 12]].map(([x, y], i) => `<path class="bar${i < n ? ' on' : ''}" d="M${x} 30 V${y}"/>`).join(''),
@@ -90,15 +92,18 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
   const motion = () => !reducedMotion && settingValue(SETTINGS.find((s) => s.id === 'motion')) !== '0';
 
   // --- Rendering ---------------------------------------------------------------------------------------
-  // The layout: the brand and the Help / Controls / Settings / language buttons; the categories as tabs; under
-  // them a panel for the selected mission (briefing, set-up steps, Start); down the right the category's missions
-  // as cards, each with its own live preview. On a phone the cards come first and swipe sideways.
+  // The layout: the brand and the language, Help, Controls and Settings buttons; the wall of missions by category, as
+  // still frames; the big screen with the selected mission's picture, title, story, set-up steps and Start.
   let artSeq = 0;
+  let heroKey = null;
+  const thumbArt = (id, animate) => previewArt(id, shipFor[id] ?? FIXED_SHIP, animate, lang, `m${++artSeq}`);
+
   function shell() {
     const u = t();
+    heroKey = null;
     root.innerHTML = `
-      <div class="mm-bg" aria-hidden="true"><svg viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid slice"><path class="bg-grid" d="${[100, 200, 300, 400, 500].map((y) => `M0 ${y}H1000`).join('')}${[100, 200, 300, 400, 500, 600, 700, 800, 900].map((x) => `M${x} 0V600`).join('')}"/><g class="bg-radar"><circle cx="500" cy="660" r="200"/><circle cx="500" cy="660" r="400"/><circle cx="500" cy="660" r="600"/><g class="bg-sweep"><path d="M500 660 L500 60 A600 600 0 0 1 846 170Z"/></g></g></svg></div>
-      <div class="mm2">
+      <div class="mm3">
+        <div class="mm-stage" aria-hidden="true"></div>
         <header class="mm-top">
           <div class="mm-brand">
             <svg class="brand-radar" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="5"/><g class="brand-sweep"><path d="M12 12 L12 2 A10 10 0 0 1 20.7 7Z"/></g><circle class="brand-dot" cx="12" cy="12" r="1.6"/></svg>
@@ -109,82 +114,111 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
             <button type="button" class="mm-btn" data-open="help" title="${esc(u.help)} (H)">${icon(ICON.help, 'ic', 24)}<span>${esc(u.help)}</span></button>
             <button type="button" class="mm-btn" data-open="controls" title="${esc(u.controls)} (C)">${icon(ICON.keys, 'ic', 24)}<span>${esc(u.controls)}</span></button>
             <button type="button" class="mm-btn" data-open="settings" title="${esc(u.settings)} (G)">${icon(ICON.gear, 'ic', 24)}<span>${esc(u.settings)}</span></button>
+            ${ONLINE ? `<a class="mm-btn mm-dlbtn" id="dl-offline-menu" href="/intercept-offline" download="intercept-offline.html" title="${esc(u.offline)}: ${esc(u.offlineHint)}" aria-label="${esc(u.offline)}">${icon(ICON.down, 'ic', 24)}</a>` : ''}
           </div>
         </header>
-        <nav class="mm-cats" role="radiogroup" aria-label="${esc(u.category)}">
-          ${GROUPS.map((g0) => {
-            const g = groupIn(g0, lang);
-            const n = MISSIONS.filter((m) => m.group === g.id).length;
-            return `<button type="button" class="mm-cat" role="radio" data-tab="${g.id}" aria-checked="false">${icon(ICON[g.id])}<b>${esc(g.name)}</b><em class="mm-n">${n}</em></button>`;
-          }).join('')}
-        </nav>
-        <section class="mm-grid" aria-label="${esc(u.missions)}"><div class="mm-missions" role="radiogroup" aria-label="${esc(u.missions)}"></div></section>
-        <aside class="mm-panel" aria-live="polite">
-          <div class="mm-panel-in" id="ch-panel">
+        <main class="mm-info" id="ch-panel" aria-live="polite">
+          <div class="mm-lead">
             <h1 id="ch-title"></h1>
             <div class="mm-story"><p id="ch-tag"></p><button type="button" class="mm-more" id="ch-more" aria-expanded="false" hidden></button></div>
+          </div>
+          <div class="mm-act">
             <div class="mm-step" data-step="ship" hidden><h2>${esc(u.launcher)}</h2><div class="mm-cards" role="radiogroup" aria-label="${esc(u.launcher)}"></div></div>
             <div class="mm-step" data-step="drill" hidden><h2>${esc(u.ships)}</h2><div class="mm-picks" role="radiogroup" aria-label="${esc(u.ships)}"></div></div>
             <div class="mm-step" data-step="level" hidden><h2>${esc(u.enemy)}</h2><div class="mm-picks" role="radiogroup" aria-label="${esc(u.enemy)}"></div></div>
+            <div class="mm-go">
+              <button type="button" id="ch-start" class="mm-start"><span></span>${icon(ICON.play, 'ic', 24)}</button>
+              <button type="button" class="mm-continue" id="ch-continue" hidden></button>
+            </div>
           </div>
-          <footer class="mm-go">
-            <p class="mm-sum"><span id="ch-summary"></span></p>
-            <button type="button" id="ch-start" class="mm-start"><span></span>${icon(ICON.play, 'ic', 24)}</button>
-            <div class="mm-go-row"><em class="mm-last" id="ch-last" hidden>${esc(u.lastPlayed)}</em><button type="button" class="mm-continue" id="ch-continue" hidden></button></div>
-          </footer>
-        </aside>
-        <p class="mm-foot"><span>${esc(u.stats(MISSIONS.length, GROUPS.length))}</span><span class="mm-keyhint">${esc(u.menuKeys)}</span>${ONLINE ? `<a id="dl-offline-menu" href="/intercept-offline" download="intercept-offline.html" title="${esc(u.offlineHint)}">${esc(u.offline)}</a>` : ''}</p>
+        </main>
+        <nav class="mm-deck" aria-label="${esc(u.missions)}">${GROUPS.map((g0) => {
+          const g = groupIn(g0, lang);
+          const thumbs = entriesOf(g.id, lang).map((e) => {
+            const attr = e.family ? `data-family="${e.family}"` : `data-mode="${e.id}"`;
+            return `<button type="button" class="mm-mission" role="radio" ${attr} aria-checked="false" title="${esc(e.blurb)}"><span class="mm-prev"></span><b>${esc(e.name)}</b><i class="mm-loop" aria-hidden="true"></i></button>`;
+          }).join('');
+          return `<section class="mm-group"><button type="button" class="mm-cat" data-tab="${g.id}" aria-pressed="false" title="${esc(g.hint)}">${icon(ICON[g.id])}${esc(g.name)}</button><div class="mm-row" role="radiogroup" aria-label="${esc(g.name)}">${thumbs}</div></section>`;
+        }).join('')}</nav>
       </div>
       <div class="mm-overlay" id="mm-overlay" hidden><div class="mm-dialog" role="dialog" aria-modal="true" tabindex="-1"></div></div>`;
     document.documentElement.lang = lang;
+    root.querySelectorAll('.mm-mission').forEach((b) => {
+      const idOf = () => (b.dataset.family ? lastIn.drill : b.dataset.mode);
+      b.addEventListener('click', () => pickRow(b));
+      b.addEventListener('dblclick', go);
+      // A thumbnail plays under the pointer; the selected one has the big picture for that.
+      b.addEventListener('pointerenter', (e) => {
+        if (e.pointerType === 'mouse' && motion() && b.getAttribute('aria-checked') !== 'true') b.querySelector('.mm-prev').innerHTML = thumbArt(idOf(), true);
+      });
+      b.addEventListener('pointerleave', () => { b.querySelector('.mm-prev').innerHTML = thumbArt(idOf(), false); });
+    });
     wire();
-    paint(true);
+    paint();
   }
 
-  // A card's preview: its own mission (the drill card shows the number of ships picked), with its own ids.
-  const cardArt = (e) => {
-    const id = e.family ? lastIn.drill : e.id;
-    return previewArt(id, shipFor[id] ?? FIXED_SHIP, motion(), lang, `m${++artSeq}`);
-  };
+  // The big picture. A new one opens in a radar ping coming down from the selected thumbnail, over the one before it.
+  function showHero() {
+    const id = mode;
+    const key = `${id}:${shipNow()}:${motion()}`;
+    if (key === heroKey) return;
+    const first = heroKey === null;
+    heroKey = key;
+    const stage = $(root, '.mm-stage');
+    const layer = document.createElement('div');
+    layer.className = 'mm-hero';
+    layer.innerHTML = previewArt(id, shipNow(), motion(), lang, `h${++artSeq}`);
+    const thumb = $(root, '.mm-mission[aria-checked="true"]');
+    const bar = thumb.querySelector('.mm-loop');
+    bar.replaceWith(bar.cloneNode()); // the bar starts over with the picture's loop
+    $(root, '.mm3').classList.toggle('still', !motion());
+    if (first || !motion()) { stage.replaceChildren(layer); return; }
+    // Only the picture on show stays under the new one (a quick second pick cuts the first one's ping short).
+    const shown = [...stage.querySelectorAll('.mm-hero')].pop();
+    stage.replaceChildren(...(shown ? [shown] : []));
+    const from = thumb.getBoundingClientRect();
+    const box = stage.getBoundingClientRect();
+    const ping = document.createElement('i');
+    ping.className = 'mm-ping';
+    for (const el of [layer, ping]) {
+      el.style.setProperty('--ox', `${from.left + from.width / 2 - box.left}px`);
+      el.style.setProperty('--oy', `${from.top + from.height / 2 - box.top}px`);
+    }
+    layer.classList.add('reveal');
+    layer.addEventListener('animationend', () => {
+      layer.classList.remove('reveal');
+      layer.previousElementSibling?.remove();
+      ping.remove();
+    }, { once: true });
+    stage.append(layer, ping);
+  }
 
-  // The cards for the selected category, the panel for the selected mission.
-  function paint(fresh = false) {
+  // The wall's marks and thumbnails, the words for the selected mission, then the picture.
+  function paint() {
     const u = t();
     const group = groupOf(mode);
     const ship = shipNow();
     const text = menuText(mode, ship, lang);
-    root.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.tab === group)));
-    const list = $(root, '.mm-missions');
-    const entries = entriesOf(group, lang);
-    const listKey = `${group}:${lang}:${motion()}`;
-    if (fresh || list.dataset.key !== listKey) {
-      list.dataset.key = listKey;
-      list.innerHTML = entries.map((e) => {
-        const attr = e.family ? `data-family="${e.family}"` : `data-mode="${e.id}"`;
-        return `<button type="button" class="mm-mission" role="radio" ${attr} aria-checked="false">`
-          + `<span class="mm-prev" data-art="${e.family ? '' : e.id}">${cardArt(e)}</span>`
-          + `<span class="mm-cardfoot">${icon(ICON[e.family ? lastIn.drill : e.id])}<span class="mm-m-txt"><b>${esc(e.name)}</b><small>${esc(e.blurb)}</small></span><em class="mm-m-kind">${esc(e.kind)}</em></span>`
-          + '<i class="mm-sel" aria-hidden="true"></i></button>';
-      }).join('');
-      list.querySelectorAll('.mm-mission').forEach((b) => {
-        b.addEventListener('click', () => pickRow(b));
-        b.addEventListener('dblclick', go);
-      });
-    }
-    list.querySelectorAll('.mm-mission').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.family ? group === 'drill' : b.dataset.mode === mode)));
-    // A card follows its mission's launcher or number of ships: redraw it when that changes.
-    list.querySelectorAll('.mm-mission').forEach((b) => {
+    root.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === group)));
+    root.querySelectorAll('.mm-mission').forEach((b) => {
+      const was = b.getAttribute('aria-checked') === 'true';
+      const on = b.dataset.family ? group === 'drill' : b.dataset.mode === mode;
+      b.setAttribute('aria-checked', String(on));
+      // A thumbnail follows its mission's launcher or number of ships: redraw it when that changes.
       const id = b.dataset.family ? lastIn.drill : b.dataset.mode;
       const key = `${id}:${shipFor[id] ?? ''}`;
       const prev = b.querySelector('.mm-prev');
-      if (prev.dataset.key !== key) {
-        if (prev.dataset.key) prev.innerHTML = previewArt(id, shipFor[id] ?? FIXED_SHIP, motion(), lang, `m${++artSeq}`);
+      if (prev.dataset.key !== key || (on && !was)) {
+        prev.innerHTML = thumbArt(id, false);
         prev.dataset.key = key;
-        if (b.dataset.family) b.querySelector('.mm-cardfoot .ic').outerHTML = icon(ICON[id]);
+      }
+      if (on && !was) {
+        const deck = b.closest('.mm-deck');
+        if (deck.scrollWidth > deck.clientWidth) deck.scrollTo({ left: b.offsetLeft - (deck.clientWidth - b.offsetWidth) / 2, behavior: motion() ? 'smooth' : 'auto' });
       }
     });
 
-    // The panel slides in again when the mission changes.
+    // The words rise in again when the mission changes.
     const panel = $(root, '#ch-panel');
     if (panel.dataset.mode !== mode) {
       panel.dataset.mode = mode;
@@ -208,7 +242,7 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     if (text.hasShip) {
       shipStep.querySelector('.mm-cards').innerHTML = SHIPS.map((s0, i) => {
         const s = shipIn(s0, lang);
-        return `<button type="button" class="mm-card" role="radio" data-ship="${s.id}" aria-checked="${s.id === ship}">${SHIP_ART(s.id)}<span><b><kbd>${i + 1}</kbd>${esc(s.name)}</b><small>${esc(s.desc)}</small></span></button>`;
+        return `<button type="button" class="mm-card" role="radio" data-ship="${s.id}" aria-checked="${s.id === ship}" title="${esc(s.desc)}">${SHIP_ART(s.id)}<span><b><kbd>${i + 1}</kbd>${esc(s.name)}</b><small>${esc(s.desc)}</small></span></button>`;
       }).join('');
     }
     const drillStep = $(root, '[data-step="drill"]');
@@ -216,7 +250,7 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     if (group === 'drill') {
       drillStep.querySelector('.mm-picks').innerHTML = drills.map((id, i) => {
         const m = missionIn(missionById(id), lang);
-        return `<button type="button" class="mm-pick" role="radio" data-mode="${id}" aria-checked="${id === mode}">${icon(ICON[id])}<span><b><kbd>${i + 1}</kbd>${esc(m.tile)}</b><small>${esc(m.tileSub)}</small></span></button>`;
+        return `<button type="button" class="mm-pick" role="radio" data-mode="${id}" aria-checked="${id === mode}" title="${esc(m.tileSub)}">${icon(ICON[id])}<span><b><kbd>${i + 1}</kbd>${esc(m.tile)}</b><small>${esc(m.tileSub)}</small></span></button>`;
       }).join('');
     }
     const levelStep = $(root, '[data-step="level"]');
@@ -224,7 +258,7 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     if (text.hasLevel) {
       levelStep.querySelector('.mm-picks').innerHTML = ENEMY_LEVELS.map((l0, i) => {
         const l = levelIn(l0, lang);
-        return `<button type="button" class="mm-pick" role="radio" data-level="${l.id}" aria-checked="${l.id === level}">${icon(ICON.levelBars(i + 1))}<span><b><kbd>${i + 1}</kbd>${esc(l.name)}</b><small>${esc(l.desc)}</small></span></button>`;
+        return `<button type="button" class="mm-pick" role="radio" data-level="${l.id}" aria-checked="${l.id === level}" title="${esc(l.desc)}">${icon(ICON.levelBars(i + 1))}<span><b><kbd>${i + 1}</kbd>${esc(l.name)}</b><small>${esc(l.desc)}</small></span></button>`;
       }).join('');
     }
     root.querySelectorAll('[data-ship]').forEach((b) => { b.onclick = () => setShip(b.dataset.ship); b.ondblclick = go; });
@@ -233,19 +267,17 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
 
     // The way in, and a quick way back into the last mission played.
     $(root, '#ch-start span').textContent = text.button;
-    $(root, '#ch-summary').textContent = text.summary;
-    $(root, '#ch-last').hidden = lastPlayed !== mode;
     const cont = $(root, '#ch-continue');
     cont.hidden = !lastPlayed || lastPlayed === mode;
     if (lastPlayed) {
-      cont.innerHTML = `<small>${esc(u.continue)}</small> <b>${esc(missionIn(missionById(lastPlayed), lang).name)}</b>`;
+      cont.innerHTML = `<small>${esc(u.continue)}</small><b>${esc(missionIn(missionById(lastPlayed), lang).name)}</b>`;
       cont.title = u.continueHint;
     }
-    $(root, '.mm-go-row').hidden = $(root, '#ch-last').hidden && cont.hidden;
     document.title = text.tabTitle;
+    showHero();
   }
 
-  // --- Overlays ----------------------------------------------------------------------------------------
+// --- Overlays ----------------------------------------------------------------------------------------
   function renderOverlay() {
     const box = $(root, '#mm-overlay');
     box.hidden = !overlay;
