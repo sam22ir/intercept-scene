@@ -145,9 +145,6 @@ function frigate(variant, animate, { lock = null } = {}) {
     + `<path class="a-mast" d="M348 ${HZ - 70}V${HZ - 96}M340 ${HZ - 86}H356"/>`
     + `<circle class="a-dome" cx="270" cy="${HZ - 50}" r="8"/>`
     + `<path class="a-gun" d="M410 ${HZ - 22}V${HZ - 28}H424L440 ${HZ - 31}"/>`;
-  const radar = animate
-    ? `<rect class="a-radar" x="342" y="${HZ - 100}" width="12" height="3"><animateTransform attributeName="transform" type="scale" values="1 1;0.1 1;1 1" additive="sum" dur="1.6s" repeatCount="indefinite"/></rect>`
-    : `<rect class="a-radar" x="342" y="${HZ - 100}" width="12" height="3"/>`;
   const [bx, by] = BOX[variant];
   const aim = variant === 'aft' ? -150 : -30;
   // The box turns to its target before it fires (or, in a recovery, while it tracks).
@@ -158,7 +155,7 @@ function frigate(variant, animate, { lock = null } = {}) {
   const cat = `<path class="a-cat" d="M${CAT[0] - 14} ${CAT[1] + 6} L${CAT[0] + 4} ${CAT[1] - 2}"/>`;
   const wake = `<path class="a-wake" d="M208 ${HZ + 2} Q150 ${HZ + 4} 40 ${HZ + 8} L40 ${HZ + 12} Q150 ${HZ + 10} 212 ${HZ + 6}Z"/>`
     + `<path class="a-bow" d="M438 ${HZ - 2} q12 4 22 2"/>`;
-  return wake + hull + sup + radar + box + cat;
+  return wake + hull + sup + box + cat;
 }
 
 const droneSide = '<g class="a-dronebody"><path d="M-10 0H9L12 -1.5L9 -3H-8Z"/><path d="M-1 -1L-6 -8H-3L4 -1Z"/><path d="M-9 -1L-12 -6H-10L-6 -1Z"/></g>';
