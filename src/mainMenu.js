@@ -7,10 +7,10 @@ import { previewArt } from './menuArt.js';
 import { LANG, LANGS, UI, saveLang } from './i18n.js';
 
 // The main menu, built from the data in menu.js / menuFr.js (no mission words live in index.html): a top bar
-// (brand, language, Help, Settings), the four categories down the left, the category's missions, the selected
-// mission's animated preview (menuArt.js) with its briefing, the set-up steps it has (launcher, number of ships,
-// enemy level) and its controls, and Start. Help (about, missions, the in-mission buttons, this menu) and
-// Settings (language and the preferences every mission reads from storage) are overlays. The language
+// (brand, language, Help, Controls, Settings), the four categories down the left, the category's missions, the
+// selected mission's animated preview (menuArt.js) with its briefing, the set-up steps it has (launcher, number of
+// ships, enemy level), and Start. Help (about, missions, the in-mission buttons, this menu), Controls (the keys of
+// every mission) and Settings (language and the preferences every mission reads from storage) are overlays. The language
 // re-renders the menu at once; the missions read it when they load. Selection changes only on a click or a
 // key, never on hover, and Start, Enter or a double click launches (once: `onLaunch` is start.js's launch()).
 
@@ -54,6 +54,7 @@ const ICON = {
   maneuvers: '<path class="ship" d="M8 4 H22 L27 7.5 L22 11 H8Z"/><path class="ship" d="M8 16 H22 L27 19.5 L22 23 H8Z"/><path class="ship" d="M5 28 H24 L31 32 L24 36 H5Z"/><path d="M15 11 V16 M15 23 V28"/>',
   formations: '<path class="ship" d="M17 4 L20 10 L23 4Z M8 15 L11 21 L14 15Z M26 15 L29 21 L32 15Z M17 26 L20 32 L23 26Z"/><path d="M20 12 L11 15 M20 12 L29 15 M11 23 L20 26 M29 23 L20 26"/>',
   help: '<circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.3-2.7 4"/><circle class="dot" cx="12" cy="17.6" r="0.9"/>',
+  keys: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h1.5M10 10h1.5M14 10h1.5M17 10h1M8 14.5h8"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
   play: '<path d="M7 4.5l13 7.5-13 7.5z"/>',
   levelBars: (n) => [[8, 24], [17, 18], [26, 12]].map(([x, y], i) => `<path class="bar${i < n ? ' on' : ''}" d="M${x} 30 V${y}"/>`).join(''),
@@ -70,7 +71,7 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
   let lang = LANG;
   let mode = MISSION_IDS.includes(initialMode) ? initialMode : 'intercept';
   let level = ENEMY_LEVELS.some((l) => l.id === preLevel) ? preLevel : DEFAULT_LEVEL;
-  let overlay = null; // 'help' | 'settings' | null
+  let overlay = null; // 'help' | 'controls' | 'settings' | null
   let helpTab = 'about';
   let storyOpen = false;
   let gone = false;
@@ -89,9 +90,9 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
   const motion = () => !reducedMotion && settingValue(SETTINGS.find((s) => s.id === 'motion')) !== '0';
 
   // --- Rendering ---------------------------------------------------------------------------------------
-  // The layout: the brand and the Help / Settings / language buttons; the categories as tabs; then the
-  // category's missions as cards, each with its own live preview, beside a panel for the selected one
-  // (briefing, set-up steps, controls, Start).
+  // The layout: the brand and the Help / Controls / Settings / language buttons; the categories as tabs; then
+  // the category's missions as cards, each with its own live preview, beside a panel for the selected one
+  // (briefing, set-up steps, Start).
   let artSeq = 0;
   function shell() {
     const u = t();
@@ -106,6 +107,7 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
           <div class="mm-actions">
             <div class="mm-lang" role="radiogroup" aria-label="${esc(u.sLanguage)}">${LANGS.map((l) => `<button type="button" role="radio" data-lang="${l.id}" aria-checked="${l.id === lang}" title="${esc(l.name)}">${l.short}</button>`).join('')}</div>
             <button type="button" class="mm-btn" data-open="help" title="${esc(u.help)} (H)">${icon(ICON.help, 'ic', 24)}<span>${esc(u.help)}</span></button>
+            <button type="button" class="mm-btn" data-open="controls" title="${esc(u.controls)} (C)">${icon(ICON.keys, 'ic', 24)}<span>${esc(u.controls)}</span></button>
             <button type="button" class="mm-btn" data-open="settings" title="${esc(u.settings)} (G)">${icon(ICON.gear, 'ic', 24)}<span>${esc(u.settings)}</span></button>
           </div>
         </header>
@@ -127,7 +129,6 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
             <div class="mm-step" data-step="ship" hidden><h2>${esc(u.launcher)}</h2><div class="mm-cards" role="radiogroup" aria-label="${esc(u.launcher)}"></div></div>
             <div class="mm-step" data-step="drill" hidden><h2>${esc(u.ships)}</h2><div class="mm-picks" role="radiogroup" aria-label="${esc(u.ships)}"></div></div>
             <div class="mm-step" data-step="level" hidden><h2>${esc(u.enemy)}</h2><div class="mm-picks" role="radiogroup" aria-label="${esc(u.enemy)}"></div></div>
-            <div class="mm-keys"><h2>${esc(u.controls)}</h2><ul id="ch-keys"></ul><p id="ch-keys-more"></p></div>
           </div>
           <footer class="mm-go">
             <p class="mm-sum"><span id="ch-summary"></span><small id="chooser-sub"></small></p>
@@ -207,10 +208,6 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     more.setAttribute('aria-expanded', String(storyOpen));
     requestAnimationFrame(() => { more.hidden = !storyOpen && tag.scrollHeight <= tag.clientHeight + 2; });
     $(root, '#ch-facts').innerHTML = text.facts.map((f) => `<li>${esc(f)}</li>`).join('');
-    const all = text.keys.length <= 6;
-    const shown = all ? text.keys : text.keys.slice(0, 6);
-    $(root, '#ch-keys').innerHTML = shown.map(([k, l]) => `<li><kbd>${esc(k)}</kbd>${esc(l)}</li>`).join('');
-    $(root, '#ch-keys-more').textContent = all ? '' : u.moreKeys(text.keys.length - shown.length);
 
     // Set-up steps: the launcher, the number of ships (a drill), the enemy's level.
     const shipStep = $(root, '[data-step="ship"]');
@@ -262,13 +259,14 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     box.hidden = !overlay;
     if (!overlay) return;
     const dlg = box.querySelector('.mm-dialog');
-    dlg.innerHTML = overlay === 'help' ? helpHtml() : settingsHtml();
+    dlg.innerHTML = overlay === 'help' ? helpHtml() : overlay === 'controls' ? controlsHtml() : settingsHtml();
     dlg.querySelector('[data-close]').addEventListener('click', closeOverlay);
     dlg.querySelectorAll('[data-help]').forEach((b) => b.addEventListener('click', () => { helpTab = b.dataset.help; renderOverlay(); }));
     dlg.querySelectorAll('[data-set]').forEach((b) => b.addEventListener('click', () => applySetting(b.dataset.set, b.dataset.val)));
     dlg.querySelector('[data-reset]')?.addEventListener('click', resetSettings);
     dlg.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => { closeOverlay(); setMode(b.dataset.goto); }));
     dlg.focus({ preventScroll: true });
+    dlg.querySelector('.mm-cm-sel')?.scrollIntoView({ block: 'center' });
   }
   const openOverlay = (which) => { overlay = which; renderOverlay(); };
   function closeOverlay() { overlay = null; renderOverlay(); $(root, '#ch-start')?.focus({ preventScroll: true }); }
@@ -303,6 +301,20 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     }
     return `<header class="mm-dh"><h2>${icon(ICON.help, 'ic', 24)}${esc(u.helpTitle)}</h2><button type="button" class="mm-x" data-close title="${esc(u.close)} (Esc)" aria-label="${esc(u.close)}">×</button></header>`
       + `<nav class="mm-dtabs" role="tablist">${tabs.map(([id, name]) => `<button type="button" role="tab" data-help="${id}" aria-selected="${id === helpTab}">${esc(name)}</button>`).join('')}</nav>`
+      + `<div class="mm-dbody">${body}</div>`;
+  }
+
+  // The keys of every mission, by category; the selected mission is marked and scrolled to.
+  function controlsHtml() {
+    const u = t();
+    const body = GROUPS.map((g0) => {
+      const cards = MISSIONS.filter((m) => m.group === g0.id).map((m0) => {
+        const m = missionIn(m0, lang);
+        return `<article class="mm-cm${m.id === mode ? ' mm-cm-sel' : ''}"><h4>${icon(ICON[m.id])}${esc(m.name)}</h4><ul>${m.keys.map(([k, l]) => `<li><kbd>${esc(k)}</kbd>${esc(l)}</li>`).join('')}</ul></article>`;
+      }).join('');
+      return `<h3>${esc(groupIn(g0, lang).name)}</h3><div class="mm-cgrid">${cards}</div>`;
+    }).join('');
+    return `<header class="mm-dh"><h2>${icon(ICON.keys, 'ic', 24)}${esc(u.controls)}</h2><button type="button" class="mm-x" data-close title="${esc(u.close)} (Esc)" aria-label="${esc(u.close)}">×</button></header>`
       + `<div class="mm-dbody">${body}</div>`;
   }
 
@@ -405,6 +417,7 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
       else if (has.hasShip && n <= SHIPS.length) setShip(SHIPS[n - 1].id);
       else if (has.hasLevel) setLevel(ENEMY_LEVELS[n - 1].id);
     } else if (e.key === 'h' || e.key === 'H' || e.key === '?') openOverlay('help');
+    else if (e.key === 'c' || e.key === 'C') openOverlay('controls');
     else if (e.key === 'g' || e.key === 'G') openOverlay('settings');
     else if (e.key === 'Enter' && !e.target.closest?.('.mm-actions, .mm-lang')) { e.preventDefault(); go(); }
   }
