@@ -217,7 +217,7 @@ const ZAXIS = new THREE.Vector3(0, 0, 1);
 function droneVis(d) {
   let v = vis.get(d.id);
   if (!v) {
-    const plane = createPlane();
+    const plane = createPlane({ label: `Drone-${d.id}` });
     plane.setBooster(1e9, 0, 1); // no booster canister: these were launched far away
     scene.add(plane.group);
     v = { plane, tag: tag('drone'), debris: null };

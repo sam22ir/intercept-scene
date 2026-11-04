@@ -136,7 +136,7 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
           const g = groupIn(g0, lang);
           const thumbs = entriesOf(g.id, lang).map((e) => {
             const attr = e.family ? `data-family="${e.family}"` : `data-mode="${e.id}"`;
-            return `<button type="button" class="mm-mission" role="radio" ${attr} aria-checked="false" title="${esc(e.blurb)}"><span class="mm-prev"></span><b>${esc(e.name)}</b><i class="mm-loop" aria-hidden="true"></i></button>`;
+            return `<button type="button" class="mm-mission" role="radio" ${attr} aria-checked="false" title="${esc(e.blurb)}"><span class="mm-prev"></span><b>${esc(e.name)}</b></button>`;
           }).join('');
           return `<section class="mm-group"><button type="button" class="mm-cat" data-tab="${g.id}" aria-pressed="false" title="${esc(g.hint)}">${icon(ICON[g.id])}${esc(g.name)}</button><div class="mm-row" role="radiogroup" aria-label="${esc(g.name)}">${thumbs}</div></section>`;
         }).join('')}</nav>
@@ -169,9 +169,6 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     layer.className = 'mm-hero';
     layer.innerHTML = previewArt(id, shipNow(), motion(), lang, `h${++artSeq}`);
     const thumb = $(root, '.mm-mission[aria-checked="true"]');
-    const bar = thumb.querySelector('.mm-loop');
-    bar.replaceWith(bar.cloneNode()); // the bar starts over with the picture's loop
-    $(root, '.mm3').classList.toggle('still', !motion());
     if (first || !motion()) { stage.replaceChildren(layer); return; }
     // Only the picture on show stays under the new one (a quick second pick cuts the first one's ping short).
     const shown = [...stage.querySelectorAll('.mm-hero')].pop();

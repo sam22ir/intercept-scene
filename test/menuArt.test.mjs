@@ -26,6 +26,31 @@ describe('the mission previews', () => {
     }
   }
 
+  // A browser silently ignores an animation whose timing list is malformed: the part just stands still.
+  it('every animation has a timing list a browser will accept', () => {
+    for (const id of MISSION_IDS) {
+      for (const tag of previewArt(id, 'fwd', true).matchAll(/<animate[A-Za-z]*\b[^>]*>/g)) {
+        const attr = (name) => tag[0].match(new RegExp(`\\b${name}="([^"]*)"`))?.[1];
+        const times = attr('keyTimes')?.split(';').map(Number);
+        if (!times) continue;
+        assert.equal(times[0], 0, `${id}: starts at 0: ${tag[0]}`);
+        if (attr('calcMode') !== 'discrete') assert.equal(times.at(-1), 1, `${id}: ends at 1: ${tag[0]}`);
+        assert.ok(times.every((x, i) => i === 0 || x >= times[i - 1]), `${id}: in order: ${tag[0]}`);
+        const steps = (attr('values') ?? attr('keyPoints'))?.split(';').length;
+        assert.equal(steps, times.length, `${id}: one time per value: ${tag[0]}`);
+        const splines = attr('keySplines')?.split(';').length;
+        if (splines) assert.equal(splines, times.length - 1, `${id}: one curve per step: ${tag[0]}`);
+      }
+    }
+  });
+
+  it('the drone in the Fly preview really manoeuvres: it slides and banks, and the world rolls against it', () => {
+    const svg = previewArt('fly', 'fwd', true);
+    assert.match(svg, /type="translate" values="0 0;0 0;-20 -4/);
+    assert.match(svg, /type="rotate" values="0 320 200;0 320 200;-38 320 200/);
+    assert.match(svg, /type="rotate" values="0 320 140;0 320 140;8 320 140/);
+  });
+
   it('has nothing for an unknown mission', () => {
     assert.equal(previewArt('nope'), '');
   });

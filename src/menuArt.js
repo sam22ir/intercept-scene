@@ -52,7 +52,7 @@ function boom(x, y, at, animate, r = 26) {
     `<circle class="a-debris" r="${1.6 + (i % 2)}" cx="${x}" cy="${y}" opacity="0">`
     + `<animate attributeName="cx" values="${x};${x};${x + dx}" keyTimes="0;${k(0)};1" ${LOOP}/>`
     + `<animate attributeName="cy" values="${y};${y};${y + dy}" keyTimes="0;${k(0)};1" ${LOOP}/>`
-    + `<animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;${k(0)};${k(0.01)};${k(0.22)};${k(0.26)}" ${LOOP}/></circle>`
+    + `<animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;${k(0)};${k(0.01)};${k(0.22)};${k(0.26)};1" ${LOOP}/></circle>`
   )).join('');
   return `<circle cx="${x}" cy="${y}" r="0" fill="#fff" opacity="0" filter="url(#ma-glow)">`
     + `<animate attributeName="r" values="0;0;${r * 1.4};0;0" keyTimes="0;${k(0)};${k(0.02)};${k(0.06)};1" ${LOOP}/>`
@@ -222,34 +222,39 @@ function chute(ship, animate) {
 }
 
 // --- Fly the drone: behind the drone, the sea rushing under it, the missile closing in ---------------
+const FLY_T = [0, 0.12, 0.18, 0.34, 0.42, 0.5, 0.57, 0.7, 0.8, 0.9, 1];
 function fly(animate) {
   const vx = 320;
   const vy = 140;
-  const rays = [-300, -180, -90, -30, 30, 90, 180, 300].map((dx) => `M${vx} ${vy}L${vx + dx * 4} ${H}`).join('');
+  const rays = [-300, -180, -90, -30, 30, 90, 180, 300].map((dx) => `M${vx} ${vy}L${vx + dx * 4} ${H + 200}`).join('');
   const lines = [0, 1, 2, 3, 4].map((i) => {
     const y0 = vy + 4 + i * 4;
-    if (!animate) return `<path class="a-grid" d="M0 ${vy + 12 + i * i * 7}H${W}"/>`;
-    return `<path class="a-grid" d="M0 ${y0}H${W}"><animate attributeName="d" values="M0 ${vy + 2}H${W};M0 ${H}H${W}" keyTimes="0;1" dur="1.6s" begin="${-i * 0.32}s" calcMode="spline" keySplines="0.7 0 1 1" repeatCount="indefinite"/></path>`;
+    if (!animate) return `<path class="a-grid" d="M-160 ${vy + 12 + i * i * 7}H${W + 160}"/>`;
+    return `<path class="a-grid" d="M-160 ${y0}H${W + 160}"><animate attributeName="d" values="M-160 ${vy + 2}H${W + 160};M-160 ${H}H${W + 160}" keyTimes="0;1" dur="1.6s" begin="${-i * 0.32}s" calcMode="spline" keySplines="0.7 0 1 1" repeatCount="indefinite"/></path>`;
   }).join('');
-  const sky = `<rect width="${W}" height="${vy}" fill="url(#ma-sky)"/><circle cx="160" cy="${vy - 4}" r="60" fill="url(#ma-sun)"/>`;
-  const sea = `<rect y="${vy}" width="${W}" height="${H - vy}" fill="url(#ma-sea)"/><path class="a-grid" d="${rays}"/>${lines}`;
-  const bank = animate
-    ? `<animateTransform attributeName="transform" type="rotate" values="0 ${vx} 200;0 ${vx} 200;-35 ${vx} 200;-35 ${vx} 200;0 ${vx} 200;30 ${vx} 200;30 ${vx} 200;0 ${vx} 200" keyTimes="0;0.12;0.18;0.34;0.42;0.56;0.7;0.8" ${LOOP}/>`
-    : `<animateTransform attributeName="transform" type="rotate" values="-20 ${vx} 200" dur="1s" fill="freeze"/>`;
-  const drone = `<g>${animate ? bank : ''}<g transform="translate(${vx} 200)" class="a-rear">`
+  // The world is drawn wider and taller than the picture: it rolls against the drone's bank.
+  const sky = `<rect x="-160" y="-240" width="${W + 320}" height="240" fill="#0a1626"/><rect x="-160" width="${W + 320}" height="${vy}" fill="url(#ma-sky)"/><circle cx="160" cy="${vy - 4}" r="60" fill="url(#ma-sun)"/>`;
+  const sea = `<rect x="-160" y="${vy}" width="${W + 320}" height="${H - vy}" fill="url(#ma-sea)"/><rect x="-160" y="${H}" width="${W + 320}" height="200" fill="#06131f"/><path class="a-grid" d="${rays}"/>${lines}`;
+  // The manoeuvre, keyed to the keys lit on screen: hard left, climb as the missile is called, then break right and
+  // down under its path, and level off. The drone banks and slides across the picture; the world rolls against it.
+  const moves = (attr, list) => `<animateTransform attributeName="transform" type="${attr}" values="${list.join(';')}" keyTimes="${FLY_T.join(';')}" calcMode="spline" keySplines="${FLY_T.slice(1).map(() => '0.42 0 0.58 1').join(';')}" ${LOOP}/>`;
+  const slide = moves('translate', [[0, 0], [0, 0], [-20, -4], [-95, -6], [-70, -24], [-60, -30], [-20, -6], [110, 24], [90, 14], [30, 2], [0, 0]].map((p) => p.join(' ')));
+  const bank = moves('rotate', [0, 0, -38, -38, -6, -6, 36, 36, -8, 4, 0].map((a) => `${a} ${vx} 200`));
+  const roll = moves('rotate', [0, 0, 8, 8, 1, 1, -9, -9, 2, -1, 0].map((a) => `${a} ${vx} ${vy}`));
+  const drone = `<g>${slide}<g>${bank}<g transform="translate(${vx} 200)" class="a-rear">`
     + '<path class="a-wing" d="M-120 4 L-10 -2 L10 -2 L120 4 L120 8 L10 4 L-10 4 L-120 8Z"/>'
     + '<path class="a-fus" d="M-12 -8 Q0 -16 12 -8 L10 12 Q0 18 -10 12Z"/>'
     + '<path class="a-wing" d="M-40 -30 L-4 -10 L4 -10 L40 -30 L40 -26 L4 -4 L-4 -4 L-40 -26Z"/>'
     + '<path class="a-wing" d="M-2 -10 V-40 H2 V-10Z"/>'
-    + `<circle class="a-prop" r="16" cy="2">${animate ? '<animate attributeName="r" values="16;14;16" dur="0.12s" repeatCount="indefinite"/>' : ''}</circle>`
-    + '</g></g>';
+    + `<circle class="a-prop" r="16" cy="2"><animate attributeName="r" values="16;14;16" dur="0.12s" repeatCount="indefinite"/></circle>`
+    + '</g></g></g>';
   const still = !animate ? `<g transform="rotate(-20 ${vx} 200)"><g transform="translate(${vx} 200)" class="a-rear"><path class="a-wing" d="M-120 4 L-10 -2 L10 -2 L120 4 L120 8 L10 4 L-10 4 L-120 8Z"/><path class="a-fus" d="M-12 -8 Q0 -16 12 -8 L10 12 Q0 18 -10 12Z"/><path class="a-wing" d="M-40 -30 L-4 -10 L4 -10 L40 -30 L40 -26 L4 -4 L-4 -4 L-40 -26Z"/><path class="a-wing" d="M-2 -10 V-40 H2 V-10Z"/><circle class="a-prop" r="16" cy="2"/></g></g>` : '';
   // The missile climbs in from low behind, the drone breaks right, the missile overshoots and bursts wide.
   const mPath = 'M110 300 C180 260 260 230 330 214 S520 170 600 120';
   const missile = '<g><circle class="a-flame" r="5" filter="url(#ma-glow)"/><circle class="a-mslhead" r="2.6"/></g>';
   const cap = (x, label, at) => `<g transform="translate(${x} 52)"><rect class="a-key" width="30" height="26" rx="6"/><text class="a-keytext" x="15" y="18" text-anchor="middle">${label}</text>`
     + (animate ? `<rect class="a-keyon" width="30" height="26" rx="6" opacity="0"><animate attributeName="opacity" values="0;0;0.9;0.9;0;0" keyTimes="0;${f3(at)};${f3(at + 0.01)};${f3(at + 0.14)};${f3(at + 0.16)};1" ${LOOP}/></rect>` : '') + '</g>';
-  return sky + sea
+  return `<g>${animate ? roll : ''}${sky}${sea}</g>`
     + drawn(mPath, [0.3, 0.68], 'a-smoketrail', animate, 0.8)
     + mover(missile, { path: mPath, kt: [0.3, 0.68], rotate: '0', still: [300, 220] }, animate)
     + boom(600, 120, 0.68, animate, 18)

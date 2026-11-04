@@ -93,7 +93,7 @@ function airfoil(n = 36, t = 0.13, camber = 0.03) {
 
 const ORANGE = '#ff5a14';
 
-function fuselageTexture() {
+function fuselageTexture(label) {
   return canvasTexture(1024, 1024, (ctx, W, H) => {
     // u (x) = around (0 bottom, .25 left, .5 top, .75 right); v (y) = along, top = nose.
     ctx.fillStyle = ORANGE;
@@ -142,12 +142,12 @@ function fuselageTexture() {
     ctx.save();
     ctx.translate(0.25 * W, V(0.6));
     ctx.rotate(Math.PI / 2);
-    ctx.fillText('H10-1727', 0, 10);
+    ctx.fillText(label, 0, 10);
     ctx.restore();
     ctx.save();
     ctx.translate(0.75 * W, V(0.6));
     ctx.rotate(-Math.PI / 2);
-    ctx.fillText('H10-1727', 0, 10);
+    ctx.fillText(label, 0, 10);
     ctx.restore();
     // Black anti-glare / wire channel along the top.
     ctx.fillStyle = '#1d1c19';
@@ -223,15 +223,13 @@ function surfaceTexture({ hinge0, hinge1, text }) {
   });
 }
 
-function tailDecal() {
+function tailDecal(label) {
   const tex = canvasTexture(512, 256, (ctx, W, H) => {
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 92px sans-serif';
+    ctx.font = 'bold 104px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('B-9HG', W / 2, 105);
-    ctx.font = 'bold 78px sans-serif';
-    ctx.fillText('H10-1727', W / 2, 205);
+    ctx.fillText(label, W / 2, 165);
   });
   return new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
 }
@@ -286,11 +284,12 @@ function finGeometry() {
   return loft(loops);
 }
 
-export function createPlane() {
+// `label` is the name painted on the tail and the fuselage: Drone-1, Drone-2, ...
+export function createPlane({ label = 'Drone-1' } = {}) {
   const group = new THREE.Group();
   group.name = 'plane';
 
-  const orange = new THREE.MeshStandardMaterial({ map: fuselageTexture(), metalness: 0.15, roughness: 0.45 });
+  const orange = new THREE.MeshStandardMaterial({ map: fuselageTexture(label), metalness: 0.15, roughness: 0.45 });
   const wingMat = new THREE.MeshStandardMaterial({ map: surfaceTexture({ hinge0: 0.5, hinge1: 0.95, text: 'H10' }), metalness: 0.15, roughness: 0.45 });
   const tailMat = new THREE.MeshStandardMaterial({ map: surfaceTexture({ hinge0: 0.05, hinge1: 0.95 }), metalness: 0.15, roughness: 0.45 });
   const metal = mat(0x8d9399, { metalness: 0.85, roughness: 0.35 });
@@ -424,7 +423,7 @@ export function createPlane() {
   tk.add(finGeometry(), tailMat);
   tail.add(shadowed(tk.build()));
   // Registration on both sides of the fin, each reading correctly.
-  const decalMat = tailDecal();
+  const decalMat = tailDecal(label);
   for (const side of [1, -1]) {
     const decal = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.21), decalMat);
     decal.position.set(side * 0.035, TOP_Y + 0.3, -2.1);

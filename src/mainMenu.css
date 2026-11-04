@@ -157,11 +157,6 @@
 .mm-mission[aria-checked='true'] b { background: var(--accent); color: #1a0d02; }
 /* The selected thumbnail points down at the screen it feeds. */
 .mm-mission[aria-checked='true']::after { content: ''; position: absolute; left: 50%; bottom: -8px; margin-left: -8px; border: 8px solid transparent; border-bottom-width: 0; border-top-color: var(--accent); filter: drop-shadow(0 0 6px rgba(255, 122, 26, 0.8)); }
-/* The picture's ten-second loop runs along the foot of its thumbnail. */
-.mm-loop { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; border-radius: 0 0 10px 10px; background: #fff; transform: scaleX(0); transform-origin: left; visibility: hidden; }
-.mm-mission[aria-checked='true'] .mm-loop { visibility: visible; animation: mm-loop 10s linear infinite; }
-.mm3.still .mm-loop { visibility: hidden !important; }
-@keyframes mm-loop { to { transform: scaleX(1); } }
 
 /* --- Help and Settings ----------------------------------------------------------------------------------- */
 .mm-overlay { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px; background: rgba(3, 7, 12, 0.7); backdrop-filter: blur(6px); animation: mm-fade 0.18s ease-out; }
