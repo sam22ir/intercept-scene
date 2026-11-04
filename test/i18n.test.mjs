@@ -27,12 +27,11 @@ describe('the missions in French', () => {
     it(m.id, () => {
       const fr = FR.missions[m.id];
       assert.ok(fr, 'has French words');
-      for (const f of ['name', 'kind', 'blurb', 'tagline', 'facts', 'keys', 'button']) {
+      for (const f of ['name', 'kind', 'blurb', 'tagline', 'keys', 'button']) {
         if (m[f] === undefined) continue;
         assert.ok(fr[f] ?? (f === 'blurb' || f === 'tagline' ? null : m[f]), `${m.id}.${f}`);
       }
       for (const f of ['fixed', 'fixedNote', 'sub', 'tile']) if (m[f]) assert.ok(fr[f], `${m.id}.${f}`);
-      assert.equal(fr.facts.length, m.facts.length, 'as many facts');
       assert.deepEqual(fr.keys.map(([k]) => k), m.keys.map(([k]) => k), 'the same keys, only the labels translated');
       const t = menuText(m.id, 'fwd', 'fr');
       assert.equal(t.title, fr.name);

@@ -124,7 +124,6 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
           <div class="mm-panel-in" id="ch-panel">
             <p class="mm-kind" id="ch-kind"></p>
             <h1 id="ch-title"></h1>
-            <ul class="mm-facts" id="ch-facts"></ul>
             <div class="mm-story"><p id="ch-tag"></p><button type="button" class="mm-more" id="ch-more" aria-expanded="false" hidden></button></div>
             <div class="mm-step" data-step="ship" hidden><h2>${esc(u.launcher)}</h2><div class="mm-cards" role="radiogroup" aria-label="${esc(u.launcher)}"></div></div>
             <div class="mm-step" data-step="drill" hidden><h2>${esc(u.ships)}</h2><div class="mm-picks" role="radiogroup" aria-label="${esc(u.ships)}"></div></div>
@@ -206,7 +205,6 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     more.textContent = storyOpen ? u.less : u.more;
     more.setAttribute('aria-expanded', String(storyOpen));
     requestAnimationFrame(() => { more.hidden = !storyOpen && tag.scrollHeight <= tag.clientHeight + 2; });
-    $(root, '#ch-facts').innerHTML = text.facts.map((f) => `<li>${esc(f)}</li>`).join('');
 
     // Set-up steps: the launcher, the number of ships (a drill), the enemy's level.
     const shipStep = $(root, '[data-step="ship"]');

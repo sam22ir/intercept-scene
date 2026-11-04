@@ -47,7 +47,6 @@ describe('the menu data', () => {
     assert.equal(new Set(MISSIONS.map((m) => m.name)).size, MISSIONS.length, 'names are unique');
     for (const m of MISSIONS) {
       for (const f of ['name', 'kind', 'blurb', 'tagline', 'brand', 'button']) assert.ok(typeof m[f] === 'string' && m[f].length >= 3, `${m.id}.${f}`);
-      assert.ok(m.facts.length === 3 && m.facts.every((x) => x.length > 3), `${m.id} has three facts`);
       assert.ok(m.keys.length >= 4 && m.keys.every(([k, l]) => k && l), `${m.id} lists its controls`);
       assert.ok(m.brand.length <= 16, `${m.id}'s top-bar title fits`);
       if (!m.ship) assert.ok(m.fixed && m.fixedNote && m.sub, `${m.id} says what is fixed`);
@@ -76,7 +75,7 @@ describe('the menu data', () => {
     for (const id of FAMILIES[0].members) {
       const m = missionById(id);
       assert.equal(m.tile, `${m.ships} ships`);
-      assert.ok(m.tileSub && m.facts[0].startsWith(`${m.ships} ships`), `${id} says how many ships`);
+      assert.ok(m.tileSub, `${id} says how many ships`);
     }
     assert.deepEqual(entriesOf('drill').map((e) => e.members), [FAMILIES[0].members]);
     assert.deepEqual(ENTRIES.map((e) => e.id), ['intercept', 'chute', 'fly', 'helm', 'duel', 'harbour', 'mob', 'maneuvers2'], 'the list order M steps through');
@@ -137,7 +136,6 @@ describe('the words are true of the missions', () => {
     assert.equal(sc.engagements.length, 1);
     assert.equal(sc.drones.length, 1);
     const m = missionById('intercept');
-    assert.ok(m.facts[0].startsWith('1 drone') && m.facts[0].includes('1 missile'));
     assert.match(m.tagline, /shoots it down/);
     assert.ok(Number.isFinite(sc.tHit), 'the drone is hit');
   });
@@ -151,18 +149,15 @@ describe('the words are true of the missions', () => {
     assert.match(m.tagline, /never fired/);
     assert.match(m.tagline, /parachute/);
     assert.match(m.tagline, /lands in the sea/);
-    assert.ok(m.facts.includes('No missile'));
   });
 
   it('Two-ship drill: SHIP1 and SHIP2 alone, the number of orders, the length and the play speed', () => {
     const m = missionById('maneuvers2');
     const minutes = Math.round(M2.exercise.tEnd / 60);
     assert.ok(m.tagline.includes(`${M2.PHASES.length} orders, about ${minutes} minutes`), `${M2.PHASES.length} orders, ${minutes} min`);
-    assert.ok(m.facts.includes(`${M2.PHASES.length} orders`));
-    assert.ok(m.facts.includes(`About ${minutes} minutes`));
     assert.match(m.tagline, /4×/);
     assert.deepEqual(M2.SHIP_IDS, ['ship1', 'ship2']);
-    assert.ok(!/unit/i.test(m.tagline + m.facts.join()), 'no unit in the two-ship drill');
+    assert.ok(!/unit/i.test(m.tagline), 'no unit in the two-ship drill');
     for (const f of ['FORM 120', 'FORM 345']) assert.ok(m.tagline.includes(f) && M2.PHASES.some((p) => p.title === f), f);
     assert.match(src.start, /__DRILL_SHIPS = mode === 'maneuvers2' \? 2 : 3/);
   });
@@ -171,23 +166,19 @@ describe('the words are true of the missions', () => {
     const m = missionById('maneuvers');
     const minutes = Math.round(M.exercise.tEnd / 60);
     assert.ok(m.tagline.includes(`${M.PHASES.length} orders, about ${minutes} minutes`), `${M.PHASES.length} orders, ${minutes} min`);
-    assert.ok(m.facts.includes(`${M.PHASES.length} orders`));
-    assert.ok(m.facts.includes(`About ${minutes} minutes`));
     assert.match(src.maneuvers, /clock\.setSpeed\(4\)/);
     assert.match(m.tagline, /4×/);
-    for (const id of ['SHIP1', 'SHIP2']) assert.ok(m.facts[0].includes(id) && m.tagline.includes(id));
+    for (const id of ['SHIP1', 'SHIP2']) assert.ok(m.tagline.includes(id));
   });
 
   it('Four-ship formations: SHIP1 to SHIP4, the number of orders, the length and the play speed', () => {
     const m = missionById('formations');
     const minutes = Math.round(FM.exercise.tEnd / 60);
     assert.ok(m.tagline.includes(`${FM.PHASES.length} orders, about ${minutes} minutes`), `${FM.PHASES.length} orders, ${minutes} min`);
-    assert.ok(m.facts.includes(`${FM.PHASES.length} orders`));
-    assert.ok(m.facts.includes(`About ${minutes} minutes`));
     assert.match(src.formations, /clock\.setSpeed\(8\)/);
     assert.match(m.tagline, /8×/);
     assert.deepEqual(Object.values(FM.SHIP_NAMES), ['SHIP1', 'SHIP2', 'SHIP3', 'SHIP4']);
-    assert.ok(m.tagline.includes('SHIP1 to SHIP4') && m.facts[0].includes('SHIP1 to SHIP4'));
+    assert.ok(m.tagline.includes('SHIP1 to SHIP4'));
     for (const f of ['line ahead', 'line of bearing', 'line abreast', 'box', 'diamond', 'CORPEN', 'TURN']) assert.ok(m.tagline.includes(f), f);
     assert.ok(FM.PHASES.some((p) => p.kind === 'corpen') && FM.PHASES.some((p) => p.kind === 'turn'));
     assert.deepEqual([...new Set(FM.PHASES.filter((p) => p.kind === 'form').map((p) => p.form))].sort(), ['abreast', 'bearing', 'box', 'column', 'diamond']);
@@ -197,9 +188,7 @@ describe('the words are true of the missions', () => {
 
   it('Solo Air Defense: the rounds, the views, and every key it lists is really bound', () => {
     const m = missionById('helm');
-    assert.ok(m.facts.includes(`${H.CELLS} missiles + 2 guns`));
     assert.match(src.helm, /const VIEWS = \['bridge', 'behind', 'above', 'missile', 'sight', 'target', 'orbit'\]/);
-    assert.ok(m.facts.includes('7 views'));
     for (const letter of ['f', 'm', 'a', 'n', 'r', 'v', 'i']) assert.match(src.helm, new RegExp(`case '${letter}':`), `helmMain binds ${letter}`);
     for (const k of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Tab']) assert.match(src.helm, new RegExp(k));
     const label = Object.fromEntries(m.keys);
@@ -214,7 +203,6 @@ describe('the words are true of the missions', () => {
   it('Fly the drone: the cruise speed, and every key it lists is really bound', () => {
     const m = missionById('fly');
     assert.ok(m.tagline.includes(`${F.DEFAULT_SPEED} m/s`), `${F.DEFAULT_SPEED} m/s`);
-    assert.ok(m.facts.includes(`${F.DEFAULT_SPEED} m/s cruise`));
     const keys = m.keys.map(([k]) => k);
     for (const letter of ['e', 'l', 'f', 'r', 'v', 'm']) {
       assert.match(src.fly, new RegExp(`case '${letter}':`), `flyMain binds ${letter}`);
@@ -253,13 +241,10 @@ describe('the words are true of the ship duel', () => {
     const sim = new D.DuelSim({ seed: 1 });
     assert.equal(sim.ships.length, 2);
     assert.ok(sim.ships[1].ai && !sim.ships[0].ai, 'one helmsman, the enemy');
-    assert.match(m.facts[0], /^76 mm with a zoom ring/);
     assert.deepEqual(Object.keys(D.AMMO_TYPES), ['he', 'ap']);
     assert.equal(sim.ships[0].gats.length, 2, 'the two 30 mm guns');
-    assert.match(m.facts[1], /radar sight/);
     assert.ok(D.MAIN_ARC > 0 && D.MAIN_MOUNT[0] > 0, 'the 76 mm is on the bow');
     assert.equal(D.COMP_IDS.length, 5);
-    assert.match(m.facts[2], new RegExp(`^${D.CREWS} repair crews`));
     assert.match(m.tagline, /76 mm/);
     assert.match(m.tagline, /30 mm/);
     assert.match(m.tagline, /sinks/);

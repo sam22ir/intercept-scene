@@ -131,8 +131,6 @@
 .mm-kind { margin: 0; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: #ffb37a; font-weight: 700; }
 .mm-panel h1 { margin: -6px 0 0; font-size: 26px; line-height: 1.12; }
 .mm-panel h2 { margin: 0 0 7px; font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
-.mm-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.mm-facts li { padding: 3px 10px; border-radius: 999px; background: rgba(95, 212, 255, 0.08); border: 1px solid rgba(95, 212, 255, 0.22); color: #bfeaff; font-size: 11.5px; }
 .mm-story p { margin: 0; font-size: 13px; line-height: 1.5; color: #c9d2db; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .mm-story.open p { display: block; }
 .mm-more { margin-top: 4px; padding: 0; border: 0; background: none; color: var(--accent) !important; font-size: 12px; font-weight: 600; cursor: pointer; }
