@@ -14,7 +14,7 @@ const int = (n) => Math.round(n).toLocaleString('en-US');
 function startingPlan() {
   const plan = loadPlan() ?? { ...PLAN_DEFAULTS };
   const w = read('intercept.weather');
-  return { ...plan, weather: WEATHER_CHOICES.includes(w) ? w : 'auto' };
+  return { ...plan, droneSpeed: PLAN_DEFAULTS.droneSpeed, weather: WEATHER_CHOICES.includes(w) ? w : 'auto' }; // the cruise speed is not a choice
 }
 
 const VALUE = {
@@ -22,7 +22,6 @@ const VALUE = {
   runAlt: (v) => `${int(v)} m`,
   turnBack: (v) => `${int(v)} m`,
   engage: (v) => `${int(v)} m`,
-  droneSpeed: (v) => `${v} m/s`,
   shipKn: (v) => `${v} kn`,
   heading: (v) => `${String(v).padStart(3, '0')}°`,
   burst: (v, u) => (v === 0 ? u.bBurstHit : `${v} m`),
@@ -94,7 +93,7 @@ export function briefHtml({ mode, ship, title, button, ships, u }) {
   return `<header class="mm-dh"><h2>${esc(title)}</h2><button type="button" class="mm-x" data-close title="${esc(u.close)} (Esc)" aria-label="${esc(u.close)}">×</button></header>`
     + `<div class="mm-dbody br-body"><form class="br-form" onsubmit="return false">`
     + `<h3>${esc(u.bDrone)}</h3>`
-    + slider('alt', u.bAlt) + slider('runAlt', u.bRunAlt) + slider('turnBack', u.bTurnBack) + slider('engage', mode === 'chute' ? u.bLock : u.bEngage) + slider('droneSpeed', u.bDroneSpeed)
+    + slider('alt', u.bAlt) + slider('runAlt', u.bRunAlt) + slider('turnBack', u.bTurnBack) + slider('engage', mode === 'chute' ? u.bLock : u.bEngage)
     + (mode === 'chute' ? '' : slider('burst', u.bBurst))
     + `<h3>${esc(u.bShip)}</h3>`
     + seg('ship', u.launcher, ships, ship) + slider('shipKn', u.bShipSpeed) + slider('heading', u.bHeading)

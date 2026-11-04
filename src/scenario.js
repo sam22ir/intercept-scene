@@ -489,6 +489,44 @@ const _qRoll = new THREE.Quaternion();
 const _w = new THREE.Vector3();
 const _c2 = new THREE.Vector3();
 
+// With a plan the bank comes from the turn over the sea at the speed over the sea, and it is baked once (so it stays a pure
+// function of time) and averaged over 3 s: the drone rolls into and out of its turn, steady in between.
+const BANK_DT = 0.1;
+const BANK_AVERAGE = 15; // samples either side
+function bakePlanBank(f) {
+  const n = Math.ceil((f.tPathEnd - T_RELEASE) / BANK_DT) + 1;
+  const raw = new Float32Array(n);
+  const p = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+  const h = 0.3;
+  const sea = SHIP_SPEED * h;
+  for (let i = 0; i < n; i++) {
+    const t = f.shift + T_RELEASE + i * BANK_DT;
+    pathRelPos(t - h, p[0], f);
+    pathRelPos(t, p[1], f);
+    pathRelPos(t + h, p[2], f);
+    const v1x = p[1].x - p[0].x + sea, v1z = p[1].z - p[0].z;
+    const v2x = p[2].x - p[1].x + sea, v2z = p[2].z - p[1].z;
+    const turn = Math.atan2(v1z * v2x - v1x * v2z, v1x * v2x + v1z * v2z) / h;
+    const v = Math.hypot(v1x + v2x, p[2].y - p[0].y, v1z + v2z) / (2 * h);
+    raw[i] = THREE.MathUtils.clamp(Math.atan((v * turn) / G), -MAX_BANK, MAX_BANK);
+  }
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let sum = 0;
+    let count = 0;
+    for (let k = Math.max(0, i - BANK_AVERAGE); k <= Math.min(n - 1, i + BANK_AVERAGE); k++) { sum += raw[k]; count += 1; }
+    out[i] = sum / count;
+  }
+  return out;
+}
+function planBank(tf, f) {
+  f.banks ??= bakePlanBank(f);
+  const x = Math.max(0, (tf - T_RELEASE) / BANK_DT);
+  const i = Math.floor(x);
+  if (i >= f.banks.length - 1) return f.banks[f.banks.length - 1];
+  return f.banks[i] + (f.banks[i + 1] - f.banks[i]) * (x - i);
+}
+
 // World position + attitude. Nose is local +Z, left wing local +X. Attitude
 // follows the ship-relative path (continuous off the rail); bank comes from
 // the turn rate (coordinated turn: tan(bank) = v·ω / g). Returns airspeed.
@@ -516,17 +554,14 @@ function pathPose(t, pos, quat, f = FLIGHTS[0]) {
       _w.x += SHIP_SPEED;
       fwd.lerp(_c2.copy(_w).normalize(), k).normalize();
     }
-    // With a plan the bank comes from the turn over the sea, at the speed over the sea.
-    const sea = PLAN ? SHIP_SPEED * 2 * h : 0;
     pathRelPos(t - 2 * h, _d, f);
-    const v1x = _rel.x - _d.x + sea, v1z = _rel.z - _d.z;
+    const v1x = _rel.x - _d.x, v1z = _rel.z - _d.z;
     pathRelPos(t + 2 * h, _d, f);
-    const v2x = _d.x - _rel.x + sea, v2z = _d.z - _rel.z;
+    const v2x = _d.x - _rel.x, v2z = _d.z - _rel.z;
     const turn = Math.atan2(v1z * v2x - v1x * v2z, v1x * v2x + v1z * v2z) / (2 * h);
-    const v = PLAN ? _w.length() || speed : speed;
     // Ease bank in over the first second so it doesn't snap at release.
     const ease = THREE.MathUtils.smoothstep(tf, T_RELEASE, T_RELEASE + 1);
-    bank = ease * THREE.MathUtils.clamp(Math.atan((v * turn) / G), -MAX_BANK, MAX_BANK);
+    bank = ease * (PLAN ? planBank(tf, f) : THREE.MathUtils.clamp(Math.atan((speed * turn) / G), -MAX_BANK, MAX_BANK));
   }
   _x.crossVectors(_up, fwd).normalize();
   _y.crossVectors(fwd, _x);

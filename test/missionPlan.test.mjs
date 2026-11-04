@@ -208,9 +208,9 @@ describe('the scenario flown from a plan', () => {
         S.planeVel(t, vel);
         const speed = vel.length();
         const sin = vel.y / speed;
-        // Level for four seconds: the speed has settled from the slope before.
+        // Level for six seconds: the speed has settled from the slope before (it follows with a 2 s lag).
         steady = Math.abs(sin) < 0.003 ? steady + 1 : 0;
-        if (steady > 16) level = Math.max(level, Math.abs(speed - p.droneSpeed));
+        if (steady > 24) level = Math.max(level, Math.abs(speed - p.droneSpeed));
         const angle = (Math.asin(sin) * 180) / Math.PI;
         topUp = Math.max(topUp, angle);
         topDown = Math.min(topDown, angle);
@@ -226,10 +226,44 @@ describe('the scenario flown from a plan', () => {
       assert.ok(level < 1.5, `level flight is the cruise speed: off by ${level}`);
       assert.ok(Math.abs(topUp - 20) < 2, `climbs at 20 degrees over the sea: ${topUp}`);
       assert.ok(Math.abs(topDown + 20) < 2, `descends at 20 degrees over the sea: ${topDown}`);
-      // 45 degrees in the turn; the ship's own speed moves it a few degrees either way.
       assert.ok(bank > 40 && bank <= 50 + 1e-6, `bank ${bank}`);
-      assert.ok(pitch > 18 && pitch <= 21.5, `pitch ${pitch}`);
+      // A little over 20 for the seconds it enters a descent, before the speed has built up.
+      assert.ok(pitch > 18 && pitch <= 22, `pitch ${pitch}`);
     });
+
+    for (const shipKn of [14, 30]) {
+      it(`${variant} at ${shipKn} kn: the bank holds at 45 degrees through the turn back`, async () => {
+        const { S } = await fly(variant, 'intercept', { shipKn, turnBack: 2500 });
+        const sc = S.scenario;
+        const pos = new THREE.Vector3();
+        const q = new THREE.Quaternion();
+        const wing = new THREE.Vector3();
+        const banks = [];
+        const bankAt = (t) => {
+          S.planePose(t, pos, q);
+          wing.set(1, 0, 0).applyQuaternion(q);
+          return Math.abs(Math.asin(wing.y) * 180 / Math.PI);
+        };
+        // The aft launcher's first swing round off the rail is a real turn too: about 45 degrees, at the climb's speed.
+        if (variant === 'aft') {
+          const swing = [];
+          for (let t = sc.tRelease + 4; t < sc.tRelease + 9; t += 0.25) swing.push(bankAt(t));
+          assert.ok(Math.min(...swing) > 40 && Math.max(...swing) < 50, `first swing ${Math.min(...swing).toFixed(1)} to ${Math.max(...swing).toFixed(1)}`);
+        }
+        // From after that swing.
+        for (let t = sc.tRelease + 25; t < sc.tLaunch; t += 0.1) banks.push(bankAt(t));
+        // The turn itself, leaving out the seconds it rolls in and out.
+        const inTurn = banks.filter((b) => b > 20).sort((a, b) => a - b);
+        const mid = inTurn.slice(Math.floor(inTurn.length * 0.25));
+        assert.ok(inTurn.length > 200, `a real turn: ${inTurn.length} samples`);
+        const typical = mid[Math.floor(mid.length / 2)];
+        assert.ok(Math.abs(typical - 45) < 1, `typically ${typical.toFixed(1)} degrees`);
+        assert.ok(mid[0] > 41 && mid.at(-1) < 47, `${mid[0].toFixed(1)} to ${mid.at(-1).toFixed(1)} degrees`);
+        // And it rolls: no sudden jumps, and level on the straights.
+        for (let i = 1; i < banks.length; i++) assert.ok(Math.abs(banks[i] - banks[i - 1]) < 3, `a jump of ${Math.abs(banks[i] - banks[i - 1]).toFixed(1)} degrees in 0.1 s`);
+        assert.ok(banks.slice(0, 40).every((b) => b < 5), 'level on the way out');
+      });
+    }
 
     it(`${variant}: recovery flies the plan and ends under the parachute`, async () => {
       const { S } = await fly(variant, 'chute', { engage: 900, turnBack: 2000 });

@@ -105,33 +105,61 @@ export const planEngage = (plan) => ({ timing: 'range', time: 0, range: plan.eng
 
 const smooth = (u) => { const x = Math.min(1, Math.max(0, u)); return x * x * (3 - 2 * x); };
 
-// The shape on the sea for an outbound heading `a` (degrees off the bow or the stern), or null if it cannot be flown.
-function outline(a, R, aft) {
+// The shape for an outbound heading `a` (degrees off the bow or the stern), or null if it cannot be flown. A steady bank is a
+// steady turn over the sea, so headings here are over the sea and each turn is a true circle there: in the ship's frame it
+// is that circle less the ship's own run while it is flown (across her, z, the two are the same).
+function outline(a, plan, aft) {
   const [x0, , z0] = RAIL_END;
+  const R = turnRadius(plan);
+  const V = plan.droneSpeed;
+  const ship = shipSpeedOf(plan);
   const th = aft ? 180 - a : a; // heading: degrees from the bow toward port
-  const left = th > RAIL_YAW;
   const c = (d) => Math.cos(d * DEG);
   const s = (d) => Math.sin(d * DEG);
-  // The first arc, from the rail's heading onto the outbound one.
-  const qx = x0 + (left ? R * (s(th) - s(RAIL_YAW)) : R * (s(RAIL_YAW) - s(th)));
-  const qz = z0 + (left ? R * (c(th) - c(RAIL_YAW)) : R * (c(RAIL_YAW) - c(th)));
+  // The first turn, from the rail onto the outbound heading, flown step by step at the speed the drone has: the climb's
+  // while it climbs, then picking up to the cruise speed. At the same bank, slower means tighter.
+  const slow = 0.7 * V;
+  const th0 = Math.atan2(slow * s(RAIL_YAW), slow * c(RAIL_YAW) + ship) / DEG;
+  const left = th > th0;
+  const first = [];
+  let qx = x0;
+  let qz = z0;
+  let h = RAIL_END[1];
+  let v = slow;
+  let heading = th0;
+  let sinceMark = 0;
+  while (Math.abs(th - heading) > 1e-6) {
+    const dt = 0.1;
+    const turn = Math.min(Math.abs(th - heading), ((G * Math.tan(TURN_BANK * DEG)) / v) * dt / DEG);
+    const mid = heading + ((left ? 1 : -1) * turn) / 2;
+    const climbing = h < plan.alt;
+    if (climbing) h += v * Math.sin(20 * DEG) * dt; else v += ((V - v) * dt) / 2;
+    const hv = climbing ? v * Math.cos(20 * DEG) : v;
+    qx += (hv * c(mid) - ship) * dt;
+    qz -= hv * s(mid) * dt;
+    heading += (left ? 1 : -1) * turn;
+    sinceMark += turn;
+    if (sinceMark >= 15) { first.push([qx, qz]); sinceMark = 0; }
+  }
+  // The last piece: a very short leg would kink the spline, so a small one replaces the mark before it.
+  if (sinceMark > 0) { if (sinceMark < 7 && first.length) first.pop(); first.push([qx, qz]); }
   // The outbound leg ends where the turn back brings the drone out on the ship's centre line.
   const pz = -R * (1 + c(a));
   const L = (qz - pz) / s(a);
   if (L < 0) return null;
-  const px = qx + L * c(th);
-  const ex = px + (aft ? -1 : 1) * R * s(a);
+  const px = qx + L * (c(th) - ship / V);
+  const ex = px + (aft ? -1 : 1) * R * s(a) - (ship * (a + 180) * DEG * R) / V;
   const ahead = aft ? -1 : 1;
   if (px * ahead < 100 || ex * ahead < 200) return null;
-  return { a, th, left, qx, qz, L, px, pz, ex, turnBack: Math.hypot(px, pz), far: Math.abs(ex) + R };
+  return { a, th, first, L, px, pz, ex, turnBack: Math.hypot(px, pz), far: Math.abs(ex) + R };
 }
 
 // The shape nearest to a turn-back distance; also the shortest one this speed can fly.
-function solveOutline(target, R, aft) {
+function solveOutline(target, plan, aft) {
   let best = null;
   let shortest = Infinity;
   for (let a = 1; a <= 85; a += a < 12 ? 0.02 : 0.25) { // a long outbound leg is very sensitive to it
-    const o = outline(a, R, aft);
+    const o = outline(a, plan, aft);
     if (!o) continue;
     shortest = Math.min(shortest, o.turnBack);
     if (!best || Math.abs(o.turnBack - target) < Math.abs(best.turnBack - target)) best = o;
@@ -144,7 +172,7 @@ function solveOutline(target, R, aft) {
 export function generatePath(plan, { variant = 'fwd', mode = 'intercept' } = {}) {
   const aft = variant === 'aft';
   const R = turnRadius(plan);
-  const { best: o, shortest } = solveOutline(plan.turnBack, R, aft);
+  const { best: o, shortest } = solveOutline(plan.turnBack, plan, aft);
   const notes = [];
   if (Math.abs(o.turnBack - plan.turnBack) > 50) notes.push({ key: 'turnBack', value: Math.round(o.turnBack) });
   const dirX = aft ? -1 : 1;
@@ -157,20 +185,23 @@ export function generatePath(plan, { variant = 'fwd', mode = 'intercept' } = {})
   let [x, , z] = RAIL_END;
   let s = 0;
   const push = (nx, nz) => { s += Math.hypot(nx - x, nz - z); x = nx; z = nz; track.push({ x, z, s }); };
-  const arc = (from, to, left) => {
+  const sea = shipSpeedOf(plan);
+  // A turn over the sea from heading `from` to `to`, at speed v, as it comes out in the ship's frame.
+  const arc = (from, to, left, r, v) => {
     const step = (to - from) / Math.max(1, Math.ceil(Math.abs(to - from) / 15));
+    const run = (sea * Math.abs(step) * DEG * r) / v;
     for (let d = from + step; left ? d <= to + 1e-6 : d >= to - 1e-6; d += step) {
       const a = d - step;
       const c0 = Math.cos(a * DEG), c1 = Math.cos(d * DEG), s0 = Math.sin(a * DEG), s1 = Math.sin(d * DEG);
-      push(x + (left ? R * (s1 - s0) : R * (s0 - s1)), z + (left ? R * (c1 - c0) : R * (c0 - c1)));
+      push(x + (left ? r * (s1 - s0) : r * (s0 - s1)) - run, z + (left ? r * (c1 - c0) : r * (c0 - c1)));
     }
   };
-  if (Math.abs(o.th - RAIL_YAW) > 0.5) arc(RAIL_YAW, o.th, o.left);
+  for (const [fx, fz] of o.first) push(fx, fz);
   const legs = Math.max(1, Math.ceil(o.L / Math.max(160, o.L / 18)));
   const qx = x, qz = z;
   for (let i = 1; i <= legs; i++) push(qx + ((o.px - qx) * i) / legs, qz + ((o.pz - qz) * i) / legs);
   const sTurn = s;
-  arc(o.th, aft ? 360 : -180, aft);
+  arc(o.th, aft ? 360 : -180, aft, R, plan.droneSpeed);
   const sExit = s;
 
   // Recovery leaves the run in early enough to come down to the recovery point.
