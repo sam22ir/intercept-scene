@@ -215,9 +215,8 @@
 .mm-dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; margin: 0 0 12px; align-items: center; }
 .mm-dl dt { font-weight: 700; color: var(--text); white-space: nowrap; }
 .mm-dl dd { margin: 0; }
-.mm-cgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 10px; align-items: start; }
-.mm-cm { padding: 10px 12px 12px; border-radius: 12px; border: 1px solid var(--mm-line); background: rgba(0, 0, 0, 0.2); scroll-margin: 12px; }
-.mm-cm-sel { border-color: var(--accent); background: var(--accent-soft); }
+.mm-dialog-sm { width: min(460px, 100%); }
+.mm-cm { padding: 10px 12px 12px; border-radius: 12px; border: 1px solid var(--mm-line); background: rgba(0, 0, 0, 0.2); }
 .mm-cm h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 14px; color: var(--text); }
 .mm-cm h4 .ic { flex: none; width: 24px; height: 24px; color: var(--muted); }
 .mm-cm ul { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; font-size: 12px; }

@@ -89,7 +89,7 @@ export const UI = {
       ['Enter', 'start the mission'],
       ['Double-click', 'a mission starts it straight away'],
       ['H', 'this help'],
-      ['C', 'the controls of every mission'],
+      ['C', 'the controls of the selected mission'],
       ['G', 'settings'],
     ],
     menuTips: [
@@ -191,7 +191,7 @@ export const UI = {
       ['Entrée', 'lancer la mission'],
       ['Double-clic', 'sur une mission la lance directement'],
       ['H', 'cette aide'],
-      ['C', 'les commandes de toutes les missions'],
+      ['C', 'les commandes de la mission choisie'],
       ['G', 'les réglages'],
     ],
     menuTips: [

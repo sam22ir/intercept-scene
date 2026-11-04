@@ -10,7 +10,7 @@ import { LANG, LANGS, UI, saveLang } from './i18n.js';
 // (brand, language, Help, Controls, Settings), the four categories down the left, the category's missions, the
 // selected mission's animated preview (menuArt.js) with its briefing, the set-up steps it has (launcher, number of
 // ships, enemy level), and Start. Help (about, missions, the in-mission buttons, this menu), Controls (the keys of
-// every mission) and Settings (language and the preferences every mission reads from storage) are overlays. The language
+// the selected mission) and Settings (language and the preferences every mission reads from storage) are overlays. The language
 // re-renders the menu at once; the missions read it when they load. Selection changes only on a click or a
 // key, never on hover, and Start, Enter or a double click launches (once: `onLaunch` is start.js's launch()).
 
@@ -265,8 +265,8 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     dlg.querySelectorAll('[data-set]').forEach((b) => b.addEventListener('click', () => applySetting(b.dataset.set, b.dataset.val)));
     dlg.querySelector('[data-reset]')?.addEventListener('click', resetSettings);
     dlg.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => { closeOverlay(); setMode(b.dataset.goto); }));
+    dlg.classList.toggle('mm-dialog-sm', overlay === 'controls');
     dlg.focus({ preventScroll: true });
-    dlg.querySelector('.mm-cm-sel')?.scrollIntoView({ block: 'center' });
   }
   const openOverlay = (which) => { overlay = which; renderOverlay(); };
   function closeOverlay() { overlay = null; renderOverlay(); $(root, '#ch-start')?.focus({ preventScroll: true }); }
@@ -304,18 +304,12 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
       + `<div class="mm-dbody">${body}</div>`;
   }
 
-  // The keys of every mission, by category; the selected mission is marked and scrolled to.
+  // The keys of the selected mission.
   function controlsHtml() {
     const u = t();
-    const body = GROUPS.map((g0) => {
-      const cards = MISSIONS.filter((m) => m.group === g0.id).map((m0) => {
-        const m = missionIn(m0, lang);
-        return `<article class="mm-cm${m.id === mode ? ' mm-cm-sel' : ''}"><h4>${icon(ICON[m.id])}${esc(m.name)}</h4><ul>${m.keys.map(([k, l]) => `<li><kbd>${esc(k)}</kbd>${esc(l)}</li>`).join('')}</ul></article>`;
-      }).join('');
-      return `<h3>${esc(groupIn(g0, lang).name)}</h3><div class="mm-cgrid">${cards}</div>`;
-    }).join('');
+    const m = missionIn(missionById(mode), lang);
     return `<header class="mm-dh"><h2>${icon(ICON.keys, 'ic', 24)}${esc(u.controls)}</h2><button type="button" class="mm-x" data-close title="${esc(u.close)} (Esc)" aria-label="${esc(u.close)}">×</button></header>`
-      + `<div class="mm-dbody">${body}</div>`;
+      + `<div class="mm-dbody"><article class="mm-cm"><h4>${icon(ICON[m.id])}${esc(m.name)}</h4><ul>${m.keys.map(([k, l]) => `<li><kbd>${esc(k)}</kbd>${esc(l)}</li>`).join('')}</ul></article></div>`;
   }
 
   function settingsHtml() {
