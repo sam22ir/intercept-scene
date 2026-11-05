@@ -1,5 +1,5 @@
 /* The main menu (mainMenu.js) is a control room: the brand and buttons along the top, under them a wall of every
-   mission as a thumbnail, by category (a thumbnail plays under the pointer), and below that a big framed screen with
+   mission as a thumbnail, by category (each plays by itself, on a loop), and below that a big framed screen with
    the selected mission's live preview (menuArt.js) and its title, story, set-up and Start. Picking a mission sends a
    radar ping down from its thumbnail that opens the new picture. Help, Controls and Settings are overlays. Everything
    moving here is CSS (stopped by prefers-reduced-motion) or the previews' SMIL (the menu draws still frames instead).
@@ -291,10 +291,16 @@
 .mm-dialog-brief .mm-dh h2 { font-size: 18px; }
 .br-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; padding: 4px 20px 10px; }
 .br-form h3 { margin: 10px 0 4px; }
-.br-form.br-drawn input[data-key='alt'], .br-form.br-drawn input[data-key='runAlt'], .br-form.br-drawn input[data-key='turnBack'], .br-form.br-drawn input[data-key='engage'] { opacity: 0.35; }
 .br-row { display: grid; grid-template-columns: 136px minmax(0, 1fr) 72px; align-items: center; gap: 8px; min-height: 28px; color: var(--text); font-size: 12.5px; }
 .br-row.seg { grid-template-columns: 136px minmax(0, 1fr); min-height: 34px; }
 .br-row input { width: 100%; margin: 0; accent-color: var(--accent); cursor: pointer; }
+/* Drawn here rather than by the browser, whose own slider dims the orange: a solid fill up to the value (--fill, missionBrief.js). */
+.br-row input[type='range'] { -webkit-appearance: none; appearance: none; height: 18px; background: transparent; }
+.br-row input[type='range']::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: linear-gradient(to right, var(--accent) var(--fill, 0%), rgba(255, 255, 255, 0.18) var(--fill, 0%)); }
+.br-row input[type='range']::-moz-range-track { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.18); }
+.br-row input[type='range']::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--accent); }
+.br-row input[type='range']::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: -4px; border: 0; border-radius: 50%; background: var(--accent); }
+.br-row input[type='range']::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: var(--accent); }
 .br-row output { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .br-row .mm-seg { justify-content: flex-start; }
 .br-row .mm-seg button { padding: 4px 8px; font-size: 11.5px; }
@@ -316,6 +322,13 @@
 .br-stats { margin: 0; font-size: 12px; line-height: 1.4; color: var(--text); }
 .br-notes { margin: 0; padding: 0; list-style: none; font-size: 12px; line-height: 1.35; color: #ffc27a; }
 .br-notes:empty { display: none; }
+/* The form alone sets the window's height, and the map gives up the room when the words under it grow, so a note appearing never moves the sliders under the pointer. */
+@media (min-width: 761px) {
+  .br-view { display: flex; flex-direction: column; contain: size; }
+  .br-draw { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .br-draw .br-map { flex: 1 1 0; min-height: 0; }
+  .br-draw .br-side { flex: none; }
+}
 .br-foot { flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 20px 14px; border-top: 1px solid var(--mm-line); }
 .br-foot > span { flex: 1; }
 .br-cancel { padding: 9px 16px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.18); background: none; cursor: pointer; font-weight: 600; }

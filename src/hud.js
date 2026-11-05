@@ -268,7 +268,8 @@ export function createHud({ onUnits, missionSub = '' } = {}) {
     button.setAttribute('aria-pressed', String(enabled));
     if (unitsButton) {
       unitsButton.setAttribute('aria-pressed', String(units === 'kn'));
-      unitsButton.firstChild.textContent = units === 'kn' ? 'Speeds in km/h' : 'Speeds in knots';
+      // In the gear menu the words follow an icon: only they change.
+      (unitsButton.querySelector('.mi-l')?.lastChild ?? unitsButton.firstChild).textContent = units === 'kn' ? 'Speeds in km/h' : 'Speeds in knots';
       unitsButton.title = `Show speeds in ${units === 'kn' ? 'km/h' : 'knots'} (U)`;
     }
   }

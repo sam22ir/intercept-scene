@@ -121,6 +121,7 @@ function showChooser(preselect, preselectLevel = null) {
     level: validLevel(preselectLevel) ?? validLevel(read('localStorage', 'intercept.level.duel')) ?? DEFAULT_LEVEL,
     lastPlayed: MISSION_IDS.includes(rememberedMode) ? rememberedMode : null,
     reducedMotion: (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } })(),
+    openPlan, // the gear menu's Mission settings: straight to the settings window
     onLaunch: (choice) => { mode = choice.mode; level = choice.level; launch(choice.ship, choice.plan); },
   });
 }
@@ -129,6 +130,8 @@ function showChooser(preselect, preselectLevel = null) {
 // URL still names a ship.
 const forceChooser = read('sessionStorage', 'intercept.chooser') === '1';
 write('sessionStorage', 'intercept.chooser', '0');
+const openPlan = read('sessionStorage', 'intercept.openPlan') === '1';
+write('sessionStorage', 'intercept.openPlan', '0');
 const skipChooser = read('sessionStorage', 'intercept.skip') === '1';
 write('sessionStorage', 'intercept.skip', '0');
 let fromUrl = null;

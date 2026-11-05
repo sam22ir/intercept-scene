@@ -194,7 +194,8 @@ export function createEffects(scene, debris, k = 0) {
   group.add(puff.finalize(), blast.finalize());
 
   // Faint two-stroke exhaust haze behind the drone.
-  const exhaust = new ParticleField(1400, {
+  // A planned flight can last minutes (a 15 km turn back): room for all of its puffs, so the haze does not stop early.
+  const exhaust = new ParticleField(scenario.plan ? Math.max(1400, Math.ceil((tFlightEnd - tRelease) / 0.06) + 2) : 1400, {
     mode: MODE.SMOKE, drag: 1.0, rise: 0.2, size: [0.08, 0.7], wind: [2.5, 0, 1.2],
   });
   for (let t = tRelease; t < tFlightEnd; t += 0.06) {

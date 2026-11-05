@@ -1,4 +1,4 @@
-import { PLAN_DEFAULTS, PLAN_RANGES, RAIL_END, TOD_CHOICES, WEATHER_CHOICES, generatePath, loadPlan, planStats, validatePlan } from './missionPlan.js';
+import { PLAN_DEFAULTS, PLAN_RANGES, RAIL_END, TOD_CHOICES, WEATHER_CHOICES, generatePath, linkRanges, loadPlan, planStats, validatePlan } from './missionPlan.js';
 
 // The window that opens on Start in the Watch missions: the mission's settings beside a live drawing of the drone's path,
 // from above and from the side, generated from them by missionPlan.js. It only hands the plan back: start.js stores it and
@@ -83,8 +83,8 @@ function drawView(plan, path, mode, ship, u) {
 
 const seg = (id, label, choices, value) => `<div class="br-row seg"><span>${esc(label)}</span><div class="mm-seg" role="radiogroup" aria-label="${esc(label)}">${choices.map(([v, l]) => `<button type="button" role="radio" data-seg="${id}" data-val="${v}" aria-checked="${v === value}">${esc(l)}</button>`).join('')}</div></div>`;
 
-// `opts`: { mode, ship, title, button, ships: [[id, name]], u, onShip, onStart }
-export function briefHtml({ mode, ship, title, button, ships, u }) {
+// `opts`: { mode, ship, title, button, u, onStart, onCancel } (the launcher is chosen on the mission's panel, before this window)
+export function briefHtml({ mode, ship, title, button, u }) {
   const slider = (key, label) => {
     const [lo, hi, step] = PLAN_RANGES[key];
     return `<label class="br-row"><span>${esc(label)}</span><input type="range" data-key="${key}" min="${lo}" max="${hi}" step="${step}"><output data-out="${key}"></output></label>`;
@@ -96,18 +96,17 @@ export function briefHtml({ mode, ship, title, button, ships, u }) {
     + slider('alt', u.bAlt) + slider('runAlt', u.bRunAlt) + slider('turnBack', u.bTurnBack) + slider('engage', mode === 'chute' ? u.bLock : u.bEngage)
     + (mode === 'chute' ? '' : slider('burst', u.bBurst))
     + `<h3>${esc(u.bShip)}</h3>`
-    + seg('ship', u.launcher, ships, ship) + slider('shipKn', u.bShipSpeed) + slider('heading', u.bHeading)
+    + slider('shipKn', u.bShipSpeed) + slider('heading', u.bHeading)
     + `<h3>${esc(u.bConditions)}</h3>`
     + seg('weather', u.sWeather, [['auto', u.auto], ['clear', u.wClear], ['haze', u.wHaze], ['squalls', u.wSqualls], ['overcast', u.wOvercast]], 'auto')
-    + seg('tod', u.bTod, TOD_CHOICES.map((id) => [id, { auto: u.auto, dawn: u.bDawn, noon: u.bNoon, dusk: u.bDusk }[id]]), 'auto')
+    + seg('tod', u.bTod, TOD_CHOICES.map((id) => [id, { auto: u.auto, dawn: u.bDawn, noon: u.bNoon, dusk: u.bDusk, night: u.bNight }[id]]), 'auto')
     + (drawn ? `<h3>${esc(u.bPath)}</h3>${seg('drawn', u.bPathFrom, [['0', u.bPathGen], ['1', u.bPathDrawn]], '0')}` : '')
     + `</form><div class="br-view"><div class="br-draw"></div><p class="br-stats"></p><ul class="br-notes"></ul></div></div>`
     + `<footer class="br-foot"><button type="button" class="mm-link" data-defaults>${esc(u.bDefaults)}</button><span></span><button type="button" class="br-cancel" data-close-2>${esc(u.bCancel)}</button><button type="button" class="mm-start br-start" id="br-start"><span>${esc(button)}</span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5l13 7.5-13 7.5z"/></svg></button></footer>`;
 }
 
-export function wireBrief(dlg, { mode, ship: ship0, u, onShip, onStart, onCancel }) {
+export function wireBrief(dlg, { mode, ship, u, onStart, onCancel }) {
   let plan = validatePlan(startingPlan());
-  let ship = ship0;
   const drawn = () => plan.drawn && read(pathKey(mode, ship)) !== null;
 
   function update() {
@@ -115,11 +114,12 @@ export function wireBrief(dlg, { mode, ship: ship0, u, onShip, onStart, onCancel
     for (const input of dlg.querySelectorAll('input[data-key]')) {
       const key = input.dataset.key;
       input.value = plan[key];
+      input.style.setProperty('--fill', `${((input.value - input.min) / (input.max - input.min)) * 100}%`);
       dlg.querySelector(`[data-out="${key}"]`).textContent = VALUE[key](plan[key], u);
     }
     dlg.querySelectorAll('[data-seg]').forEach((b) => {
       const { seg: id, val } = b.dataset;
-      const now = id === 'ship' ? ship : id === 'drawn' ? (plan.drawn ? '1' : '0') : plan[id];
+      const now = id === 'drawn' ? (plan.drawn ? '1' : '0') : plan[id];
       b.setAttribute('aria-checked', String(val === now));
     });
     const path = generatePath(plan, { variant: ship, mode });
@@ -138,11 +138,12 @@ export function wireBrief(dlg, { mode, ship: ship0, u, onShip, onStart, onCancel
     // The run in can be no higher than the top; moving the top takes it along when they were together.
     if (input.dataset.key === 'alt' && plan.runAlt > plan.alt) plan.runAlt = plan.alt;
     if (input.dataset.key === 'runAlt' && plan.runAlt > plan.alt) plan.alt = plan.runAlt;
+    plan = linkRanges(plan, input.dataset.key, { variant: ship, mode });
     update();
   }));
   dlg.querySelectorAll('[data-seg]').forEach((b) => b.addEventListener('click', () => {
     const { seg: id, val } = b.dataset;
-    if (id === 'ship') { ship = val; onShip(val); } else if (id === 'drawn') plan.drawn = val === '1';
+    if (id === 'drawn') plan.drawn = val === '1';
     else plan[id] = val;
     update();
   }));

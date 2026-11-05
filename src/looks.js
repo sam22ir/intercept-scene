@@ -72,6 +72,11 @@ const TOD = [
   { elev: 25, horizon: [182, 206, 232], zenith: [62, 114, 202], glow: [255, 226, 170], sun: [0xff, 0xf1, 0xdc], sunI: 2.7, hemi: [0xcf, 0xe0, 0xff], hemiI: 0.6, warm: 0.06 },
   { elev: 45, horizon: [170, 202, 236], zenith: [48, 108, 208], glow: [255, 236, 190], sun: [0xff, 0xf6, 0xe8], sunI: 2.9, hemi: [0xd4, 0xe4, 0xff], hemiI: 0.62, warm: 0 },
 ];
+// Night is not a sun elevation: the light comes from the moon, high up, so it has its own row (`sky.night` in resolveLook).
+const NIGHT = { horizon: [16, 22, 40], zenith: [3, 6, 16], glow: [200, 215, 255], sun: [0xa8, 0xb8, 0xe0], sunI: 0.35, hemi: [0x30, 0x3c, 0x60], hemiI: 0.25, warm: 0 };
+// A plan's noon (`sky.day`) is Solo Air Defense's calm daylight: the same blue sky, sun colour and fill as environment.js's calm look.
+// That sun stands at 24 degrees; this one is higher, so it is weaker, to put about the same light on the decks and on the hull's sides.
+const DAY = { horizon: [135, 190, 245], zenith: [28, 102, 229], glow: [255, 217, 140], sun: [0xff, 0xf1, 0xdc], sunI: 1.7, hemi: [0xcf, 0xe0, 0xff], hemiI: 0.6, warm: 0 };
 const lerp = (a, b, t) => a + (b - a) * t;
 const mix3 = (a, b, t) => a.map((v, i) => lerp(v, b[i], t));
 
@@ -152,24 +157,31 @@ export const WEATHER = {
 };
 
 // The look with a weather applied. Pure: the same inputs always give the same world.
-// `sky` (the mission plan's time of day and heading, missionPlan.js) moves the sun: { elev, az } or { azAdd }.
+// `sky` (the mission plan's time of day and heading, missionPlan.js) moves the sun: { elev, az } or { azAdd }; with `night`
+// { elev, az } is the moon and the sky and light come from the NIGHT row.
 export function resolveLook(name, weather, sky = null) {
   if (!LOOKS[name]) return null;
   const base = { ...LOOKS[name], ...(sky?.elev === undefined ? null : { elev: sky.elev, az: sky.az }) };
   if (sky?.azAdd) base.az += sky.azAdd;
+  const day = !!sky?.day;
+  // The calm sea and clear air; a weather picked in the window still applies on top, as a change from clear.
+  if (day) Object.assign(base, { overcast: 0, cover: 0, fog: [3000, 16000], weather: 'clear', sea: { state: 1, caps: 0, wind: [0, 0], glitter: 0, reflect: 0.55 } });
   // Each look's numbers already describe its own default weather, so a weather only changes them by how far it differs
   // from that default (the default itself changes nothing, and `clear` on the duel really does clear the sky).
   const w = WEATHER[WEATHERS.includes(weather) ? weather : base.weather] ?? WEATHER.clear;
   const d = WEATHER[base.weather];
   const rel = (a, b, lo, hi) => Math.min(hi, Math.max(lo, a + b));
   const overcast = rel(base.overcast, w.overcast - d.overcast, 0, 1);
-  const tod = todAt(base.elev);
+  const night = !!sky?.night;
+  const tod = night ? NIGHT : day ? DAY : todAt(base.elev);
   const grey = (c, k) => { const l = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]; return mix3(c, [l, l, l], k); };
   const dim = (c, k) => c.map((v) => v * k);
   const horizon = dim(mix3(tod.horizon, grey(tod.horizon, 1), overcast * 0.85), 1 - overcast * 0.12);
   const zenith = dim(mix3(tod.zenith, grey(tod.zenith, 1), overcast * 0.9), 1 - overcast * 0.35);
   return {
     name,
+    night,
+    day,
     weather: WEATHERS.includes(weather) ? weather : base.weather,
     elev: base.elev,
     az: base.az,
@@ -184,12 +196,12 @@ export function resolveLook(name, weather, sky = null) {
     hemi: tod.hemi,
     hemiI: tod.hemiI * (1 + overcast * 0.25),
     warm: tod.warm,
-    env: 0.7 * (1 - overcast * 0.35),
+    env: 0.7 * (1 - overcast * 0.35) * (night ? 0.1 : day ? 0.55 : 1), // a high sun makes the image-based light far brighter, and it washed the hull out
     sea: {
       state: Math.max(0.4, base.sea.state + w.state - d.state),
       caps: rel(base.sea.caps, w.caps - d.caps, 0, 1.2),
       wind: base.sea.wind,
-      glitter: base.sea.glitter * (1 - overcast),
+      glitter: base.sea.glitter * (1 - overcast) * (night ? 0.12 : 1),
       reflect: base.sea.reflect,
     },
     clouds: base.clouds,
@@ -200,7 +212,8 @@ export function resolveLook(name, weather, sky = null) {
     // colours, so a warm horizon fades to the blue above it without the pink that blending after the tone curve gives.
     skyStops: SKY_STOPS.map((t) => horizon.map((v, i) => Math.round(v + (zenith[i] - v) * t))),
     // The physical Sky only lights the scene (the image-based light); these set how warm and hazy that light is.
-    ibl: { turbidity: 2 + overcast * 8 + (1 - Math.min(base.elev, 30) / 30) * 4, rayleigh: 1.4 + (1 - Math.min(base.elev, 30) / 30) * 1.2, mie: 0.004 + overcast * 0.006 },
+    ibl: day ? { turbidity: 1.2, rayleigh: 3.2, mie: 0.0012 } // the calm look's
+      : { turbidity: 2 + overcast * 8 + (1 - Math.min(base.elev, 30) / 30) * 4, rayleigh: 1.4 + (1 - Math.min(base.elev, 30) / 30) * 1.2, mie: 0.004 + overcast * 0.006 },
   };
 }
 

@@ -7,7 +7,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {
-  PLAN_DEFAULTS, RAIL_END, RECOVERY_AT, generatePath, planEngage, planSky, planStats, relSpeed, speedAtSlope, turnRadius, validatePlan,
+  MAX_KEYS, PATH_LIMIT, PLAN_DEFAULTS, PLAN_RANGES, RAIL_END, RECOVERY_AT, clampKey, detectKeys, flyRoute, generatePath, keyManoeuvre, linkRanges, planEngage, planSky, planStats, relSpeed, speedAtSlope, turnRadius, validateKeys, validatePlan,
 } from '../src/missionPlan.js';
 
 const plan = (o = {}) => validatePlan({ ...PLAN_DEFAULTS, ...o });
@@ -19,6 +19,8 @@ const SHAPES = [
   { alt: 600, runAlt: 100, turnBack: 3000, engage: 800 },
   { droneSpeed: 100, shipKn: 30, turnBack: 1000, engage: 1500, alt: 1000 },
   { droneSpeed: 45, shipKn: 5, turnBack: 800, engage: 200, alt: 60, runAlt: 40 },
+  { alt: 1000, runAlt: 1000, turnBack: 15000, engage: 1500 },
+  { alt: 1000, runAlt: 100, turnBack: 15000, engage: 400, shipKn: 30 },
 ];
 
 describe('the settings', () => {
@@ -40,6 +42,11 @@ describe('the settings', () => {
     assert.equal(planSky(plan({ tod: 'dawn' })).az, 0, 'a sun in the east, dead ahead of a ship heading east... and abeam of one heading north');
     assert.equal(planSky(plan({ tod: 'dawn', heading: 90 })).az, 90, 'heading east, the dawn sun is dead ahead (the scene\'s +X)');
     assert.equal(planSky(null), null);
+    assert.equal(validatePlan({ tod: 'night' }).tod, 'night');
+    assert.deepEqual(planSky(plan({ tod: 'night' })), { elev: 40, az: -110, night: true }, 'night is the moon, and only night says so');
+    assert.equal(planSky(plan({ tod: 'dusk' })).night, undefined);
+    assert.equal(planSky(plan({ tod: 'noon' })).day, true, 'noon wears the calm daylight');
+    assert.equal(planSky(plan({ tod: 'dawn' })).day, undefined);
   });
 
   it('the engagement setting says what the plan says', () => {
@@ -74,7 +81,7 @@ describe('the generated path', () => {
           assert.ok(path.points.length >= 8 && path.points.length <= 80, `${path.points.length} points fit the editor`);
           for (const q of path.points) {
             assert.ok(q.every(Number.isFinite));
-            assert.ok(Math.abs(q[0]) <= 6000 && Math.abs(q[2]) <= 6000 && q[1] >= 8 && q[1] <= p.alt, `in bounds: ${q}`);
+            assert.ok(Math.abs(q[0]) <= PATH_LIMIT && Math.abs(q[2]) <= PATH_LIMIT && q[1] >= 8 && q[1] <= p.alt, `in bounds: ${q}`);
           }
           // After the launch it goes the launcher's way: its far point is on that side, past the turn-back distance.
           const out = path.points.reduce((m, q) => Math.max(m, q[0] * ahead), -Infinity);
@@ -96,6 +103,27 @@ describe('the generated path', () => {
       }
     }
   }
+
+  it('stays on the launcher\'s side whatever the window asks: a turn back too short for the ship\'s speed gives way, and says so', () => {
+    for (const variant of VARIANTS) {
+      const ahead = variant === 'aft' ? -1 : 1;
+      for (const mode of ['intercept', 'chute']) {
+        for (const turnBack of [800, 1000, 1200]) {
+          for (const shipKn of [5, 14, 30]) {
+            for (const [alt, runAlt] of [[250, 40], [250, 250], [1000, 250]]) {
+              const p = plan({ turnBack, shipKn, alt, runAlt, engage: 200 });
+              const path = generatePath(p, { variant, mode });
+              const what = `${variant} ${mode} ${JSON.stringify({ turnBack, shipKn, alt, runAlt })}`;
+              const out = Math.max(...path.points.map((q) => q[0] * ahead));
+              const back = Math.max(...path.points.map((q) => -q[0] * ahead));
+              assert.ok(back <= 300 && out > back + 300, `${what}: out ${out}, the wrong way ${back}`);
+              assert.equal(path.notes.some((n) => n.key === 'turnBack'), Math.abs(path.turnBack - turnBack) > 50, what);
+            }
+          }
+        }
+      }
+    }
+  });
 
   it('turns back at the distance asked, when the speed allows it', () => {
     for (const variant of VARIANTS) {
@@ -147,6 +175,188 @@ describe('the generated path', () => {
     const s = planStats(p, generatePath(p));
     assert.ok(s.vMin < 75 && s.vMax > 75, `${s.vMin} to ${s.vMax}`);
     assert.ok(s.tEngage > 10 && s.tEngage < s.tFlight, `${s.tEngage} of ${s.tFlight}`);
+  });
+});
+
+describe('the turn-back and engagement sliders move each other', () => {
+  for (const variant of VARIANTS) {
+    for (const mode of ['intercept', 'chute']) {
+      const opts = { variant, mode };
+      it(`${variant} ${mode}: more engagement takes the turn back out, and the engagement then holds`, () => {
+        for (const shipKn of [5, 14, 30]) {
+          for (const engage of [650, 1000, 1500]) {
+            const out = linkRanges(plan({ turnBack: 800, engage, shipKn }), 'engage', opts);
+            assert.equal(out.engage, engage, 'the slider being moved keeps its value');
+            assert.equal(generatePath(out, opts).engage, engage, `${JSON.stringify(out)} holds`);
+          }
+        }
+      });
+
+      it(`${variant} ${mode}: a shorter turn back brings the engagement in, on the slider's steps`, () => {
+        for (const shipKn of [5, 14, 30]) {
+          const out = linkRanges(plan({ turnBack: 800, engage: 1500, shipKn }), 'turnBack', opts);
+          assert.equal(out.turnBack, 800, 'the slider being moved keeps its value');
+          assert.ok(out.engage < 1500 && out.engage % PLAN_RANGES.engage[2] === 0, `engage ${out.engage}`);
+          // At the slider's minimum a very fast ship can still leave less room than that: the window's note says so.
+          const path = generatePath(out, opts);
+          if (out.engage > PLAN_RANGES.engage[0]) assert.equal(path.engage, out.engage, `${JSON.stringify(out)} holds`);
+          else assert.equal(path.notes.some((n) => n.key === 'engage'), path.engage < out.engage);
+        }
+      });
+    }
+  }
+
+  it('leaves them alone when the engagement already fits, and other settings alone always', () => {
+    const p = plan();
+    assert.deepEqual(linkRanges(p, 'engage'), p);
+    assert.deepEqual(linkRanges(p, 'turnBack'), p);
+    const far = plan({ turnBack: 800, engage: 1500 });
+    assert.deepEqual(linkRanges(far, 'alt'), far);
+  });
+});
+
+describe('the settings\' ranges reach what the owner asked', () => {
+  it('1000 m of altitude and 15 km to the turn back', () => {
+    assert.equal(PLAN_RANGES.alt[1], 1000);
+    assert.equal(PLAN_RANGES.turnBack[1], 15000);
+    assert.equal(validatePlan({ turnBack: 15000 }).turnBack, 15000);
+  });
+
+  it('with the room to climb, 1000 m really is flown, and nothing says otherwise', () => {
+    const p = plan({ alt: 1000, runAlt: 1000, turnBack: 5000, engage: 650 });
+    for (const variant of VARIANTS) {
+      const path = generatePath(p, { variant });
+      assert.equal(path.alt, 1000);
+      assert.equal(Math.max(...path.points.map((q) => q[1])), 1000);
+      assert.deepEqual(path.notes, []);
+    }
+  });
+
+  it('without the room, the note says how high it gets', () => {
+    const path = generatePath(plan({ alt: 1000, runAlt: 1000, turnBack: 800, engage: 650 }));
+    const note = path.notes.find((n) => n.key === 'alt');
+    assert.ok(note && note.value < 1000, JSON.stringify(path.notes));
+    assert.ok(Math.abs(Math.max(...path.points.map((q) => q[1])) - note.value) <= 1);
+  });
+
+  it('15 km out: the distance is met, the points fit the editor and the limits, and the far end is on the launcher\'s side', () => {
+    for (const variant of VARIANTS) {
+      const path = generatePath(plan({ turnBack: 15000 }), { variant });
+      assert.ok(Math.abs(path.turnBack - 15000) <= 50, `${variant}: ${path.turnBack}`);
+      assert.equal(path.notes.some((n) => n.key === 'turnBack'), false);
+      assert.ok(path.points.length <= 80);
+      assert.ok(path.points.every((q) => Math.abs(q[0]) < PATH_LIMIT && Math.abs(q[2]) < PATH_LIMIT));
+      const ahead = variant === 'aft' ? -1 : 1;
+      assert.ok(path.keys[0][0] * ahead > 14000);
+    }
+  });
+});
+
+describe('the manoeuvre points', () => {
+  const speeds = { droneSpeed: 75, ship: 7 };
+  // Plan-view heading change per metre, and slope over the sea, sampled along a flown route.
+  const seaBank = (route) => {
+    const banks = [];
+    const p = route.marks;
+    for (let i = 2; i < p.length; i++) {
+      const v = (a, b) => { const dt = Math.hypot(b.x - a.x, b.z - a.z) / 75; return [(b.x - a.x) / dt + 7, (b.z - a.z) / dt]; };
+      const u = v(p[i - 2], p[i - 1]);
+      const w = v(p[i - 1], p[i]);
+      const turn = Math.atan2(u[1] * w[0] - u[0] * w[1], u[0] * w[0] + u[1] * w[1]);
+      banks.push({ turn, s: p[i].s - p[i - 2].s });
+    }
+    return banks;
+  };
+
+  it('a generated path has only a few, and each is where a manoeuvre starts', () => {
+    for (const variant of VARIANTS) {
+      for (const mode of ['intercept', 'chute']) {
+        const path = generatePath(plan({ alt: 400, runAlt: 150, turnBack: 3000 }), { variant, mode });
+        assert.ok(path.keys.length <= 5, `${variant} ${mode}: ${path.keys.length} points`);
+        const route = flyRoute(path.keys, { droneSpeed: 75, ship: plan().shipKn * 0.514444 });
+        const first = keyManoeuvre(path.keys, route, 0);
+        assert.equal(first.turn, true, 'the first point starts the turn back');
+        assert.equal(keyManoeuvre(path.keys, route, path.keys.length - 1).last, true);
+        assert.ok(path.keys.some((_, i) => keyManoeuvre(path.keys, route, i).alt === 'down'), 'one starts the descent');
+      }
+    }
+  });
+
+  it('the path is what the points fly, so opening the editor changes nothing', () => {
+    const p = plan({ turnBack: 2500 });
+    const path = generatePath(p);
+    assert.deepEqual(flyRoute(path.keys, { droneSpeed: p.droneSpeed, ship: p.shipKn * 0.514444 }).points.at(-1), path.points.at(-1));
+    assert.deepEqual(flyRoute(path.keys, { droneSpeed: p.droneSpeed, ship: p.shipKn * 0.514444 }).points, path.points);
+  });
+
+  it('flies a moved point at the same rules: a level turn holds one radius, a climb 20 degrees', () => {
+    const keys = [[1500, 300, -800], [2500, 300, 300], [600, 100, 200], [100, 100, 0]];
+    const route = flyRoute(keys, speeds);
+    assert.deepEqual(route.notes, []);
+    assert.ok(route.points.length <= 80);
+    keys.forEach((k, i) => assert.ok(route.points.some((q) => q[0] === k[0] && q[2] === k[2]), `passes through point ${i + 1}`));
+    // The climb: height gained per metre flown over the sea.
+    const m = route.marks;
+    const up = m.findIndex((q) => q.h > 100);
+    const a = m[up];
+    const b = m[up + 1];
+    const seaRun = Math.hypot(b.x - a.x, b.z - a.z);
+    assert.ok(Math.atan2(b.h - a.h, seaRun) * 57.3 < 26 && Math.atan2(b.h - a.h, seaRun) * 57.3 > 14);
+    assert.ok(seaBank(route).some((x) => Math.abs(x.turn) > 0.1), 'it does turn');
+  });
+
+  it('a point too close for the turn is flown at straight, and said', () => {
+    const route = flyRoute([[2000, 100, -800], [2005, 100, -790], [100, 100, 0]], speeds);
+    assert.ok(route.points.length > 3);
+    assert.ok(route.notes.every((n) => n.key === 'tight' || n.key === 'steep'));
+  });
+
+  it('says when an altitude cannot be reached by the next point at 20 degrees', () => {
+    const route = flyRoute([[300, 900, -100], [500, 100, -100], [100, 100, 0]], speeds);
+    const note = route.notes.find((n) => n.key === 'steep' && n.index === 0);
+    assert.ok(note && note.value < 900, JSON.stringify(route.notes));
+  });
+
+  it('keeps the launcher\'s side, except the recovery\'s last point', () => {
+    assert.equal(clampKey([-500, 100, 0], 0, 3, { variant: 'fwd' })[0], 100);
+    assert.equal(clampKey([500, 100, 0], 0, 3, { variant: 'aft' })[0], -100);
+    assert.equal(clampKey([-212, 90, -212], 2, 3, { variant: 'fwd', mode: 'chute' })[0], -212);
+    assert.equal(clampKey([-212, 90, -212], 1, 3, { variant: 'fwd', mode: 'chute' })[0], 100);
+    assert.equal(clampKey([500, 5000, 0], 0, 3, {})[1], 1000);
+    assert.equal(clampKey([500, 1, 0], 0, 3, {})[1], 8);
+    assert.equal(clampKey([1e7, 100, -1e7], 0, 3, {})[0], PATH_LIMIT);
+  });
+
+  it('checks a stored list', () => {
+    assert.deepEqual(validateKeys([[1.2, 100.4, -3]]), [[1, 100, -3]]);
+    assert.equal(validateKeys([]), null);
+    assert.equal(validateKeys('x'), null);
+    assert.equal(validateKeys([[1, 2]]), null);
+    assert.equal(validateKeys(Array(MAX_KEYS + 1).fill([1, 100, 1])), null);
+    assert.equal(validateKeys([[PATH_LIMIT + 1, 100, 0]]), null);
+  });
+
+  it('finds the points of a path that has none stored, however many it was drawn with', () => {
+    const path = generatePath(plan({ alt: 400, runAlt: 150, turnBack: 3000 }));
+    const keys = detectKeys(path.points);
+    assert.ok(keys.length >= 2 && keys.length <= MAX_KEYS, `${keys.length}`);
+    assert.deepEqual(keys.at(-1), path.points.at(-1));
+    assert.deepEqual(detectKeys([[100, 50, 0]]), [[100, 50, 0]]);
+  });
+
+  it('the track never crosses itself on the sea (the crowded picture was the view, not the path)', () => {
+    const cross = (a, b, c, d) => {
+      const o = (p, q, r) => (q[0] - p[0]) * (r[2] - p[2]) - (q[2] - p[2]) * (r[0] - p[0]);
+      return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0;
+    };
+    for (const variant of VARIANTS) {
+      for (const turnBack of [1600, 3000, 15000]) {
+        const all = [RAIL_END, ...generatePath(plan({ turnBack }), { variant }).points];
+        for (let i = 1; i < all.length; i++) {
+          for (let j = i + 2; j < all.length; j++) assert.equal(cross(all[i - 1], all[i], all[j - 1], all[j]), false, `${variant} ${turnBack}: legs ${i} and ${j}`);
+        }
+      }
+    }
   });
 });
 
@@ -275,6 +485,50 @@ describe('the scenario flown from a plan', () => {
       assert.ok(S.droneRange(sc.tLock + 1) < S.droneRange(sc.tLock), 'on the way in');
     });
   }
+
+  it('the editor\'s flight time is the real one, for the path flown and for a path it has not flown', async () => {
+    for (const variant of VARIANTS) {
+      for (const turnBack of [1600, 6000]) {
+        const { S } = await fly(variant, 'intercept', { turnBack });
+        const real = S.scenario.tPathEnd - S.scenario.tRelease;
+        const shown = S.pathTiming(S.ACTIVE_PATH);
+        assert.ok(Math.abs(shown.flight - real) < 1, `${variant} ${turnBack}: shown ${shown.flight}, flown ${real}`);
+        assert.ok(Math.abs(shown.at(0) - S.scenario.tRelease) < 0.2);
+      }
+    }
+  });
+
+  it('15 km out: flown, and the missile still leaves on the run in, and hits', async () => {
+    for (const variant of VARIANTS) {
+      const { S } = await fly(variant, 'intercept', { turnBack: 15000, alt: 1000, runAlt: 300, engage: 1200 });
+      const sc = S.scenario;
+      assert.ok(Math.max(...Array.from({ length: 200 }, (_, i) => S.droneRange(sc.tRelease + ((sc.tLaunch - sc.tRelease) * i) / 200))) > 15000);
+      assert.ok(Math.abs(S.droneRange(sc.tLaunch) - 1200) < 20, `launched at ${S.droneRange(sc.tLaunch)}`);
+      assert.ok(S.droneRange(sc.tLaunch + 0.5) < S.droneRange(sc.tLaunch), 'closing');
+      assert.ok(Number.isFinite(sc.tHit) && sc.interceptMiss === 0, 'it hits');
+      assert.ok(Math.abs(sc.hitPos.y - 300) < 25, `at the run's height: ${sc.hitPos.y}`);
+    }
+  });
+
+  it('a stored path keeps its manoeuvre points, and one from before them still flies', async () => {
+    const keys = [[1500, 300, -800], [800, 300, 0], [100, 300, 0]];
+    const points = flyRoute(keys, { droneSpeed: 75, ship: 14 * 0.514444 }).points;
+    const store = new Map();
+    globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) };
+    try {
+      store.set('intercept.path.v2', JSON.stringify({ points, keys }));
+      const a = (await fly('fwd', 'intercept', { drawn: true })).S;
+      assert.deepEqual(a.ACTIVE_KEYS, keys);
+      assert.ok(a.scenario.customPath);
+      assert.ok(a.scenario.interceptMiss === 0 && Number.isFinite(a.scenario.tHit));
+      store.set('intercept.path.v2', JSON.stringify({ points }));
+      const b = (await fly('fwd', 'intercept', { drawn: true })).S;
+      assert.equal(b.ACTIVE_KEYS, null);
+      assert.deepEqual(b.ACTIVE_PATH, points);
+    } finally {
+      delete globalThis.localStorage;
+    }
+  });
 
   it('a drawn path is only flown when the plan says so', async () => {
     const stored = { points: [[100, 100, -100], [500, 200, -300], [1500, 250, -300], [1800, 250, 0], [1000, 250, 0], [300, 250, 0]] };

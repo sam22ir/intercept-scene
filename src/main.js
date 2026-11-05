@@ -12,7 +12,6 @@ import { createEnvironment } from './environment.js';
 import { lookFor } from './looks.js';
 import { planSky } from './missionPlan.js';
 import { createShipFx } from './fx/shipFx.js';
-import { wireWeather } from './weatherButton.js';
 import { createShip } from './models/ship.js';
 import { createPlane } from './models/plane.js';
 import { createMissile } from './models/missile.js';
@@ -82,7 +81,6 @@ const chute = scenario.hasMissile ? null : createParachute();
 if (chute) scene.add(chute.group);
 const effects = createEffects(scene, debris);
 if (debris) scenario.tEnd = scenario.tHit + debris.fallTime + 5;
-wireWeather({ look: env.look, getTime: () => clock.t });
 const shipFx = createShipFx(scene, { tEnd: scenario.tEnd, sea: env.look?.sea.state ?? 1 });
 
 // Floating tags + missile path; the on/off choice is remembered per viewer.
@@ -362,7 +360,7 @@ document.querySelector('#btn-keys').addEventListener('click', () => setKeys(true
 document.querySelector('#keys-close').addEventListener('click', () => setKeys(false));
 window.addEventListener('pointerdown', (e) => {
   if (!menuEl.hidden && !e.target.closest('#menu, #btn-menu')) setMenu(false);
-  if (!keysEl.hidden && !e.target.closest('#keys, #btn-keys')) setKeys(false);
+  if (!keysEl.hidden && !e.target.closest('#keys, #btn-keys, .cs-keys')) setKeys(false);
 }, true);
 try { setPanelFolded(localStorage.getItem(FOLD_KEY) === '1', false); } catch { /* storage unavailable */ }
 
@@ -483,6 +481,7 @@ createShare({
     focus: rig.id,
     director: directing,
     path: scenario.customPath || scenario.plan ? scenario.activePath : null,
+    keys: scenario.activeKeys,
     launch: scenario.launchU,
     // The same sky and sea for whoever opens the link, and the same mission plan.
     extra: { ...(env.look ? { weather: env.look.weather } : null), ...(scenario.plan ? { plan: JSON.stringify(scenario.plan) } : null) },
@@ -625,6 +624,8 @@ renderer.setAnimationLoop((now) => {
   if (missileGone && rig.id === 'missile') setFocus('plane', 60); // pull back out of the fireball
   editor.update();
   updatePickables();
+  // A planned flight can go 15 km out and more: the sky and the sea come along with the camera, as in Fly the drone.
+  if (scenario.plan) env.follow(camera.position);
   if (directing) {
     const shot = director.pose(clock.t, camera.position, dirLook);
     if (shot !== currentShot) {
@@ -718,28 +719,61 @@ const watchBadges = document.createElement('div');
     const q = (id) => document.querySelector(id);
     const item = (b, label, key, ic) => { b.className = 'mi-item'; b.setAttribute('role', 'menuitem'); b.innerHTML = '<span class="mi-l"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true">' + MI[ic] + '</svg>' + label + '</span>' + (key ? '<kbd>' + key + '</kbd>' : ''); return b; };
     const head = (t) => { const h = document.createElement('div'); h.className = 'menu-h'; h.textContent = t; return h; };
-    const keep = (el) => el;
-    const link = q('#dl-offline');
-    if (link) { link.className = 'mi-item'; link.innerHTML = '<span class="mi-l"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true">' + MI.dl + '</svg>Download offline version</span>'; }
-    const shipBtn = q('#btn-ship'), keysBtn = q('#btn-keys');
-    item(shipBtn, 'Main menu', '', 'menu');
+    // Main menu stands beside the gear, not in it (start.js sends #btn-home on to #btn-ship, which stays out of the menu).
+    const shipBtn = q('#btn-ship');
+    const homeBtn = q('#btn-home');
+    homeBtn.title = 'Main menu';
+    homeBtn.setAttribute('aria-label', 'Main menu');
+    homeBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-home"/></svg>';
+    menuButton.after(homeBtn);
+    // The mission settings: back to the window on the main menu, with this mission's settings in it.
+    const planBtn = document.createElement('button');
+    planBtn.type = 'button';
+    planBtn.id = 'btn-plan';
+    planBtn.title = 'Change this mission\'s settings: back to the settings window';
+    planBtn.addEventListener('click', () => {
+      stripShareParams();
+      try { sessionStorage.setItem('intercept.chooser', '1'); sessionStorage.setItem('intercept.openPlan', '1'); location.reload(); } catch { location.search = ''; }
+    });
+    // Fullscreen, as in the drills.
+    const fsBtn = q('#btn-fullscreen');
+    const toggleFullscreen = () => {
+      try {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else document.documentElement.requestFullscreen?.();
+      } catch { /* not allowed here */ }
+    };
+    fsBtn.addEventListener('click', toggleFullscreen);
+    fsBtn.classList.add('watch-fs');
+    MI.plan = '<path d="M5 7h9M18 7h1M5 17h1M10 17h9"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/><path d="M5 12h3M12 12h7"/><circle cx="10" cy="12" r="2"/>';
+    MI.full = '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>';
+    item(planBtn, 'Mission settings', '', 'plan');
+    item(q('#btn-edit'), 'Edit flight path', 'E', 'edit');
+    item(q('#btn-engage'), 'Missile engagement', 'G', 'engage');
     item(q('#btn-director'), 'Cinematic camera', 'D', 'cine');
     item(q('#btn-labels'), 'Tags and missile path', 'L', 'tags');
     item(q('#btn-trails'), 'Trajectories', 'T', 'trails');
     item(q('#btn-hud'), 'Readouts', 'H', 'readouts');
     item(q('#btn-map'), 'Mini map', 'M', 'map');
+    item(foldButton, 'Hide the interface', 'C', 'hide');
+    if (document.fullscreenEnabled) item(fsBtn, 'Fullscreen', 'F', 'full');
     item(q('#btn-sound'), 'Sound', 'S', 'sound');
     item(q('#btn-units'), 'Speeds in knots', 'U', 'units');
-    item(q('#btn-edit'), 'Edit flight path', 'E', 'edit');
-    item(q('#btn-engage'), 'Missile engagement', 'G', 'engage');
     item(q('#btn-record'), 'Record', '', 'rec');
     item(q('#btn-link'), 'Copy link to this moment', '', 'link');
-    item(foldButton, 'Hide the interface', 'C', 'hide');
-    item(keysBtn, 'Keyboard shortcuts', '?', 'keys');
-    menuEl.replaceChildren(head('Mission'), shipBtn, head('Camera'), q('#btn-director'), q('#btn-labels'), q('#btn-trails'),
-      head('Display'), q('#btn-hud'), q('#btn-map'), q('#btn-units'), foldButton,
-      head('Sound'), q('#btn-sound'), head('Sea'), ...[q('#sea-row'), q('#btn-weather')].filter(keep),
-      head('Tools'), q('#btn-edit'), q('#btn-engage'), q('#btn-record'), q('#btn-link'), head('Help'), keysBtn, ...[link].filter(keep));
+    menuEl.replaceChildren(head('Mission'), planBtn, q('#btn-edit'), q('#btn-engage'),
+      head('View'), q('#btn-director'), q('#btn-labels'), q('#btn-trails'), q('#btn-hud'), q('#btn-map'), foldButton, ...(document.fullscreenEnabled ? [fsBtn] : []),
+      head('Sound and speeds'), q('#btn-sound'), q('#btn-units'),
+      head('Share'), q('#btn-record'), q('#btn-link'));
+    // #btn-ship stays in the page, hidden: the Main menu button sends its click on to it.
+    shipBtn.hidden = true;
+    document.body.append(shipBtn);
+    // (Keyboard shortcuts left the menu: the keys button on the camera strip opens the sheet, and so does ?.)
+    // The sheet follows the map's new controls.
+    for (const dd of keysEl.querySelectorAll('dd')) if (dd.textContent.startsWith('Mini map')) dd.textContent = 'Mini map (scroll over it to zoom)';
+    globalThis.addEventListener('keydown', (e) => {
+      if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest?.('input, textarea') && !editor.active) toggleFullscreen();
+    });
   }
 
   // The badges: drone altitude and speed, the missile, the frigate's range.
@@ -768,12 +802,14 @@ function updateWatchBadges(t) {
   const pos = t < tHit ? plane.group.position : dronePosAt(t, _wb);
   const rng = pos.distanceTo(ship.group.position);
   const ms = telemetry.missileSpeed;
-  let html = wbBadge('hb-alt' + (down ? ' out' : alt < 15 ? ' low' : ''), wbIcon.alt, alt / 200, 'Drone altitude', Math.round(alt) + ' m' + (down ? ' · wreck' : ''), String(Math.round(alt)))
+  const altFull = scenario.plan ? Math.max(scenario.plan.alt, 200) : 200;
+  const rngFull = scenario.plan ? Math.max(scenario.plan.turnBack * 1.5, 2500) : 2500;
+  let html = wbBadge('hb-alt' + (down ? ' out' : alt < 15 ? ' low' : ''), wbIcon.alt, alt / altFull, 'Drone altitude', Math.round(alt) + ' m' + (down ? ' · wreck' : ''), String(Math.round(alt)))
     + wbBadge('hb-spd' + (down ? ' out' : ''), wbIcon.speed, spd / 110, 'Drone speed', Math.round(spd) + ' m/s · ' + Math.round(spd * 3.6) + ' km/h', String(Math.round(spd)));
   if (scenario.mode !== 'chute') {
     html += wbBadge('hb-msl ' + (ms === null || ms === undefined ? (t > tHit ? 'out' : 'ok') : 'arm'), wbIcon.missile, ms ? ms / 400 : 0, 'Missile', ms ? Math.round(ms) + ' m/s · ' + Math.round(telemetry.range ?? 0) + ' m to the drone' : (t > tHit ? 'spent' : 'waiting in its tube'), ms ? String(Math.round(ms)) : '');
   }
-  html += wbBadge('hb-hull', wbIcon.ship, 1 - rng / 2500, 'Frigate', Math.round(rng) + ' m from the drone', rng >= 1000 ? (rng / 1000).toFixed(1) : String(Math.round(rng)));
+  html += wbBadge('hb-hull', wbIcon.ship, 1 - rng / rngFull, 'Frigate', Math.round(rng) + ' m from the drone', rng >= 1000 ? (rng / 1000).toFixed(1) : String(Math.round(rng)));
   if (html !== lastWb) { watchBadges.innerHTML = html; lastWb = html; }
 }
 

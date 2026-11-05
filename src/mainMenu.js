@@ -14,7 +14,7 @@ import { briefHtml, wireBrief } from './missionBrief.js';
 // (launcher, number of ships, enemy level) and Start. Help (about, missions, the in-mission buttons, this menu), Controls
 // (the keys of the selected mission) and Settings (language and the preferences every mission reads from storage) are
 // overlays. The language re-renders the menu at once; the missions read it when they load. Selection changes only on a
-// click or a key, never on hover (a thumbnail only plays under the pointer), and Start, Enter or a double click launches
+// click or a key, never on hover (every thumbnail plays by itself, on a loop), and Start, Enter or a double click launches
 // (once: `onLaunch` is start.js's launch()).
 
 const $ = (root, s) => root.querySelector(s);
@@ -61,6 +61,7 @@ const ICON = {
   help: '<circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.3-2.7 4"/><circle class="dot" cx="12" cy="17.6" r="0.9"/>',
   keys: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h1.5M10 10h1.5M14 10h1.5M17 10h1M8 14.5h8"/>',
   down: '<path d="M12 4v11M7.5 11 12 15.5 16.5 11M5 20h14"/>',
+  full: '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
   play: '<path d="M7 4.5l13 7.5-13 7.5z"/>',
   levelBars: (n) => [[8, 24], [17, 18], [26, 12]].map(([x, y], i) => `<path class="bar${i < n ? ' on' : ''}" d="M${x} 30 V${y}"/>`).join(''),
@@ -73,7 +74,7 @@ const SHIP_ART = (id) => `<svg viewBox="0 0 320 96" aria-hidden="true" focusable
     : '<path class="arc" d="M222 38 Q254 -2 308 6"/><rect class="box" x="208" y="40" width="22" height="12" rx="2"/>')
   + '</svg>';
 
-export function createMainMenu(root, { mode: initialMode, ship: preShip, level: preLevel, lastPlayed, reducedMotion, onLaunch }) {
+export function createMainMenu(root, { mode: initialMode, ship: preShip, level: preLevel, lastPlayed, reducedMotion, openPlan = false, onLaunch }) {
   let lang = LANG;
   let mode = MISSION_IDS.includes(initialMode) ? initialMode : 'intercept';
   let level = ENEMY_LEVELS.some((l) => l.id === preLevel) ? preLevel : DEFAULT_LEVEL;
@@ -96,8 +97,8 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
   const motion = () => !reducedMotion && settingValue(SETTINGS.find((s) => s.id === 'motion')) !== '0';
 
   // --- Rendering ---------------------------------------------------------------------------------------
-  // The layout: the brand and the language, Help, Controls and Settings buttons; the wall of missions by category, as
-  // still frames; the big screen with the selected mission's picture, title, story, set-up steps and Start.
+  // The layout: the brand and the language, Help, Controls, Settings and Fullscreen buttons; the wall of missions by category,
+  // each playing on a loop; the big screen with the selected mission's picture, title, story, set-up steps and Start.
   let artSeq = 0;
   let heroKey = null;
   const thumbArt = (id, animate) => previewArt(id, shipFor[id] ?? FIXED_SHIP, animate, lang, `m${++artSeq}`);
@@ -118,6 +119,7 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
             <button type="button" class="mm-btn" data-open="help" title="${esc(u.help)} (H)">${icon(ICON.help, 'ic', 24)}<span>${esc(u.help)}</span></button>
             <button type="button" class="mm-btn" data-open="controls" title="${esc(u.controls)} (C)">${icon(ICON.keys, 'ic', 24)}<span>${esc(u.controls)}</span></button>
             <button type="button" class="mm-btn" data-open="settings" title="${esc(u.settings)} (G)">${icon(ICON.gear, 'ic', 24)}<span>${esc(u.settings)}</span></button>
+            ${document.fullscreenEnabled ? `<button type="button" class="mm-btn mm-dlbtn" id="mm-full" title="${esc(u.fullscreen)} (F)" aria-label="${esc(u.fullscreen)}">${icon(ICON.full, 'ic', 24)}</button>` : ''}
             ${ONLINE ? `<a class="mm-btn mm-dlbtn" id="dl-offline-menu" href="/intercept-offline" download="intercept-offline.html" title="${esc(u.offline)}: ${esc(u.offlineHint)}" aria-label="${esc(u.offline)}">${icon(ICON.down, 'ic', 24)}</a>` : ''}
           </div>
         </header>
@@ -148,14 +150,8 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
       <div class="mm-overlay" id="mm-overlay" hidden><div class="mm-dialog" role="dialog" aria-modal="true" tabindex="-1"></div></div>`;
     document.documentElement.lang = lang;
     root.querySelectorAll('.mm-mission').forEach((b) => {
-      const idOf = () => (b.dataset.family ? lastIn.drill : b.dataset.mode);
       b.addEventListener('click', () => pickRow(b));
       b.addEventListener('dblclick', go);
-      // A thumbnail plays under the pointer; the selected one has the big picture for that.
-      b.addEventListener('pointerenter', (e) => {
-        if (e.pointerType === 'mouse' && motion() && b.getAttribute('aria-checked') !== 'true') b.querySelector('.mm-prev').innerHTML = thumbArt(idOf(), true);
-      });
-      b.addEventListener('pointerleave', () => { b.querySelector('.mm-prev').innerHTML = thumbArt(idOf(), false); });
     });
     wire();
     paint();
@@ -207,10 +203,10 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
       b.setAttribute('aria-checked', String(on));
       // A thumbnail follows its mission's launcher or number of ships: redraw it when that changes.
       const id = b.dataset.family ? lastIn.drill : b.dataset.mode;
-      const key = `${id}:${shipFor[id] ?? ''}`;
+      const key = `${id}:${shipFor[id] ?? ''}:${motion()}`;
       const prev = b.querySelector('.mm-prev');
-      if (prev.dataset.key !== key || (on && !was)) {
-        prev.innerHTML = thumbArt(id, false);
+      if (prev.dataset.key !== key) {
+        prev.innerHTML = thumbArt(id, motion()); // it plays on a loop by itself (a still frame when the menu's motion is off)
         prev.dataset.key = key;
       }
       if (on && !was) {
@@ -401,9 +397,7 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     ship: shipNow(),
     title: menuText(mode, shipNow(), lang).title,
     button: menuText(mode, shipNow(), lang).button,
-    ships: SHIPS.map((s0) => { const s = shipIn(s0, lang); return [s.id, s.name]; }),
     u: t(),
-    onShip: setShip,
     onCancel: closeOverlay,
     onStart: (plan) => launch(plan),
   });
@@ -458,10 +452,19 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
     } else if (e.key === 'h' || e.key === 'H' || e.key === '?') openOverlay('help');
     else if (e.key === 'c' || e.key === 'C') openOverlay('controls');
     else if (e.key === 'g' || e.key === 'G') openOverlay('settings');
+    else if ((e.key === 'f' || e.key === 'F') && document.fullscreenEnabled) toggleFullscreen();
     else if (e.key === 'Enter' && !e.target.closest?.('.mm-actions, .mm-lang')) { e.preventDefault(); go(); }
   }
 
+  function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen?.();
+    } catch { /* not allowed here */ }
+  }
+
   function wire() {
+    root.querySelector('#mm-full')?.addEventListener('click', toggleFullscreen);
     root.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
     root.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => setLang(b.dataset.lang)));
     root.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => openOverlay(b.dataset.open)));
@@ -475,5 +478,6 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
   shell();
   window.addEventListener('keydown', onKey);
   $(root, '#ch-start').focus({ preventScroll: true });
+  if (openPlan && PLAN_MODES.includes(mode)) openOverlay('plan'); // back from a mission's gear menu: Mission settings
   return { get mode() { return mode; }, open: openOverlay };
 }

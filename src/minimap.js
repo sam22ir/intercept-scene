@@ -1,18 +1,23 @@
 import * as THREE from 'three';
 import { scenario, shipPos, planePos, planeVel, missilePos, missileTrailPoints } from './scenario.js';
 import { TRAIL_COLORS } from './trails.js';
+import {
+  autoRadius, loadMapView, pointerAngle, radiusAtAngle, radiusLabel, ringAngle, ringStep, saveMapView, wheelRadius,
+} from './mapView.js';
 
-// Mini map: a small translucent round radar at the bottom of the screen, beside the timeline. It is centred on
-// the ship with the bow pointing up (so ahead is up, starboard is right) and shows the
-// ship, each drone and each missile with the way they are heading, plus their paths in the
-// ship's frame (the part already flown is bright, the rest faint). Everything is a pure
-// function of t, so it scrubs both ways. Click it to change the zoom; M hides it.
+// Mini map: a small translucent round radar at the bottom of the screen, beside the timeline, with the bow pointing up
+// (so ahead is up, starboard is right). It is centred on the ship or the drone (the small buttons at its corner) and shows
+// the ship, each drone and each missile with the way they are heading, plus their paths in the ship's frame (the part
+// already flown is bright, the rest faint). Everything is a pure function of t and the view, so it scrubs both ways. The wheel
+// over it or the ring round its rim zooms, Auto goes back to following everything, and M hides it. The view is remembered.
 
-const SCALES = [300, 500, 750, 1000, 1500, 2000, 3000, 4500, 7000]; // auto-zoom steps: metres to the rim
-const ZOOMS = ['auto', 500, 1000, 2000]; // what a click cycles through
 const PATH_DT = 0.5; // s between path samples
 
 const hex = (c) => `#${c.toString(16).padStart(6, '0')}`;
+
+const ICON_SHIP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l4 6.5v12.5H8V9z"/></svg>';
+const ICON_DRONE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5c1 1.4 1.3 3.2 1.3 5.5v2l8.2 3v2.2l-8.2-1.6v3.6l2.7 2v1.6L12 19.7l-4 1.1v-1.6l2.7-2v-3.6l-8.2 1.6V13l8.2-3V8c0-2.3.3-4.1 1.3-5.5z"/></svg>';
+const ICON_RINGS = '<svg class="line" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg>';
 
 // dronePosAt(t, out, k): the drone's world position, resolving to its wreck after the hit.
 export function createMinimap({ dronePosAt }) {
@@ -49,8 +54,74 @@ export function createMinimap({ dronePosAt }) {
   });
 
   let enabled = true;
-  let zoom = 0; // index into ZOOMS
+  const view = loadMapView();
   let lastKey = '';
+
+  // The controls: the centre at the disc's lower left, Auto at its lower right, the ring round its rim.
+  root.title = 'Mini map, bow up. Scroll over it or drag the ring to zoom, M to hide it.';
+  root.classList.add('map-tools');
+  const ctl = document.createElement('div');
+  ctl.className = 'map-center';
+  ctl.setAttribute('role', 'group');
+  ctl.setAttribute('aria-label', 'Map centre');
+  ctl.innerHTML = `<button type="button" data-center="ship" title="Centre the map on the ship" aria-label="Centre the map on the ship">${ICON_SHIP}</button>`
+    + `<button type="button" data-center="drone" title="Centre the map on the drone" aria-label="Centre the map on the drone">${ICON_DRONE}</button>`
+    + `<button type="button" data-rings title="Show or hide the range rings" aria-label="Show or hide the range rings">${ICON_RINGS}</button>`;
+  const auto = document.createElement('button');
+  auto.type = 'button';
+  auto.className = 'map-auto';
+  auto.textContent = 'Auto';
+  auto.title = 'Zoom by itself to keep everything on the map';
+  const ring = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  ring.setAttribute('class', 'map-ring');
+  ring.setAttribute('viewBox', '0 0 100 100');
+  ring.setAttribute('aria-hidden', 'true');
+  const arc = (r, deg) => [50 + r * Math.sin((deg * Math.PI) / 180), 50 - r * Math.cos((deg * Math.PI) / 180)].map((v) => v.toFixed(2)).join(' ');
+  const RING_R = 47.5;
+  const trackPath = `M${arc(RING_R, -140)} A${RING_R} ${RING_R} 0 1 1 ${arc(RING_R, 140)}`;
+  ring.innerHTML = `<path class="map-ring-hit" d="${trackPath}"/><path class="map-ring-track" d="${trackPath}"/><circle class="map-ring-knob" r="3"/>`;
+  const knob = ring.querySelector('circle');
+  root.append(ring, ctl, auto);
+
+  function setView(change) {
+    Object.assign(view, change);
+    saveMapView(view);
+    lastKey = '';
+    showView();
+  }
+  function showView() {
+    ctl.querySelectorAll('button').forEach((b) => {
+      const on = 'rings' in b.dataset ? view.rings === true : b.dataset.center === view.center;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    auto.classList.toggle('active', view.radius === null);
+    auto.setAttribute('aria-pressed', String(view.radius === null));
+  }
+  showView();
+  ctl.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-center]');
+    if (b) setView({ center: b.dataset.center });
+    if (e.target.closest('button[data-rings]')) setView({ rings: !view.rings });
+  });
+  auto.addEventListener('click', () => setView({ radius: null }));
+  root.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setView({ radius: wheelRadius(shown, e.deltaY) });
+  }, { passive: false });
+  const ringTo = (e) => {
+    const r = canvas.getBoundingClientRect();
+    setView({ radius: radiusAtAngle(pointerAngle(e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2)) });
+  };
+  const hit = ring.querySelector('.map-ring-hit');
+  hit.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    hit.setPointerCapture(e.pointerId);
+    ringTo(e);
+  });
+  hit.addEventListener('pointermove', (e) => { if (hit.hasPointerCapture(e.pointerId)) ringTo(e); });
 
   // The disc's size comes from the CSS (--map-d: larger on desktop, 150 px on phones), so it is
   // measured again when the window changes size.
@@ -67,41 +138,49 @@ export function createMinimap({ dronePosAt }) {
   size();
   window.addEventListener('resize', size);
 
-  // The largest distance from the ship of anything the map is following at t.
+  // Where the map is centred at t, in the ship's frame: the ship herself, or the drone (its wreck after the hit).
+  function centreAt(t, out) {
+    if (view.center !== 'drone') return out.set(0, 0, 0);
+    dronePosAt(t, out, 0);
+    return out.setX(out.x - shipPos(t, _s).x);
+  }
+
+  const _c = new THREE.Vector3();
+  // The largest distance from the centre of anything the map is following at t.
   function reach(t) {
-    let far = 0;
+    centreAt(t, _c);
+    let far = Math.hypot(_c.x, _c.z); // the ship
+    shipPos(t, _s);
     for (const s of sets) {
       if (t >= s.t0 && (!s.e || t < s.e.tHit + 2)) {
         dronePosAt(t, _a, s.k);
-        far = Math.max(far, Math.hypot(_a.x - shipPos(t, _s).x, _a.z));
+        far = Math.max(far, Math.hypot(_a.x - _s.x - _c.x, _a.z - _c.z));
       }
       if (s.e && t > s.e.tLaunch && t < s.e.tHit) {
         missilePos(t, _b, s.k);
-        far = Math.max(far, Math.hypot(_b.x - shipPos(t, _s).x, _b.z));
+        far = Math.max(far, Math.hypot(_b.x - _s.x - _c.x, _b.z - _c.z));
       }
     }
     return far;
   }
 
-  function radiusAt(t) {
-    const z = ZOOMS[zoom];
-    if (z !== 'auto') return z;
-    const want = Math.max(reach(t) * 1.15, 250);
-    return SCALES.find((r) => r >= want) ?? SCALES[SCALES.length - 1];
-  }
-
-  const niceStep = (R) => (R >= 2000 ? 500 : R >= 1000 ? 250 : R >= 500 ? 100 : 50);
+  let shown = 1000; // the radius last drawn: where the wheel starts from
+  const radiusAt = (t) => view.radius ?? autoRadius(reach(t));
 
   function draw(t) {
     const R = radiusAt(t);
+    shown = R;
     const half = SIZE / 2;
     const rim = half - 6;
     const k = rim / R;
+    centreAt(t, _c);
+    const cx = _c.x;
+    const cz = _c.z;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, SIZE, SIZE);
-    // Map frame: origin at the ship, x ahead is up the screen, z starboard is right.
-    const px = (z) => half + z * k;
-    const py = (x) => half - x * k;
+    // Map frame: the origin at the centre chosen, x ahead is up the screen, z starboard is right.
+    const px = (z) => half + (z - cz) * k;
+    const py = (x) => half - (x - cx) * k;
     const clampTo = (x, y) => { // keep a marker on the disc
       const dx = x - half;
       const dy = y - half;
@@ -109,23 +188,28 @@ export function createMinimap({ dronePosAt }) {
       return d > rim ? [half + (dx / d) * rim, half + (dy / d) * rim, true] : [x, y, false];
     };
 
-    // Range rings and the bow tick.
+    // Range rings round the ship and the cross (only when asked for), and the bow tick.
     ctx.lineWidth = 1;
-    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-    ctx.fillStyle = 'rgba(255,255,255,0.4)';
     ctx.font = '9px system-ui, sans-serif';
     ctx.textAlign = 'left';
-    const step = niceStep(R);
-    for (let r = step; r <= R + 1e-6; r += step) {
+    const shipX = px(0);
+    const shipY = py(0);
+    if (view.rings) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+      const step = ringStep(R);
+      const off = Math.hypot(cx, cz);
+      for (let r = step; r <= off + R + 1e-6; r += step) {
+        if (r < off - R) continue;
+        ctx.beginPath();
+        ctx.arc(shipX, shipY, r * k, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,0.1)';
       ctx.beginPath();
-      ctx.arc(half, half, r * k, 0, Math.PI * 2);
+      ctx.moveTo(half, half - rim); ctx.lineTo(half, half + rim);
+      ctx.moveTo(half - rim, half); ctx.lineTo(half + rim, half);
       ctx.stroke();
     }
-    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-    ctx.beginPath();
-    ctx.moveTo(half, half - rim); ctx.lineTo(half, half + rim);
-    ctx.moveTo(half - rim, half); ctx.lineTo(half + rim, half);
-    ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
     ctx.beginPath();
     ctx.moveTo(half, 3); ctx.lineTo(half - 3.5, 10); ctx.lineTo(half + 3.5, 10); ctx.closePath();
@@ -181,16 +265,19 @@ export function createMinimap({ dronePosAt }) {
       ctx.globalAlpha = 1;
     };
 
-    // Ship at the centre, pointing up.
+    // The ship, pointing up: on the rim, fainter, when she is off the map.
+    const [hx, hy, hEdge] = clampTo(shipX, shipY);
     ctx.fillStyle = hex(TRAIL_COLORS.ship);
     ctx.strokeStyle = 'rgba(8,12,18,0.85)';
     ctx.lineWidth = 1.2;
+    ctx.globalAlpha = hEdge ? 0.55 : 1;
     ctx.beginPath();
-    ctx.moveTo(half, half - 9);
-    ctx.lineTo(half + 4, half - 3); ctx.lineTo(half + 3.5, half + 8); ctx.lineTo(half - 3.5, half + 8); ctx.lineTo(half - 4, half - 3);
+    ctx.moveTo(hx, hy - 9);
+    ctx.lineTo(hx + 4, hy - 3); ctx.lineTo(hx + 3.5, hy + 8); ctx.lineTo(hx - 3.5, hy + 8); ctx.lineTo(hx - 4, hy - 3);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+    ctx.globalAlpha = 1;
 
     shipPos(t, _s);
     for (const s of sets) {
@@ -234,23 +321,25 @@ export function createMinimap({ dronePosAt }) {
       }
     }
 
-    label.textContent = `${ZOOMS[zoom] === 'auto' ? 'AUTO · ' : ''}${R >= 1000 ? `${R / 1000} km` : `${R} m`}`;
+    label.textContent = `${view.radius === null ? 'AUTO · ' : ''}${radiusLabel(R)}`;
+    const deg = ringAngle(R);
+    knob.setAttribute('cx', (50 + RING_R * Math.sin((deg * Math.PI) / 180)).toFixed(2));
+    knob.setAttribute('cy', (50 - RING_R * Math.cos((deg * Math.PI) / 180)).toFixed(2));
   }
 
   const api = {
     get enabled() { return enabled; },
+    get view() { return { ...view, shown }; },
     setEnabled(on) { enabled = on; root.hidden = !on; document.body.classList.toggle('has-map', on); lastKey = ''; },
-    cycleZoom() { zoom = (zoom + 1) % ZOOMS.length; lastKey = ''; },
-    // Redraws only when the moment or the zoom changed.
+    // Redraws only when the moment or the view changed.
     update(t) {
       if (!enabled) return;
-      const key = `${t}|${zoom}`;
+      const key = `${t}|${view.center}|${view.radius}`;
       if (key === lastKey) return;
       lastKey = key;
       draw(t);
     },
   };
-  root.addEventListener('click', () => api.cycleZoom());
   // Sit just above the timeline, whatever height it has on this screen.
   const tl = document.querySelector('.timeline');
   if (tl && typeof ResizeObserver === 'function') {

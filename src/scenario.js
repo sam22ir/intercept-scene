@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { generatePath, relSpeed, shipSpeedOf, speedAtSlope, validatePlan } from './missionPlan.js';
+import { PATH_LIMIT, generatePath, relSpeed, shipSpeedOf, speedAtSlope, validateKeys, validatePlan } from './missionPlan.js';
 
 // The whole story is a pure function of time t (seconds). Nothing here keeps
 // per-frame state, which is what lets the timeline scrub in both directions.
@@ -167,6 +167,10 @@ const RECOVERY_PATH_AFT = [
 const CHUTE_PATH = SHIP_VARIANT === 'aft' ? RECOVERY_PATH_AFT : RECOVERY_PATH_FWD;
 export const PLAN_PATH = PLAN ? generatePath(PLAN, { variant: SHIP_VARIANT, mode: MODE }) : null;
 export const DEFAULT_PATH = (PLAN_PATH ? PLAN_PATH.points : CHUTE_MODE ? CHUTE_PATH : INTERCEPT_PATH).map((p) => [...p]);
+// The manoeuvre points behind the path (the path editor shows these), when it has them.
+export const DEFAULT_KEYS = PLAN_PATH ? PLAN_PATH.keys.map((k) => [...k]) : null;
+// What flyRoute needs to fly them.
+export const ROUTE_SPEEDS = { droneSpeed: PLAN ? PLAN.droneSpeed : 40, ship: SHIP_SPEED };
 
 // A custom path drawn in the editor is stored per browser and applied on load.
 // The aft ship flies a different default path, so its drawn paths are stored apart.
@@ -180,7 +184,7 @@ export function validatePath(pts) {
   const out = [];
   for (const p of pts) {
     if (!Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite)) return null;
-    if (Math.abs(p[0]) > 6000 || Math.abs(p[2]) > 6000 || p[1] > 2000) return null;
+    if (Math.abs(p[0]) > PATH_LIMIT || Math.abs(p[2]) > PATH_LIMIT || p[1] > 2000) return null;
     out.push([Math.round(p[0]), Math.round(Math.max(p[1], MIN_ALT)), Math.round(p[2])]);
   }
   return out;
@@ -200,7 +204,7 @@ function loadCustomPath() {
     if (!raw) return null;
     const o = JSON.parse(raw);
     const points = validatePath(o.points);
-    return points ? { points, launch: validateLaunchU(o.launch) } : null;
+    return points ? { points, keys: validateKeys(o.keys), launch: validateLaunchU(o.launch) } : null;
   } catch {
     return null;
   }
@@ -215,7 +219,7 @@ function loadSharedPath() {
     const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
     const o = JSON.parse(globalThis.atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4)));
     const points = validatePath(o.points);
-    return points ? { points, launch: validateLaunchU(o.launch) } : null;
+    return points ? { points, keys: validateKeys(o.keys), launch: validateLaunchU(o.launch) } : null;
   } catch {
     return null;
   }
@@ -228,6 +232,8 @@ export const SHARED_PATH = SHARED !== null;
 export const CUSTOM_PATH = CUSTOM !== null;
 export const ACTIVE_PATH = CUSTOM?.points ?? DEFAULT_PATH.map((p) => [...p]);
 export const ACTIVE_LAUNCH_U = CUSTOM?.launch ?? null;
+// null: a path with no manoeuvre points stored (the editor finds them with detectKeys).
+export const ACTIVE_KEYS = CUSTOM ? CUSTOM.keys : DEFAULT_KEYS;
 
 // Same spline the drone flies, for the editor's live preview.
 export function buildPathCurve(editablePts) {
@@ -253,7 +259,7 @@ const WAYPOINTS = [...PATH_FIXED, ...ACTIVE_PATH];
 export const ENGAGE_STORAGE_KEY = 'intercept.engage.v1';
 export const BURST_SIDES = ['auto', 'above', 'below', 'left', 'right'];
 export const ENGAGE_TIMINGS = ['auto', 'launch', 'impact', 'range'];
-export const RANGE_LIMITS = [100, 1500]; // m, drone distance from the ship
+export const RANGE_LIMITS = [100, 5500]; // m, drone distance from the ship
 export const MAX_BURST = 60;
 export const ENGAGE_DEFAULTS = { timing: 'auto', time: 0, range: 650, dist: 0, side: 'auto' };
 
@@ -330,8 +336,7 @@ function makeFlight(editablePts, shift) {
 // With a plan: the booster takes the drone from the rail's speed up to the speed for the slope it is on, which it then
 // follows with a two-second lag (less going up, more coming down, missionPlan.js), all of it over the sea, so along the
 // path it depends on the way the ship is going too. Baked once, like the rest, so it stays a pure function of time.
-function planArcTable(curve, length) {
-  const STEP = 5;
+function planArcTable(curve, length, dt = ARC_DT, STEP = 5) {
   const n = Math.ceil(length / STEP);
   const slope = new Float32Array(n + 1);
   const dirX = new Float32Array(n + 1);
@@ -344,14 +349,34 @@ function planArcTable(curve, length) {
   const table = [0];
   let s = 0;
   let lag = slope[0];
-  for (let tau = 0; s < length; tau += ARC_DT) {
+  for (let tau = 0; s < length; tau += dt) {
     const i = Math.min(n, Math.floor(s / STEP));
-    lag += ((slope[i] - lag) * ARC_DT) / 2;
+    lag += ((slope[i] - lag) * dt) / 2;
     const cruise = relSpeed(speedAtSlope(PLAN.droneSpeed, lag), SHIP_SPEED, dirX[i]);
-    s += (tau < 1.3 ? V_RELEASE + ((cruise - V_RELEASE) * tau) / 1.3 : cruise) * ARC_DT;
+    s += (tau < 1.3 ? V_RELEASE + ((cruise - V_RELEASE) * tau) / 1.3 : cruise) * dt;
     table.push(s);
   }
   return table;
+}
+
+// The flying time of any path, for the path editor's readouts: { flight: seconds from release to its end, at(s): seconds
+// after t = 0 at which the drone has flown s metres }. With a plan it is the same speed law as the flight itself, on a
+// coarser table, so it stays quick enough to run on every drag.
+export function pathTiming(editablePts) {
+  const curve = buildPathCurve(editablePts);
+  const length = curve.getLength();
+  if (!PLAN) return { flight: flightTimeForLength(length, 0.1), at: (s) => timeForLength(s) };
+  const dt = 0.05;
+  const table = planArcTable(curve, length, dt, 20);
+  return {
+    flight: (table.length - 1) * dt,
+    at(s) {
+      let lo = 0;
+      let hi = table.length - 1;
+      while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (table[mid] < s) lo = mid; else hi = mid; }
+      return T_RELEASE + hi * dt;
+    },
+  };
 }
 
 function speedAt(tau) {
@@ -1118,6 +1143,8 @@ export const scenario = {
   inbound: INBOUND, // [t0, t1]: the inbound run, the only stretch a launch (or lock-on) may fall in
   launchU: ACTIVE_LAUNCH_U, // the editor's red launch point (fraction of the path), or null
   plan: PLAN, // the mission plan these came from (missionPlan.js), or null
+  activeKeys: ACTIVE_KEYS, // the manoeuvre points behind the path, or null
+  tPathEnd: FLIGHTS[0].tPathEnd,
   // One entry per engagement: none in a recovery, one in an intercept.
   // tLaunch/tHit above are always the first engagement.
   engagements: CHUTE_MODE ? [] : ENGS.map((e) => ({
