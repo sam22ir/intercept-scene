@@ -120,7 +120,7 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
             <button type="button" class="mm-btn" data-open="controls" title="${esc(u.controls)} (C)">${icon(ICON.keys, 'ic', 24)}<span>${esc(u.controls)}</span></button>
             <button type="button" class="mm-btn" data-open="settings" title="${esc(u.settings)} (G)">${icon(ICON.gear, 'ic', 24)}<span>${esc(u.settings)}</span></button>
             ${document.fullscreenEnabled ? `<button type="button" class="mm-btn mm-dlbtn" id="mm-full" title="${esc(u.fullscreen)} (F)" aria-label="${esc(u.fullscreen)}">${icon(ICON.full, 'ic', 24)}</button>` : ''}
-            ${ONLINE ? `<a class="mm-btn mm-dlbtn" id="dl-offline-menu" href="/intercept-offline" download="intercept-offline.html" title="${esc(u.offline)}: ${esc(u.offlineHint)}" aria-label="${esc(u.offline)}">${icon(ICON.down, 'ic', 24)}</a>` : ''}
+            ${ONLINE ? `<a class="mm-btn mm-dlbtn" id="dl-offline-menu" href="/naval-simulator-offline" download="naval-simulator-offline.html" title="${esc(u.offline)}: ${esc(u.offlineHint)}" aria-label="${esc(u.offline)}">${icon(ICON.down, 'ic', 24)}</a>` : ''}
           </div>
         </header>
         <main class="mm-info" id="ch-panel" aria-live="polite">
@@ -305,7 +305,7 @@ export function createMainMenu(root, { mode: initialMode, ship: preShip, level: 
           const g = groupIn(g0, lang);
           return `<div>${icon(ICON[g.id])}<b>${esc(g.name)}</b><small>${esc(g.hint)}</small><span>${MISSIONS.filter((m) => m.group === g.id).map((m) => esc(missionIn(m, lang).name)).join(' · ')}</span></div>`;
         }).join('')}</div>`
-        + `<p class="mm-note">${esc(u.aboutTech)}${ONLINE ? ` <a href="/intercept-offline" download="intercept-offline.html">${esc(u.offline)}</a>` : ''}</p>`;
+        + `<p class="mm-note">${esc(u.aboutTech)}${ONLINE ? ` <a href="/naval-simulator-offline" download="naval-simulator-offline.html">${esc(u.offline)}</a>` : ''}</p>`;
     } else if (helpTab === 'missions') {
       body = GROUPS.map((g0) => {
         const g = groupIn(g0, lang);

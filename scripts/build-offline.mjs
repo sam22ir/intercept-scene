@@ -1,7 +1,7 @@
 // Turns the Vite build into one self-contained HTML file that runs from disk
 // (file://) with no internet: the JS bundle and CSS are inlined, and the
 // "download offline version" link is dropped from the offline copy.
-// Run after `vite build`; writes dist/intercept-offline.html.
+// Run after `vite build`; writes dist/naval-simulator-offline.html.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,5 +25,5 @@ html = html
 if (scripts !== 1 || /(src|href)="\/assets\//.test(html)) {
   throw new Error('offline build: expected exactly one bundle and no remaining /assets/ references');
 }
-writeFileSync(join(dist, 'intercept-offline.html'), html);
-console.log(`offline build: dist/intercept-offline.html (${(html.length / 1024).toFixed(0)} KB)`);
+writeFileSync(join(dist, 'naval-simulator-offline.html'), html);
+console.log(`offline build: dist/naval-simulator-offline.html (${(html.length / 1024).toFixed(0)} KB)`);

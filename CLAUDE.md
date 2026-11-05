@@ -8,7 +8,7 @@ Interactive Three.js naval simulator ("Naval Simulator" / "Simulateur naval"): a
 
 Catch undeclared variables (a runtime error the build and tests miss) with `npx --yes eslint@9` and a flat config that turns on only `no-undef` (browser globals declared), run over `src`.
 
-The folder name ends with a **trailing space** (`/home/saadi/plane sceen `). Quote every path in shell commands.
+**The project's name is Naval Simulator** (`naval-simulator`; the owner's decision): use it for the project as a whole. "Intercept", "Formations" and the like name missions only. Older names survive where changing them has a cost: the `intercept-scene-master` folder, the `intercept-scene` GitHub repo and Worker (its live address), and the `intercept.*` storage keys, which keep each player's settings.
 
 ## Commands
 
@@ -16,17 +16,17 @@ The folder name ends with a **trailing space** (`/home/saadi/plane sceen `). Quo
 pnpm install      # one install at a time on this machine
 pnpm dev          # http://localhost:5173 (also the "dev" entry in .claude/launch.json)
 pnpm test         # node --test: scenario timings, hits, clearances, determinism
-pnpm build        # tests + dist/ bundle + dist/intercept-offline.html (the >500 kB chunk warning is three.js, expected)
+pnpm build        # tests + dist/ bundle + dist/naval-simulator-offline.html (the >500 kB chunk warning is three.js, expected)
 pnpm cf-deploy    # build + `wrangler deploy` (static-assets Worker, see wrangler.jsonc)
 ```
 
-`scripts/build-offline.mjs` runs after `vite build`. It inlines the single JS bundle and the CSS into `dist/intercept-offline.html`, which opens by double-click from disk with no internet. The site links to it ("Download offline version", `#dl-offline`), and the script strips that link from the offline copy. Keep the app free of runtime network loads (fonts, CDN scripts, fetched assets) and of code splitting, or the offline file breaks. The script fails the build if it finds more than one bundle.
+`scripts/build-offline.mjs` runs after `vite build`. It inlines the single JS bundle and the CSS into `dist/naval-simulator-offline.html`, which opens by double-click from disk with no internet. The site links to it ("Download offline version", `#dl-offline`), and the script strips that link from the offline copy. Keep the app free of runtime network loads (fonts, CDN scripts, fetched assets) and of code splitting, or the offline file breaks. The script fails the build if it finds more than one bundle.
 
 Live at https://intercept-scene.nafaa-store.workers.dev. The owner works only on this machine: commit locally and do not push or deploy until asked. When asked, run the tests and the build first and do not deploy if they fail: `git push`, then `node scripts/build-offline.mjs` after `vite build`, then `npx wrangler@4 deploy` (pnpm and a local wrangler are not installed on this machine).
 
 `src/scenario.js` imports only `three`, so timings and clearances can be checked in Node without a browser. Import it and sample `planeRelPos`, `missilePos` and `shipPos`.
 
-To test in a real browser, use the built-in browser pane (`preview_start` with the `dev` entry, then the `mcp__Claude_Browser__*` tools); do not drive headless Chromium with Playwright. Load a scene with `?mode=…&start=1`, seek with `__scene.clock.seek(t)` through `javascript_tool` instead of waiting for real-time playback (software rendering is slow, 1-2 fps), then screenshot. The offline file can be opened as `file://` from `dist/intercept-offline.html`.
+To test in a real browser, use the built-in browser pane (`preview_start` with the `dev` entry, then the `mcp__Claude_Browser__*` tools); do not drive headless Chromium with Playwright. Load a scene with `?mode=…&start=1`, seek with `__scene.clock.seek(t)` through `javascript_tool` instead of waiting for real-time playback (software rendering is slow, 1-2 fps), then screenshot. The offline file can be opened as `file://` from `dist/naval-simulator-offline.html`.
 
 In the browser console, `window.__scene` exposes `{ scenario, clock, setFocus, camera, controls, rig, renderer, plane, missile, ship }`, for example `__scene.clock.seek(__scene.scenario.tHit)`.
 
