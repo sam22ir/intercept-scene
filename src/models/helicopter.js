@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Kit, mat, canvasTexture } from './kit.js';
 import { HeliFlight } from '../heliFlight.js';
 
-// A naval helicopter (Super Lynx Mk140 as flown by the Algerian Navy): a boxy fuselage with a blunt glazed nose and a chin radar, a tail boom with a swept fin and a four-blade tail rotor on the starboard side, a four-blade
+// A naval helicopter (Super Lynx Mk140): a boxy fuselage with a blunt glazed nose and a chin radar, a tail boom with a swept fin and a four-blade tail rotor on the starboard side, a four-blade
 // main rotor, wheeled gear. Nose along +X, the wheels at y = 0; procedural geometry only. It stands on the pad (PAD) and, every so
 // often, spins up, lifts off, flies a circuit round the ship and lands again, only for the look of it (heliFlight.js decides when:
 // never while the ship is turning); `userData.update(state)` poses it from that state.
@@ -237,7 +237,7 @@ export function createHelicopter() {
     return m;
   };
   const serial = letters('LC-32', 0.7, 0.21, 90, '#2b2d2b');
-  const name = letters('ALGERIAN NAVAL FORCES', 1.5, 0.14, 13, '#2b2d2b');
+  const name = letters('NAVAL FORCES', 1.5, 0.14, 13, '#2b2d2b');
   const decals = [];
   for (const s of [-1, 1]) {
     decals.push(decal(serial, 0.7, 0.21, -3.2, 2.34, s * 0.5, s, -0.28));

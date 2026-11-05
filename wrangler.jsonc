@@ -1,7 +1,7 @@
 {
   // Static-assets-only Worker: serves the Vite build in dist/.
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "intercept-scene",
+  "name": "naval-simulator",
   "compatibility_date": "2026-10-01",
   "assets": {
     "directory": "./dist",

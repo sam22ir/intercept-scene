@@ -177,7 +177,8 @@ export function createHud({ onUnits, missionSub = '' } = {}) {
       ? (r < scenario.launchRange / 2 ? ' threat-high' : ' threat') : '';
     return cell(`drone${threat}`, 'Range', u(f(r), 'm'), onRail ? 'on the rail' : `${closing >= 0 ? 'closing' : 'opening'} ${spd(closing)} ${spdUnit()}`, 'Range from the drone to the ship')
       + cell('drone', 'Bearing', fmtBearing(droneBearing(t, 0)), `${f(Math.max(0, planePos(t, _p, 0).y))} m up`, 'Relative bearing from the bow, and the altitude of the drone')
-      + cell('drone', 'Speed', onRail ? '—' : u(spd(droneSpeed(t, 0)), spdUnit()), '');
+      + cell('drone', 'Speed', onRail ? '—' : u(spd(droneSpeed(t, 0)), spdUnit()), '')
+      + (scenario.plan ? cell('', 'Ship', `${String(scenario.plan.heading).padStart(3, '0')}°`, `${scenario.plan.shipKn} kn`, "The ship's heading and speed") : '');
   }
 
   function missileRows(t) {
@@ -267,7 +268,8 @@ export function createHud({ onUnits, missionSub = '' } = {}) {
     button.setAttribute('aria-pressed', String(enabled));
     if (unitsButton) {
       unitsButton.setAttribute('aria-pressed', String(units === 'kn'));
-      unitsButton.firstChild.textContent = units === 'kn' ? 'Speeds in km/h' : 'Speeds in knots';
+      // In the gear menu the words follow an icon: only they change.
+      (unitsButton.querySelector('.mi-l')?.lastChild ?? unitsButton.firstChild).textContent = units === 'kn' ? 'Speeds in km/h' : 'Speeds in knots';
       unitsButton.title = `Show speeds in ${units === 'kn' ? 'km/h' : 'knots'} (U)`;
     }
   }

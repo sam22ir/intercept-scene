@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { PATH_LIMIT, generatePath, relSpeed, shipSpeedOf, speedAtSlope, validateKeys, validatePlan } from './missionPlan.js';
 
 // The whole story is a pure function of time t (seconds). Nothing here keeps
 // per-frame state, which is what lets the timeline scrub in both directions.
@@ -47,7 +48,10 @@ export const MODE = (() => {
   }
 })();
 export const CHUTE_MODE = MODE === 'chute';
-export const SHIP_SPEED = 7; // m/s (~14 kn)
+// The mission plan (missionPlan.js, the window that opens on Start), read once: it generates the path and sets the speeds.
+// start.js only sets it for this file's two missions; without one everything below is the original story.
+export const PLAN = MODES.includes(globalThis.__SCENARIO) || !globalThis.__SCENARIO ? validatePlan(globalThis.__PLAN) : null;
+export const SHIP_SPEED = PLAN ? shipSpeedOf(PLAN) : 7; // m/s (~14 kn)
 
 export function shipPos(t, out) {
   return out.set(SHIP_SPEED * t, 0, 0);
@@ -98,69 +102,80 @@ const RELEASE_POINT = RAIL.start.clone()
   .addScaledVector(RAIL.up, RAIL.ride);
 
 // --- Flight path, ship frame -------------------------------------------------
-// Off the rail to port, a wide left-hand loop astern, back up the port side
-// low and close, a long shallow climb out ahead of the bow, then a left turn
-// back onto an inbound run at the ship — the leg on which it is shot down.
+// Off the rail, out along (fwd) or against (aft) the ship's heading on her port side in a
+// gradual climb, a turn-around 1.6 km out, then an inbound run at the ship: the leg on which
+// it is shot down (Intercept) or turns off for the recovery point (Recovery).
 // The first two waypoints are fixed by the catapult (so the release is
 // continuous); everything after them is the editable path (path editor).
 export const PATH_FIXED = [
   RELEASE_POINT.toArray(),
   RELEASE_POINT.clone().addScaledVector(RAIL.dir, 20).toArray(),
 ];
-// Generated from straights and constant-radius left arcs (R = 190 m), so the bank never
-// passes 50 degrees at the cruise speeds below (bank = atan(v^2 / (g R)), 46.6 degrees at
-// 42 m/s) and the pitch never passes 20 degrees. Out to port, a wide left-hand loop
-// astern that exits level 40 m abeam, a low close pass up the port side, a long shallow
-// climb out ahead of the bow, then a left turn back onto a straight, gently descending
-// inbound run at the ship.
-const INTERCEPT_PATH_FWD = [
-  [2, 29, -65], [38, 38, -108], [64, 40, -149], [79, 43, -195],
-  [81, 47, -244], [72, 51, -292], [50, 55, -336], [18, 59, -372],
-  [-23, 61, -400], [-69, 63, -416], [-118, 66, -420], [-166, 70, -411],
-  [-210, 74, -390], [-247, 77, -359], [-276, 77, -319], [-293, 72, -274],
-  [-298, 66, -225], [-290, 61, -177], [-271, 57, -132], [-241, 52, -94],
-  [-202, 45, -65], [-156, 38, -46], [-108, 33, -40], [10, 28, -40],
-  [127, 34, -40], [245, 40, -40], [362, 55, -40], [480, 67, -40],
-  [598, 83, -40], [715, 95, -40], [766, 96, -47], [812, 96, -66],
-  [852, 97, -98], [882, 98, -139], [900, 99, -186], [905, 100, -236],
-  [897, 102, -286], [876, 103, -332], [843, 104, -371], [802, 105, -399],
-  [754, 106, -416], [703, 107, -420], [654, 107, -410], [608, 108, -387],
-  [490, 101, -306], [371, 91, -225], [252, 79, -144], [133, 69, -64],
-  [15, 62, 17],
-];
-// The aft launcher (921) fires astern, so its drone shares the release, the loop and the
-// close pass, then swings left round the bow, runs back astern on the port side well clear
-// of the ship, and turns left again onto an inbound run from behind (converging slowly on
-// the ship). Any missile from the stern box then leaves away from the ship, never across it.
+// The two Intercept paths were generated from straights and R = 190 m arcs (15 degree steps).
+// Altitude climbs gradually along the outbound leg, 1 - (1 - u)^2 of the way from the rail
+// to INTERCEPT_ALT by the turn-around (steepest just off the rail, under 15 degrees), then
+// stays level, so the drone is near INTERCEPT_ALT when it is shot down.
+export const INTERCEPT_ALT = 250;
+// The aft launcher (921) fires astern: off the rail it turns left round to the reciprocal of
+// the ship's heading, flies out astern on the port side to 1.6 km, turns left again and runs
+// in from astern at the ship. Any missile from the stern box leaves away from the ship.
 const INTERCEPT_PATH_AFT = [
-  [2, 29, -65], [38, 38, -108], [64, 40, -149], [79, 43, -195],
-  [81, 47, -244], [72, 51, -292], [50, 55, -336], [18, 59, -372],
-  [-23, 61, -400], [-69, 63, -416], [-118, 66, -420], [-166, 70, -411],
-  [-210, 74, -390], [-247, 77, -359], [-276, 77, -319], [-293, 72, -274],
-  [-298, 66, -225], [-290, 61, -177], [-271, 57, -132], [-241, 52, -94],
-  [-202, 45, -65], [-156, 38, -46], [-108, 33, -40], [-26, 28, -40],
-  [55, 32, -40], [137, 36, -40], [218, 40, -40], [300, 55, -40],
-  [349, 56, -46], [395, 58, -65], [434, 59, -96], [465, 61, -135],
-  [484, 63, -181], [490, 66, -230], [484, 68, -279], [465, 70, -325],
-  [434, 72, -364], [395, 73, -395], [349, 75, -414], [300, 76, -420],
-  [156, 80, -420], [12, 85, -420], [-132, 91, -420], [-276, 97, -420],
-  [-420, 103, -420], [-564, 108, -420], [-708, 112, -420], [-756, 112, -414],
-  [-801, 112, -395], [-840, 112, -366], [-870, 113, -328], [-890, 113, -284],
-  [-898, 113, -236], [-893, 113, -187], [-876, 113, -141], [-848, 114, -102],
-  [-811, 114, -70], [-767, 114, -49], [-719, 114, -40], [-581, 108, -32],
-  [-443, 99, -24], [-306, 90, -16], [-168, 81, -8], [-30, 75, 0],
+  [1, 29, -64], [27, 40, -104], [42, 51, -150], [45, 62, -197],
+  [36, 72, -244], [16, 82, -288], [-14, 91, -324], [-53, 101, -353],
+  [-97, 110, -370], [-145, 119, -376], [-257, 138, -376], [-369, 156, -376],
+  [-481, 172, -376], [-593, 187, -376], [-704, 200, -376], [-816, 212, -376],
+  [-928, 222, -376], [-1040, 231, -376], [-1152, 238, -376], [-1264, 243, -376],
+  [-1376, 247, -376], [-1488, 249, -376], [-1600, 250, -376], [-1649, 250, -370],
+  [-1695, 250, -351], [-1734, 250, -321], [-1765, 250, -281], [-1784, 250, -235],
+  [-1790, 250, -186], [-1784, 250, -137], [-1765, 250, -91], [-1734, 250, -52],
+  [-1695, 250, -22], [-1649, 250, -3], [-1531, 250, -2], [-1412, 250, -1],
+  [-1294, 250, -1], [-1176, 250, 0], [-1057, 250, 1], [-939, 250, 1],
+  [-820, 250, 2], [-702, 250, 3], [-584, 250, 3], [-465, 250, 4],
+  [-347, 250, 5], [-228, 250, 5], [-110, 250, 6],
+];
+// The forward launcher (920): off the rail it turns right onto the ship's heading, flies out
+// ahead on the port side to 1.6 km, turns right round and runs in from ahead at the bow.
+const INTERCEPT_PATH_FWD = [
+  [1, 32, -64], [42, 46, -101], [92, 60, -124], [146, 74, -132],
+  [258, 100, -132], [370, 124, -132], [482, 146, -132], [594, 166, -132],
+  [705, 183, -132], [817, 199, -132], [929, 213, -132], [1041, 224, -132],
+  [1153, 233, -132], [1265, 241, -132], [1376, 246, -132], [1488, 249, -132],
+  [1600, 250, -132], [1649, 250, -126], [1695, 250, -107], [1734, 250, -76],
+  [1765, 250, -37], [1784, 250, 9], [1790, 250, 58], [1784, 250, 107],
+  [1765, 250, 153], [1734, 250, 192], [1695, 250, 223], [1649, 250, 242],
+  [1600, 250, 248], [1484, 250, 229], [1368, 250, 211], [1252, 250, 192],
+  [1135, 250, 174], [1019, 250, 155], [903, 250, 136], [787, 250, 118],
+  [671, 250, 99], [555, 250, 80], [438, 250, 62], [322, 250, 43],
+  [206, 250, 25], [90, 250, 6],
 ];
 const INTERCEPT_PATH = SHIP_VARIANT === 'aft' ? INTERCEPT_PATH_AFT : INTERCEPT_PATH_FWD;
-// Recovery uses the forward ship's flight up to the middle of the inbound run (index 45,
-// about 400 m off the ship), where the parachute opens, for both ships (no missile).
-const CHUTE_PATH = INTERCEPT_PATH_FWD.slice(0, 46);
-export const DEFAULT_PATH = CHUTE_MODE ? CHUTE_PATH : INTERCEPT_PATH;
+// Recovery flies the same path as Intercept up to a point on the inbound run (about 800 m
+// out for fwd, 1.3 km for aft), where the launcher has locked on but never fires; then the
+// drone turns off a little to port and comes down on a straight leg (smoothstep descent)
+// to RECOVERY_POINT, 300 m off the port quarter at 90 m, where the parachute opens.
+export const RECOVERY_POINT = [-212, 90, -212];
+const RECOVERY_PATH_FWD = [
+  ...INTERCEPT_PATH_FWD.slice(0, 36),
+  [676, 245, 81], [565, 230, 45], [454, 209, 8], [343, 183, -29], [232, 157, -65],
+  [121, 131, -102], [10, 110, -139], [-101, 95, -175], RECOVERY_POINT,
+];
+const RECOVERY_PATH_AFT = [
+  ...INTERCEPT_PATH_AFT.slice(0, 37),
+  [-1186, 246, -22], [-1078, 233, -43], [-969, 215, -64], [-861, 194, -85], [-753, 170, -106],
+  [-645, 146, -128], [-537, 125, -149], [-428, 107, -170], [-320, 94, -191], RECOVERY_POINT,
+];
+const CHUTE_PATH = SHIP_VARIANT === 'aft' ? RECOVERY_PATH_AFT : RECOVERY_PATH_FWD;
+export const PLAN_PATH = PLAN ? generatePath(PLAN, { variant: SHIP_VARIANT, mode: MODE }) : null;
+export const DEFAULT_PATH = (PLAN_PATH ? PLAN_PATH.points : CHUTE_MODE ? CHUTE_PATH : INTERCEPT_PATH).map((p) => [...p]);
+// The manoeuvre points behind the path (the path editor shows these), when it has them.
+export const DEFAULT_KEYS = PLAN_PATH ? PLAN_PATH.keys.map((k) => [...k]) : null;
+// What flyRoute needs to fly them.
+export const ROUTE_SPEEDS = { droneSpeed: PLAN ? PLAN.droneSpeed : 40, ship: SHIP_SPEED };
 
 // A custom path drawn in the editor is stored per browser and applied on load.
 // The aft ship flies a different default path, so its drawn paths are stored apart.
-export const PATH_STORAGE_KEY = CHUTE_MODE
-  ? 'intercept.path.chute.v1'
-  : `intercept.path.${SHIP_VARIANT === 'aft' ? 'aft.' : ''}v1`;
+// v2: the default paths changed (out and back, 250 m), so paths drawn on the old ones are dropped.
+export const PATH_STORAGE_KEY = `intercept.path.${CHUTE_MODE ? 'chute.' : ''}${SHIP_VARIANT === 'aft' ? 'aft.' : ''}v2`;
 export const MIN_ALT = 8; // never let a drawn path touch the sea
 
 // Returns a cleaned copy of editable points, or null if they are unusable.
@@ -169,16 +184,27 @@ export function validatePath(pts) {
   const out = [];
   for (const p of pts) {
     if (!Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite)) return null;
-    if (Math.abs(p[0]) > 6000 || Math.abs(p[2]) > 6000 || p[1] > 2000) return null;
+    if (Math.abs(p[0]) > PATH_LIMIT || Math.abs(p[2]) > PATH_LIMIT || p[1] > 2000) return null;
     out.push([Math.round(p[0]), Math.round(Math.max(p[1], MIN_ALT)), Math.round(p[2])]);
   }
   return out;
 }
 
+// The red launch point drawn in the editor: a fraction of the path's length (release to
+// end) at which the missile leaves (Intercept) or the launcher locks on (Recovery).
+// null leaves it to the automatic 650 m trigger.
+export function validateLaunchU(u) {
+  const v = Number(u);
+  return u === null || u === undefined || !Number.isFinite(v) ? null : Math.round(Math.min(Math.max(v, 0), 1) * 10000) / 10000;
+}
+
 function loadCustomPath() {
   try {
     const raw = globalThis.localStorage?.getItem(PATH_STORAGE_KEY);
-    return raw ? validatePath(JSON.parse(raw).points) : null;
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    const points = validatePath(o.points);
+    return points ? { points, keys: validateKeys(o.keys), launch: validateLaunchU(o.launch) } : null;
   } catch {
     return null;
   }
@@ -191,17 +217,23 @@ function loadSharedPath() {
     const m = /(?:^#|&)path=([A-Za-z0-9_-]+)/.exec(globalThis.location?.hash ?? '');
     if (!m) return null;
     const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
-    return validatePath(JSON.parse(globalThis.atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4))).points);
+    const o = JSON.parse(globalThis.atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4)));
+    const points = validatePath(o.points);
+    return points ? { points, keys: validateKeys(o.keys), launch: validateLaunchU(o.launch) } : null;
   } catch {
     return null;
   }
 }
 
 const SHARED = loadSharedPath();
-const CUSTOM = SHARED ?? loadCustomPath();
+// A plan generates the path unless it says to fly the one drawn in the editor.
+const CUSTOM = SHARED ?? (PLAN && !PLAN.drawn ? null : loadCustomPath());
 export const SHARED_PATH = SHARED !== null;
 export const CUSTOM_PATH = CUSTOM !== null;
-export const ACTIVE_PATH = CUSTOM ?? DEFAULT_PATH.map((p) => [...p]);
+export const ACTIVE_PATH = CUSTOM?.points ?? DEFAULT_PATH.map((p) => [...p]);
+export const ACTIVE_LAUNCH_U = CUSTOM?.launch ?? null;
+// null: a path with no manoeuvre points stored (the editor finds them with detectKeys).
+export const ACTIVE_KEYS = CUSTOM ? CUSTOM.keys : DEFAULT_KEYS;
 
 // Same spline the drone flies, for the editor's live preview.
 export function buildPathCurve(editablePts) {
@@ -227,7 +259,7 @@ const WAYPOINTS = [...PATH_FIXED, ...ACTIVE_PATH];
 export const ENGAGE_STORAGE_KEY = 'intercept.engage.v1';
 export const BURST_SIDES = ['auto', 'above', 'below', 'left', 'right'];
 export const ENGAGE_TIMINGS = ['auto', 'launch', 'impact', 'range'];
-export const RANGE_LIMITS = [100, 1500]; // m, drone distance from the ship
+export const RANGE_LIMITS = [100, 5500]; // m, drone distance from the ship
 export const MAX_BURST = 60;
 export const ENGAGE_DEFAULTS = { timing: 'auto', time: 0, range: 650, dist: 0, side: 'auto' };
 
@@ -258,7 +290,9 @@ function loadEngage() {
   }
 }
 const LOADED_ENGAGE = loadEngage();
-export const CUSTOM_ENGAGE = LOADED_ENGAGE !== null && JSON.stringify(LOADED_ENGAGE) !== JSON.stringify(ENGAGE_DEFAULTS);
+// The engagement a plan stores for itself is not a custom one.
+const PLAN_ENGAGE = PLAN && LOADED_ENGAGE?.timing === 'range' && LOADED_ENGAGE.range === PLAN.engage && LOADED_ENGAGE.dist === PLAN.burst;
+export const CUSTOM_ENGAGE = LOADED_ENGAGE !== null && !PLAN_ENGAGE && JSON.stringify(LOADED_ENGAGE) !== JSON.stringify(ENGAGE_DEFAULTS);
 export const ENGAGE = LOADED_ENGAGE ?? { ...ENGAGE_DEFAULTS };
 
 
@@ -281,14 +315,17 @@ function makeFlight(editablePts, shift) {
   const curve = buildPathCurve(editablePts);
   const length = curve.getLength();
   // Arc length flown since release, tabulated once (trapezoid rule).
-  const arcTable = [0];
-  for (let tau = 0; arcTable[arcTable.length - 1] < length; tau += ARC_DT) {
-    const s = arcTable[arcTable.length - 1];
-    arcTable.push(s + 0.5 * (speedAt(tau) + speedAt(tau + ARC_DT)) * ARC_DT);
+  const arcTable = PLAN ? planArcTable(curve, length) : [0];
+  if (!PLAN) {
+    for (let tau = 0; arcTable[arcTable.length - 1] < length; tau += ARC_DT) {
+      const s = arcTable[arcTable.length - 1];
+      arcTable.push(s + 0.5 * (speedAt(tau) + speedAt(tau + ARC_DT)) * ARC_DT);
+    }
   }
   const tauMax = (arcTable.length - 1) * ARC_DT;
   return {
     shift, curve, length, arcTable, tauMax,
+    vEnd: PLAN ? (arcTable[arcTable.length - 1] - arcTable[arcTable.length - 2]) / ARC_DT : null,
     end: curve.getPointAt(1),
     endDir: curve.getTangentAt(1),
     tRelease: T_RELEASE + shift,
@@ -296,7 +333,54 @@ function makeFlight(editablePts, shift) {
   };
 }
 
+// With a plan: the booster takes the drone from the rail's speed up to the speed for the slope it is on, which it then
+// follows with a two-second lag (less going up, more coming down, missionPlan.js), all of it over the sea, so along the
+// path it depends on the way the ship is going too. Baked once, like the rest, so it stays a pure function of time.
+function planArcTable(curve, length, dt = ARC_DT, STEP = 5) {
+  const n = Math.ceil(length / STEP);
+  const slope = new Float32Array(n + 1);
+  const dirX = new Float32Array(n + 1);
+  const dir = new THREE.Vector3();
+  for (let i = 0; i <= n; i++) {
+    curve.getTangentAt(Math.min(1, (i * STEP) / length), dir);
+    slope[i] = dir.y;
+    dirX[i] = dir.x;
+  }
+  const table = [0];
+  let s = 0;
+  let lag = slope[0];
+  for (let tau = 0; s < length; tau += dt) {
+    const i = Math.min(n, Math.floor(s / STEP));
+    lag += ((slope[i] - lag) * dt) / 2;
+    const cruise = relSpeed(speedAtSlope(PLAN.droneSpeed, lag), SHIP_SPEED, dirX[i]);
+    s += (tau < 1.3 ? V_RELEASE + ((cruise - V_RELEASE) * tau) / 1.3 : cruise) * dt;
+    table.push(s);
+  }
+  return table;
+}
+
+// The flying time of any path, for the path editor's readouts: { flight: seconds from release to its end, at(s): seconds
+// after t = 0 at which the drone has flown s metres }. With a plan it is the same speed law as the flight itself, on a
+// coarser table, so it stays quick enough to run on every drag.
+export function pathTiming(editablePts) {
+  const curve = buildPathCurve(editablePts);
+  const length = curve.getLength();
+  if (!PLAN) return { flight: flightTimeForLength(length, 0.1), at: (s) => timeForLength(s) };
+  const dt = 0.05;
+  const table = planArcTable(curve, length, dt, 20);
+  return {
+    flight: (table.length - 1) * dt,
+    at(s) {
+      let lo = 0;
+      let hi = table.length - 1;
+      while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (table[mid] < s) lo = mid; else hi = mid; }
+      return T_RELEASE + hi * dt;
+    },
+  };
+}
+
 function speedAt(tau) {
+  if (PLAN) return PLAN.droneSpeed;
   if (tau <= SPEED_KEYS[0][0]) return SPEED_KEYS[0][1];
   for (let i = 1; i < SPEED_KEYS.length; i++) {
     const [t1, v1] = SPEED_KEYS[i];
@@ -311,6 +395,44 @@ function speedAt(tau) {
 export function pathFlightTime(editablePts, dt = 0.05) {
   return flightTimeForLength(buildPathCurve(editablePts).getLength(), dt);
 }
+// Where the 650 m trigger falls on an editable path, as a fraction of its length: the same
+// search as launchAtRange, by arc length instead of time (the path is in the ship frame, so
+// time only scales it). null when the path never goes out and comes back inside the arc.
+export function autoLaunchU(editablePts, range = LAUNCH_RANGE) {
+  const c = buildPathCurve(editablePts);
+  const N = 2000;
+  const p = new THREE.Vector3();
+  const rng = [];
+  for (let i = 0; i <= N; i++) rng.push(c.getPointAt(i / N, p).distanceTo(SHIP_CENTER));
+  const out = rng.findIndex((r) => r > range);
+  if (out < 0) return null;
+  for (let i = out + 1; i <= N; i++) {
+    if (rng[i] <= range && rng[i] < rng[i - 1] && inArcX(c.getPointAt(i / N, p).x)) return i / N;
+  }
+  return null;
+}
+// The inbound run of an editable path as [u0, u1] fractions of its length (the same rule as
+// inboundWindow, by arc length): the only stretch the editor's red launch point may sit on.
+export function inboundU(editablePts) {
+  const c = buildPathCurve(editablePts);
+  const N = 2000;
+  const p = new THREE.Vector3();
+  const rng = [];
+  const ok = [];
+  for (let i = 0; i <= N; i++) {
+    c.getPointAt(i / N, p);
+    rng.push(p.distanceTo(SHIP_CENTER));
+    ok.push(inArcX(p.x));
+  }
+  const closing = (i) => i > 0 && rng[i] < rng[i - 1] && ok[i];
+  let i = N;
+  while (i > 0 && !closing(i)) i--;
+  const i1 = i;
+  while (i > 0 && closing(i)) i--;
+  return i1 - i > 2 ? [(i + 1) / N, i1 / N] : null;
+}
+// Seconds after t = 0 at which a drone reaches `s` metres along its path (editor readout).
+export const timeForLength = (s) => T_RELEASE + flightTimeForLength(s);
 export function flightTimeForLength(len, dt = 0.05) {
   let s = 0;
   let tau = 0;
@@ -327,10 +449,24 @@ const T_CHUTE = CHUTE_MODE ? T_RELEASE + ARC_TAU_MAX : Infinity;
 function arcAt(tau, f) {
   const { arcTable, tauMax } = f;
   if (tau <= 0) return 0;
-  if (tau >= tauMax) return arcTable[arcTable.length - 1] + speedAt(tau) * (tau - tauMax);
+  if (tau >= tauMax) return arcTable[arcTable.length - 1] + (f.vEnd ?? speedAt(tau)) * (tau - tauMax);
   const x = tau / ARC_DT;
   const i = Math.floor(x);
   return arcTable[i] + (arcTable[i + 1] - arcTable[i]) * (x - i);
+}
+
+// Time at which drone f has flown s metres of its path (inverse of arcAt, on the path).
+function timeAtArc(s, f = FLIGHTS[0]) {
+  const { arcTable } = f;
+  let lo = 0;
+  let hi = arcTable.length - 1;
+  if (s >= arcTable[hi]) return f.tPathEnd;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (arcTable[mid] < s) lo = mid; else hi = mid;
+  }
+  const k = (s - arcTable[lo]) / Math.max(1e-9, arcTable[hi] - arcTable[lo]);
+  return f.tRelease + (lo + k) * ARC_DT;
 }
 
 // Drone position in the ship frame along the planned path (before any parachute).
@@ -375,6 +511,46 @@ const _rel = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 const _zAxis = new THREE.Vector3(0, 0, 1);
 const _qRoll = new THREE.Quaternion();
+const _w = new THREE.Vector3();
+const _c2 = new THREE.Vector3();
+
+// With a plan the bank comes from the turn over the sea at the speed over the sea, and it is baked once (so it stays a pure
+// function of time) and averaged over 3 s: the drone rolls into and out of its turn, steady in between.
+const BANK_DT = 0.1;
+const BANK_AVERAGE = 15; // samples either side
+function bakePlanBank(f) {
+  const n = Math.ceil((f.tPathEnd - T_RELEASE) / BANK_DT) + 1;
+  const raw = new Float32Array(n);
+  const p = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+  const h = 0.3;
+  const sea = SHIP_SPEED * h;
+  for (let i = 0; i < n; i++) {
+    const t = f.shift + T_RELEASE + i * BANK_DT;
+    pathRelPos(t - h, p[0], f);
+    pathRelPos(t, p[1], f);
+    pathRelPos(t + h, p[2], f);
+    const v1x = p[1].x - p[0].x + sea, v1z = p[1].z - p[0].z;
+    const v2x = p[2].x - p[1].x + sea, v2z = p[2].z - p[1].z;
+    const turn = Math.atan2(v1z * v2x - v1x * v2z, v1x * v2x + v1z * v2z) / h;
+    const v = Math.hypot(v1x + v2x, p[2].y - p[0].y, v1z + v2z) / (2 * h);
+    raw[i] = THREE.MathUtils.clamp(Math.atan((v * turn) / G), -MAX_BANK, MAX_BANK);
+  }
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let sum = 0;
+    let count = 0;
+    for (let k = Math.max(0, i - BANK_AVERAGE); k <= Math.min(n - 1, i + BANK_AVERAGE); k++) { sum += raw[k]; count += 1; }
+    out[i] = sum / count;
+  }
+  return out;
+}
+function planBank(tf, f) {
+  f.banks ??= bakePlanBank(f);
+  const x = Math.max(0, (tf - T_RELEASE) / BANK_DT);
+  const i = Math.floor(x);
+  if (i >= f.banks.length - 1) return f.banks[f.banks.length - 1];
+  return f.banks[i] + (f.banks[i + 1] - f.banks[i]) * (x - i);
+}
 
 // World position + attitude. Nose is local +Z, left wing local +X. Attitude
 // follows the ship-relative path (continuous off the rail); bank comes from
@@ -396,6 +572,13 @@ function pathPose(t, pos, quat, f = FLIGHTS[0]) {
     fwd.subVectors(_b, _a);
     speed = fwd.length() / (2 * h);
     fwd.normalize();
+    // With a plan the nose lies along the flight path over the sea, easing from the rail's own line just after release.
+    if (PLAN) {
+      const k = THREE.MathUtils.smoothstep(tf, T_RELEASE, T_RELEASE + 1);
+      _w.copy(fwd).multiplyScalar(speed);
+      _w.x += SHIP_SPEED;
+      fwd.lerp(_c2.copy(_w).normalize(), k).normalize();
+    }
     pathRelPos(t - 2 * h, _d, f);
     const v1x = _rel.x - _d.x, v1z = _rel.z - _d.z;
     pathRelPos(t + 2 * h, _d, f);
@@ -403,7 +586,7 @@ function pathPose(t, pos, quat, f = FLIGHTS[0]) {
     const turn = Math.atan2(v1z * v2x - v1x * v2z, v1x * v2x + v1z * v2z) / (2 * h);
     // Ease bank in over the first second so it doesn't snap at release.
     const ease = THREE.MathUtils.smoothstep(tf, T_RELEASE, T_RELEASE + 1);
-    bank = ease * THREE.MathUtils.clamp(Math.atan((speed * turn) / G), -MAX_BANK, MAX_BANK);
+    bank = ease * (PLAN ? planBank(tf, f) : THREE.MathUtils.clamp(Math.atan((speed * turn) / G), -MAX_BANK, MAX_BANK));
   }
   _x.crossVectors(_up, fwd).normalize();
   _y.crossVectors(fwd, _x);
@@ -530,15 +713,13 @@ const rangeAt = (t, k = 0) => planeRelPos(t, tmp, k).distanceTo(SHIP_CENTER);
 // Fire once the drone, having been out of range, closes back inside this range
 // of the ship. If a drawn path never leaves the range, fire at the first
 // closing moment after a short delay; if it never closes, fire near the end.
-const LAUNCH_RANGE = 650;
+const LAUNCH_RANGE = PLAN_PATH ? PLAN_PATH.engage : 650;
 // Firing arc: the forward box only engages a drone ahead of or abeam its pivot,
 // the aft box one astern of or abeam its pivot, so a missile never has to cross
 // the ship. (Same pivot x as LAUNCHER_PIVOT below.)
 const PIVOT_X = SHIP_VARIANT === 'aft' ? -33.8 : 24;
-const inArc = (t, k) => {
-  const x = planeRelPos(t, tmp, k).x;
-  return SHIP_VARIANT === 'aft' ? x <= PIVOT_X : x >= PIVOT_X;
-};
+export const inArcX = (x) => (SHIP_VARIANT === 'aft' ? x <= PIVOT_X : x >= PIVOT_X);
+const inArc = (t, k) => inArcX(planeRelPos(t, tmp, k).x);
 // Distance from the ship at time t, as the drone-range trigger measures it.
 export function droneRange(t, k = 0) {
   return rangeAt(t, k);
@@ -559,7 +740,30 @@ function launchAtRange(k, range) {
   }
   return { t: Math.max(f.tRelease + 4, Math.min(from, f.tPathEnd - 4)), ok: false };
 }
-const deriveLaunch = (k) => launchAtRange(k, LAUNCH_RANGE).t;
+// The missile only ever leaves on the inbound run, the drone flying toward the ship: the last
+// stretch of the path on which it closes on the ship inside the launcher's arc (recovery: the
+// last one before it passes abeam). null if the path has none.
+function inboundWindow(k = 0) {
+  const f = FLIGHTS[k];
+  const dt = 0.05;
+  const closing = (t) => rangeAt(t, k) < rangeAt(t - dt, k) && inArc(t, k);
+  let t = f.tPathEnd;
+  while (t > f.tRelease && !closing(t)) t -= dt;
+  const t1 = t;
+  while (t > f.tRelease && closing(t)) t -= dt;
+  return t1 - t > 1 ? [t + dt, t1] : null;
+}
+const INBOUND = inboundWindow(0);
+// Any launch time, from any setting, is held inside the inbound run.
+const clampInbound = (tl) => (INBOUND ? Math.min(Math.max(tl, INBOUND[0]), INBOUND[1]) : tl);
+// The red launch point from the editor, when one was placed, wins over the 650 m trigger.
+const pointLaunch = (k) => {
+  const f = FLIGHTS[k];
+  return clampInbound(Math.min(Math.max(timeAtArc(ACTIVE_LAUNCH_U * f.length, f), f.tRelease + 1), f.tPathEnd - 1));
+};
+const deriveLaunch = (k) => (ACTIVE_LAUNCH_U !== null && k === 0 ? pointLaunch(k) : clampInbound(launchAtRange(k, LAUNCH_RANGE).t));
+// Recovery: the launcher locks on where Intercept would fire, tracks the drone and never fires.
+const T_LOCK = CHUTE_MODE ? Math.min(deriveLaunch(0), T_CHUTE - 1) : Infinity;
 // Two shots must leave the launcher at least this far apart (slew and reload).
 const MIN_LAUNCH_GAP = 2.5;
 // Launch moments derived from the path alone. The engagement settings may move the
@@ -765,7 +969,7 @@ function engage(k, tLaunch, opts = ENGAGE) {
 const launchLimits = (k) => [FLIGHTS[k].tRelease + 1, FLIGHTS[k].tPathEnd - 1];
 const clampLaunch = (tl, k) => {
   const [lo, hi] = launchLimits(k);
-  return Math.min(Math.max(tl, lo), hi);
+  return clampInbound(Math.min(Math.max(tl, lo), hi));
 };
 
 // Launch time that makes the burst land at tImpact: flight time barely depends on the
@@ -783,7 +987,7 @@ function solveLaunchForImpact(k, tImpact, opts) {
 function resolveLaunch(autoLaunch, opts) {
   if (CHUTE_MODE || opts.timing === 'auto') return autoLaunch;
   if (opts.timing === 'launch') return clampLaunch(opts.time, 0);
-  if (opts.timing === 'range') return launchAtRange(0, opts.range).t;
+  if (opts.timing === 'range') return clampInbound(launchAtRange(0, opts.range).t);
   return solveLaunchForImpact(0, opts.time, opts);
 }
 
@@ -830,7 +1034,30 @@ for (const e0 of ENGS) {
 }
 const T_LAST_LAUNCH = SLEWS.length ? SLEWS[SLEWS.length - 1].tLaunch : Infinity;
 
+// Recovery lock-on: the box slews onto the drone over LOCK_SLEW s ending at T_LOCK, follows
+// it (within its own half plus a little: it never swings over the superstructure) until the
+// parachute opens, then stows.
+const LOCK_SLEW = 1.6;
+const TRACK_YAW = THREE.MathUtils.degToRad(100); // either way from the stowed heading
+const _ta = new THREE.Vector3();
+function trackAim(t) {
+  planeRelPos(t, _ta).sub(LAUNCHER_PIVOT);
+  const raw = Math.atan2(-_ta.z, _ta.x);
+  const off = THREE.MathUtils.clamp(Math.atan2(Math.sin(raw - STOW_YAW), Math.cos(raw - STOW_YAW)), -TRACK_YAW, TRACK_YAW);
+  const pitch = THREE.MathUtils.clamp(Math.atan2(_ta.y, Math.hypot(_ta.x, _ta.z)), THREE.MathUtils.degToRad(20), THREE.MathUtils.degToRad(70));
+  return { yaw: STOW_YAW + off, pitch };
+}
+function lockAim(t) {
+  const w = THREE.MathUtils.smoothstep(t, T_LOCK - LOCK_SLEW, T_LOCK);
+  const back = THREE.MathUtils.smoothstep(t, T_CHUTE + 2, T_CHUTE + 5);
+  if (w === 0 || back === 1) return { yaw: STOW_YAW, pitch: 0 };
+  const a = trackAim(Math.min(Math.max(t, T_LOCK), T_CHUTE + 2));
+  const k = w * (1 - back);
+  return { yaw: THREE.MathUtils.lerp(STOW_YAW, a.yaw, k), pitch: THREE.MathUtils.lerp(0, a.pitch, k) };
+}
+
 export function launcherAim(t) {
+  if (CHUTE_MODE) return lockAim(t);
   let yaw = STOW_YAW;
   let pitch = 0;
   for (const e of SLEWS) {
@@ -912,6 +1139,12 @@ export const scenario = {
   hasMissile: !CHUTE_MODE,
   tChute: T_CHUTE,
   tSplash: T_SPLASH,
+  tLock: T_LOCK, // recovery: the launcher has locked on the drone (Infinity in an intercept)
+  inbound: INBOUND, // [t0, t1]: the inbound run, the only stretch a launch (or lock-on) may fall in
+  launchU: ACTIVE_LAUNCH_U, // the editor's red launch point (fraction of the path), or null
+  plan: PLAN, // the mission plan these came from (missionPlan.js), or null
+  activeKeys: ACTIVE_KEYS, // the manoeuvre points behind the path, or null
+  tPathEnd: FLIGHTS[0].tPathEnd,
   // One entry per engagement: none in a recovery, one in an intercept.
   // tLaunch/tHit above are always the first engagement.
   engagements: CHUTE_MODE ? [] : ENGS.map((e) => ({
@@ -930,7 +1163,7 @@ export const scenario = {
     { t: T_RELEASE, label: 'Catapult launch' },
     ...pathMarkers.map(({ t, label }) => ({ t, label })),
     ...(CHUTE_MODE
-      ? [{ t: T_CHUTE, label: 'Parachute opens' }, { t: T_SPLASH, label: 'Splashdown' }]
+      ? [{ t: T_LOCK, label: 'Launcher lock-on' }, { t: T_CHUTE, label: 'Parachute opens' }, { t: T_SPLASH, label: 'Splashdown' }]
       : [{ t: T_LAUNCH, label: 'Missile launch' }, { t: tHit, label: 'Impact' }]),
   ].sort((a, b) => a.t - b.t),
 };

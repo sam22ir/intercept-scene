@@ -16,6 +16,27 @@ const ZENITH = new THREE.Color(0.2, 0.38, 0.66);
 const CALM_HORIZON = new THREE.Color(0.06, 0.56, 3.0);
 const CALM_ZENITH = new THREE.Color(0, 0.16, 1.4);
 
+// Night and storm (`mood`): sky = brightness of the calm sky, grey = how far it is pulled to a flat grey, fog = [near, far] m,
+// sun / hemi / env = the light levels, cloud / land / sea = brightness of the cloud sprites, the mountains and the water's own colour, disc = the sun's disc.
+export const MOODS = {
+  night: { sky: 0.022, grey: 0.15, fog: [900, 7000], sun: 0.05, hemi: 0.16, env: 0.1, cloud: 0.03, land: 0.09, sea: 0.1, disc: 0 },
+  storm: { sky: 0.3, grey: 0.85, fog: [700, 4800], sun: 0.3, hemi: 0.55, env: 0.4, cloud: 0.42, land: 0.4, sea: 0.5, disc: 0 },
+};
+function moodSky(c, m) {
+  const l = 0.3 * c.r + 0.59 * c.g + 0.11 * c.b;
+  return new THREE.Color(c.r + (l - c.r) * m.grey, c.g + (l - c.g) * m.grey, c.b + (l - c.b) * m.grey).multiplyScalar(m.sky);
+}
+
+// The horizon's islands and far ships are drawn unlit and the weather's sprites by their own colour, so a night look dims them directly.
+function dimForNight(group) {
+  const seen = new Set();
+  group.traverse((o) => {
+    if (!o.material?.color || seen.has(o.material)) return;
+    seen.add(o.material);
+    o.material.color.multiplyScalar(o.isSprite ? 0.25 : 0.06);
+  });
+}
+
 const rgbHex = (c) => (Math.round(c[0]) << 16) | (Math.round(c[1]) << 8) | Math.round(c[2]);
 
 // The weather override, read once: ?weather=clear|haze|squalls|overcast, else localStorage['intercept.weather'].
@@ -36,10 +57,13 @@ function readWeather() {
 // `look` (a name from looks.js, e.g. 'intercept') gives a mission its own time of day, sky, sea state, scenery and weather;
 // the weather can be overridden with ?weather= or localStorage['intercept.weather'] (read once). Without `look` the original
 // default or `calm` look is used, unchanged.
-export function createEnvironment(renderer, scene, { calm = false, tallMountains = false, look: lookName = null, realSea = false } = {}) {
-  const look = !calm && lookName ? resolveLook(lookName, readWeather()) : null;
-  const horizon = look ? new THREE.Color(...fromDisplay(look.horizon)) : calm ? CALM_HORIZON : HORIZON;
-  const zenith = look ? new THREE.Color(...fromDisplay(look.zenith)) : calm ? CALM_ZENITH : ZENITH;
+export function createEnvironment(renderer, scene, { calm = false, tallMountains = false, landTurn = 0, look: lookName = null, realSea = false, mood: moodName = null, sky: skyOver = null } = {}) {
+  const look = !calm && lookName ? resolveLook(lookName, readWeather(), skyOver) : null;
+  // `mood` (the calm look only, opt-in: Solo Air Defense's night and storm): the sky, fog, lights, clouds and mountains are dimmed
+  // from the calm values; without it nothing here changes.
+  const mood = calm && !look ? MOODS[moodName] ?? null : null;
+  const horizon = look ? new THREE.Color(...fromDisplay(look.horizon)) : calm ? (mood ? moodSky(CALM_HORIZON, mood) : CALM_HORIZON) : HORIZON;
+  const zenith = look ? new THREE.Color(...fromDisplay(look.zenith)) : calm ? (mood ? moodSky(CALM_ZENITH, mood) : CALM_ZENITH) : ZENITH;
   const sunDir = new THREE.Vector3().setFromSphericalCoords(
     1, THREE.MathUtils.degToRad(90 - (look ? look.elev : SUN_ELEVATION)), THREE.MathUtils.degToRad(look ? look.az : SUN_AZIMUTH),
   );
@@ -71,14 +95,16 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
         uniforms: {
           uHorizon: { value: look ? new THREE.Color(...srgbToLinear(look.horizon)) : horizon }, uZenith: { value: look ? new THREE.Color(...srgbToLinear(look.zenith)) : zenith }, uSun: { value: sunDir },
           uGlow: { value: new THREE.Vector3(glow[0] / gmax, glow[1] / gmax, glow[2] / gmax) },
-          uGlowAmt: { value: look ? 1 - look.overcast : 1 }, // the sun's disc and glow, fading as the deck thickens
+          uGlowAmt: { value: look && !look.night ? 1 - look.overcast : look ? 0 : 1 }, // the sun's disc and glow, fading as the deck thickens
+          uNight: { value: look?.night ? 1 - look.overcast : 0 }, // the moon and the stars, fading the same way
           uCover: { value: look ? look.cover : 0 }, // the painted cloud deck
           uLook: { value: look ? 1 : 0 },
+          uDisc: { value: mood ? mood.disc : 1 }, // the calm sky's sun glow and disc
         },
         vertexShader: 'varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
         fragmentShader: `
           uniform vec3 uHorizon, uZenith, uSun, uGlow;
-          uniform float uGlowAmt, uCover, uLook;
+          uniform float uGlowAmt, uCover, uLook, uDisc, uNight;
           varying vec3 vDir;
           float h21(vec2 p) { p = 50.0 * fract(p * 0.3183099 + vec2(0.71, 0.113)); return fract(p.x * p.y * (p.x + p.y)); }
           float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
@@ -87,12 +113,18 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
             vec3 col = mix(uHorizon, uZenith, pow(h, 0.45));
             float s = max(dot(normalize(vDir), uSun), 0.0);
             if (uLook < 0.5) {
-              col += vec3(1.0, 0.85, 0.55) * (pow(s, 40.0) * 0.5 + pow(s, 900.0) * 6.0);
+              col += vec3(1.0, 0.85, 0.55) * (pow(s, 40.0) * 0.5 + pow(s, 900.0) * 6.0) * uDisc;
             } else {
               // Aerial haze: a thin brighter band just above the horizon (zero at the horizon itself, so the sea's
               // fog colour meets the sky with no seam), and a glow low in the sky on the sun's side.
               col += uHorizon * 0.12 * smoothstep(0.0, 0.03, h) * pow(1.0 - h, 6.0);
               col += uGlow * uGlowAmt * (pow(s, 5.0) * 0.35 * pow(1.0 - h, 4.0) + pow(s, 40.0) * 0.5 + pow(s, 900.0) * 6.0);
+              if (uNight > 0.001) { // the moon with a faint halo, and stars fading out toward the horizon's haze
+                vec2 sp = vDir.xz / (abs(vDir.y) + 1.0) * 260.0;
+                float star = step(0.985, h21(floor(sp))) * smoothstep(0.5, 0.1, length(fract(sp) - 0.5)) * (0.35 + 0.65 * h21(floor(sp) + 17.0));
+                col += vec3(0.8, 0.85, 1.0) * star * 0.75 * smoothstep(0.03, 0.3, h) * uNight;
+                col += uGlow * uNight * (pow(s, 250.0) * 0.1 + smoothstep(0.9998, 0.99988, s));
+              }
               if (uCover > 0.001) { // an overcast deck: broad cloud shapes, darker in the thick parts, drawn in perspective
                 vec2 q = vDir.xz / (vDir.y + 0.16) * 0.9;
                 float c = 0.5 * vn(q) + 0.28 * vn(q * 2.3 + 7.0) + 0.14 * vn(q * 5.1 + 3.0) + 0.08 * vn(q * 11.0);
@@ -122,18 +154,18 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
   skyClone.scale.setScalar(1000);
   skyScene.add(skyClone);
   scene.environment = pmrem.fromScene(skyScene).texture;
-  scene.environmentIntensity = look ? look.env : 0.7;
+  scene.environmentIntensity = look ? look.env : 0.7 * (mood ? mood.env : 1);
   pmrem.dispose();
 
-  scene.fog = look ? new THREE.Fog(horizon, look.fog[0], look.fog[1]) : new THREE.Fog(horizon, 3000, 16000);
+  scene.fog = look ? new THREE.Fog(horizon, look.fog[0], look.fog[1]) : mood ? new THREE.Fog(horizon, mood.fog[0], mood.fog[1]) : new THREE.Fog(horizon, 3000, 16000);
 
-  const sun = new THREE.DirectionalLight(look ? rgbHex(look.sunColor) : 0xfff1dc, look ? look.sunI : 2.7);
+  const sun = new THREE.DirectionalLight(look ? rgbHex(look.sunColor) : 0xfff1dc, look ? look.sunI : 2.7 * (mood ? mood.sun : 1));
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.4;
   scene.add(sun, sun.target);
-  scene.add(look ? new THREE.HemisphereLight(rgbHex(look.hemi), 0x203040, look.hemiI) : new THREE.HemisphereLight(0xcfe0ff, 0x203040, 0.6));
+  scene.add(look ? new THREE.HemisphereLight(rgbHex(look.hemi), 0x203040, look.hemiI) : new THREE.HemisphereLight(0xcfe0ff, 0x203040, 0.6 * (mood ? mood.hemi : 1)));
 
   // `realSea` (a mission look only): real waves, displaced geometry and shading from the same table the ships ride (realOcean.js).
   const real = !!(realSea && look);
@@ -142,8 +174,16 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
   scene.add(ocean);
   const clouds = createClouds(calm, look);
   const mountains = calm ? (tallMountains ? createTallMountains() : createMountains()) : null;
-  if (mountains) scene.add(mountains);
+  if (mountains) { scene.add(mountains); if (tallMountains) setLandTurn(landTurn, mountains); }
   scene.add(clouds);
+  if (mood) { // the sprites and the ridges are drawn unlit: dim them directly, and bring the water's fog in with the scene's
+    for (const c of clouds.children) c.material.color.multiplyScalar(mood.cloud);
+    mountains?.traverse((o) => { if (o.material?.color) o.material.color.setScalar(mood.land); });
+    ocean.material.uniforms.uDeep.value.multiplyScalar(mood.sea);
+    ocean.material.uniforms.uScatter.value.multiplyScalar(mood.sea);
+    ocean.material.uniforms.uFogNear.value = mood.fog[0];
+    ocean.material.uniforms.uFogFar.value = mood.fog[1];
+  }
   // Scenery that stands still in the world (so it is a yardstick for speed and height), and weather on the horizon.
   // Everything here repeats every WORLD_PERIOD metres around a far-flying camera; the period is at least twice the fog
   // distance, so an object only jumps while it is fogged out.
@@ -154,6 +194,7 @@ export function createEnvironment(renderer, scene, { calm = false, tallMountains
     if (look.scenery.ships) scenery.add(createFarShips(look.scenery.ships));
     if (look.squalls || look.banks) scenery.add(createWeatherSprites(look.squalls, look.banks, look.overcast, horizon, look.fog[1]));
     if (buoys) scenery.add(buoys.mesh);
+    if (look.night) dimForNight(scenery);
     scene.add(scenery);
   }
   const CLOUD_PERIOD = 26000; // the cloud field repeats this often, so it never runs out under a far-flying camera
@@ -241,16 +282,18 @@ function createOcean(sunDir, calm, horizon, look = null, zenithCol = ZENITH) {
   if (look) {
     scatter.multiplyScalar(0.55 + 0.45 * Math.min(look.sunI / 2.7, 1));
     scatter.lerp(new THREE.Color(...srgbToLinear(look.horizon)).multiplyScalar(0.1), look.warm * 0.8); // a low sun warms the water's own colour
+    if (look.night) { deep.multiplyScalar(0.12); scatter.multiplyScalar(0.12); }
+    if (look.day) { deep.setRGB(0.012, 0.075, 0.13); scatter.setRGB(0.03, 0.18, 0.24); } // the calm look's water
   }
   const material = new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
       uSunDir: { value: sunDir },
       uSunColor: { value: sunLin },
-      uCalm: { value: calm ? 1 : 0 },
+      uCalm: { value: calm || look?.day ? 1 : 0 },
       uGrid: { value: 0 }, // the drill's tactical grid: on or off
       uGridCell: { value: 457.2 }, // 500 yd squares, north up
-      uRingC: { value: new THREE.Vector2() }, // the range rings' centre (ALG), world x z
+      uRingC: { value: new THREE.Vector2() }, // the range rings' centre (SHIP1), world x z
       uDeep: { value: calm ? new THREE.Color(0.012, 0.075, 0.13) : deep },
       uScatter: { value: calm ? new THREE.Color(0.03, 0.18, 0.24) : scatter },
       uHorizon: { value: horizon },
@@ -265,6 +308,7 @@ function createOcean(sunDir, calm, horizon, look = null, zenithCol = ZENITH) {
       uGlitter: { value: look ? look.sea.glitter : calm ? 0 : 1 },
       uReflect: { value: look ? look.sea.reflect : calm ? 0.55 : 0.9 },
       uFoamTint: { value: look ? 0.6 : 0 }, // foam picks up the sun's colour (a low sun warms it)
+      uFoamK: { value: look?.night ? 0.1 : 1 }, // the foam and whitecaps are unlit: night dims them
       uShipX: { value: 0 }, // ship position along +X, drives the wake
     },
     vertexShader: /* glsl */ `
@@ -281,7 +325,7 @@ function createOcean(sunDir, calm, horizon, look = null, zenithCol = ZENITH) {
       #define CHOP_DRIFT 0.7 // m/s each octave drifts
       uniform float uTime;
       uniform vec3 uSunDir, uSunColor, uDeep, uScatter, uHorizon, uZenith;
-      uniform float uFogNear, uFogFar, uShipX, uCalm, uGrid, uGridCell, uSea, uCaps, uGlitter, uReflect, uFoamTint, uSkyOn;
+      uniform float uFogNear, uFogFar, uShipX, uCalm, uGrid, uGridCell, uSea, uCaps, uGlitter, uReflect, uFoamTint, uFoamK, uSkyOn;
       uniform vec3 uSky[4];
       uniform vec2 uWind;
       uniform vec2 uRingC;
@@ -390,7 +434,7 @@ function createOcean(sunDir, calm, horizon, look = null, zenithCol = ZENITH) {
         vec3 col = mix(water, sky, fresnel * uReflect) + spec;
         float foam = wakeFoam(vWorld.xz, dist);
         vec3 foamCol = vec3(0.82, 0.87, 0.9) * (0.55 + 0.45 * max(uSunDir.y, 0.0));
-        foamCol *= mix(vec3(1.0), uSunColor / max(max(uSunColor.r, uSunColor.g), uSunColor.b), uFoamTint);
+        foamCol *= mix(vec3(1.0), uSunColor / max(max(uSunColor.r, uSunColor.g), uSunColor.b), uFoamTint) * uFoamK;
         if (uCaps > 0.001) {
           // Whitecaps: only on the steepest faces of the chop we already have (no new octaves), broken into patches by
           // a drifting noise, and faded out with the pixel footprint and distance so they never shimmer.
@@ -402,7 +446,7 @@ function createOcean(sunDir, calm, horizon, look = null, zenithCol = ZENITH) {
         col = mix(col, foamCol, foam);
         if (uGrid > 0.5) {
           // Tactical grid: 500 yd squares (every second line brighter) aligned to north, and solid range rings
-          // at 250, 500 and 1000 yd round ALG. Antialiased by the pixel footprint, fading with distance.
+          // at 250, 500 and 1000 yd round SHIP1. Antialiased by the pixel footprint, fading with distance.
           vec2 g = vWorld.xz / uGridCell;
           vec2 w = max(fwidth(g), vec2(1e-5));
           vec2 dm = abs(fract(g - 0.5) - 0.5) / w;
@@ -477,7 +521,7 @@ function createClouds(calm = false, look = null) {
     const hn = look.horizon.map((v) => v / Math.max(lum(look.horizon), 1));
     const warm = Math.min(1, look.warm * 1.8);
     const grey = 1 - look.overcast * 0.45;
-    const base = [2.3, 2.3, 2.4].map((v, j) => v * (1 - warm + warm * hn[j]) * grey * k);
+    const base = [2.3, 2.3, 2.4].map((v, j) => v * (1 - warm + warm * hn[j]) * grey * k * (look.night ? 0.05 : 1));
     return new THREE.Color(...base);
   };
   const layers = look
@@ -511,6 +555,20 @@ function createClouds(calm = false, look = null) {
 // thickens with distance and clears toward the tops. One mesh of about 90,000 vertices, no textures, no lights. Static, far enough
 // that moving the camera barely shifts it. The ridge line that hides far drones (`ridgeAngle`) comes from the same heightfield.
 const MOUNT_ARC = [-0.3, 3.4]; // radians: an arc of about 210 degrees
+// Solo Air Defense can turn the whole range (mountains, town, radar map, the ridge line that hides drones) about the ship, by landTurn
+// radians from north toward east; every other mission keeps it at 0.
+let landTurn = 0;
+export function setLandTurn(t, group = null) {
+  landTurn = t;
+  if (group) group.rotation.y = -t;
+}
+// The bearing of (dx, dz) in the range's own frame, wrapped to start at the arc's first edge.
+function rangeAngle(dx, dz) {
+  let a = Math.atan2(dz, dx) - landTurn;
+  while (a < MOUNT_ARC[0]) a += 2 * Math.PI;
+  while (a >= MOUNT_ARC[0] + 2 * Math.PI) a -= 2 * Math.PI;
+  return a;
+}
 const T_COLS = 900;
 const T_ROWS = 80;
 const T_R0 = 4800; // m: the nearest the land comes (so the radar map's 6 km range reaches the shore)
@@ -616,14 +674,12 @@ function terrain() {
 // the direction on the sea, x north and z east as in the scene. Used to hide what lies behind the mountains.
 // The height of the land at (dx, dz) metres from the ship, x north and z east (-1 over the sea), for the radar map.
 export function landHeightAt(dx, dz) {
-  let a = Math.atan2(dz, dx);
-  if (a < MOUNT_ARC[0]) a += 2 * Math.PI;
+  const a = rangeAngle(dx, dz);
   if (a > MOUNT_ARC[1]) return -1;
   return terrainH(a, Math.hypot(dx, dz));
 }
 export function ridgeAngle(dx, dz) {
-  let a = Math.atan2(dz, dx);
-  if (a < MOUNT_ARC[0]) a += 2 * Math.PI;
+  const a = rangeAngle(dx, dz);
   if (a > MOUNT_ARC[1]) return -Infinity;
   const f = ((a - MOUNT_ARC[0]) / (MOUNT_ARC[1] - MOUNT_ARC[0])) * T_COLS;
   const i = Math.min(T_COLS - 1, Math.floor(f));
@@ -848,7 +904,8 @@ function townLayout() {
 }
 // Where the buildings are, metres from the ship (x north, z east) with their size, for the radar map.
 export function townSpots() {
-  return townLayout().buildings.map((b) => [b.x, b.z, Math.max(b.w, b.dp)]);
+  const c = Math.cos(landTurn), sn = Math.sin(landTurn);
+  return townLayout().buildings.map((b) => [b.x * c - b.z * sn, b.x * sn + b.z * c, Math.max(b.w, b.dp)]);
 }
 // A tile of one floor of plain wall with a window, repeated up and across the walls (the vertex colours tint it).
 function windowTexture() {

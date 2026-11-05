@@ -69,19 +69,42 @@ const CLOSE_CALL = 2000; // m: "drone closing"
 const PASSES_BEFORE_ATTACK = 1; // the first approach is a pass; the second one is the attack
 const STRIKES_TO_LOSE = 3;
 
+// --- Night and storm (opt-in: `new HelmSim({ mood: 'night' | 'storm' })`) ---------------------------------------------------------
+// Night leaves the radar as it is (the eye sees nothing, the scope is all there is); a storm shortens it by `k` and buries a low
+// drone in the sea clutter until it is inside `clutter` metres.
+const MOOD_RADAR = { night: { k: 1, clutter: 0 }, storm: { k: 0.72, clutter: 2600 } };
+const CLUTTER_ALT = 30; // m
+
+// --- The saturation raid (opt-in: `new HelmSim({ raid: true })`) ----------------------------------------------------
+// Instead of one drone at a time, a salvo arrives from one sector: many cheap decoys with a few real missiles among them. All
+// look the same on the radar until they are inside ID_RANGE, then each is classified. A real one dashes at DASH_SPEED from
+// DASH_RANGE and does more damage; a decoy just flies in. Eight cells cannot answer everything, so the guns take the decoys
+// and the missiles the real ones. After each raid the launcher is reloaded and the next, bigger, salvo is called.
+export const ID_RANGE = 4200; // m: a contact is classified (decoy or missile) inside this
+export const DASH_RANGE = 3000; // m: a real missile starts its terminal dash
+export const DASH_SPEED = 240; // m/s
+const RAID_FIRST = 15; // s to the first raid
+const RAID_GAP = 30; // s from the last contact of a raid to the call of the next
+const RAID_ARC = rad(70); // the salvo's spread in bearing
+const RAID_HP = 2; // hit points of a decoy or a missile (a drone has DRONE_HP)
+const RAID_DAMAGE = { decoy: 0.5, real: 1.5 }; // of STRIKES_TO_LOSE
+const RAID_GUN_TOPUP = 600; // rounds back into each gun between raids
+export const raidSize = (n) => ({ decoys: Math.min(24, 10 + 4 * (n - 1)), real: [3, 3, 4, 5, 5, 6][Math.min(n - 1, 5)] });
+
 // --- The helicopter at war ---------------------------------------------------------------------------------
 // It stands down while a drone is within STAND_DOWN_RANGE (or has made its first pass: it comes back for the attack), keeps
 // standing down STAND_DOWN_HOLD s after the last one, spots for the ship while it is up (its eye clears the ridges, its own
-// radar reaches HELI_RADAR) and, before the drone is close, fires its two light missiles: each takes HELI_DAMAGE of a drone's six hit points.
+// radar reaches HELI_RADAR) and, before the drone is close, fires two gun bursts: each takes HELI_DAMAGE of a drone's six hit points.
 export const STAND_DOWN_RANGE = 2000; // m from the ship
 const STAND_DOWN_HOLD = 15; // s
 export const HELI_RADAR = 7500; // m
 export const HELI_ROUNDS = 2;
 export const HELI_DAMAGE = 2; // hit points of DRONE_HP
-const HELI_MISSILE_RANGE = [2200, 4200]; // m from the helicopter
+const HELI_GUN_RANGE = [2200, 4200]; // m from the helicopter
 const HELI_CONE = rad(50); // off its nose
 const HELI_COOL = 9; // s between rounds
-const HELI_MISSILE_SPEED = 300; // m/s at most
+const HELI_BURST = 1.2; // s a burst lasts
+const HELI_BULLET_SPEED = 900; // m/s: the burst lands this long after it starts
 const HELI_RIDGE_DROP = rad(0.3); // how much further over a ridge line it sees from its height
 const HELI_AIRBORNE = 14; // m above the pad before it counts as up
 
@@ -141,8 +164,14 @@ function mulberry32(seed) {
 }
 
 export class HelmSim {
-  constructor({ seed = 7 } = {}) {
+  constructor({ seed = 7, raid = false, mood = null } = {}) {
     this.seed = seed;
+    this.raidMode = raid;
+    this.mood = MOOD_RADAR[mood] ? mood : null; // 'night' or 'storm' (opt-in); null is the plain mission
+    const m = MOOD_RADAR[this.mood] ?? { k: 1, clutter: 0 };
+    this.radarRange = RADAR_RANGE * m.k; // m: what the radar reaches in this weather
+    this.idRange = ID_RANGE * m.k;
+    this.clutter = m.clutter; // m: a drone below CLUTTER_ALT is lost in the sea clutter until it is this close
     this.skyline = null; // (dx, dz, eyeY) -> angle of the ridge line in that direction; set by the scene
     this.reset();
   }
@@ -167,7 +196,11 @@ export class HelmSim {
     this.drones = [];
     this.nextId = 1;
     this.wave = 0;
-    this.nextSpawn = 18;
+    this.nextSpawn = this.raidMode ? RAID_FIRST : 18;
+    this.raid = null; // the raid in progress: { n, decoys, real, left, ... }
+    this.raidNo = 0;
+    this.raidLog = []; // the finished raids' results
+    this.raidAlarmed = false;
     this.targetId = null;
     this.missiles = [];
     this.cellsUsed = 0;
@@ -180,6 +213,7 @@ export class HelmSim {
     this.heli = new HeliFlight((this.seed ^ 0x2718) >>> 0); // the deck helicopter: it never flies while she turns, and stands down when a drone is close
     this.heliAmmo = HELI_ROUNDS;
     this.heliCool = 0;
+    this.heliGun = null; // the burst in progress: { id, targetId, tStart, tEnd, tHit, hit }
     this.heliShots = 0;
     this.standUntil = -Infinity;
   }
@@ -205,7 +239,7 @@ export class HelmSim {
   get knots() { return this.u / KT; }
   get rateOfTurn() { return deg(this.r) * 60; } // deg per minute, + = to starboard
   get cellsLeft() { return CELLS - this.cellsUsed; }
-  get shipMissiles() { return this.missiles.filter((m) => !m.heli); }
+  get shipMissiles() { return this.missiles; }
   // The helicopter's eye: where it is now in the world, and whether it is up (a hover over the pad does not count at once).
   get heliUp() { return this.heli.state.flying && this.heli.state.y - PAD.y > HELI_AIRBORNE; }
   heliWorld(out) { const st = this.heli.state; return this.toWorld(out.set(st.x, st.y, st.z), out); }
@@ -250,11 +284,13 @@ export class HelmSim {
   }
   nearest() {
     let best = null;
-    for (const d of this.detected) if (!best || this.rangeTo(d.pos) < this.rangeTo(best.pos)) best = d;
+    for (const d of this.detected) if (!best || this.priority(d) < this.priority(best)) best = d;
     return best;
   }
+  // Lower is more urgent: the nearest, but a classified missile before anything else (only a raid has classes).
+  priority(d) { return this.rangeTo(d.pos) - (d.class === 'real' ? 1e5 : 0); }
   cycleTarget() {
-    const list = this.detected.sort((a, b) => this.rangeTo(a.pos) - this.rangeTo(b.pos));
+    const list = this.detected.sort((a, b) => this.priority(a) - this.priority(b));
     if (!list.length) { this.say('No target on the radar', 'warn'); return; }
     const i = list.findIndex((d) => d.id === this.targetId);
     const d = list[(i + 1) % list.length];
@@ -357,7 +393,69 @@ export class HelmSim {
     stepHull(this, dt, { want, orderKn: this.out ? 0 : TELEGRAPH[this.order].kn });
   }
 
+  // --- the saturation raid ----------------------------------------------------------------------------------
+  stepRaid() {
+    if (this.out) return;
+    const r = this.raid;
+    if (!r) {
+      if (this.t >= this.nextSpawn) this.startRaid();
+      return;
+    }
+    if (r.left > 0) return;
+    // The last contact is resolved: the result, the reload, and the next raid called.
+    const res = {
+      n: r.n, decoys: r.decoys, real: r.real, realKilled: r.realKilled, decoysKilled: r.decoysKilled,
+      realStruck: r.realStruck, decoysStruck: r.decoysStruck, cellsUsed: this.cellsUsed - r.cells0,
+      cellsOnDecoys: r.cellsOnDecoys, rounds: r.rounds0 - this.gunRounds, strikes: this.strikes - r.strikes0, tEnd: this.t,
+    };
+    this.raidLog.push(res);
+    this.raid = null;
+    this.nextSpawn = this.t + RAID_GAP;
+    this.events.push({ type: 'raid-over', result: res });
+    this.say(`Raid ${res.n} over: ${res.realKilled} of ${res.real} missiles and ${res.decoysKilled} of ${res.decoys} decoys destroyed, ${res.cellsUsed} cells used`, res.realStruck ? 'bad' : 'ok');
+    if (!this.shot) this.cellsUsed = 0;
+    for (const g of this.guns) g.ammo = Math.min(GUN_ROUNDS, g.ammo + RAID_GUN_TOPUP);
+    this.say(`Launcher reloaded: ${CELLS} cells. Raid ${res.n + 1} in ${RAID_GAP} s`, '');
+  }
+
+  startRaid() {
+    this.raidNo += 1;
+    const n = this.raidNo;
+    const size = raidSize(n);
+    const rng = this.rng;
+    const kinds = [...Array(size.decoys).fill('decoy'), ...Array(size.real).fill('real')];
+    for (let i = kinds.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [kinds[i], kinds[j]] = [kinds[j], kinds[i]]; } // which are real is hidden
+    const centre = rng() * Math.PI * 2;
+    this.raid = {
+      n, decoys: size.decoys, real: size.real, left: kinds.length, cells0: this.cellsUsed, rounds0: this.gunRounds, strikes0: this.strikes,
+      realKilled: 0, decoysKilled: 0, realStruck: 0, decoysStruck: 0, cellsOnDecoys: 0, tStart: this.t,
+    };
+    this.raidAlarmed = false;
+    for (const kind of kinds) {
+      const d = this.spawn({ bearing: centre + (rng() - 0.5) * RAID_ARC });
+      d.raid = n;
+      d.kind = kind; // the truth; `class` is what the radar has worked out
+      d.class = null;
+      d.hp = RAID_HP;
+      d.damage = RAID_DAMAGE[kind];
+      d.passes = PASSES_BEFORE_ATTACK; // straight in, no low pass first
+    }
+    this.events.push({ type: 'raid', n, count: kinds.length });
+  }
+
+  // A raid contact is resolved (killed, struck or lost in the sea): the raid's tally.
+  raidResolve(d, how) {
+    const r = this.raid;
+    if (!r || d.raid !== r.n || d.counted) return;
+    d.counted = true;
+    r.left -= 1;
+    const real = d.kind === 'real';
+    if (how === 'killed') { if (real) r.realKilled += 1; else r.decoysKilled += 1; }
+    if (how === 'struck') { if (real) r.realStruck += 1; else r.decoysStruck += 1; }
+  }
+
   stepSpawn() {
+    if (this.raidMode) { this.stepRaid(); return; }
     if (this.out || this.t < this.nextSpawn) return;
     const maxLive = this.wave >= 2 ? 2 : 1;
     if (this.live.length >= maxLive) { this.nextSpawn = this.t + 5; return; }
@@ -416,7 +514,9 @@ export class HelmSim {
     const sv = this.shipVel(_b);
     switch (d.phase) {
       case 'inbound': {
-        if (range < 1100) { this.setPhase(d, 'pass'); return this.droneAim(d, out); } // its first approach: a low pass
+        if (d.raid) { // a raid contact attacks at once: a real one dashes from DASH_RANGE, a decoy flies in to 1.1 km
+          if (d.kind === 'real' ? range < DASH_RANGE : range < 1100) { d.dash = d.kind === 'real'; this.setPhase(d, 'attack'); return this.droneAim(d, out); }
+        } else if (range < 1100) { this.setPhase(d, 'pass'); return this.droneAim(d, out); } // its first approach: a low pass
         const w = Math.sin(this.t * 0.25 + d.weave) * 220; // a lazy weave on the way in
         const bx = (d.pos.z - this.z) / (range || 1);
         const bz = -(d.pos.x - this.x) / (range || 1);
@@ -451,7 +551,7 @@ export class HelmSim {
       }
       case 'attack': {
         // Straight at her, aiming for the superstructure, leading her motion.
-        const lead = range / ATTACK_SPEED;
+        const lead = range / (d.dash ? DASH_SPEED : ATTACK_SPEED);
         return this.toWorld(_a.set(8, 10, 0), out).addScaledVector(sv, lead);
       }
       default:
@@ -472,11 +572,25 @@ export class HelmSim {
     d.hidden = !!this.skyline && range > MASK_RANGE && angle < this.skyline(dx, dz, SKY_EYE)
       && !(up && angle >= this.skyline(dx, dz, SKY_EYE) - HELI_RIDGE_DROP);
     // Radar contact, and the calls.
-    if (!d.detected && !d.hidden && (range < RADAR_RANGE || (up && range < HELI_RADAR))) {
+    const buried = this.clutter > 0 && d.pos.y < CLUTTER_ALT && range > this.clutter; // lost in the sea clutter
+    if (!d.detected && !d.hidden && !buried && (range < this.radarRange || (up && range < HELI_RADAR))) {
       d.detected = true;
       if (this.targetId === null || !this.target) this.targetId = d.id;
-      this.events.push({ type: 'alarm', level: 1, id: d.id });
-      this.say(`${range < RADAR_RANGE ? 'Radar' : 'Helicopter'}: drone ${d.name} detected, ${relName(this.relBearing(d.pos))}, ${kmText(range)}`, 'warn');
+      if (d.raid) { // one call for the whole salvo
+        if (!this.raidAlarmed) {
+          this.raidAlarmed = true;
+          this.events.push({ type: 'alarm', level: 2, id: d.id });
+          this.say(`Raid ${d.raid}: ${this.raid.decoys + this.raid.real} contacts, ${relName(this.relBearing(d.pos))}, ${kmText(range)}. Missiles are among them`, 'bad');
+        }
+      } else {
+        this.events.push({ type: 'alarm', level: 1, id: d.id });
+        this.say(`${range < this.radarRange ? 'Radar' : 'Helicopter'}: drone ${d.name} detected, ${relName(this.relBearing(d.pos))}, ${kmText(range)}`, 'warn');
+      }
+    }
+    if (d.raid && d.detected && !d.class && range < this.idRange) { // inside ID_RANGE the radar tells a missile from a decoy
+      d.class = d.kind;
+      this.events.push({ type: 'classified', id: d.id, kind: d.kind });
+      if (d.kind === 'real') this.say(`${d.name} is a MISSILE: ${relName(this.relBearing(d.pos))}, ${kmText(range)}`, 'bad');
     }
     if (d.detected && !d.called && range < CLOSE_CALL) {
       d.called = true;
@@ -486,14 +600,16 @@ export class HelmSim {
     const before = d.phase;
     const aim = this.droneAim(d, _c);
     if (d.phase !== before && d.phase === 'attack') {
-      this.events.push({ type: 'alarm', level: 3, id: d.id });
-      this.say(`Drone ${d.name} attack run! Fire!`, 'bad');
+      if (!d.raid || d.dash) {
+        this.events.push({ type: 'alarm', level: 3, id: d.id });
+        this.say(d.dash ? `Missile ${d.name} is diving on the ship! Fire!` : `Drone ${d.name} attack run! Fire!`, 'bad');
+      }
     } else if (d.phase !== before && d.phase === 'pass' && before === 'inbound') {
       this.events.push({ type: 'alarm', level: 2, id: d.id });
       this.say(`Drone ${d.name} coming in low, ${relName(this.relBearing(d.pos))}`, 'bad');
     }
     // Steer: turn the velocity toward the aim at a limited rate, climb or sink at a limited rate.
-    const speed = d.phase === 'attack' ? ATTACK_SPEED : DRONE_SPEED;
+    const speed = d.phase === 'attack' ? (d.dash ? DASH_SPEED : ATTACK_SPEED) : DRONE_SPEED;
     const hv = _a.set(d.vel.x, 0, d.vel.z);
     const heading = Math.atan2(hv.z, hv.x);
     const want = Math.atan2(aim.z - d.pos.z, aim.x - d.pos.x);
@@ -522,14 +638,16 @@ export class HelmSim {
     d.alive = false;
     d.phase = 'struck';
     d.tDown = this.t;
-    this.strikes += 1;
+    this.strikes += d.damage ?? 1;
+    this.raidResolve(d, 'struck');
     this.events.push({ type: 'struck', id: d.id, pos: d.pos.clone() });
+    const shown = Math.round(this.strikes * 10) / 10;
     if (this.strikes >= STRIKES_TO_LOSE) {
       this.out = true;
       this.events.push({ type: 'over' });
-      this.say(`Drone ${d.name} hit the ship: she is out of action. R to sail again`, 'bad');
+      this.say(`${d.dash ? 'Missile' : 'Drone'} ${d.name} hit the ship: she is out of action. R to sail again`, 'bad');
     } else {
-      this.say(`Drone ${d.name} hit the ship! Damage ${this.strikes} of ${STRIKES_TO_LOSE}`, 'bad');
+      this.say(`${d.dash ? 'Missile' : 'Drone'} ${d.name} hit the ship! Damage ${shown} of ${STRIKES_TO_LOSE}`, 'bad');
     }
   }
 
@@ -541,10 +659,12 @@ export class HelmSim {
       t: this.t, kind, pos: d.pos.clone(), quat: d.quat.clone(), vel: d.vel.clone(),
       burstPos: burstPos.clone(), burstDist: burstPos.distanceTo(d.pos), prop: 0,
     };
+    this.raidResolve(d, kind === 'missile' ? 'killed' : 'sea');
     if (kind === 'missile') {
       this.kills += 1;
       this.events.push({ type: 'explosion', id: d.id, pos: burstPos.clone() });
-      this.say(`Splash one: drone ${d.name} destroyed`, 'ok');
+      if (!d.raid) this.say(`Splash one: drone ${d.name} destroyed`, 'ok');
+      else if (d.kind === 'real') this.say(`Splash one missile: ${d.name}`, 'ok');
     } else {
       this.events.push({ type: 'splash', id: d.id, pos: burstPos.clone() });
     }
@@ -734,7 +854,7 @@ export class HelmSim {
     const r = _a.subVectors(d.pos, m.pos);
     if (r.length() < FUZE) { this.removeMissile(m); this.missileHit(m, d, m.pos.clone()); return; }
     if (age > MISSILE_LIFE) { this.loseMissile(m, 'The missile ran out of time'); return; }
-    const speed = age < 0.5 ? 40 + age * 360 : Math.min(m.heli ? HELI_MISSILE_SPEED : 420, 220 + (age - 0.5) * 160);
+    const speed = age < 0.5 ? 40 + age * 360 : Math.min(420, 220 + (age - 0.5) * 160);
     if (age > 0.3) {
       const off = m.vel.angleTo(r);
       if (off > 0.6) {
@@ -764,21 +884,35 @@ export class HelmSim {
     if (m.pos.y < 0.5 && age > 1) this.loseMissile(m, 'The missile fell into the sea');
   }
 
-  // A ship's missile destroys the drone; the helicopter's only takes some of its hit points.
+  // A ship's missile destroys the drone.
   missileHit(m, d, pos) {
-    if (!m.heli) { this.down(d, 'missile', pos); return; }
-    d.hp -= HELI_DAMAGE;
-    if (d.hp <= 0) { this.down(d, 'missile', pos); return; }
-    this.events.push({ type: 'heli-hit', id: d.id, pos: pos.clone() });
-    this.say(`Helicopter missile hit drone ${d.name}: damaged, still flying`, 'ok');
+    if (d.raid && d.kind === 'decoy' && this.raid?.n === d.raid) this.raid.cellsOnDecoys += 1; // a cell spent on a decoy
+    this.down(d, 'missile', pos);
   }
 
-  // The helicopter's missile: only when it is up and flying free (not standing down, not coming in), at a drone that is not
-  // yet close, ahead of its nose so the round never crosses the ship. One in the air at a time.
+  // The helicopter's guns: only when it is up and flying free (not standing down, not coming in), at a drone that is not
+  // yet close, ahead of its nose so the burst never crosses the ship. One burst at a time; it lands as it would in flight, and takes only
+  // some of the drone's hit points.
   stepHeliWeapon(dt) {
     this.heliCool = Math.max(0, this.heliCool - dt);
+    const g = this.heliGun;
+    if (g) {
+      if (!g.hit && this.t >= g.tHit) {
+        g.hit = true;
+        const d = this.drones.find((x) => x.id === g.targetId);
+        if (d && d.alive) {
+          d.hp -= HELI_DAMAGE;
+          if (d.hp <= 0) this.down(d, 'missile', d.pos.clone());
+          else {
+            this.events.push({ type: 'heli-hit', id: d.id, pos: d.pos.clone() });
+            this.say(`Helicopter guns hit drone ${d.name}: damaged, still flying`, 'ok');
+          }
+        }
+      }
+      if (g.hit && this.t >= g.tEnd) this.heliGun = null;
+    }
     if (this.out || this.heliCool > 0 || this.heliAmmo <= 0 || !this.heliUp || this.standDown) return;
-    if (this.heli.phase !== 'circuit' || this.missiles.some((m) => m.heli)) return;
+    if (this.heli.phase !== 'circuit' || this.heliGun) return;
     const hp = this.heliWorld(_d);
     const st = this.heli.state;
     const nx = Math.cos(st.yaw); // the nose in the ship's frame (x ahead, z to starboard), turned into the world by her heading
@@ -788,7 +922,7 @@ export class HelmSim {
     for (const d of this.drones) {
       if (!d.alive || !d.detected || d.hidden) continue;
       const rng = hp.distanceTo(d.pos);
-      if (rng < HELI_MISSILE_RANGE[0] || rng > HELI_MISSILE_RANGE[1]) continue;
+      if (rng < HELI_GUN_RANGE[0] || rng > HELI_GUN_RANGE[1]) continue;
       if (this.rangeTo(d.pos) < STAND_DOWN_RANGE) continue;
       _c.subVectors(d.pos, hp).setY(0);
       if (fwd.angleTo(_c) > HELI_CONE) continue;
@@ -799,11 +933,9 @@ export class HelmSim {
     this.heliCool = HELI_COOL;
     this.heliShots += 1;
     const dir = new THREE.Vector3().subVectors(best.d.pos, hp).normalize();
-    const pos = hp.clone().addScaledVector(dir, 3);
-    const m = { id: 1000 + this.heliShots, heli: true, pos, vel: dir.clone().multiplyScalar(40).add(this.shipVel(_b)), dir, tFire: this.t, targetId: best.d.id, start: pos.clone() };
-    this.missiles.push(m);
-    this.events.push({ type: 'heli-fire', pos: pos.clone(), dir: dir.clone(), id: m.id });
-    this.say(`Helicopter: missile away at drone ${best.d.name}`, 'warn');
+    this.heliGun = { id: 1000 + this.heliShots, targetId: best.d.id, tStart: this.t, tEnd: this.t + HELI_BURST, tHit: this.t + HELI_BURST * 0.5 + best.rng / HELI_BULLET_SPEED, hit: false };
+    this.events.push({ type: 'heli-fire', pos: hp.clone(), dir, id: this.heliGun.id });
+    this.say(`Helicopter: guns on drone ${best.d.name}`, 'warn');
   }
 
   removeMissile(m) { this.missiles = this.missiles.filter((x) => x !== m); }
@@ -811,7 +943,7 @@ export class HelmSim {
   loseMissile(m, text) {
     this.removeMissile(m);
     this.events.push({ type: 'missile-lost', pos: m.pos.clone(), id: m.id });
-    this.say(m.heli ? 'Helicopter missile lost' : text, 'warn');
+    this.say(text, 'warn');
   }
 
   // The worst threat now, for the alarm and the readouts: 0 none, 1 detected, 2 inside 2 km or passing, 3 attacking.

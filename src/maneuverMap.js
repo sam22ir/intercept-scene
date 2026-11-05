@@ -12,7 +12,7 @@ const SCALES = [600, 1000, 1500, 2500, 4000]; // auto-zoom steps: metres to the 
 const ZOOMS = ['auto', 1000, 2500];
 const TRACK_SECONDS = 300;
 const TRACK_STEP = 6;
-const COLORS = { alg: '#3ddc84', rus: '#ff7a1a', unit: '#5ab4ff' };
+const COLORS = { ship1: '#3ddc84', ship2: '#ff7a1a', unit: '#5ab4ff' };
 
 export function createManeuverMap() {
   const root = document.querySelector('#minimap');
@@ -44,12 +44,12 @@ export function createManeuverMap() {
   const p = {};
 
   function draw(t) {
-    shipState('alg', t, a);
-    shipState('rus', t, b);
+    shipState('ship1', t, a);
+    shipState('ship2', t, b);
     if (HAS_UNIT) shipState('unit', t, u);
-    // The map is centred on the guide: ALG, RUS after G FORM RUS, the unit through the formations on her and the
-    // screens (G FORM UNIT, the screen centre), ALG again in the final FORM 1.
-    const g = { alg: a, rus: b, unit: u }[guideShipAt(t)];
+    // The map is centred on the guide: SHIP1, SHIP2 after G FORM SHIP2, the unit through the formations on her and the
+    // screens (G FORM UNIT, the screen centre), SHIP1 again in the final FORM 1.
+    const g = { ship1: a, ship2: b, unit: u }[guideShipAt(t)];
     const cx = g.x; // map centre, metres North
     const cz = g.z; // metres East
     const half = SIZE / 2;
@@ -108,7 +108,7 @@ export function createManeuverMap() {
     // In a screen order, each screen ship's sector round the unit (the screen centre).
     const scr = phaseAt(t).id;
     if (scr === 'screenk' || scr === 'screenm') {
-      for (const id of ['alg', 'rus']) {
+      for (const id of ['ship1', 'ship2']) {
         const sec = SECTORS[scr][id];
         const span = (sec.b2 - sec.b1 + 360) % 360;
         const pt = (bd, d) => { const r = (bd * Math.PI) / 180; return [sx(u.z + Math.sin(r) * d), sy(u.x + Math.cos(r) * d)]; };
@@ -158,15 +158,15 @@ export function createManeuverMap() {
       ctx.fill();
       ctx.stroke();
     };
-    arrow(ax, ay, a.heading, COLORS.alg);
-    arrow(bx, by, b.heading, COLORS.rus);
+    arrow(ax, ay, a.heading, COLORS.ship1);
+    arrow(bx, by, b.heading, COLORS.ship2);
     const ux2 = sx(u.z); const uy2 = sy(u.x);
     if (HAS_UNIT) arrow(ux2, uy2, u.heading, COLORS.unit);
     ctx.font = '600 9px system-ui, sans-serif';
-    ctx.fillStyle = COLORS.alg;
-    ctx.fillText(shipNames.alg, ax, ay - 10);
-    ctx.fillStyle = COLORS.rus;
-    ctx.fillText(shipNames.rus, bx, by - 10);
+    ctx.fillStyle = COLORS.ship1;
+    ctx.fillText(shipNames.ship1, ax, ay - 10);
+    ctx.fillStyle = COLORS.ship2;
+    ctx.fillText(shipNames.ship2, bx, by - 10);
     if (HAS_UNIT) {
       ctx.fillStyle = COLORS.unit;
       ctx.fillText(shipNames.unit, ux2, uy2 - 10);

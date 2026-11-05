@@ -8,7 +8,8 @@ import { RADAR_RANGE, ARC, MIN_RANGE, MISSILE_RANGE, GUN_RANGE, gunBlind, kmText
 // missiles in flight and the crosses where drones went down. Click it to change the range; M hides it.
 
 const SCALES = [1000, 2000, 3000, 6000]; // metres to the rim
-const ZOOMS = ['auto', 2000, 6000, 12000, 20000]; // the last two show the land (a backdrop: it keeps its bearing and distance however far she sails)
+const ZOOMS = ['auto', 2000, 6000, 12000]; // the last two show the land (a backdrop: it keeps its bearing and distance however far she sails)
+const SLIDE_MIN = 1000, SLIDE_MAX = 12000; // the thin slider's range, metres to the rim (log scale)
 const SWEEP = 2.5; // s per turn of the aerial
 const TRACK_STEP = 1; // s between own-track samples
 const TRACK_MAX = 180;
@@ -83,8 +84,20 @@ export function createHelmMap() {
   const track = [];
   let lastTrack = -Infinity;
   let sightView = null; // in the radar view: { yaw (world, radians from north), half (the lens's half-width), locked }
-  root.addEventListener('click', () => { zoom = (zoom + 1) % ZOOMS.length; });
-  root.title = 'Radar, heading up: click to change the range (M hides it)';
+  let custom = null; // metres to the rim while the slider has been moved; a click on the map goes back to the steps
+  const show = { missile: true, guns: true }; // the two fire sectors, switched in the settings menu
+  try { const v = JSON.parse(localStorage.getItem('intercept.helm.sectors') ?? 'null'); if (v) { show.missile = v.missile !== false; show.guns = v.guns !== false; } } catch { /* storage unavailable */ }
+  const slider = document.createElement('input');
+  slider.type = 'range'; slider.className = 'mm-zoom'; slider.min = '0'; slider.max = '1000'; slider.step = '1';
+  slider.setAttribute('aria-label', 'Radar map zoom');
+  slider.title = 'Zoom the radar map';
+  const toSlide = (m) => Math.round(1000 * Math.log(Math.min(SLIDE_MAX, Math.max(SLIDE_MIN, m)) / SLIDE_MIN) / Math.log(SLIDE_MAX / SLIDE_MIN));
+  const fromSlide = (v) => SLIDE_MIN * (SLIDE_MAX / SLIDE_MIN) ** (v / 1000);
+  slider.addEventListener('input', () => { custom = fromSlide(1000 - Number(slider.value)); }); // up zooms in
+  document.body.classList.add('has-map-zoom');
+  document.body.append(slider); // stands upright beside the disc (the disc clips what is inside it)
+  root.addEventListener('click', () => { custom = null; zoom = (zoom + 1) % ZOOMS.length; });
+  root.title = 'Radar, heading up: click to change the range, the slider zooms (M hides it)';
 
   function draw(sim) {
     measure();
@@ -92,7 +105,8 @@ export function createHelmMap() {
     const live = sim.detected;
     // Range: the smallest scale that holds every contact (auto), or the one picked.
     let scale = ZOOMS[zoom];
-    if (scale === 'auto') {
+    if (custom !== null) scale = custom;
+    else if (scale === 'auto') {
       const far = live.reduce((m, d) => Math.max(m, sim.rangeTo(d.pos)), 0);
       scale = SCALES.find((s) => s >= Math.max(far * 1.12, GUN_RANGE * 1.1)) ?? SCALES[SCALES.length - 1];
     }
@@ -135,22 +149,24 @@ export function createHelmMap() {
     const aOf = (th) => -Math.PI / 2 + th; // bearing off the bow (+ to starboard) -> canvas angle
     const rIn = MIN_RANGE * k;
     const rOut = MISSILE_RANGE * k;
+    if (show.missile) {
     ctx.beginPath();
     ctx.arc(R, R, rOut, aOf(-ARC), aOf(ARC));
     ctx.arc(R, R, rIn, aOf(ARC), aOf(-ARC), true);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(61, 220, 132, 0.05)';
+    ctx.fillStyle = 'rgba(255, 122, 26, 0.07)';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(61, 220, 132, 0.55)';
+    ctx.strokeStyle = 'rgba(255, 122, 26, 0.45)';
     ctx.lineWidth = 1;
     ctx.stroke();
+    }
     const rg = GUN_RANGE * k;
     const covered = (th) => !gunBlind(0, -th) || !gunBlind(1, -th);
     const STEP = Math.PI / 90;
-    ctx.fillStyle = 'rgba(255, 179, 64, 0.05)';
-    ctx.strokeStyle = 'rgba(255, 179, 64, 0.55)';
+    ctx.fillStyle = 'rgba(80, 200, 255, 0.07)';
+    ctx.strokeStyle = 'rgba(80, 200, 255, 0.45)';
     ctx.lineWidth = 1;
-    for (let th = -Math.PI; th < Math.PI; th += STEP) {
+    for (let th = -Math.PI; show.guns && th < Math.PI; th += STEP) {
       if (!covered(th + STEP / 2) || (covered(th - STEP / 2) && th > -Math.PI)) continue; // start of a covered run
       let end = th;
       while (end < Math.PI && covered(end + STEP / 2)) end += STEP;
@@ -171,32 +187,45 @@ export function createHelmMap() {
       ctx.arc(R, R, (R - 6) * (i / 4), 0, Math.PI * 2);
       ctx.stroke();
     }
-    if (RADAR_RANGE < scale) {
+    const reach = sim.radarRange ?? RADAR_RANGE;
+    if (reach < scale) {
       ctx.setLineDash([3, 4]);
       ctx.beginPath();
-      ctx.arc(R, R, RADAR_RANGE * k, 0, Math.PI * 2);
+      ctx.arc(R, R, reach * k, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
     }
-    // Where the radar view is looking: a thin line out to the rim, a pointer on the rim and the true bearing (no sector).
+    // Where the radar view is looking: a sector out to the rim as wide as the lens (it narrows as the radar zooms in), a centre line and the true bearing.
     if (sightView) {
       const a0 = sightView.yaw - sim.psi - Math.PI / 2;
       const col = sightView.locked ? '61, 220, 132' : '255, 196, 84';
       const ux = Math.cos(a0);
       const uy = Math.sin(a0);
-      ctx.strokeStyle = `rgba(${col}, 0.8)`;
-      ctx.lineWidth = 1;
+      const half = Math.max(0.018, Math.min(sightView.half ?? 0.1, Math.PI / 2.2)); // at least a thin wedge, so the tightest zoom still shows
+      const rim = R - 9;
+      const g = ctx.createRadialGradient(R, R, 4, R, R, rim);
+      g.addColorStop(0, `rgba(${col}, 0.05)`);
+      g.addColorStop(1, `rgba(${col}, 0.42)`);
+      ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.moveTo(R + ux * 8, R + uy * 8);
-      ctx.lineTo(R + ux * (R - 9), R + uy * (R - 9));
-      ctx.stroke();
-      ctx.fillStyle = `rgb(${col})`;
-      ctx.beginPath();
-      ctx.moveTo(R + ux * (R - 2), R + uy * (R - 2));
-      ctx.lineTo(R + ux * (R - 11) - uy * 4, R + uy * (R - 11) + ux * 4);
-      ctx.lineTo(R + ux * (R - 11) + uy * 4, R + uy * (R - 11) - ux * 4);
+      ctx.moveTo(R, R);
+      ctx.arc(R, R, rim, a0 - half, a0 + half);
       ctx.closePath();
       ctx.fill();
+      ctx.strokeStyle = `rgba(${col}, 0.9)`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(R, R);
+      ctx.lineTo(R + Math.cos(a0 - half) * rim, R + Math.sin(a0 - half) * rim);
+      ctx.arc(R, R, rim, a0 - half, a0 + half);
+      ctx.lineTo(R, R);
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(${col}, 0.35)`;
+      ctx.beginPath();
+      ctx.moveTo(R + ux * 8, R + uy * 8);
+      ctx.lineTo(R + ux * rim, R + uy * rim);
+      ctx.stroke();
+      ctx.fillStyle = `rgb(${col})`;
       const brg = ((Math.round((sightView.yaw * 180) / Math.PI) % 360) + 360) % 360;
       const txt = `${String(brg).padStart(3, '0')}°`;
       ctx.font = '700 9px system-ui, sans-serif';
@@ -208,16 +237,6 @@ export function createHelmMap() {
       ctx.fillText(txt, R + ux * (R - 23), R + uy * (R - 23));
       ctx.lineWidth = 1;
     }
-    // The scale: a bar of a round length stands low on the disc (no numbers on the rings or the bar; the corner label gives the range).
-    const nice = [200, 500, 1000, 2000, 5000, 10000].reduce((best, m) => (Math.abs(m * k - R * 0.5) < Math.abs(best * k - R * 0.5) ? m : best), 1000);
-    const bw = nice * k;
-    const by = R + R * 0.56;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(R - bw / 2, by - 3); ctx.lineTo(R - bw / 2, by); ctx.lineTo(R + bw / 2, by); ctx.lineTo(R + bw / 2, by - 3);
-    ctx.stroke();
-    ctx.lineWidth = 1;
     // The heading line.
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.beginPath();
@@ -288,8 +307,16 @@ export function createHelmMap() {
       ctx.closePath();
       ctx.fill();
       if (d.id === sim.targetId) {
-        ctx.strokeStyle = '#fff';
-        ctx.strokeRect(x - 7, y - 7, 14, 14);
+        ctx.strokeStyle = 'rgba(255, 138, 141, 0.9)';
+        ctx.beginPath();
+        ctx.arc(x, y, 11, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255, 138, 141, 0.9)';
+        ctx.font = '600 9px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const tx = x + 13, ty = y - 7;
+        if (Math.hypot(tx - R, ty - R) < R - 34) ctx.fillText(kmText(sim.rangeTo(d.pos)), tx, ty);
       }
     }
 
@@ -310,10 +337,14 @@ export function createHelmMap() {
 
     // The ship at the centre.
     ctx.fillStyle = GREEN;
+    ctx.strokeStyle = 'rgba(8,12,18,0.85)';
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.moveTo(R, R - 7); ctx.lineTo(R + 3.5, R + 5); ctx.lineTo(R - 3.5, R + 5);
+    ctx.moveTo(R, R - 9);
+    ctx.lineTo(R + 4, R - 3); ctx.lineTo(R + 3.5, R + 8); ctx.lineTo(R - 3.5, R + 8); ctx.lineTo(R - 4, R - 3);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
     ctx.restore();
 
     // The rim: north mark, turning as the ship turns.
@@ -327,13 +358,19 @@ export function createHelmMap() {
     ctx.textAlign = 'center';
     ctx.fillText('N', R + Math.cos(nb) * (R - 9), R + Math.sin(nb) * (R - 9));
 
-    label.textContent = `${zoom === 0 ? 'AUTO · ' : ''}${kmText(scale)}`;
+    label.textContent = `${zoom === 0 && custom === null ? 'AUTO · ' : ''}${kmText(scale)}`;
+    if (document.activeElement !== slider) slider.value = String(1000 - toSlide(scale));
   }
 
   return {
     get enabled() { return enabled; },
-    setEnabled(on) { enabled = on; root.hidden = !on; },
+    setEnabled(on) { enabled = on; root.hidden = !on; slider.hidden = !on; },
     set sight(v) { sightView = v; },
+    sector: (id) => show[id],
+    setSector(id, on) {
+      show[id] = on;
+      try { localStorage.setItem('intercept.helm.sectors', JSON.stringify(show)); } catch { /* storage unavailable */ }
+    },
     update(sim) { if (enabled) draw(sim); },
   };
 }

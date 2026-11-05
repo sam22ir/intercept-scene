@@ -19,6 +19,8 @@ import { menuText } from './menu.js';
 import {
   HelmSim, SLEW_TIME, TELEGRAPH, RUDDER_MAX, CELLS, MISSILE_RANGE, MIN_RANGE, GUN_RANGE, GUN_BLOCK, RADAR_RANGE, ARC, BRIDGE_EYE, DIRECTOR_EYE, GUN_MOUNTS, GUN_ROUNDS, DRONE_HP, relName, kmText,
 } from './helm.js';
+import { raidRun, classicRun, saveBest, loadBest } from './helmScoring.js';
+import { Recorder, replayRate } from './helmReplay.js';
 import './helm.css';
 
 // Entry point of "Solo Air Defense", mission id `helm` (see helm.js for the model): you sail the frigate with the arrow keys and fight off
@@ -48,8 +50,16 @@ controls.maxPolarAngle = Math.PI * 0.495;
 controls.enabled = false;
 const rig = new CameraRig(camera, controls);
 
-const env = createEnvironment(renderer, scene, { calm: true, tallMountains: true });
+// Night and storm are opt-in: ?mood=night|storm|day, or the value kept in localStorage; the default mission is the day.
+const MOOD_KEY = 'intercept.helm.mood';
+const MOOD = (() => {
+  const ok = (m) => (m === 'night' || m === 'storm' ? m : null);
+  try { const q = new URLSearchParams(location.search).get('mood'); if (q !== null) return ok(q); } catch { /* no location */ }
+  try { return ok(localStorage.getItem(MOOD_KEY)); } catch { return null; }
+})();
+const env = createEnvironment(renderer, scene, { calm: true, tallMountains: true, landTurn: Math.PI - 1.55, mood: MOOD }); // the range stands to the south
 env.setShadowSize(1024);
+if (MOOD === 'storm') env.setSea(1.8, 1.0); // a heavy sea with whitecaps
 env.ocean.material.uniforms.uShipX.value = 1e7; // the shader's straight-line wake: this ship turns, she has her own
 const ship = createShip({ catapult: false, helicopter: true });
 ship.group.rotation.order = 'YXZ'; // heading, then heel, then trim
@@ -94,8 +104,27 @@ scene.add(tracerHeads);
 let tracerNext = 0;
 const gunClock = [0, 0];
 const smokeClock = [0, 0];
+const heliClock = { v: 0 };
+const _hp = new THREE.Vector3(), _hd = new THREE.Vector3();
 function updateGuns(dt) {
   const t = sim.t;
+  // The helicopter's burst: tracers from the helicopter toward its target while the burst lasts.
+  const hg = sim.heliGun;
+  const hTarget = hg && t < hg.tEnd ? sim.drones.find((x) => x.id === hg.targetId) : null;
+  if (hTarget) {
+    heliClock.v += dt;
+    sim.heliWorld(_hp);
+    _hd.subVectors(hTarget.pos, _hp).normalize();
+    while (heliClock.v >= 0.05) {
+      heliClock.v -= 0.05;
+      const tr = tracers[tracerNext++ % TRACERS];
+      tr.p.copy(_hp).addScaledVector(_hd, 3);
+      tr.v.copy(_hd).multiplyScalar(900).add(sim.shipVel(_hp.clone()));
+      tr.v.x += (Math.random() - 0.5) * 12; tr.v.y += (Math.random() - 0.5) * 12; tr.v.z += (Math.random() - 0.5) * 12;
+      tr.t0 = t - Math.random() * 0.016;
+      tr.on = true;
+    }
+  } else heliClock.v = 0;
   for (let i = 0; i < gatlings.length; i++) {
     const g = sim.guns[i];
     gatlings[i].pose(g.yaw, g.pitch, g.spin, g.firing, t);
@@ -143,9 +172,16 @@ function updateGuns(dt) {
   hp.needsUpdate = true;
 }
 const audio = createHelmAudio();
-const sim = new HelmSim({ seed: (Date.now() % 100000) | 0 });
+// The saturation raid is opt-in: ?raid=1, or the gear menu's switch (kept in localStorage); the default mission is unchanged.
+const RAID_KEY = 'intercept.helm.raid';
+const RAID = (() => {
+  try { const q = new URLSearchParams(location.search).get('raid'); if (q !== null) return q !== '0'; } catch { /* no location */ }
+  try { return localStorage.getItem(RAID_KEY) === '1'; } catch { return false; }
+})();
+const sim = new HelmSim({ seed: (Date.now() % 100000) | 0, raid: RAID, mood: MOOD });
 sim.skyline = ridgeAngle;
 sim.gunsAuto = true; // the guns start on automatic (A switches it off)
+const rec = new Recorder(); // the poses of the last 30 s and the kills, for the replay button
 
 // Tags (drones, missiles): an HTML layer like the other missions'.
 const labels = new CSS2DRenderer();
@@ -181,7 +217,7 @@ const ZAXIS = new THREE.Vector3(0, 0, 1);
 function droneVis(d) {
   let v = vis.get(d.id);
   if (!v) {
-    const plane = createPlane();
+    const plane = createPlane({ label: `Drone-${d.id}` });
     plane.setBooster(1e9, 0, 1); // no booster canister: these were launched far away
     scene.add(plane.group);
     v = { plane, tag: tag('drone'), debris: null };
@@ -200,6 +236,7 @@ function dropVis(id) {
 
 function handleEvents() {
   for (const e of sim.takeEvents()) {
+    rec.note(e, sim);
     audio.event(e);
     switch (e.type) {
       case 'say': say(e.text, e.tone); break;
@@ -218,7 +255,7 @@ function handleEvents() {
           cine.tLaunch = sim.t;
         } else startCine(e.id);
         break;
-      case 'heli-fire': fx.launchBillow(e.pos, e.dir, sim.t); break; // the helicopter's round: no cut to the launcher
+      case 'heli-fire': break; // the helicopter's burst: its tracers are drawn from the sim's burst state (updateGuns)
       case 'heli-hit': for (let i = 0; i < 4; i++) fx.missileTrail(e.pos, sim.t); break; // a puff of smoke: it is damaged, not destroyed
       case 'explosion': {
         fx.explosion(e.pos, sim.t);
@@ -244,7 +281,11 @@ function handleEvents() {
       case 'gunhit': fx.missileTrail(e.pos, sim.t); break; // a puff where the burst struck
       case 'splash': fx.splashAt(e.pos, sim.t, 1.6); break;
       case 'missile-lost': if (e.pos.y < 8) fx.splashAt(e.pos, sim.t, 1.2); break;
-      case 'over': if (cine) pendingOrbit = true; else setView('orbit', true); break; // the shot of the last hit plays out first
+      case 'raid-over': showGrade(raidRun(sim.raidLog), false); break;
+      case 'over':
+        showGrade(RAID ? raidRun(sim.raidLog, true) : classicRun({ kills: sim.kills, strikes: sim.strikes, cellsUsed: sim.cellsUsed, rounds: GUN_ROUNDS * GUN_MOUNTS.length - sim.gunRounds, out: true }), true);
+        if (cine) pendingOrbit = true; else setView('orbit', true);
+        break; // the shot of the last hit plays out first
       default: break;
     }
   }
@@ -289,7 +330,11 @@ function applyState(dt) {
       const r = sim.rangeTo(d.pos);
       v.tag.el.classList.toggle('dead', d.phase === 'attack' || d.phase === 'pass');
       v.tag.el.classList.toggle('helm-target', d.id === sim.targetId);
-      v.tag.title.textContent = `${d.name}${d.id === sim.targetId ? ' · TARGET' : ''}${d.phase === 'attack' ? ' · ATTACK' : ''}`;
+      // A raid contact is unknown until the radar classifies it; the word and a mark say which, not only the colour.
+      const kind = d.raid ? (d.class === 'real' ? ' · ▲ MISSILE' : d.class === 'decoy' ? ' · ○ DECOY' : ' · ? UNKNOWN') : '';
+      v.tag.el.classList.toggle('helm-missile', d.class === 'real');
+      v.tag.el.classList.toggle('helm-decoy', d.class === 'decoy');
+      v.tag.title.textContent = `${d.name}${kind}${d.id === sim.targetId ? ' · TARGET' : ''}${d.phase === 'attack' && !d.raid ? ' · ATTACK' : ''}`;
       const taken = Math.max(0, DRONE_HP - d.hp);
       v.tag.body.innerHTML = `${kmText(r)} · ${Math.round(d.pos.y)}<span> m up</span>${taken ? `<span class="tag-hits"> ${'●'.repeat(taken)}${'○'.repeat(DRONE_HP - taken)}</span>` : ''}`;
       // A drone the guns have hurt trails smoke, more the worse it is.
@@ -308,7 +353,6 @@ function applyState(dt) {
     let v = mvis.get(m.id);
     if (!v) {
       const model = createMissile();
-      if (m.heli) model.group.scale.setScalar(0.6); // a light air-launched round
       scene.add(model.group);
       v = { model, trailLast: m.pos.clone() };
       mvis.set(m.id, v);
@@ -355,6 +399,31 @@ function flash(kind) {
   alarmEl.classList.remove('hit');
   void alarmEl.offsetWidth; // restart the animation
   alarmEl.classList.add(kind);
+}
+
+// --- The grade ---------------------------------------------------------------------------------------------------------
+// A card with the letter, what it was made of and the best run so far. After each raid it shows briefly; when the ship is put out of
+// action (a raid run or the plain mission) the run is saved if it beats the best, and the card stays until R.
+const gradeEl = document.createElement('div');
+gradeEl.className = 'helm-grade';
+gradeEl.hidden = true;
+gradeEl.setAttribute('role', 'status');
+document.body.appendChild(gradeEl);
+let gradeTimer = 0;
+function showGrade(run, final) {
+  let best = loadBest(run.mode);
+  let isNew = false;
+  if (final) ({ best, isNew } = saveBest(run));
+  const rows = run.mode === 'raid'
+    ? [['Raids', `${run.raids}`], ['Raid scores', run.scored.map((r) => r.grade).join(' ') || '-'], ['Points', `${run.points}`]]
+    : [['Kills', `${run.kills}`], ['Hits taken', `${Math.round(run.strikes * 10) / 10}`], ['Missiles fired', `${run.cellsUsed}`], ['Gun rounds', `${Math.round(run.rounds)}`]];
+  const last = run.mode === 'raid' ? run.scored[run.scored.length - 1] : null;
+  gradeEl.innerHTML = `<div class="hg-l">${last && !final ? last.grade : run.grade}</div><div class="hg-b"><b>${final ? (run.out ? 'Out of action' : 'Run over') : `Raid ${run.raids} over`}</b>`
+    + rows.map(([k, v]) => `<span>${k} <i>${v}</i></span>`).join('')
+    + `<span class="hg-best">${best ? `Best: ${best.grade} · ${best.points} pts${isNew ? ' · new best' : ''}` : ''}</span></div>`;
+  gradeEl.hidden = false;
+  clearTimeout(gradeTimer);
+  if (!final) gradeTimer = setTimeout(() => { gradeEl.hidden = true; }, 9000);
 }
 
 // --- Camera views -----------------------------------------------------------------------------------------------------
@@ -407,6 +476,7 @@ function setFov(f) {
 }
 
 const shipTarget = (out) => out.set(sim.x, 10, sim.z);
+const orbitTarget = (out) => out.set(sim.x, -40, sim.z); // a little under her, so she stands above the middle of the screen, clear of the instruments
 let viewBefore = 'behind'; // the view the target view was left from: the camera goes back to it once the drone has splashed
 let tgtWatch = null; // the drone the target view was last on
 function setView(v, quiet = false) {
@@ -424,7 +494,12 @@ function setView(v, quiet = false) {
   camera.up.set(0, 1, 0);
   if (v === 'orbit') {
     controls.enabled = true;
-    rig.focus('ship', shipTarget, 260, 40);
+    // It opens off her starboard beam, a little abaft it and above the water, looking down on her from 300 m (drag and wheel take it from there).
+    orbitTarget(controls.target);
+    const fx = Math.cos(sim.psi), fz = Math.sin(sim.psi), az = THREE.MathUtils.degToRad(25), el = THREE.MathUtils.degToRad(22);
+    const hx = -fz * Math.cos(az) - fx * Math.sin(az), hz = fx * Math.cos(az) - fz * Math.sin(az);
+    camera.position.set(controls.target.x + 300 * Math.cos(el) * hx, controls.target.y + 300 * Math.sin(el), controls.target.z + 300 * Math.cos(el) * hz);
+    rig.focus('ship', orbitTarget, 300, 40);
   } else {
     controls.enabled = false;
     rig.free();
@@ -764,7 +839,8 @@ function aimSight(dt, d) {
   }
   else if (sight.phase === 'lock' && off > THREE.MathUtils.degToRad(3.5)) sight.phase = 'slew'; // lost it: swing back onto it
   camera.lookAt(_e.copy(camera.position).add(sight.aim));
-  const wantFov = Math.max(fovWant * sightZoom, 1);
+  sightBase = fovWant;
+  const wantFov = Math.max(fovWant * sightZoom, LENS_MIN);
   const found = sight.phase === 'lock';
   sightTxt.textContent = found
     ? `${d.name} · ${relName(sim.relBearing(d.pos))} · ${kmText(sim.rangeTo(d.pos))} · ${Math.round(d.pos.y)} m${sim.engageable(d) ? '' : ' · IN ARC'}`
@@ -802,8 +878,59 @@ function wreckShot(dt) {
   return true;
 }
 
+// --- The opening shot ------------------------------------------------------------------------------------------------------
+// On entering: straight down over the ship (bow up), then the camera comes down and swings a little way round her, and settles into the behind
+// view, each part eased into the next. Any key or click cuts it short: the camera glides from where it is to the behind view.
+const INTRO_TOP = 1.5, INTRO_ORBIT = 3, INTRO_SETTLE = 1.5; // seconds: the plan view, the descent and swing, the settle behind her
+let intro = new URLSearchParams(location.search).get('intro') === '0' ? null : { t: 0, from: null, skipT: 0 };
+const smooth = (x) => { const c = THREE.MathUtils.clamp(x, 0, 1); return c * c * (3 - 2 * c); };
+const _ip = new THREE.Vector3(), _il = new THREE.Vector3(), _bp = new THREE.Vector3(), _bl = new THREE.Vector3(), _iu = new THREE.Vector3();
+function skipIntro() { if (intro && !intro.from && intro.t > 0.6) intro.from = { pos: camera.position.clone(), look: _il.clone(), up: camera.up.clone(), skipT: 0 }; }
+window.addEventListener('keydown', skipIntro);
+window.addEventListener('pointerdown', skipIntro);
+function updateIntro(dt) {
+  intro.t += dt;
+  const fx = Math.cos(sim.psi), fz = Math.sin(sim.psi);
+  // The behind view's own pose (what the camera lands on).
+  _bp.set(sim.x - fx * BEHIND_DIST, BEHIND_DIST * 0.06 + 12, sim.z - fz * BEHIND_DIST);
+  _bl.set(sim.x + fx * 10, _bp.y + (BEHIND_DIST + 10) * 0.062, sim.z + fz * 10);
+  // The circling pose: spherical about the ship, azimuth 0 = straight astern, so the plan view and the finish line up.
+  const u = smooth((intro.t - INTRO_TOP) / INTRO_ORBIT);
+  const el = THREE.MathUtils.degToRad(THREE.MathUtils.lerp(88, 24, u));
+  const r = intro.t < INTRO_TOP ? THREE.MathUtils.lerp(470, 400, smooth(intro.t / INTRO_TOP)) : THREE.MathUtils.lerp(400, 240, u);
+  const az = THREE.MathUtils.degToRad(60) * u; // swings round to her quarter only, so the picture turns a little, then the settle brings it astern
+  const hx = -fx * Math.cos(az) + fz * Math.sin(az), hz = -fx * Math.sin(az) - fz * Math.cos(az);
+  _ip.set(sim.x + r * Math.cos(el) * hx, 10 + r * Math.sin(el), sim.z + r * Math.cos(el) * hz);
+  _il.set(sim.x, 10, sim.z);
+  const upBlend = smooth((THREE.MathUtils.radToDeg(el) - 50) / 28); // 1 while it looks straight down (bow up), 0 once it is low
+  _iu.set(fx * upBlend, 1 - upBlend, fz * upBlend).normalize();
+  let s = smooth((intro.t - INTRO_TOP - INTRO_ORBIT) / INTRO_SETTLE);
+  let done = intro.t >= INTRO_TOP + INTRO_ORBIT + INTRO_SETTLE;
+  if (intro.from) { // cut short: glide from where the camera was to the behind view
+    intro.from.skipT += dt;
+    s = smooth(intro.from.skipT / 0.9);
+    done = intro.from.skipT >= 0.9;
+    _ip.copy(intro.from.pos); _il.copy(intro.from.look); _iu.copy(intro.from.up);
+  }
+  camera.position.lerpVectors(_ip, _bp, s);
+  _il.lerp(_bl, s);
+  _iu.lerp(_up0, s).normalize();
+  camera.up.copy(_iu);
+  const wantNear = Math.min(Math.max(camera.position.y * 0.2, 0.3), 400);
+  if (camera.near !== wantNear) { camera.near = wantNear; camera.updateProjectionMatrix(); }
+  camera.lookAt(_il);
+  fov = 50;
+  setFov(fov);
+  if (done) { intro = null; camera.up.set(0, 1, 0); setView('behind', true); }
+}
+const _up0 = new THREE.Vector3(0, 1, 0);
+
 function updateCamera(dt) {
   bridge.group.visible = view === 'bridge';
+  if (intro) {
+    if (cine || view !== 'behind') intro = null; // a shot of the action, or a view the player chose, takes over
+    else { updateIntro(dt); updateRadarUi(); return; }
+  }
   // Looking straight down from high up nothing is near the camera, so the near plane moves out with the height: the depth buffer then
   // keeps its precision across the 10 km to the land (otherwise the shore flickers where the land dips under the sea).
   const wantNear = view === 'above' ? Math.min(Math.max(aboveH * 0.2, 0.3), 400) : 0.3;
@@ -1032,6 +1159,7 @@ function renderPip() {
 
 let behindYaw = 0;
 let sightZoom = 1;
+let sightBase = 24; // the lens (degrees) the sight wants before the zoom is applied, set each frame
 // The fire-control director's mount (see updateCamera): its aim, its turning speed and where it is in finding the target.
 const SIGHT_RATE = THREE.MathUtils.degToRad(55); // the fastest it turns, per second
 const SIGHT_WIDE = 24; // degrees: the lens while it looks for the target
@@ -1051,17 +1179,45 @@ const radarKeys = { l: 0, r: 0, u: 0, d: 0 };
 const radarEl = document.createElement('div');
 radarEl.className = 'helm-radar';
 radarEl.hidden = true;
-radarEl.innerHTML = '<div class="hr-marks"></div><div class="hr-pad">'
-  + '<div class="hr-acts"><button type="button" data-act="auto">Release / auto<kbd>Space</kbd></button><button type="button" data-act="next">Next target<kbd>Tab</kbd></button><button type="button" data-act="pick" class="hr-pick">Lock nearest to<kbd></kbd></button></div>'
-  + '<div class="hr-mid"><div class="hr-read"><b class="hr-mode">AUTO</b><span class="hr-brg"></span></div>'
-  + '<div class="hr-dpad"><button type="button" data-dir="u" aria-label="Aim up">▲</button><button type="button" data-dir="l" aria-label="Aim left">◀</button>'
-  + '<button type="button" data-act="lock" class="hr-lock">LOCK</button><button type="button" data-dir="r" aria-label="Aim right">▶</button><button type="button" data-dir="d" aria-label="Aim down">▼</button></div></div>'
-  + '<div class="hr-acts"><button type="button" data-act="arm">Arm missile<kbd>M</kbd></button><button type="button" data-act="fire" class="hr-fire">Fire<kbd>F</kbd></button></div></div>';
+// The console: two spheres side by side at the foot of the screen, the aim stick (a drag on it turns the sight; a ring round it zooms the lens)
+// and FIRE, with the option buttons, round and animated, one cluster each side.
+const RICON = { // 32 x 32 drawings, animated by CSS in helm.css (.hr-sweep, .hr-brk, .hr-xh, .flame, .puff)
+  auto: '<svg viewBox="0 0 32 32" aria-hidden="true"><g class="hr-sweep"><path d="M26 16a10 10 0 1 1-3.2-7.4M26 6v6h-6"/></g><circle cx="16" cy="16" r="2" style="fill:currentColor;stroke:none"/></svg>',
+  next: '<svg viewBox="0 0 32 32" aria-hidden="true"><g class="hr-brk"><path d="M5 11V5h6M21 5h6v6M27 21v6h-6M11 27H5v-6"/></g><circle cx="16" cy="16" r="3.2" class="fill"/><path d="M21 16h5M23.5 13.5L26 16l-2.5 2.5"/></svg>',
+  lock: '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="7" y="14" width="18" height="13" rx="3" class="fill"/><g class="hr-shackle"><path d="M11 14v-4a5 5 0 0 1 10 0v4"/></g><circle cx="16" cy="20.5" r="1.8" style="fill:currentColor;stroke:none"/></svg>',
+  arm: '<svg viewBox="0 0 32 32" aria-hidden="true"><g transform="rotate(-45 16 16)"><circle class="puff p1" cx="4" cy="16" r="1.6"/><circle class="puff p2" cx="4" cy="16" r="1.6"/><path class="flame" d="M9 14.2L1.5 16 9 17.8z"/><path class="fill" d="M9 13.2h11.5L27 16l-6.5 2.8H9z"/><path d="M9 13.2L5.8 9.8h5.6l1.9 3.4M9 18.8l-3.2 3.4h5.6l1.9-3.4M16 13.2v5.6"/></g></svg>',
+  pick: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 16s5-8 13-8 13 8 13 8-5 8-13 8S3 16 3 16z"/><circle cx="16" cy="16" r="3.6" class="fill"/></svg>',
+};
+const optHtml = (icon, title, sub, key) => `<i class="sp-ico">${icon}</i><span class="sp-txt"><b>${title}</b><small>${sub}</small></span><kbd>${key}</kbd>`;
+const optBtn = (cls, act, icon, title, sub, key) => `<button type="button" class="helm-act hr-opt ${cls}" data-act="${act}">${optHtml(icon, title, sub, key)}</button>`;
+// The ring shows the lens itself, in degrees (wide at the lower left, close at the lower right), not the multiplier on it:
+// a lock closes the lens on its own, and the dot follows that too.
+const LENS_MIN = 1, LENS_MAX = SIGHT_WIDE * 4, ZOOM_SPAN = Math.log(LENS_MAX / LENS_MIN);
+const SIGHT_ZOOM_MIN = 0.02, SIGHT_ZOOM_MAX = 40; // the multiplier on the lens the sight would have anyway
+const RING_ARC = 2 * Math.PI * 70 * 0.75; // the zoom ring runs 270 degrees, from the lower left round to the lower right
+radarEl.innerHTML = '<div class="hr-marks"></div><div class="hr-console">'
+  + '<div class="hr-read"><b class="hr-mode">AUTO</b><span class="hr-brg"></span></div>'
+  + '<div class="hr-row"><div class="hr-opts">'
+  + optBtn('hr-auto', 'auto', RICON.auto, 'Release / auto', 'back to automatic tracking', 'Space')
+  + optBtn('hr-next', 'next', RICON.next, 'Next target', 'step through the drones', 'Tab')
+  + optBtn('hr-lock', 'lock', RICON.lock, 'Lock', 'catch the drone in the sight', 'Enter')
+  + '</div>'
+  + '<div class="hr-stickwrap"><svg class="hr-ring" viewBox="0 0 150 150" aria-label="Zoom"><circle class="hr-rtrack" r="70" cx="75" cy="75"/><circle class="hr-rfill" r="70" cx="75" cy="75"/><circle class="hr-hit" r="70" cx="75" cy="75"/><circle class="hr-rthumb" r="7"/></svg>'
+  + '<div class="hr-stick" title="Drag to aim the sight"><i class="hr-knob"></i></div></div>'
+  + '<button type="button" class="hr-fireball" data-act="fire" title="Launch the missile (F)"><span>FIRE</span><kbd>F</kbd></button>'
+  + '<div class="hr-opts">'
+  + optBtn('hr-arm', 'arm', RICON.arm, 'Arm missile', 'make one ready on the target', 'M')
+  + optBtn('hr-pick hr-opt-pick', 'pick', RICON.pick, 'Lock nearest to', 'the view or the ship', 'VIEW')
+  + '</div></div></div>';
 document.body.appendChild(radarEl);
 const radarMarks = radarEl.querySelector('.hr-marks');
 const radarMode = radarEl.querySelector('.hr-mode');
 const radarBrg = radarEl.querySelector('.hr-brg');
 const radarPickKbd = radarEl.querySelector('.hr-pick kbd');
+const fireBall = radarEl.querySelector('.hr-fireball');
+const stickEl = radarEl.querySelector('.hr-stick');
+const hitEl = radarEl.querySelector('.hr-hit'), thumbEl = radarEl.querySelector('.hr-rthumb'), fillEl = radarEl.querySelector('.hr-rfill');
+const pickSub = radarEl.querySelector('.hr-pick small');
 const pressKey = (key) => { window.dispatchEvent(new KeyboardEvent('keydown', { key })); window.dispatchEvent(new KeyboardEvent('keyup', { key })); };
 function lockOn(d) {
   sim.targetId = d.id;
@@ -1090,7 +1246,45 @@ function lockHover() {
   if (d) lockOn(d);
   else say('Nothing on the radar to lock', 'warn');
 }
+// Drag on a control until the pointer lets go.
+function dragOn(e, move) {
+  const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); move(null); };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
+  move(e);
+}
+const STICK_TRAVEL = 30; // px the knob can move from the middle
 radarEl.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('.hr-hit')) { // the zoom ring: drag round it (wide at the lower left, close at the lower right)
+    e.preventDefault();
+    dragOn(e, (ev) => {
+      if (!ev) return;
+      const r = hitEl.getBoundingClientRect();
+      let a = (Math.atan2(ev.clientY - (r.top + r.height / 2), ev.clientX - (r.left + r.width / 2)) * 180 / Math.PI - 135 + 720) % 360;
+      if (a > 270) a = a > 315 ? 0 : 270; // the gap at the bottom snaps to the nearer end
+      const lens = LENS_MIN * Math.exp((1 - a / 270) * ZOOM_SPAN);
+      sightZoom = THREE.MathUtils.clamp(lens / sightBase, SIGHT_ZOOM_MIN, SIGHT_ZOOM_MAX);
+    });
+    return;
+  }
+  if (e.target.closest('.hr-stick')) { // the aim stick: how far it is pushed is how fast the sight turns; it springs back to the middle
+    e.preventDefault();
+    sight.locked = false; // taking the stick takes the sight back from a lock
+    const r = stickEl.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    dragOn(e, (ev) => {
+      if (!ev) { radarKeys.l = radarKeys.r = radarKeys.u = radarKeys.d = 0; stickEl.style.setProperty('--kx', '0px'); stickEl.style.setProperty('--ky', '0px'); return; }
+      let dx = ev.clientX - cx, dy = ev.clientY - cy;
+      const len = Math.hypot(dx, dy);
+      if (len > STICK_TRAVEL) { dx *= STICK_TRAVEL / len; dy *= STICK_TRAVEL / len; }
+      const x = dx / STICK_TRAVEL, y = dy / STICK_TRAVEL;
+      radarKeys.r = Math.max(0, x); radarKeys.l = Math.max(0, -x); radarKeys.d = Math.max(0, y); radarKeys.u = Math.max(0, -y);
+      sight.manual = true;
+      stickEl.style.setProperty('--kx', `${dx.toFixed(1)}px`); stickEl.style.setProperty('--ky', `${dy.toFixed(1)}px`);
+    });
+    return;
+  }
   const b = e.target.closest('button');
   if (!b) return;
   e.preventDefault();
@@ -1141,7 +1335,8 @@ function aimManual(dt) {
   sightEl.classList.toggle('lock', !!d);
   sightEl.classList.toggle('searching', !d);
   sightTxt.textContent = d ? `${d.name} in the sight · ${relName(sim.relBearing(d.pos))} · ${kmText(sim.rangeTo(d.pos))} · locking…` : 'Manual: aim at a drone';
-  return Math.max(SIGHT_WIDE * sightZoom, 1);
+  sightBase = SIGHT_WIDE;
+  return Math.max(SIGHT_WIDE * sightZoom, LENS_MIN);
 }
 // Brackets on every detected drone in the picture, and the pad's readout.
 const radarMarkEls = new Map();
@@ -1151,6 +1346,15 @@ function updateRadarUi() {
   radarMode.textContent = sight.locked ? (sight.phase === 'lock' ? 'LOCKED' : 'LOCKING') : sight.manual ? 'MANUAL' : sim.target ? 'AUTO' : 'SCAN';
   radarMode.classList.toggle('manual', manual);
   radarPickKbd.textContent = pickMode === 'ship' ? 'SHIP' : 'VIEW';
+  pickSub.textContent = pickMode === 'ship' ? 'the drone nearest the ship (click to change)' : 'the drone nearest the view (click to change)';
+  const canFire = sim.cellsLeft > 0 || !!sim.shot;
+  fireBall.classList.toggle('empty', !canFire);
+  fireBall.classList.toggle('ready', !!sim.shot?.hold);
+  fireBall.classList.toggle('lock', !!sim.shot?.locked);
+  const zf = THREE.MathUtils.clamp(1 - Math.log(Math.max(fov, LENS_MIN) / LENS_MIN) / ZOOM_SPAN, 0, 1), ang = (135 + 270 * zf) * Math.PI / 180;
+  thumbEl.setAttribute('cx', (75 + 70 * Math.cos(ang)).toFixed(1));
+  thumbEl.setAttribute('cy', (75 + 70 * Math.sin(ang)).toFixed(1));
+  fillEl.style.strokeDasharray = `${(RING_ARC * zf).toFixed(1)} 440`;
   radarEl.classList.toggle('locked', sight.locked);
   const rel = THREE.MathUtils.radToDeg(Math.atan2(Math.sin(Math.atan2(sight.aim.z, sight.aim.x) - sim.psi), Math.cos(Math.atan2(sight.aim.z, sight.aim.x) - sim.psi)));
   radarBrg.textContent = `${relName(THREE.MathUtils.degToRad(rel))} · elv ${Math.round(THREE.MathUtils.radToDeg(Math.asin(sight.aim.y)))}° · lens ${Math.round(fov)}°`;
@@ -1201,7 +1405,7 @@ canvas.addEventListener('dblclick', () => { lookYaw = 0; lookPitch = -0.03; behi
 canvas.addEventListener('wheel', (e) => {
   if (view === 'behind') behindDist = THREE.MathUtils.clamp(behindDist * Math.exp(e.deltaY * 0.001), 60, 1200);
   else if (view === 'above') aboveH = THREE.MathUtils.clamp(aboveH * Math.exp(e.deltaY * 0.001), 150, 24000); // high enough to see the land, 5 km and more away
-  else if (view === 'sight') sightZoom = THREE.MathUtils.clamp(sightZoom * Math.exp(e.deltaY * 0.001), 0.3, 4);
+  else if (view === 'sight') sightZoom = THREE.MathUtils.clamp(sightZoom * Math.exp(e.deltaY * 0.001), SIGHT_ZOOM_MIN, SIGHT_ZOOM_MAX);
 }, { passive: true });
 
 // --- Readouts --------------------------------------------------------------------------------------------------------
@@ -1219,8 +1423,135 @@ const head = (title, chip, tone) => `<div class="hud-head"><b>${title}</b><span 
 const shipEl = document.createElement('div');
 shipEl.id = 'helm-ship';
 shipEl.className = 'helm-ship';
+// The strip is three parts: the hull and kills badges, the dome with a propeller and a throttle bar each side (as in Surface battle), and the
+// missiles and guns badges. The badges are rebuilt as text; the propellers and bars stay put so they can turn and light up every frame.
+const PROP_SVG = '<svg viewBox="-24 -24 48 48" aria-hidden="true"><defs><linearGradient id="pp-brass" x1="0" y1="-23" x2="9" y2="-6" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f6e4a2"/><stop offset="0.55" stop-color="#d9b45c"/><stop offset="1" stop-color="#9b7632"/></linearGradient></defs><g class="pp-rot">'
+  + [0, 90, 180, 270].map((a) => `<g transform="rotate(${a})"><path d="M-2 -6 C-8.5 -9.5 -9.5 -19 -4 -22.6 C1 -24.5 8.4 -22 9 -17.6 C7 -12 4 -8 2.2 -6 Z" class="pp-blade"/><path d="M-3.4 -9 C-6 -13 -5.8 -18 -3 -20.6" class="pp-edge"/></g>`).join('')
+  + '</g><circle r="5.4" class="pp-hubring"/><circle r="3" class="pp-hub"/><circle r="1" class="pp-cap"/></svg>';
+const statHost = document.createElement('div'), centre = document.createElement('div'), wpnHost = document.createElement('div'), domeHost = document.createElement('div');
+statHost.className = 'hs-badges'; // the info badges (hull, kills, missiles, guns), left of the steering group
+wpnHost.className = 'hs-badges hs-cmds'; // the command buttons (helicopter, missile), right of it
+centre.className = 'hs-centre';
+const propL = document.createElement('div'), propR = document.createElement('div'), barL = document.createElement('div'), barR = document.createElement('div');
+propL.className = propR.className = 'hs-prop';
+propL.innerHTML = propR.innerHTML = PROP_SVG;
+barL.className = barR.className = 'hs-lvl'; // one bar for each engine, five notches: dead slow, slow, half, full, flank (the throttle, not the speed)
+barL.innerHTML = barR.innerHTML = '<i></i><i></i><i></i><i></i><i></i>';
+const domeWrap = document.createElement('div'); // the propellers stand inside the dome's two lower corners
+domeWrap.className = 'hs-domewrap';
+propL.classList.add('pp-l'); propR.classList.add('pp-r');
+domeWrap.append(domeHost, propL, propR);
+centre.append(barL, domeWrap, barR);
+shipEl.append(statHost, centre, wpnHost);
 document.body.appendChild(shipEl);
-let lastShip = '';
+const propRotL = propL.querySelector('.pp-rot'), propRotR = propR.querySelector('.pp-rot');
+let propAng = 0;
+function spinProps(dt) {
+  const kn = sim.knots;
+  propAng = (propAng + kn * 0.198 * dt) % (Math.PI * 2); // about one turn a second at 38 kn; backwards astern
+  const deg = (propAng * 180) / Math.PI;
+  propRotL.style.transform = `rotate(${deg}deg)`; propRotR.style.transform = `rotate(${-deg}deg)`;
+  const ord = sim.order;
+  for (const bar of [barL, barR]) { // the bar fills from the bottom with the throttle (slow astern lights the bottom notch in blue)
+    const n = bar.children.length;
+    for (let q = 0; q < n; q++) { const lit = ord === 0 ? q === n - 1 : (n - 1 - q) < ord - 1; bar.children[q].className = lit ? (ord === 0 ? 'astern' : q === 0 ? 'top' : 'on') : ''; }
+  }
+  const fast = Math.min(1, Math.abs(kn) / 20);
+  propL.style.setProperty('--blur', fast.toFixed(2)); propR.style.setProperty('--blur', fast.toFixed(2));
+}
+let lastStat = '', lastDome = '';
+
+// Under the radar map: the range and bearing of the drone you are on.
+const rangeEl = document.createElement('div');
+rangeEl.className = 'helm-range';
+document.body.appendChild(rangeEl);
+let lastRange = '';
+function updateRange() {
+  const t = sim.target;
+  const html = t ? `<div class="pt-pill" title="Range and bearing of the target">${kmText(sim.rangeTo(t.pos))} · ${relName(sim.relBearing(t.pos))}</div>` : '';
+  if (html !== lastRange) { rangeEl.innerHTML = html; lastRange = html; }
+}
+
+// The support buttons, round, in a row above the scope: the helicopter (E) and a missile (M, then F to launch), each with its key and a tip on hover.
+const actions = wpnHost; // (the commands stand in the bottom row, right of the steering group)
+const ICON_HELI = '<svg viewBox="0 0 32 32" aria-hidden="true"><g class="bob"><g class="rotor"><path d="M2 8.5h28"/></g><path d="M16 8.5v3"/><path class="fill" d="M6.5 18c0-3.6 3-6.5 7.5-6.5h5c3.4 0 5.5 2 5.5 4.6v1.9c0 1.4-1.3 2.5-2.9 2.5H10.5C8.2 20.5 6.5 19.7 6.5 18z"/><path class="win" d="M9.5 15.3c.8-1.5 2.4-2.3 4.6-2.3h1.4v4.3H9.2z"/><path d="M24.5 15.3l5.5-2.6v3.4l-5 2"/><circle class="trot" cx="30" cy="12.6" r="2.3"/><path d="M8 24.5h15M11 20.5v4M20 20.5v4"/></g></svg>';
+const ICON_MISS = '<svg viewBox="0 0 32 32" aria-hidden="true"><g transform="rotate(-45 16 16)"><circle class="puff p1" cx="4" cy="16" r="1.6"/><circle class="puff p2" cx="4" cy="16" r="1.6"/><path class="flame" d="M9 14.2L1.5 16 9 17.8z"/><path class="fill" d="M9 13.2h11.5L27 16l-6.5 2.8H9z"/><path d="M9 13.2L5.8 9.8h5.6l1.9 3.4M9 18.8l-3.2 3.4h5.6l1.9-3.4M16 13.2v5.6"/></g></svg>';
+const supportHtml = (icon, title, sub, key) => `<i class="sp-ico">${icon}</i><span class="sp-txt"><b>${title}</b><small>${sub}</small></span><kbd>${key}</kbd>`;
+const heliBtn = document.createElement('button'), missBtn = document.createElement('button');
+heliBtn.type = missBtn.type = 'button';
+heliBtn.className = 'helm-act helm-act-heli';
+missBtn.className = 'helm-act helm-act-miss';
+actions.append(heliBtn, missBtn);
+const ICON_GUN = '<svg viewBox="0 0 32 32" aria-hidden="true"><path class="fill" d="M3 21h11v5H3z"/><circle class="fill" cx="12" cy="16" r="5"/><path class="fill" d="M16 13.5h10v5H16z"/><path d="M16 16h10M12 11v-3"/><path class="muzzle" d="M27 13l4 3-4 3"/><path class="trace t1" d="M22 8h4"/><path class="trace t2" d="M17 6h3"/></svg>';
+const ICON_DRONE = '<svg viewBox="0 0 32 32" aria-hidden="true"><g transform="rotate(-24 16 16)"><path d="M1 22h22"/><g class="launch"><circle class="puff p1" cx="6" cy="16" r="1.6"/><circle class="puff p2" cx="6" cy="16" r="1.6"/><path class="flame" d="M9 14.6L2 16l7 1.4z"/><path class="fill" d="M9 14.5h14l2 1.5-2 1.5H9z"/><path class="fill" d="M14 8h4v16h-4z"/><path class="fill" d="M9 12h3v8H9z"/><path class="prop" d="M26.5 11.5v9"/></g></g></svg>';
+const gunBtn = document.createElement('button'), droneBtn = document.createElement('button');
+gunBtn.type = droneBtn.type = 'button';
+gunBtn.className = 'helm-act helm-act-gun'; droneBtn.className = 'helm-act helm-act-drone';
+gunBtn.innerHTML = supportHtml(ICON_GUN, 'Guns', 'hold to fire', 'G');
+droneBtn.innerHTML = supportHtml(ICON_DRONE, 'Add a drone', 'send one in', 'D');
+actions.append(gunBtn, droneBtn);
+// The guns fire while the button is held, like G; the other two do what their key does.
+gunBtn.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  input.gun = 1;
+  const up = () => { input.gun = 0; window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
+});
+// The guns badge (left of the dome) is the auto-guns switch: a click does what A does.
+statHost.addEventListener('click', (e) => { if (e.target instanceof Element && e.target.closest('.hb-gun')) { sim.toggleAutoGuns(); lastStat = ''; } });
+droneBtn.addEventListener('click', () => { sim.summon(); droneBtn.blur(); });
+heliBtn.addEventListener('click', () => { say(sim.heliRequest(), ''); heliBtn.blur(); });
+// The kill-cam's button: it appears once there is a kill or a hit to watch, and plays it only when pressed.
+const ICON_REPLAY = '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8.5 10.5a10 10 0 1 1-2.6 7.2"/><path d="M7.5 4.5v6.5H14"/><path class="fill" d="M13 12.5l8 3.5-8 3.5z"/></svg>';
+let replayItem = null; // the gear menu's entry for it, made with the menu
+const replayBtn = document.createElement('button');
+replayBtn.type = 'button';
+replayBtn.className = 'helm-act helm-act-replay';
+replayBtn.hidden = true;
+replayBtn.innerHTML = supportHtml(ICON_REPLAY, 'Replay', 'the last kill, slow motion', 'P');
+replayBtn.addEventListener('click', () => { startReplay(); replayBtn.blur(); });
+actions.append(replayBtn);
+missBtn.addEventListener('click', () => { if (sim.shot?.hold) sim.launchReady(); else sim.arm(); missBtn.blur(); });
+let lastActs = '';
+function updateActions() {
+  const act = sim.heli.action;
+  const hTitle = act === 'land' ? 'Helicopter: land' : 'Helicopter: take off';
+  const hSub = act === 'takeoff' ? (sim.standDown ? 'stays: a drone is near' : 'take off') : act === 'land' ? 'bring her in' : 'landing';
+  const hOn = act !== null;
+  // What the helicopter is doing, as a short tag and a state colour on the button.
+  const ph = sim.heli.phase;
+  const blocked = act === 'takeoff' && sim.standDown;
+  const H = blocked ? ['HOLD', 'blocked', 'on deck, a drone is near'] : {
+    parked: ['DECK', 'parked', 'parked on the deck'], spindown: ['STOP', 'parked', 'rotor winding down'],
+    spinup: ['START', 'start', 'rotor spinning up'], ready: ['READY', 'start', 'ready to lift'],
+    lift: ['LIFT', 'air', 'lifting off'], circuit: ['AIR', 'air', 'flying its circuit'],
+    hold: ['LAND', 'land', 'holding over the deck, waiting for a steady course'], descend: ['DOWN', 'land', 'coming down onto the deck'],
+    waveoff: ['WAVE', 'blocked', 'wave off: the ship turned'],
+  }[ph] ?? ['', 'parked', ''];
+  const hState = `${H[0]}|${H[1]}`;
+  const mHold = !!sim.shot?.hold;
+  const mTitle = mHold ? 'Launch the missile' : 'Make a missile ready';
+  const mSub = sim.cellsLeft <= 0 && !sim.shot ? 'none left' : mHold ? (sim.shot.locked ? 'locked: press to launch' : 'acquiring the target') : `${sim.cellsLeft} left · on the target`;
+  const mOn = sim.cellsLeft > 0 || !!sim.shot;
+  const mLocked = !!sim.shot?.locked;
+  const key = [hTitle, hSub, hOn, hState, mTitle, mSub, mOn, mHold, mLocked].join('|');
+  if (key === lastActs) return;
+  lastActs = key;
+  heliBtn.innerHTML = supportHtml(ICON_HELI, hTitle, `${H[2]} · ${hSub}`, 'E') + (H[0] ? `<em class="act-tag">${H[0]}</em>` : ''); heliBtn.disabled = !hOn;
+  heliBtn.dataset.state = H[1];
+  missBtn.innerHTML = supportHtml(ICON_MISS, mTitle, mSub, mHold ? 'F' : 'M') + (mHold ? '<em class="act-tag">FIRE</em>' : ''); missBtn.disabled = !mOn;
+  // First press readies the missile; then the same button is the FIRE button (red and pulsing, green once the lock is made).
+  missBtn.classList.toggle('armed', mHold); missBtn.classList.toggle('locked', mHold && mLocked);
+}
+// The guns' state changes without the heli/missile text changing, so it has its own cheap update.
+let lastGunState = '';
+function updateGunButtons() {
+  const k = `${input.gun}|${sim.gunsAuto}`;
+  if (k === lastGunState) return;
+  lastGunState = k;
+  gunBtn.classList.toggle('on', input.gun === 1);
+}
 // The dome: its rim is a heading tape (the degrees slide round it, the heading itself fixed and bold at the top), inside it
 // a needle from the foot swings left and right with the rudder, and the speed is under the needle.
 const DOME_R = 94; // svg units, the rim
@@ -1238,13 +1569,13 @@ function domeSvg() {
     const major = d % 30 === 0;
     ticks += `<line x1="${pt(DOME_R, a).split(',')[0]}" y1="${pt(DOME_R, a).split(',')[1]}" x2="${pt(DOME_R - (major ? 9 : d % 10 === 0 ? 6 : 3.5), a).split(',')[0]}" y2="${pt(DOME_R - (major ? 9 : d % 10 === 0 ? 6 : 3.5), a).split(',')[1]}" class="${major ? 'mj' : ''}"/>`;
     if (d % 30 === 0) {
-      const [x, y] = pt(DOME_R - 21, a).split(',');
+      const [x, y] = pt(DOME_R - 23, a).split(',');
       labels += `<text x="${x}" y="${y}" class="dl">${String(((d % 360) + 360) % 360).padStart(3, '0')}</text>`;
     }
   }
-  // The rudder: an arc just inside the scale, from the top (midships) filling left in red (port) or right in green (starboard).
-  const RR = 60;
-  const span = THREE.MathUtils.degToRad(62);
+  // The rudder: an arc against the scale (its outer line), from the top (midships) filling left in red (port) or right in green (starboard).
+  const RR = DOME_R + 2.5; // on the outer perimeter of the semicircle, around the scale
+  const span = THREE.MathUtils.degToRad(74);
   const fr = THREE.MathUtils.clamp(sim.rudder / RUDDER_MAX, -1, 1);
   const th = fr * span;
   const p0 = pt(RR, Math.PI / 2).split(',');
@@ -1258,36 +1589,46 @@ function domeSvg() {
     + `<path d="M${cx - 4},${cy - DOME_R - 1} L${cx + 4},${cy - DOME_R - 1} L${cx},${cy - DOME_R + 6} Z" class="lub"/>`
     + `<text x="${cx}" y="79" class="hd">${f(((h % 360) + 360) % 360).padStart(3, '0')}°</text>`
     + `<path d="M${pl[0]},${pl[1]} A${RR},${RR} 0 0 1 ${pr[0]},${pr[1]}" class="rt"/>${fill}`
-    + `<line x1="${p0[0]}" y1="${(Number(p0[1]) - 5).toFixed(1)}" x2="${p0[0]}" y2="${(Number(p0[1]) + 5).toFixed(1)}" class="rm"/>`
+    + `<line x1="${p0[0]}" y1="${(Number(p0[1]) - 4).toFixed(1)}" x2="${p0[0]}" y2="${(Number(p0[1]) + 4).toFixed(1)}" class="rm"/>`
     + `<text x="${cx}" y="94" class="sp">${f(sim.knots, 1)}<tspan> kn</tspan></text></svg>`;
 }
 // The weapons card: one row per weapon (the missile cells as little missiles, the guns' ammunition as a bar), and empty slots
 // kept for the weapons still to come.
 function weaponsHtml() {
-  let mState = sim.cellsLeft > 0 ? 'READY' : 'EMPTY';
-  if (sim.shot) mState = sim.shot.locked ? 'LOCKED' : sim.shot.acquiring ? 'ACQUIRING' : 'TURNING';
-  else if (sim.shipMissiles.length) mState = `${sim.shipMissiles.length} AWAY`;
-  const cls = sim.shot ? (sim.shot.locked ? 'arm lock' : 'arm') : sim.cellsLeft > 0 ? 'on' : '';
-  const pips = Array.from({ length: CELLS }, (_, i) => `<i class="${i === sim.cellsLeft - 1 ? cls : i < sim.cellsLeft ? 'on' : ''}"></i>`).join('');
-  const cells = `<div class="hw-pips">${pips}</div><span class="hw-n">${sim.cellsLeft}</span>`;
+  let mState = sim.cellsLeft > 0 ? 'ready' : 'empty';
+  if (sim.shot) mState = sim.shot.locked ? 'locked' : sim.shot.acquiring ? 'acquiring' : 'turning';
+  else if (sim.shipMissiles.length) mState = `${sim.shipMissiles.length} away`;
+  const mCls = sim.shot ? (sim.shot.locked ? 'lock' : 'arm') : sim.cellsLeft > 0 ? 'ok' : 'out';
   const firing = sim.guns.some((g) => g.firing);
-  const gState = firing ? 'FIRING' : sim.gunRounds <= 0 ? 'EMPTY' : sim.gunsAuto ? 'AUTO' : 'HOLD G';
+  const gState = firing ? 'firing' : sim.gunRounds <= 0 ? 'empty' : sim.gunsAuto ? 'auto' : 'hold G to fire';
   const gMax = GUN_ROUNDS * sim.guns.length;
-  const gPct = Math.max(0, Math.min(100, sim.gunRounds / gMax * 100)).toFixed(1);
-  return `<div class="hs-wpn">`
-    + `<div class="hw-row hw-msl${sim.shot?.locked ? ' lock' : ''}"><b>MISSILES</b><div class="hw-cells">${cells}</div><em>${mState}</em></div>`
-    + `<div class="hw-row hw-gun${firing ? ' fire' : sim.gunsAuto ? ' auto' : ''}"><b>GUNS</b><div class="hw-bar"><i style="width:${gPct}%"></i><s>${sim.gunRounds}</s></div><em>${gState}</em></div>`
-    + '</div>';
+  const gCls = firing ? 'fire' : sim.gunRounds <= 0 ? 'out' : sim.gunsAuto ? 'auto' : 'ok';
+  return badge(`hb-msl ${mCls}`, `<svg viewBox="0 0 24 24">${BI.missile}</svg>`, sim.cellsLeft / CELLS, 'Missiles', `${sim.cellsLeft} of ${CELLS} · ${mState}`, String(sim.cellsLeft))
+    + badge(`hb-gun ${gCls}`, `<svg viewBox="0 0 24 24">${BI.guns}</svg>`, sim.gunRounds / gMax, 'Guns', `${sim.gunRounds} rounds · ${gState} · click: auto on/off`, sim.gunsAuto ? 'A' : '');
 }
-function shipHtml() {
-  const hits = Array.from({ length: 3 }, (_, i) => `<i class="${i < sim.strikes ? 'hit' : ''}"></i>`).join('');
-  const dmg = sim.out ? 'out of action' : sim.strikes ? `${sim.strikes} of 3 hits` : 'no damage';
-  const hull = Array.from({ length: 3 }, (_, i) => `<i class="${i < sim.strikes ? 'hit' : ''}"></i>`).join('');
-  return `<div class="hs-stat${sim.strikes ? ' hurt' : ''}"><div class="st-hull"><div class="st-head"><span>HULL</span><em>${sim.out ? 'OUT OF ACTION' : sim.strikes ? `${sim.strikes} OF 3 HITS` : 'INTACT'}</em></div><div class="st-segs">${hull}</div></div>`
-    + `<div class="st-kills"><span>KILLS</span><b>${sim.kills}</b></div></div>`
-    + `<div class="hs-dome">${domeSvg()}</div>`
-    + weaponsHtml();
+// A round badge: an animated icon in a ring that shows how much is left, a chip for the number or state, and a tip that opens on hover.
+const RING_C = 2 * Math.PI * 20;
+function badge(cls, icon, frac, title, sub, chip) {
+  const f = Math.max(0, Math.min(1, frac));
+  return `<div class="hs-badge ${cls}"><svg class="hb-ring" viewBox="0 0 46 46" aria-hidden="true"><circle class="hb-bg" cx="23" cy="23" r="20"/><circle class="hb-fg" cx="23" cy="23" r="20" style="stroke-dasharray:${(RING_C * f).toFixed(1)} 126"/></svg>`
+    + `<span class="hb-ico">${icon}</span>${chip === '' ? '' : `<i class="hb-chip">${chip}</i>`}<span class="hb-tip"><b>${title}</b><small>${sub}</small></span></div>`;
 }
+const BI = { // 24 x 24 drawings, animated by CSS (helm.css .hb-*)
+  hull: '<g class="hb-bob"><path class="hb-fill" d="M2 15h18.2l3-1.6-2.1 5.6H4.6z"/><path d="M8.6 15l1.5-4h6l2.2 4"/><path d="M11.6 11l.9-2.6h3.3l.8 2.6"/><path d="M14.3 8.4V3.6M13 5.2h2.6"/><circle cx="7.4" cy="13.1" r="1.4"/><path d="M18.4 14.9v-1.3h1.5v1.3M19.9 14.2h2"/><path d="M2.6 14.1h3.4"/></g><path class="hb-wave" d="M1 21.4q2-1.3 4 0t4 0 4 0 4 0 4 0 4 0"/>',
+  kills: '<path class="hb-fill" d="M12 3.4c.9 1.2 1.2 3 1.2 5.2l.2 7.6-1.4 3-1.4-3 .2-7.6c0-2.2.3-4 1.2-5.2z"/><path d="M12 9.4L2.6 12.2l.6 2L12 12.8l8.8 1.4.6-2z"/><path d="M12 18l-4.2 1.2.4 1.6 3.8-.6 3.8.6.4-1.6z"/><path class="hb-prop" d="M9.6 3h4.8"/>',
+  missile: '<path class="hb-fill" d="M5.5 2.5c1.7 1.7 2.1 4.2 2.1 6.8v7.2h-4.2V9.3c0-2.6.4-5.1 2.1-6.8z"/><path class="hb-flame" d="M4.2 17.2h2.6L5.5 21.6z"/><path class="hb-fill" d="M12 2.5c1.7 1.7 2.1 4.2 2.1 6.8v7.2h-4.2V9.3c0-2.6.4-5.1 2.1-6.8z"/><path class="hb-flame" d="M10.7 17.2h2.6L12 21.6z"/><path class="hb-fill" d="M18.5 2.5c1.7 1.7 2.1 4.2 2.1 6.8v7.2h-4.2V9.3c0-2.6.4-5.1 2.1-6.8z"/><path class="hb-flame" d="M17.2 17.2h2.6L18.5 21.6z"/>',
+  guns: '<g class="hb-recoil"><path class="hb-fill" d="M2 10.4l4 .6v2.4l-4 .7z"/><path d="M6 11h9.4v2.4H6z"/><path d="M8.2 11v-.9h7.2V11M15.4 11.7h5.2M19.6 11.7v-1.3"/><path d="M10.2 13.4c.4 2.6 1.6 4.3 3.7 5.3l1.1-1.5c-1.2-.8-1.8-2.2-2-3.8"/><path d="M6.7 13.4l-.7 3.4h2.1l.8-3.4"/></g><path class="hb-muzzle" d="M21.2 11.7l2.2-1.5M21.5 11.7h2.6M21.2 11.7l2.2 1.5"/>',
+};
+function hullBadgeHtml() {
+  const left = 3 - sim.strikes;
+  const tone = sim.out ? 'out' : sim.strikes === 0 ? 'ok' : sim.strikes < 2 ? 'hurt' : 'bad'; // a raid's hits can be halves
+  const hits = Math.round(sim.strikes * 10) / 10;
+  return badge(`hb-hull ${tone}`, `<svg viewBox="0 0 24 24">${BI.hull}</svg>`, sim.out ? 0 : left / 3, 'Hull', sim.out ? 'out of action' : sim.strikes ? `${hits} of 3 hits` : 'intact', '');
+}
+function killsBadgeHtml() {
+  return badge('hb-kills', `<svg viewBox="0 0 24 24">${BI.kills}</svg>`, 1, 'Kills', `${sim.kills} drone${sim.kills === 1 ? '' : 's'} shot down`, String(sim.kills));
+}
+function statHtml() { return hullBadgeHtml() + killsBadgeHtml() + weaponsHtml(); }
 
 // The fire-zone gauges: for each weapon a range bar (0 to ZONE_SCALE) with the band it can engage in lit and a marker for the
 // target, plus one short word: READY, or what is still missing (km to close, degrees to turn, blocked).
@@ -1416,7 +1757,7 @@ function hudHtml() {
       + `${zoneHtml(t)}</div>`);
   } else {
     out.push(`<div class="hud-sec tg tg-none"><div class="tk-top"><span class="tk-id">TRK<b>—</b></span><em>scanning</em><span class="tk-eta">Tab selects</span></div>`
-      + `<div class="tk-main">${dialSvg(null)}<div class="tk-read"><strong class="tg-range tg-idle">NO<small>CONTACT</small></strong><span class="tk-true">RADAR ${kmText(RADAR_RANGE)}</span></div></div></div>`);
+      + `<div class="tk-main">${dialSvg(null)}<div class="tk-read"><strong class="tg-range tg-idle">NO<small>CONTACT</small></strong><span class="tk-true">RADAR ${kmText(sim.radarRange)}</span></div></div></div>`);
   }
 
   // The radar picture: every contact on one line, each with its own little bearing dial.
@@ -1464,7 +1805,7 @@ function keysHtml() {
   const t = sim.target;
   const ready = t && !sim.engageable(t) && !sim.shot && sim.cellsLeft > 0;
   return `${radarKeysHtml}${sim.shot?.hold ? `${k('M', 'stand down')}${k('F', 'launch', sim.shot.locked)}` : k('M', 'ready missile', ready)}${k('G', 'guns (hold)', input.gun === 1)}${k('A', 'auto guns', sim.gunsAuto)}`
-    + `${k('E', sim.heli.action === 'takeoff' ? (sim.standDown ? 'heli stays: drone near' : 'heli take off') : sim.heli.action === 'land' ? 'heli land' : 'heli landing', sim.heli.action === null || (sim.standDown && sim.heli.action === 'takeoff'))}${k('D', 'add drone')}${k('Tab', 'target', sim.detected.length > 1)}${k('1–7', 'views')}${k('V', 'next view')}`;
+    + `${k('E', sim.heli.action === 'takeoff' ? (sim.standDown ? 'heli stays: drone near' : 'heli take off') : sim.heli.action === 'land' ? 'heli land' : 'heli landing', sim.heli.action === null || (sim.standDown && sim.heli.action === 'takeoff'))}${k('D', 'add drone')}${k('Tab', 'target', sim.detected.length > 1)}${k('1–7', 'views')}${k('V', 'next view')}${rec.last() ? k('P', 'replay kill') : ''}`;
 }
 
 // --- Interface: the top bar, menu, keys sheet, sound, map ---------------------------------------------------------------
@@ -1549,6 +1890,8 @@ function setHud(on) {
   hudOn = on;
   root.hidden = !on;
   shipEl.hidden = !on;
+  actions.hidden = !on;
+  rangeEl.hidden = !on;
   hudButton.classList.toggle('active', on);
   hudButton.setAttribute('aria-pressed', String(on));
 }
@@ -1556,13 +1899,116 @@ hudButton.addEventListener('click', () => setHud(!hudOn));
 setHud(true);
 let tagsOn = true;
 
-// The view buttons: a strip at the top centre.
+// The view buttons: a strip at the top, beside the gear. Each is an icon; the one in use opens into a pill with its name. The last button shows the key bar.
 const strip = document.createElement('div');
 strip.className = 'helm-views';
-strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (${i + 1})">${['Bridge', 'Behind', 'Above', 'Missile', 'Radar', 'Target', 'Orbit'][i]}</button>`).join('');
+const VIEW_LABELS = ['Bridge', 'Behind', 'Above', 'Missile', 'Radar', 'Target', 'Orbit'];
+const MOTION = !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const VIEW_ICONS = { // drawn for what each view is: the wheelhouse wheel, a chase camera, a plan view, a missile, the radar, a target sight, an orbit
+  bridge: '<g class="wheel"><circle cx="12" cy="12" r="6.2"/><circle cx="12" cy="12" r="1.7"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4M5.3 5.3l2.5 2.5M16.2 16.2l2.5 2.5M18.7 5.3l-2.5 2.5M7.8 16.2l-2.5 2.5"/></g>',
+  behind: '<path d="M8 14h13l-2.5 4H10z"/><path d="M12 14v-3h5l1.5 3"/><g class="lines"><path d="M2 12.5h3.5M1 15.5h4.5M3 18.5h3.5"/></g>',
+  above: '<path d="M12 2.5c3.2 3 4.3 7 4.3 11v5.7L14 22h-4l-2.3-2.8v-5.7c0-4 1.1-8 4.3-11z"/><path d="M12 8v10M9.7 13h4.6"/>',
+  missile: '<path d="M3 19C7 6 15 3.5 20 8"/><path d="M16 4.8l4.4 3.4-4.8 2.4"/><circle cx="3.5" cy="18.5" r="1.4" style="fill:currentColor;stroke:none"/><g class="lines"><path d="M8 20.5h4M13 20.5h3"/></g>',
+  sight: '<circle cx="12" cy="12" r="9.3"/><circle cx="12" cy="12" r="4.7"/><g class="sweep"><path d="M12 12L19 5.6"/><path class="beam" d="M12 12L19 5.6A9.3 9.3 0 0 1 21.3 12z"/></g><circle cx="8" cy="8.5" r="1" style="fill:currentColor"/>',
+  target: '<circle cx="12" cy="12" r="6"/><path d="M12 2.5v5M12 16.5v5M2.5 12h5M16.5 12h5"/><circle cx="12" cy="12" r="1.1" style="fill:currentColor"/>',
+  orbit: '<g transform="rotate(-25 12 12)"><ellipse cx="12" cy="12" rx="9.5" ry="4.6"/>' + (MOTION ? '<circle r="1.7" style="fill:currentColor"><animateMotion dur="3.2s" repeatCount="indefinite" path="M21.5 12a9.5 4.6 0 1 1 -19 0a9.5 4.6 0 1 1 19 0"/></circle>' : '<circle cx="21.5" cy="12" r="1.7" style="fill:currentColor"/>') + '</g><path d="M9.7 12.6h4.6l-.9 1.5h-2.8zM12 10.3v2.3"/>',
+};
+strip.innerHTML = VIEWS.map((v, i) => `<button type="button" data-view="${v}" title="${VIEW_NAMES[v]} (${i + 1})" aria-label="${VIEW_LABELS[i]}"><svg viewBox="0 0 24 24">${VIEW_ICONS[v]}</svg><span>${VIEW_LABELS[i]}</span></button>`).join('');
 document.body.appendChild(strip);
 const viewButtons = [...strip.querySelectorAll('button')];
 viewButtons.forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+{ // the keys button: shows or hides the key bar (hidden at the start)
+  const kb = document.createElement('button');
+  kb.type = 'button';
+  kb.className = 'helm-keys-btn';
+  kb.title = 'Keys';
+  kb.setAttribute('aria-label', 'Show the keys');
+  kb.setAttribute('aria-pressed', 'false');
+  kb.innerHTML = '<svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>';
+  strip.appendChild(kb);
+  kb.addEventListener('click', () => { const on = keysEl.classList.toggle('show'); kb.classList.toggle('active', on); kb.setAttribute('aria-pressed', String(on)); kb.blur(); });
+}
+
+// The top bar is one gear: its menu holds everything the mission needs (the old row of buttons is hidden in helm.css).
+{
+  menuButton.innerHTML = '<svg><use href="#i-gear"/></svg>';
+  menuButton.title = 'Settings';
+  menuButton.setAttribute('aria-label', 'Settings');
+  const tagsButton = document.createElement('button'), cineButton = document.createElement('button');
+  tagsButton.id = 'btn-tags'; cineButton.id = 'btn-cine';
+  const fsButton = document.querySelector('#btn-fullscreen');
+  // A small vector drawing in front of each entry, for what it does (it moves a little on hover: helm.css `.mi`).
+  const MI = {
+    restart: '<path class="mi-a" d="M20 12a8 8 0 1 1-2.6-5.9M20 4v4.5h-4.5"/>',
+    menu: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+    readouts: '<rect x="3.5" y="4.5" width="17" height="12" rx="2"/><path d="M7 13l3-3.2 2.4 2 3.6-4.3M9 20h6M12 16.5V20"/>',
+    map: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><path class="mi-a" d="M12 12l5.5-5"/>',
+    tags: '<path d="M3.5 12.2V4.5h7.7l9 9a1.6 1.6 0 0 1 0 2.2l-5 5a1.6 1.6 0 0 1-2.2 0z"/><circle cx="8" cy="9" r="1.3"/>',
+    cine: '<rect x="3" y="7" width="13" height="10" rx="2"/><path d="M16 11l5-3v8l-5-3"/>',
+    sound: '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="mi-w1" d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path class="mi-w2" d="M18.2 6.8a7.5 7.5 0 0 1 0 10.4"/>',
+    full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    hide: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path class="mi-a" d="M4 4l16 16"/>',
+    keys: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7.5 14h9"/>',
+  };
+  const item = (b, label, key, ic) => { b.className = ''; b.setAttribute('role', 'menuitem'); b.innerHTML = `<span class="mi-l">${ic ? `<svg class="mi" viewBox="0 0 24 24" aria-hidden="true">${MI[ic]}</svg>` : ''}${label}</span>${key ? `<kbd>${key}</kbd>` : ''}`; return b; };
+  const head = (t) => { const h = document.createElement('div'); h.className = 'menu-h'; h.textContent = t; return h; };
+  const weatherBtn = document.querySelector('#btn-weather'), seaRow = document.querySelector('#sea-row');
+  const raidBtn = document.createElement('button');
+  item(raidBtn, `Saturation raid: ${RAID ? 'On' : 'Off'}`, '', 'restart');
+  raidBtn.title = 'Many cheap decoys with a few real missiles among them (reloads the scene; the mission starts again)';
+  raidBtn.addEventListener('click', () => {
+    try {
+      localStorage.setItem(RAID_KEY, RAID ? '0' : '1');
+      sessionStorage.setItem('intercept.skip', '1'); // straight back into the scene
+      const url = new URL(location.href);
+      url.searchParams.delete('raid');
+      history.replaceState(null, '', url);
+      location.reload();
+    } catch { /* blocked storage */ }
+  });
+  const moodBtn = document.createElement('button');
+  item(moodBtn, `Conditions: ${MOOD === 'night' ? 'Night' : MOOD === 'storm' ? 'Storm' : 'Day'}`, '', 'restart');
+  moodBtn.title = 'Day, night (the radar is all you have) or storm (heavy sea, a shorter radar, low drones lost in the clutter); reloads the scene';
+  moodBtn.addEventListener('click', () => {
+    try {
+      localStorage.setItem(MOOD_KEY, MOOD === null ? 'night' : MOOD === 'night' ? 'storm' : 'day');
+      sessionStorage.setItem('intercept.skip', '1');
+      const url = new URL(location.href);
+      url.searchParams.delete('mood');
+      history.replaceState(null, '', url);
+      location.reload();
+    } catch { /* blocked storage */ }
+  });
+  replayItem = document.createElement('button');
+  item(replayItem, 'Replay the last kill', 'P', 'restart');
+  replayItem.hidden = true;
+  replayItem.addEventListener('click', () => { setMenu(false); startReplay(); });
+  item(restartButton, 'Sail again', 'R', 'restart');
+  item(document.querySelector('#btn-ship'), 'Main menu', '', 'menu');
+  item(hudButton, 'Readouts', 'H', 'readouts');
+  item(mapButton, 'Radar map', 'N', 'map');
+  const secMissile = document.createElement('button'), secGuns = document.createElement('button');
+  item(secMissile, 'Map: missile sector', '', 'map'); item(secGuns, 'Map: gun sector', '', 'map');
+  item(tagsButton, 'Drone tags', 'L', 'tags');
+  item(cineButton, 'Intercept camera', 'I', 'cine');
+  item(soundButton, 'Sound', 'S', 'sound');
+  item(fsButton, 'Fullscreen', '', 'full');
+  item(foldButton, 'Hide the interface', 'C', 'hide');
+  item(document.querySelector('#btn-keys'), 'Keyboard shortcuts', '?', 'keys');
+  menuEl.replaceChildren(head('Mission'), restartButton, raidBtn, moodBtn, replayItem, document.querySelector('#btn-ship'), head('Display'), hudButton, mapButton, secMissile, secGuns, tagsButton, cineButton, foldButton, fsButton,
+    head('Sound'), soundButton, head('Sea'), ...[seaRow, weatherBtn].filter(Boolean), head('Help'), document.querySelector('#btn-keys'));
+  [hudButton, mapButton, secMissile, secGuns, soundButton, tagsButton, cineButton].forEach((b) => b.setAttribute('aria-pressed', 'true'));
+  secMissile.addEventListener('click', () => { map.setSector('missile', !map.sector('missile')); refreshGear(); });
+  secGuns.addEventListener('click', () => { map.setSector('guns', !map.sector('guns')); refreshGear(); });
+  tagsButton.addEventListener('click', () => { tagsOn = !tagsOn; refreshGear(); });
+  cineButton.addEventListener('click', () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'i' })); refreshGear(); });
+  fsButton.addEventListener('click', () => { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch { /* not allowed here */ } });
+  function refreshGear() {
+    const set = (b, on) => { b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); };
+    set(hudButton, hudOn); set(mapButton, map.enabled); set(secMissile, map.sector('missile')); set(secGuns, map.sector('guns')); set(tagsButton, tagsOn); set(cineButton, cineOn); set(soundButton, audio.enabled);
+  }
+  menuButton.addEventListener('click', refreshGear);
+}
 
 keysSheet.querySelector('dl').innerHTML = [
   ['<kbd>←</kbd> <kbd>→</kbd>', 'Rudder to port / starboard while held; let go and it comes back amidships'],
@@ -1585,6 +2031,7 @@ keysSheet.querySelector('.keys-note').textContent = 'A drone you leave alone mak
 // --- Keys ------------------------------------------------------------------------------------------------------------
 const input = { left: 0, right: 0, gun: 0 }; // gun: G held
 function restart() {
+  stopReplay();
   sim.seed = (Date.now() % 100000) | 0;
   sim.reset();
   sim.gunsAuto = true;
@@ -1595,6 +2042,7 @@ function restart() {
   fx.clear();
   audio.reset();
   banner.hidden = true;
+  gradeEl.hidden = true;
   wake.clear();
   timeScale = timeTarget = 1;
   setView('behind', true);
@@ -1604,6 +2052,10 @@ function restart() {
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select')) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (replay) { // the mission waits: only the replay's own keys work
+    if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') { stopReplay(); e.preventDefault(); }
+    return;
+  }
   if (view === 'sight') { // in the radar view the arrows aim the radar, not the ship
     const dir = { ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd' }[e.key];
     if (dir) { if (!sight.locked) { radarKeys[dir] = 1; sight.manual = true; } e.preventDefault(); return; }
@@ -1629,6 +2081,7 @@ window.addEventListener('keydown', (e) => {
     case 'd': sim.summon(); break; // send in a drone
     case 'e': say(sim.heliRequest(), ''); break; // the helicopter: take off, or land
     case 'r': restart(); break;
+    case 'p': startReplay(); break; // the kill-cam: the last kill or hit, in slow motion
     case 'v': setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]); break;
     case '1': case '2': case '3': case '4': case '5': case '6': case '7': setView(VIEWS[Number(key) - 1]); break;
     case 'h': setHud(!hudOn); break;
@@ -1658,6 +2111,183 @@ window.addEventListener('keyup', (e) => {
 });
 window.addEventListener('blur', () => { radarKeys.l = radarKeys.r = radarKeys.u = radarKeys.d = 0; input.left = 0; input.right = 0; input.gun = 0; });
 
+// --- The kill-cam replay (opt-in: the Replay button, or P) ------------------------------------------------------------------
+// The last kill, or hit on the ship, played back in slow motion from the recorded poses (helmReplay.js): a chase camera on the
+// missile, then a side view of the burst, slowest through the impact. The sim is paused while it plays and picks up where it
+// was; the smoke and fire come from the live effects' own history (their births are against the sim clock, so they replay).
+let replay = null; // { clip, rt, prevView, rate }
+const rmvis = new Map(); // missile id -> { model }: models made only for the replay (the live one is gone)
+const replayBar = document.createElement('div');
+replayBar.className = 'helm-replay';
+replayBar.hidden = true;
+replayBar.innerHTML = '<span class="hr-tag">REPLAY</span><span class="hr-what"></span><span class="hr-speed"></span><button type="button" class="hr-exit">Back to the mission <kbd>P</kbd></button>';
+document.body.appendChild(replayBar);
+const replayWhat = replayBar.querySelector('.hr-what');
+const replaySpeed = replayBar.querySelector('.hr-speed');
+const replayCam = { pos: new THREE.Vector3(), look: new THREE.Vector3(), fresh: true };
+
+function startReplay() {
+  if (replay) return;
+  const ev = rec.last();
+  if (!ev) { say('Nothing to replay yet: the last kill or hit is kept', '', 2400); return; }
+  closePopovers();
+  endCine();
+  timeScale = timeTarget = 1;
+  replay = { clip: rec.clip(ev), rt: 0, prevView: view, rate: 1 };
+  replay.rt = replay.clip.t0;
+  replayCam.fresh = true;
+  const name = `D${ev.id}`;
+  replayWhat.textContent = ev.type === 'struck' ? `${name} hits the ship` : ev.wreck?.by === 'gun' ? `${name}, shot down by the guns` : `${name}, missile kill`;
+  replayBar.hidden = false;
+  document.body.classList.add('helm-replay-on');
+  sightEl.hidden = true;
+  document.body.classList.remove('helm-sighting');
+  banner.hidden = true;
+}
+
+function stopReplay() {
+  if (!replay) return;
+  const { prevView } = replay;
+  replay = null;
+  replayBar.hidden = true;
+  document.body.classList.remove('helm-replay-on');
+  for (const v of rmvis.values()) scene.remove(v.model.group);
+  rmvis.clear();
+  for (const v of mvis.values()) v.model.group.visible = true;
+  for (const [id, v] of vis) {
+    v.plane.group.visible = true;
+    const d = sim.drones.find((x) => x.id === id);
+    if (d && d.phase === 'struck') v.plane.group.visible = false; // it hit the ship: it is gone
+  }
+  camera.up.set(0, 1, 0);
+  fov = 50;
+  setFov(50);
+  setView(prevView, true);
+  snap = true;
+  timeScale = timeTarget = 1;
+}
+
+// Poses the scene from a recorded state: the ship, the drones, the missiles. Nothing here emits an effect.
+function poseReplay(f, r) {
+  const rt = f.t;
+  const ev = r.clip.ev;
+  const s = f.ship;
+  ship.group.position.set(s.x, 0.12 * Math.sin(rt * 0.61), s.z);
+  ship.group.rotation.set(s.heel + 0.018 * Math.sin(rt * 0.52) + 0.006 * Math.sin(rt * 1.3 + 1), -s.psi, 0.006 * Math.sin(rt * 0.37 + 0.4));
+  ship.group.updateMatrixWorld(true);
+  ship.update(rt, Infinity, Infinity, { aim: { yaw: s.yaw, pitch: s.pitch }, cradleT: 0, heli: sim.heli.state });
+  env.ocean.material.uniforms.uTime.value = rt;
+  const seen = new Set();
+  for (const fd of f.drones) {
+    seen.add(fd.id);
+    const v = droneVis({ id: fd.id });
+    const g = v.plane.group;
+    v.tag.obj.visible = false;
+    if (fd.id === ev.id && rt >= ev.t) {
+      if (ev.type === 'explosion' && ev.wreck) {
+        v.rdebris ??= v.debris ?? createDebris(v.plane, ev.id, ev.wreck);
+        g.visible = true;
+        v.rdebris.apply(rt - ev.wreck.t);
+      } else g.visible = false; // it hit the ship
+    } else if (fd.alive || fd.id === ev.id) {
+      if (fd.id === ev.id) v.plane.restoreParts();
+      g.visible = true;
+      g.position.set(fd.p[0], fd.p[1], fd.p[2]);
+      g.quaternion.set(fd.q[0], fd.q[1], fd.q[2], fd.q[3]);
+      v.plane.setProp(rt * PROP_OMEGA + fd.id, 1);
+      v.plane.setLights(rt + fd.id * 0.3, true);
+    } else g.visible = false;
+  }
+  for (const [id, v] of vis) if (!seen.has(id)) { v.plane.group.visible = false; v.tag.obj.visible = false; }
+  const mseen = new Set();
+  for (const fm of f.missiles) {
+    mseen.add(fm.id);
+    let v = mvis.get(fm.id) ?? rmvis.get(fm.id);
+    if (!v) {
+      const model = createMissile();
+      scene.add(model.group);
+      v = { model };
+      rmvis.set(fm.id, v);
+    }
+    v.model.group.visible = true;
+    v.model.group.position.set(fm.p[0], fm.p[1], fm.p[2]);
+    v.model.group.quaternion.copy(_q.setFromUnitVectors(ZAXIS, _a.set(fm.d[0], fm.d[1], fm.d[2])));
+    v.model.setExhaust(rt);
+  }
+  for (const [id, v] of mvis) if (!mseen.has(id)) v.model.group.visible = false;
+  for (const [id, v] of rmvis) if (!mseen.has(id)) v.model.group.visible = false;
+}
+
+// The kill-cam: a chase camera behind the missile until just before the burst, then a side view of the burst that drifts slowly round.
+const T_CUT = 0.7; // s before the impact that the camera cuts from the chase to the burst
+function frameReplay(f, r, dt) {
+  const ev = r.clip.ev;
+  const rt = f.t;
+  const fd = f.drones.find((d) => d.id === ev.id);
+  const P = _c.set(ev.pos[0], ev.pos[1], ev.pos[2]);
+  if (fd && rt < ev.t) P.set(fd.p[0], fd.p[1], fd.p[2]);
+  else if (ev.type === 'explosion') { const v = vis.get(ev.id); if (v?.rdebris) v.rdebris.fuselagePos(rt - ev.wreck.t, P); }
+  const chase = rt < ev.t - T_CUT;
+  const want = _d;
+  const look = _e;
+  let lens = 50;
+  if (chase) {
+    const m = f.missiles.reduce((best, x) => { const dd = Math.hypot(x.p[0] - P.x, x.p[1] - P.y, x.p[2] - P.z); return dd < best.d ? { m: x, d: dd } : best; }, { m: null, d: 3000 }).m;
+    if (m) {
+      _a.set(m.d[0], m.d[1], m.d[2]);
+      want.set(m.p[0], m.p[1], m.p[2]).addScaledVector(_a, -30);
+      want.y += 6;
+      want.x += -_a.z * 5; want.z += _a.x * 5; // a little to one side, so the missile reads against the sea
+      look.set(m.p[0], m.p[1], m.p[2]).addScaledVector(_a, 60).lerp(P, 0.6);
+      lens = 52;
+    } else { // no missile (the guns, or a drone's own run): behind the drone, along its flight
+      const g = rec.sample(rt + 0.25)?.drones.find((d) => d.id === ev.id);
+      _a.set(g ? g.p[0] - P.x : 1, 0, g ? g.p[2] - P.z : 0);
+      if (_a.lengthSq() < 1e-6) _a.set(1, 0, 0);
+      _a.normalize();
+      want.copy(P).addScaledVector(_a, -55);
+      want.y += 10;
+      look.copy(P);
+    }
+  } else {
+    const sx = f.ship.x, sz = f.ship.z;
+    _a.set(P.x - sx, 0, P.z - sz);
+    if (_a.lengthSq() < 1) _a.set(1, 0, 0);
+    _a.normalize();
+    const a = 0.35 * (rt - (ev.t - T_CUT));
+    const dist = ev.type === 'struck' ? 75 : 55;
+    want.set(P.x, P.y, P.z).addScaledVector(_a, Math.sin(a) * dist);
+    want.x += -_a.z * Math.cos(a) * dist; want.z += _a.x * Math.cos(a) * dist;
+    want.y += 14;
+    look.copy(P);
+    lens = 38;
+  }
+  if (want.y < 2) want.y = 2;
+  const pull = replayCam.fresh ? 1 : 1 - Math.exp(-dt / (chase ? 0.1 : 0.4));
+  replayCam.fresh = false;
+  replayCam.pos.lerp(want, pull);
+  replayCam.look.lerp(look, pull);
+  camera.up.set(0, 1, 0);
+  camera.position.copy(replayCam.pos);
+  camera.lookAt(replayCam.look);
+  fov += (lens - fov) * (1 - Math.exp(-dt / 0.3));
+  setFov(fov);
+}
+
+function updateReplay(dt) {
+  const r = replay;
+  r.rate = replayRate(r.rt, r.clip.ev.t);
+  r.rt += dt * r.rate;
+  if (r.rt >= r.clip.t1) { stopReplay(); return; }
+  const f = rec.sample(r.rt);
+  if (!f) { stopReplay(); return; }
+  poseReplay(f, r);
+  frameReplay(f, r, dt);
+  fx.update(r.rt);
+  replaySpeed.textContent = `${r.rate} ×`;
+}
+replayBar.querySelector('.hr-exit').addEventListener('click', stopReplay);
+
 // --- Loop ---------------------------------------------------------------------------------------------------------------
 function resize() {
   const w = window.innerWidth;
@@ -1680,16 +2310,22 @@ renderer.setAnimationLoop((now) => {
   timeScale += (timeTarget - timeScale) * (1 - Math.exp(-dt / 0.2));
   if (Math.abs(timeTarget - timeScale) < 0.005) timeScale = timeTarget;
   document.body.classList.toggle('helm-slowmo', timeScale < 0.85);
-  sim.advance(dt * timeScale, input);
-  handleEvents();
-  applyState(dt);
-  updateCamera(dt);
-  updateGuns(dt * timeScale);
-  updatePip(dt);
-  audio.update(sim, camera, dt);
+  if (replay) updateReplay(dt); // the sim waits while a replay plays
+  else {
+    sim.advance(dt * timeScale, input);
+    rec.record(sim);
+    handleEvents();
+    applyState(dt);
+    updateCamera(dt);
+    updateGuns(dt * timeScale);
+    updatePip(dt);
+    audio.update(sim, camera, dt);
+  }
   env.follow(camera.position);
   env.setShadowFocus(_b.set(sim.x, 0, sim.z), 90);
-  fx.update(sim.t);
+  if (!replay) fx.update(sim.t);
+  const replayReady = !replay && rec.last() !== null;
+  if (replayBtn.hidden === replayReady) { replayBtn.hidden = !replayReady; if (replayItem) replayItem.hidden = !replayReady; }
   map.sight = view === 'sight' ? { yaw: Math.atan2(sight.aim.z, sight.aim.x), half: Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect), locked: sight.locked } : null;
   map.update(sim);
   const threat = sim.threat;
@@ -1701,8 +2337,14 @@ renderer.setAnimationLoop((now) => {
   if (hudOn) {
     const html = hudHtml();
     if (html !== lastHtml) { live.innerHTML = html; lastHtml = html; }
-    const sh = shipHtml();
-    if (sh !== lastShip) { shipEl.innerHTML = sh; lastShip = sh; }
+    const st = statHtml();
+    if (st !== lastStat) { statHost.innerHTML = st; lastStat = st; }
+    const dm = `<div class="hs-dome">${domeSvg()}</div>`;
+    if (dm !== lastDome) { domeHost.innerHTML = dm; lastDome = dm; }
+    spinProps(dt);
+    updateActions();
+    updateGunButtons();
+    updateRange();
   }
   const keys = keysHtml();
   if (keys !== lastKeys) { keysEl.innerHTML = keys; lastKeys = keys; }

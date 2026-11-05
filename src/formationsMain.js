@@ -57,7 +57,7 @@ const env = createEnvironment(renderer, scene, { calm: true });
 env.setShadowSize(1024);
 
 // --- Ships ------------------------------------------------------------------------------------------------
-const ships = Object.fromEntries(SHIP_IDS.map((id) => [id, { id, ship: createShip({ ensign: 'alg' }), state: {} }]));
+const ships = Object.fromEntries(SHIP_IDS.map((id) => [id, { id, ship: createShip({ ensign: 'navy' }), state: {} }]));
 for (const s of Object.values(ships)) scene.add(s.ship.group);
 function placeShip(s, t) {
   shipState(s.id, t, s.state);

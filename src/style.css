@@ -481,8 +481,8 @@ body.mission-maneuvers .hud-debrief { margin-top: 8px; }
 .mcard-deb .deb-rows .sub:first-child { text-align: left; }
 .mh-cell { min-width: 0; padding: 4px 6px 5px; border-radius: 8px; background: rgba(0, 0, 0, 0.22); }
 .mh-cell span { display: flex; align-items: center; gap: 4px; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
-.mh-cell.alg span::before, .mh-cell.rus span::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #3ddc84; }
-.mh-cell.rus span::before { background: #ff7a1a; }
+.mh-cell.ship1 span::before, .mh-cell.ship2 span::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #3ddc84; }
+.mh-cell.ship2 span::before { background: #ff7a1a; }
 .mh-cell.unit span::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #5ab4ff; }
 .mh-cell b { display: block; font-size: 14px; font-variant-numeric: tabular-nums; }
 .mh-cell em { font-style: normal; font-size: 10.5px; color: var(--muted); }
@@ -561,255 +561,7 @@ body.mission-maneuvers .shot-caption { top: calc(var(--gap) + var(--safe-t) + va
 .tag.ok { border-left-color: #3ddc84; }
 .tag.dead .tag-title { color: #ff8a8d; }
 
-/* Start screen: the main menu. Three tabs by what you do (Watch, Play, Drill); a list for the tab on the
-   left; on the right a briefing that follows the choice (an animated preview, what it is, a variant where
-   there is one, the controls); the way in (a one-line summary and Start) along the bottom. */
 body:not(.playing) #scene, body:not(.playing) .panel, body:not(.playing) .labels-layer { display: none; }
-.chooser {
-  position: fixed; inset: 0; z-index: 2; display: grid; padding: calc(20px + var(--safe-t)) calc(20px + var(--safe-r)) calc(20px + var(--safe-b)) calc(20px + var(--safe-l));
-  overflow-y: auto; overscroll-behavior: contain;
-  background:
-    radial-gradient(900px 420px at 50% -10%, rgba(255, 122, 26, 0.10), transparent 70%),
-    radial-gradient(1200px 700px at 50% 0%, #1b3550 0%, #0b1119 70%);
-}
-.chooser[hidden], .chooser [hidden] { display: none; }
-/* margin: auto centres when there is room and never clips the top when there is not. */
-.mm { width: min(1080px, 100%); margin: auto; display: grid; gap: 14px; }
-.menu-head { position: relative; display: grid; justify-items: center; gap: 10px; }
-.menu-brand { display: flex; align-items: baseline; justify-content: center; gap: 12px; color: var(--muted); font-size: 12.5px; }
-.menu-brand b { font-size: 22px; letter-spacing: 0.34em; text-transform: uppercase; color: var(--text); padding-left: 0.34em; }
-.menu-brand > span:last-child { position: absolute; left: 0; top: 8px; }
-.menu-brand .dot { align-self: center; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
-.menu-hint { position: absolute; right: 0; top: 4px; margin: 0; color: var(--dim); font-size: 11.5px; text-align: right; }
-.menu-body { display: grid; grid-template-columns: minmax(250px, 310px) minmax(0, 1fr); gap: 16px; align-items: start; }
-.menu-list h2, .brief h2 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
-.menu-sub { margin: 0 0 8px; color: var(--muted); font-size: 12px; }
-
-/* The tabs: three wide cards. */
-.tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; width: 100%; }
-.tab {
-  display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 12px; padding: 9px 16px; text-align: left; border-radius: 14px; color: var(--text);
-  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); transition: border-color 0.15s, background 0.15s;
-}
-.tab svg { width: 32px; height: 32px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.tab-txt b { display: block; font-size: 16px; letter-spacing: 0.02em; }
-.tab-txt small { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.3; }
-.tab:hover { background: rgba(255, 255, 255, 0.08); }
-.tab[aria-checked='true'] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
-.tab[aria-checked='true'] svg { stroke: var(--accent); }
-
-/* The mission list (the rows of the current tab). */
-.missions { display: grid; gap: 6px; }
-.mission {
-  display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; text-align: left; border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); transition: border-color 0.15s, background 0.15s;
-}
-.mission:hover { background: rgba(255, 255, 255, 0.08); }
-.mission svg, .pick svg { width: 38px; height: 38px; stroke-width: 2; }
-.m-txt b { display: flex; align-items: center; gap: 7px; font-size: 14.5px; }
-.m-txt small { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.35; }
-.m-kind { font-style: normal; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; }
-.mission[aria-checked='true'], .pick[aria-checked='true'] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
-.mission[aria-checked='true'] .m-kind { color: var(--accent); border-color: rgba(255, 122, 26, 0.5); }
-.mission .i-arc { stroke: var(--missile); stroke-dasharray: 3 3; }
-.mission .i-drone { stroke: var(--accent); stroke-width: 2.6; }
-.mission .i-burst { stroke: var(--bad); fill: rgba(255, 93, 97, 0.25); }
-.mission .i-canopy { stroke: #e5484d; fill: rgba(229, 72, 77, 0.3); }
-.mission .i-line, .pick .i-line { stroke: var(--muted); stroke-width: 1.2; }
-.pick .i-bar { stroke: var(--dim); stroke-width: 5; stroke-linecap: round; fill: none; }
-.pick .i-bar.on { stroke: var(--accent); }
-.mission .i-sea { stroke: #3d7fa6; }
-.mission .i-ship, .pick .i-ship { stroke: var(--ok); stroke-width: 2.2; fill: rgba(61, 220, 132, 0.18); }
-
-/* The briefing: it follows the selected mission (and variant). */
-.brief { display: grid; gap: 12px; padding: 16px 18px 16px; border-radius: 18px; background: rgba(255, 255, 255, 0.045); border: 1px solid var(--border); }
-.brief-top { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 18px; align-items: start; }
-.brief-head { min-width: 0; display: grid; gap: 8px; align-content: start; }
-.brief-kind { margin: 0; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
-.brief h1 { margin: 0; font-size: clamp(24px, 3vw, 34px); line-height: 1.1; letter-spacing: -0.02em; }
-.brief-tag { margin: 0; color: #c4ccd4; font-size: 13.5px; line-height: 1.5; }
-.brief-facts { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.brief-facts li { padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); border: 1px solid var(--border); font-size: 11.5px; }
-.keys-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 5px 18px; color: var(--muted); font-size: 12.5px; }
-.keys-list li { display: flex; align-items: center; gap: 10px; }
-.keys-list kbd { flex: none; min-width: 48px; font-size: 10.5px; }
-.keys-more { margin: 4px 0 0; color: var(--dim); font-size: 11.5px; }
-.keys-more:empty { display: none; }
-
-/* The animated preview (menuArt.js): a looping schematic of the mission. */
-.stage { aspect-ratio: 480 / 220; border-radius: 14px; overflow: hidden; background: #0e1a27; border: 1px solid var(--border); }
-.stage .art { display: block; width: 100%; height: 100%; }
-.stage .a-sky { fill: #0e1a27; }
-.stage .a-water { fill: #0f2a40; }
-.stage .a-sea { fill: #123a55; }
-.stage .a-hull { fill: #8f99a0; }
-.stage .a-deck { stroke: #5b656c; stroke-width: 1.5; fill: none; }
-.stage .a-sup { fill: #b2bbc0; }
-.stage .a-mast { stroke: #b2bbc0; stroke-width: 2.4; fill: none; }
-.stage .a-dome { fill: #e6e8e4; }
-.stage .a-hot { fill: var(--accent); }
-.stage .a-trail { fill: none; stroke: rgba(255, 255, 255, 0.22); stroke-width: 1.4; stroke-dasharray: 4 5; }
-.stage .a-drone { fill: none; stroke: var(--accent); stroke-width: 2.6; stroke-linecap: round; }
-.stage .a-missile { stroke: var(--missile); stroke-width: 2.4; stroke-linecap: round; }
-.stage .a-missile-head { fill: var(--missile); }
-.stage .a-burst { fill: rgba(255, 93, 97, 0.35); stroke: var(--bad); stroke-width: 2; }
-.stage .a-canopy { fill: rgba(229, 72, 77, 0.55); stroke: #e5484d; stroke-width: 1.6; }
-.stage .a-line { fill: none; stroke: rgba(255, 255, 255, 0.12); stroke-width: 1; }
-.stage .a-ring { fill: none; stroke: rgba(255, 255, 255, 0.18); stroke-width: 1.2; }
-.stage .a-sweep { fill: rgba(61, 220, 132, 0.14); }
-.stage .a-blip { stroke: var(--accent); stroke-width: 2.6; stroke-linecap: round; fill: none; }
-.stage .a-tracer { stroke: var(--missile); stroke-width: 1.6; stroke-dasharray: 3 4; }
-.stage .a-ship { fill: rgba(61, 220, 132, 0.28); stroke: var(--ok); stroke-width: 1.8; }
-.stage .a-foe { fill: rgba(255, 93, 97, 0.28); stroke: var(--bad); stroke-width: 1.8; }
-.stage .a-arc { fill: rgba(255, 122, 26, 0.09); stroke: rgba(255, 122, 26, 0.3); stroke-width: 1; stroke-dasharray: 3 4; }
-.stage .a-wake { stroke: rgba(255, 255, 255, 0.25); stroke-width: 1.4; stroke-dasharray: 3 4; }
-.stage .a-label { fill: var(--muted); font: 700 9px system-ui, sans-serif; letter-spacing: 0.08em; }
-.stage .a-key { fill: rgba(255, 255, 255, 0.08); stroke: rgba(255, 255, 255, 0.3); }
-.stage .a-keyon { fill: var(--accent); }
-.stage .a-keytext { fill: var(--text); font: 700 12px system-ui, sans-serif; }
-
-/* Variants: the launcher cards, or the number of ships in a drill. */
-.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.card {
-  display: grid; grid-template-columns: 38% 1fr; align-items: center; gap: 10px; padding: 8px 12px; text-align: left; border-radius: 14px; color: var(--text);
-  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); transition: border-color 0.15s, background 0.15s;
-}
-.card:hover { background: rgba(255, 255, 255, 0.07); }
-.card[aria-checked='true'] { border-color: var(--accent); background: rgba(255, 122, 26, 0.08); box-shadow: inset 0 0 0 1px var(--accent); }
-.card svg { width: 100%; height: 56px; stroke: none; stroke-width: 1; }
-.card .sea { fill: #123a55; }
-.card .wake { stroke: rgba(255, 255, 255, 0.35); stroke-width: 1.5; fill: none; }
-.card .hull { fill: #8f99a0; }
-.card .deckline { stroke: #5b656c; stroke-width: 1.5; fill: none; }
-.card .sup { fill: #b2bbc0; }
-.card .mast { stroke: #b2bbc0; stroke-width: 2.4; fill: none; }
-.card .dome { fill: #e6e8e4; }
-.card .hot { fill: var(--accent); }
-.card .arc { stroke: var(--missile); stroke-width: 1.8; stroke-dasharray: 5 4; fill: none; opacity: 0.55; }
-.card .tgt { fill: var(--accent); opacity: 0.55; }
-.card[aria-checked='true'] .arc, .card:hover .arc, .card[aria-checked='true'] .tgt, .card:hover .tgt { opacity: 1; }
-.card-txt { display: grid; gap: 2px; }
-.card-name { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
-.card-desc { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
-.card-name kbd, .pick kbd { color: var(--muted); }
-.picks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.pick {
-  display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: center; gap: 10px; padding: 8px 12px; text-align: left; border-radius: 14px; color: var(--text);
-  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); transition: border-color 0.15s, background 0.15s;
-}
-.pick:hover { background: rgba(255, 255, 255, 0.07); }
-.pick svg { width: 34px; height: 34px; }
-
-/* The way in. */
-.menu-go {
-  display: flex; align-items: center; gap: 14px; padding: 10px 10px 10px 18px; border-radius: 14px;
-  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border);
-}
-.ch-sum { margin: 0; flex: 1; min-width: 0; display: grid; }
-#ch-summary { font-weight: 700; font-size: 14.5px; }
-.chooser-sub { color: var(--muted); font-size: 12px; }
-.last { flex: none; font-style: normal; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); border: 1px solid rgba(255, 122, 26, 0.5); border-radius: 999px; padding: 3px 9px; }
-.ch-start {
-  flex: none; padding: 12px 26px; border-radius: 10px; font-weight: 700; font-size: 14.5px;
-  background: var(--accent); border-color: var(--accent); color: #1a0d02; box-shadow: 0 6px 20px rgba(255, 122, 26, 0.3);
-}
-.ch-start:hover { background: #ff8d3a; }
-.chooser kbd { font-size: 10px; }
-@media (pointer: coarse) { .menu-hint, .card-name kbd, .pick kbd { display: none; } }
-@media (prefers-reduced-motion: reduce) { .card, .mission, .pick, .tab { transition: none; } }
-
-/* Narrow windows: the list goes above the briefing, as a row. */
-@media (max-width: 860px) {
-  .menu-body { grid-template-columns: minmax(0, 1fr); }
-  .missions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .menu-hint { display: none; }
-  .brief-top { grid-template-columns: minmax(0, 1fr); }
-}
-
-/* Phones, portrait: one column, compact rows, Start pinned to the bottom. */
-@media (max-width: 640px) and (min-height: 501px) {
-  .chooser { padding: calc(14px + var(--safe-t)) 12px 0; }
-  .mm { gap: 12px; margin-top: 0; }
-  .menu-brand span { display: none; }
-  .menu-brand b { font-size: 18px; }
-  .tabs { gap: 6px; }
-  .tab { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; gap: 2px; padding: 8px 4px; }
-  .tab svg { width: 24px; height: 24px; }
-  .tab-txt small { display: none; }
-  .missions { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-  .mission { padding: 8px 10px; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; }
-  .mission svg { width: 30px; height: 30px; }
-  .brief { padding: 12px; gap: 12px; }
-  .brief-tag { font-size: 13px; }
-  .cards, .picks { grid-template-columns: 1fr; gap: 8px; }
-  .card { grid-template-columns: 38% 1fr; }
-  .keys-list { grid-template-columns: minmax(0, 1fr); }
-  .menu-go {
-    position: sticky; bottom: 0; margin: 0 -12px; padding: 10px 12px calc(10px + var(--safe-b)); border-radius: 0; border-width: 1px 0 0;
-    background: rgba(11, 17, 25, 0.94); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  }
-  .last { display: none; }
-  .ch-start { padding: 12px 18px; }
-}
-/* Short windows (laptops, small browser windows): the same screen, tighter, so it fits without scrolling. */
-@media (max-height: 820px) and (min-height: 501px) {
-  .chooser { padding-top: calc(10px + var(--safe-t)); padding-bottom: calc(10px + var(--safe-b)); }
-  .mm { gap: 10px; }
-  .menu-body { gap: 12px; }
-  .menu-sub { margin-bottom: 5px; }
-  .missions { gap: 4px; }
-  .mission { padding: 6px 10px; gap: 10px; grid-template-columns: 32px minmax(0, 1fr) auto; }
-  .mission svg { width: 30px; height: 30px; }
-  .m-txt small { display: none; }
-  .tab { padding: 5px 14px; }
-  .tab svg { width: 26px; height: 26px; }
-  .tab-txt b { font-size: 14.5px; }
-  .menu-head { gap: 6px; }
-  .menu-brand b { font-size: 18px; }
-  .brief { padding: 12px 14px; gap: 9px; }
-  .brief-top { gap: 14px; }
-  .brief-head { gap: 6px; }
-  .brief h1 { font-size: 24px; }
-  .brief-tag { font-size: 12.5px; line-height: 1.42; }
-  .brief-facts li { padding: 3px 9px; font-size: 11px; }
-  .card { padding: 6px 8px; gap: 8px; }
-  .card svg { height: 46px; }
-  .card-name { font-size: 13px; }
-  .card-desc { font-size: 11px; }
-  .pick { padding: 6px 8px; }
-  .keys-list { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 3px 14px; font-size: 11.5px; }
-  .menu-go { padding: 6px 8px 6px 14px; }
-  .ch-start { padding: 9px 22px; }
-}
-/* Phones, landscape: list on the left, briefing on the right, Start pinned to the bottom. */
-@media (max-height: 500px) {
-  .chooser { padding: calc(8px + var(--safe-t)) calc(14px + var(--safe-r)) 0 calc(14px + var(--safe-l)); }
-  .mm { width: 100%; margin-top: 0; gap: 8px; }
-  .menu-head { gap: 12px; }
-  .menu-hint, .menu-brand span, .chooser-sub, .brief-keys, .brief-facts, .menu-sub, .last { display: none; }
-  .tab { padding: 3px 10px; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; }
-  .tab svg { width: 20px; height: 20px; }
-  .tab-txt small { display: none; }
-  .menu-brand b { font-size: 15px; }
-  .menu-head { gap: 4px; }
-  .menu-body { grid-template-columns: 0.8fr 1.2fr; gap: 10px 14px; }
-  .missions { grid-template-columns: 1fr; gap: 5px; }
-  .mission { padding: 5px 10px; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; }
-  .mission svg { width: 26px; height: 26px; }
-  .m-txt small { display: none; }
-  .brief { padding: 10px 12px; gap: 8px; border-radius: 12px; }
-  .brief-top { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 10px; }
-  .brief h1 { font-size: 18px; }
-  .brief-tag { font-size: 11.5px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-  .cards, .picks { grid-template-columns: 1fr 1fr; gap: 6px; }
-  .card { grid-template-columns: 34% 1fr; padding: 4px 8px; gap: 6px; }
-  .card svg { height: 36px; }
-  .card-desc { display: none; }
-  .pick { grid-template-columns: minmax(0, 1fr); padding: 4px 6px; }
-  .pick svg, .pick small { display: none; }
-  .brief .variant h2 { display: none; }
-  .menu-go { position: sticky; bottom: 0; margin: 0 -14px; padding: 8px 14px calc(8px + var(--safe-b)); border-radius: 0; border-width: 1px 0 0; background: rgba(11, 17, 25, 0.94); }
-}
 .link-btn { display: block; margin-top: 8px; padding: 0; border: 0; background: none; color: var(--accent); font-size: 12px; cursor: pointer; }
 .link-btn:hover { text-decoration: underline; background: none; }
 
@@ -894,6 +646,11 @@ input[type='range'] { accent-color: var(--accent); }
   color: var(--text); font: 600 13px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums;
 }
 .ed-fields input:disabled { cursor: default; }
+.ed-launch { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: rgba(255, 59, 48, 0.12); border: 1px solid rgba(255, 59, 48, 0.35); font-size: 12px; }
+.ed-launch > span { flex: 1; min-width: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ed-launch b { color: #ff6b61; font-weight: 600; }
+.ed-launch-dot { flex: none; width: 11px; height: 11px; border-radius: 50%; background: #ff3b30; box-shadow: 0 0 0 2px rgba(8, 12, 18, 0.85); }
+.ed-launch.warn > span { color: #ffb347; }
 .ed-snap { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
 .ed-snap .chips { flex: 1; }
 .ed-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
